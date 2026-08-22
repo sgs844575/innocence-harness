@@ -9,7 +9,13 @@ import type { LucideIcon } from "lucide-react";
 import { useSlotList } from "../slots/react";
 import { NavRail } from "./NavRail";
 
-export type SettingsSection = "models" | "general" | "plugins" | "appearance" | "about";
+export type SettingsSection =
+  | "models"
+  | "general"
+  | "plugins"
+  | "skills"
+  | "appearance"
+  | "about";
 
 /** 设置分区槽位标识：每个分区一条贡献（list，注册序即清单序）。 */
 export const SETTINGS_SECTION_SLOT = "settings.section";

@@ -8,6 +8,7 @@ import {
   PROVIDER_PRESET_MIRROR,
   type AgentId,
   type ChatPermissionEvent,
+  type DiscoveredSkillMirror as SharedDiscoveredSkill,
   type PluginInventory,
   type PluginInventoryEntry,
   type PluginToggleSource,
@@ -16,6 +17,7 @@ import type {
   PluginInventory as MainPluginInventory,
   PluginInventoryEntry as MainPluginInventoryEntry,
 } from "../../../src/main/plugin-inventory";
+import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { PermissionResource } from "@innocencecode/harness-permissions";
 import type { PluginToggleSource as CorePluginToggleSource } from "../src/settings";
 import {
@@ -148,6 +150,24 @@ describe("shared PluginInventoryEntry 镜像对齐 main plugin-inventory", () =>
       const back: PluginInventoryEntry["via"] = main;
       expect(back).toBe(via);
     }
+  });
+});
+
+describe("shared DiscoveredSkillMirror 镜像对齐 main skillDiscovery", () => {
+  // shared 不 import main，发现 DTO 手工镜像：main 增删字段或改语义而忘了
+  // 同步 shared 时，双向赋值与字面量赋值会让 typecheck 失败。
+  const sample: SharedDiscoveredSkill = {
+    name: "review",
+    description: "审查指南",
+    sourceDir: "D:/home/.claude/skills/review",
+    origin: "external-a",
+    imported: false,
+  };
+
+  it("类型漂移守卫：shared 镜像与 main DiscoveredSkill 双向兼容", () => {
+    const main: DiscoveredSkill = sample;
+    const back: SharedDiscoveredSkill = main;
+    expect(back).toEqual(sample);
   });
 });
 

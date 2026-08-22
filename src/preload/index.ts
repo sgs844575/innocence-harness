@@ -2,7 +2,7 @@
 // process. Exposes a minimal, typed API surface (contextBridge) with
 // sandbox + contextIsolation and no Node in the renderer.
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, type InnocenceCodeApi, type ThemeMode } from "../shared/ipc";
+import { IPC, type DiscoveredSkillMirror, type InnocenceCodeApi, type ThemeMode } from "../shared/ipc";
 import {
   TaskIpcChannels,
   type TaskIpcApi,
@@ -54,6 +54,9 @@ const api: InnocenceCodeApi = {
   getHarnessSettings: () => ipcRenderer.invoke(IPC.settingsGet),
   setHarnessSettings: (settings) => ipcRenderer.invoke(IPC.settingsSet, settings),
   getPluginInventory: () => ipcRenderer.invoke(IPC.pluginsList),
+  discoverSkills: (): Promise<DiscoveredSkillMirror[]> => ipcRenderer.invoke(IPC.skillsDiscover),
+  importSkill: (discovered: DiscoveredSkillMirror) =>
+    ipcRenderer.invoke(IPC.skillsImport, discovered),
   listProviderModels: (profileId) => ipcRenderer.invoke(IPC.settingsModelsList, profileId),
   enrichModels: (providerName, ids) =>
     ipcRenderer.invoke(IPC.settingsEnrichModels, providerName, ids),

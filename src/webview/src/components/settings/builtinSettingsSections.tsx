@@ -4,13 +4,14 @@
 // 贡献对象经 useMemo 只构造一次（引用稳定，满足 T2 list 槽位不重注册
 // 契约），render 闭包经 ref 读取最新依赖（语言/设置更新即时生效）。
 import { useMemo, useRef } from "react";
-import { Cpu, SlidersHorizontal, Puzzle, Palette, Info } from "lucide-react";
+import { Cpu, SlidersHorizontal, Puzzle, Palette, Info, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { HarnessSettings, PluginInventory } from "../../../../shared/ipc";
 import { useRegisterList } from "../../slots/react";
 import { SETTINGS_SECTION_SLOT, type SettingsSectionContribution } from "../SettingsNav";
 import { AboutSection, AppearanceSection, GeneralSection } from "./BasicSections";
 import { PluginsSection } from "./PluginsSection";
+import { SkillsSection } from "./SkillsSection";
 import { ProviderSettingsPage } from "./provider/ProviderSettingsPage";
 
 /** 分区 render 的共享依赖（SettingsView 的 props 子集；settings 允许未加载）。 */
@@ -88,6 +89,15 @@ export function BuiltinSettingsSections({ deps }: { deps: SettingsSectionDeps })
                 inventory={pluginInventory}
               />,
             );
+          },
+        },
+        {
+          id: "skills",
+          labelKey: "settings.section.skills",
+          icon: Sparkles,
+          render: () => {
+            const { t } = p();
+            return scroll(<SkillsSection t={t} />);
           },
         },
         {

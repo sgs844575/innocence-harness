@@ -52,7 +52,8 @@ async function loadSkillFrom(dir: string, entry: string): Promise<Skill | null> 
 }
 
 export interface SkillsPluginOptions {
-  /** Directories to scan; each subdirectory (or *.md file) may hold a SKILL.md. */
+  /** Directories to scan; each subdirectory (or *.md file) may hold a SKILL.md.
+   *  多根语义：根序即优先序——前根同名技能优先，后根同名在扫描层跳过。 */
   dirs: string[];
 }
 
@@ -108,11 +109,16 @@ export interface SkillsPlugin {
  * the spine skills service, and registers the "/name" expansion message
  * processor (order first) on the session service — expansion runs over real
  * user input only, exactly like the pipeline-external pass it replaces.
+ *
+ * Multi-root semantics: root order is priority order — a skill name seen in
+ * an earlier root wins; the same name in a later root is skipped at the scan
+ * layer (before registration).
  */
 export function createSkillsPlugin(options: SkillsPluginOptions): SkillsPlugin {
   return {
     name: "skills",
     async apply(ctx) {
+      const seen = new Set<string>();
       for (const dir of options.dirs) {
         let entries: string[] = [];
         try {
@@ -122,12 +128,14 @@ export function createSkillsPlugin(options: SkillsPluginOptions): SkillsPlugin {
         }
         for (const entry of entries) {
           const skill = await loadSkillFrom(dir, entry);
-          if (skill) {
+          if (skill && !seen.has(skill.name)) {
+            // 后根同名在扫描层跳过（根序即优先序）；seen 防御根内重名。
+            seen.add(skill.name);
             try {
               ctx.skills.register(skill);
               ctx.logger.log("info", `[skills] skill loaded: ${skill.name}`);
             } catch {
-              // duplicate name across dirs — first one wins
+              // 根内同名（同批 loadSkillFrom 重复条目）— 先到先得
             }
           }
         }

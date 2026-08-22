@@ -4,6 +4,7 @@
 // project permission-rules plugin and the settings-based provider assembly
 // that every route session's plugin set is built from.
 import path from "node:path";
+import os from "node:os";
 import {
   loadInnocenceConfig,
   rulesFromConfig,
@@ -114,8 +115,12 @@ async function builtinPluginFor(
     case "subagent":
       return value as SessionPlugin;
     case "skills":
+      // 多根：根序即优先序——项目层先于用户层（同名项目层胜出）。
       return (value as (options: { dirs: string[] }) => SessionPlugin)({
-        dirs: [path.join(workspaceRoot, ".innocence", "skills")],
+        dirs: [
+          path.join(workspaceRoot, ".innocence", "skills"),
+          path.join(os.homedir(), ".innocence", "skills"),
+        ],
       });
     case "mcp":
       return (value as (options: { servers: Record<string, unknown> }) => SessionPlugin)({

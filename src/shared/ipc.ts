@@ -31,6 +31,9 @@ export const IPC = {
   settingsEnrichModels: "settings:enrich-models",
   // 插件清单投影（1c）：main 按当前 toggles 现算的 manifest 投影。
   pluginsList: "plugins:list",
+  // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
+  skillsDiscover: "skills:discover",
+  skillsImport: "skills:import",
   // Task review/route/complete channels (Task 7).
   ...TaskIpcChannels,
 } as const;
@@ -175,6 +178,18 @@ export interface PluginInventoryEntry {
 
 export type PluginInventory = PluginInventoryEntry[];
 
+// 镜像契约：以下发现 DTO 复制自 src/main/skillDiscovery.ts 的
+// DiscoveredSkill（shared 不 import main），修改任何一侧时必须同步另一侧
+// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** 外部技能发现清单的一条条目（IPC skills:discover 载荷）。 */
+export interface DiscoveredSkillMirror {
+  name: string;
+  description: string;
+  sourceDir: string;
+  origin: string;
+  imported: boolean;
+}
+
 // 镜像契约：以下两个类型复制自 packages/harness-electron/src/modelPresets.ts
 // （shared 不 import 包），修改任何一侧时必须同步另一侧。
 export type ModelSource = "preset" | "fetch" | "manual";
@@ -312,6 +327,10 @@ export interface InnocenceCodeApi {
   setHarnessSettings(settings: HarnessSettings): Promise<void>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;
+  /** 外部技能发现清单（main 探测已知外部智能体目录）。 */
+  discoverSkills(): Promise<DiscoveredSkillMirror[]>;
+  /** 导入一条已发现的技能到用户技能根（失败抛错由调用方提示）。 */
+  importSkill(discovered: DiscoveredSkillMirror): Promise<void>;
   listProviderModels(profileId: string): Promise<string[]>;
   /** 用 harness-electron 预设目录补全模型元数据（main 侧 modelFromPreset）。 */
   enrichModels(providerName: string, ids: string[]): Promise<ModelInfo[]>;

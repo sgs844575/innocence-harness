@@ -77,12 +77,13 @@ function mountSections(
 }
 
 describe("builtin settings section contributions", () => {
-  it("五个内置分区按固定序注册（id/labelKey）", () => {
+  it("六个内置分区按固定序注册（id/labelKey）", () => {
     mountSections(baseSettings(), <Probe />);
     expect(listed.map(({ id, labelKey }) => ({ id, labelKey }))).toEqual([
       { id: "models", labelKey: "settings.section.models" },
       { id: "general", labelKey: "settings.section.general" },
       { id: "plugins", labelKey: "settings.section.plugins" },
+      { id: "skills", labelKey: "settings.section.skills" },
       { id: "appearance", labelKey: "settings.section.appearance" },
       { id: "about", labelKey: "settings.section.about" },
     ]);
@@ -120,14 +121,14 @@ describe("builtin settings section contributions", () => {
 });
 
 describe("SettingsNav 槽位派生", () => {
-  it("五分区按序渲染并上抛选择命令", () => {
+  it("六分区按序渲染并上抛选择命令", () => {
     const onSelect = vi.fn();
     mountSections(
       baseSettings(),
       <SettingsNav t={t} section="models" onSelect={onSelect} onBack={() => {}} />,
     );
-    const items = screen.getAllByRole("button", { name: /模型服务|通用|插件|外观|关于/ });
-    expect(items.map((item) => item.textContent)).toEqual(["模型服务", "通用", "插件", "外观", "关于"]);
+    const items = screen.getAllByRole("button", { name: /模型服务|通用|插件|技能|外观|关于/ });
+    expect(items.map((item) => item.textContent)).toEqual(["模型服务", "通用", "插件", "技能", "外观", "关于"]);
     fireEvent.click(screen.getByRole("button", { name: "插件" }));
     expect(onSelect).toHaveBeenCalledWith("plugins");
   });
@@ -140,7 +141,7 @@ describe("SettingsRail 槽位派生", () => {
       baseSettings(),
       <SettingsRail t={t} section="plugins" onSelect={onSelect} onBack={() => {}} />,
     );
-    const names = ["模型服务", "通用", "插件", "外观", "关于"];
+    const names = ["模型服务", "通用", "插件", "技能", "外观", "关于"];
     for (const name of names) {
       const button = screen.getByRole("button", { name });
       expect(button.getAttribute("aria-pressed")).toBe(name === "插件" ? "true" : "false");
@@ -156,6 +157,7 @@ describe("SettingsView 槽位分发", () => {
     models: "模型服务",
     general: "通用",
     plugins: "插件",
+    skills: "技能",
     appearance: "外观",
     about: "关于",
   };
