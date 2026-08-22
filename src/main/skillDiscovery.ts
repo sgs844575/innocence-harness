@@ -81,9 +81,16 @@ export async function discoverExternalSkills(homedir: string = os.homedir()): Pr
   return results;
 }
 
-/** Validates a skill name (plain specifier semantics: no separators, no dot prefix). */
+/** Validates a skill name (plain specifier semantics: no separators, no dot
+ *  prefix, no drive-letter prefix — aligned with the kernel loader's rule). */
 function assertValidSkillName(name: string): void {
-  if (!name || name.startsWith(".") || name.includes("/") || name.includes("\\")) {
+  if (
+    !name ||
+    name.startsWith(".") ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    /^[a-zA-Z]:/.test(name)
+  ) {
     throw new Error(`invalid skill name: ${JSON.stringify(name)}`);
   }
 }

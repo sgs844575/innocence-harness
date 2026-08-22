@@ -57,6 +57,8 @@ const api: InnocenceCodeApi = {
   discoverSkills: (): Promise<DiscoveredSkillMirror[]> => ipcRenderer.invoke(IPC.skillsDiscover),
   importSkill: (discovered: DiscoveredSkillMirror) =>
     ipcRenderer.invoke(IPC.skillsImport, discovered),
+  importMcpServers: (root, text) => ipcRenderer.invoke(IPC.mcpImport, root, text),
+  discoverMcpFile: (root) => ipcRenderer.invoke(IPC.mcpDiscover, root),
   listProviderModels: (profileId) => ipcRenderer.invoke(IPC.settingsModelsList, profileId),
   enrichModels: (providerName, ids) =>
     ipcRenderer.invoke(IPC.settingsEnrichModels, providerName, ids),

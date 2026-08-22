@@ -129,11 +129,11 @@ describe("importSkill", () => {
     }
   });
 
-  it("name 含路径分隔符或点前缀时拒绝（防逃逸）", async () => {
+  it("name 含路径分隔符、点前缀或盘符前缀时拒绝（防逃逸）", async () => {
     const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
     try {
       const source = path.join(home, ".claude", "skills", "review");
-      for (const bad of ["..\\evil", "../evil", "a/b", ".hidden", ""]) {
+      for (const bad of ["..\\evil", "../evil", "a/b", ".hidden", "", "C:evil"]) {
         await expect(importSkill(skill(bad, source), target, home)).rejects.toThrow(
           "invalid skill name",
         );

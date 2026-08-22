@@ -34,6 +34,9 @@ export const IPC = {
   // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
   skillsDiscover: "skills:discover",
   skillsImport: "skills:import",
+  // MCP 标准格式导入（任务 5）：main 解析项目 .mcp.json / 探测发现提示。
+  mcpImport: "mcp:import",
+  mcpDiscover: "mcp:discover",
   // Task review/route/complete channels (Task 7).
   ...TaskIpcChannels,
 } as const;
@@ -190,6 +193,22 @@ export interface DiscoveredSkillMirror {
   imported: boolean;
 }
 
+// 镜像契约：以下 MCP 导入 DTO 复制自 src/main/mcpImport.ts 的
+// McpServerEntry/McpImportResult（shared 不 import main），修改任何一侧时
+// 必须同步另一侧（packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** .mcp.json 中一条 MCP 服务器条目（IPC mcp:import 载荷形状）。 */
+export interface McpServerEntryMirror {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** MCP 导入结果（imported 名称清单 + 同名跳过清单）。 */
+export interface McpImportResultMirror {
+  imported: string[];
+  skipped: { name: string; reason: "duplicate" }[];
+}
+
 // 镜像契约：以下两个类型复制自 packages/harness-electron/src/modelPresets.ts
 // （shared 不 import 包），修改任何一侧时必须同步另一侧。
 export type ModelSource = "preset" | "fetch" | "manual";
@@ -331,6 +350,10 @@ export interface InnocenceCodeApi {
   discoverSkills(): Promise<DiscoveredSkillMirror[]>;
   /** 导入一条已发现的技能到用户技能根（失败抛错由调用方提示）。 */
   importSkill(discovered: DiscoveredSkillMirror): Promise<void>;
+  /** 解析并合并项目 .mcp.json 文本到 <root>/.innocence/config.json（损坏抛错由调用方提示）。 */
+  importMcpServers(root: string, text: string): Promise<McpImportResultMirror>;
+  /** 项目根 .mcp.json 路径或 null（发现提示用）。 */
+  discoverMcpFile(root: string): Promise<string | null>;
   listProviderModels(profileId: string): Promise<string[]>;
   /** 用 harness-electron 预设目录补全模型元数据（main 侧 modelFromPreset）。 */
   enrichModels(providerName: string, ids: string[]): Promise<ModelInfo[]>;

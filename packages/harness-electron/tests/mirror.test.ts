@@ -9,6 +9,8 @@ import {
   type AgentId,
   type ChatPermissionEvent,
   type DiscoveredSkillMirror as SharedDiscoveredSkill,
+  type McpImportResultMirror,
+  type McpServerEntryMirror,
   type PluginInventory,
   type PluginInventoryEntry,
   type PluginToggleSource,
@@ -18,6 +20,7 @@ import type {
   PluginInventoryEntry as MainPluginInventoryEntry,
 } from "../../../src/main/plugin-inventory";
 import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
+import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
 import type { PermissionResource } from "@innocencecode/harness-permissions";
 import type { PluginToggleSource as CorePluginToggleSource } from "../src/settings";
 import {
@@ -168,6 +171,29 @@ describe("shared DiscoveredSkillMirror 镜像对齐 main skillDiscovery", () => 
     const main: DiscoveredSkill = sample;
     const back: SharedDiscoveredSkill = main;
     expect(back).toEqual(sample);
+  });
+});
+
+describe("shared MCP 导入 DTO 镜像对齐 main mcpImport", () => {
+  // shared 不 import main，MCP 导入 DTO 手工镜像：main 增删字段而忘了同步
+  // shared 时，双向赋值会让 typecheck 失败。
+  const entry: McpServerEntryMirror = {
+    command: "npx",
+    args: ["-y", "server"],
+    env: { K: "v" },
+  };
+  const result: McpImportResultMirror = {
+    imported: ["a"],
+    skipped: [{ name: "b", reason: "duplicate" }],
+  };
+
+  it("类型漂移守卫：entry 与 result 双向兼容", () => {
+    const mainEntry: McpServerEntry = entry;
+    const backEntry: McpServerEntryMirror = mainEntry;
+    expect(backEntry).toEqual(entry);
+    const mainResult: McpImportResult = result;
+    const backResult: McpImportResultMirror = mainResult;
+    expect(backResult).toEqual(result);
   });
 });
 
