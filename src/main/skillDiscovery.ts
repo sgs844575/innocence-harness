@@ -81,13 +81,28 @@ export async function discoverExternalSkills(homedir: string = os.homedir()): Pr
   return results;
 }
 
-/** Recursively copies a directory tree (Node fs, explicit UTF-8 for text). */
+/** Validates a skill name (plain specifier semantics: no separators, no dot prefix). */
+function assertValidSkillName(name: string): void {
+  if (!name || name.startsWith(".") || name.includes("/") || name.includes("\\")) {
+    throw new Error(`invalid skill name: ${JSON.stringify(name)}`);
+  }
+}
+
+/** Whether resolved is inside root (resolve guards traversal suffixes). */
+function isInsideRoot(resolved: string, root: string): boolean {
+  return resolved === root || resolved.startsWith(root + path.sep);
+}
+
+/** Recursively copies a directory tree; symlink entries are skipped to avoid
+ *  cycles and to prevent expanding linked directories into real copies. */
 async function copyDir(source: string, target: string): Promise<void> {
   await fs.mkdir(target, { recursive: true });
   for (const entry of await fs.readdir(source)) {
     const from = path.join(source, entry);
     const to = path.join(target, entry);
-    const stat = await fs.stat(from);
+    // lstat: do not follow symlinks (directory link cycles would recurse forever)
+    const stat = await fs.lstat(from);
+    if (stat.isSymbolicLink()) continue; // skipped: symlinks are not copied
     if (stat.isDirectory()) {
       await copyDir(from, to);
     } else {
@@ -107,6 +122,14 @@ export async function importSkill(
   homedir: string = os.homedir(),
 ): Promise<void> {
   const root = targetRoot ?? userSkillsRoot(homedir);
+  // name comes from external frontmatter via IPC round-trip — never trust it
+  assertValidSkillName(discovered.name);
+  // sourceDir likewise: re-verify it belongs to a known external root
+  const resolvedSource = path.resolve(discovered.sourceDir);
+  const knownRoots = externalSkillRoots(homedir).map((r) => path.resolve(r.dir));
+  if (!knownRoots.some((r) => isInsideRoot(resolvedSource, r))) {
+    throw new Error("skill source outside known roots");
+  }
   let name = discovered.name;
   if (await fs.stat(path.join(root, name)).catch(() => null)) {
     name = `${discovered.name}-imported`;

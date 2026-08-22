@@ -128,4 +128,67 @@ describe("importSkill", () => {
       await fs.rm(target, { recursive: true, force: true });
     }
   });
+
+  it("name 含路径分隔符或点前缀时拒绝（防逃逸）", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
+    try {
+      const source = path.join(home, ".claude", "skills", "review");
+      for (const bad of ["..\\evil", "../evil", "a/b", ".hidden", ""]) {
+        await expect(importSkill(skill(bad, source), target, home)).rejects.toThrow(
+          "invalid skill name",
+        );
+      }
+      expect(await fs.readdir(target)).toEqual([]);
+    } finally {
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("sourceDir 位于已知外部根之外时拒绝（不信任渲染层回传）", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-outside-"));
+    try {
+      await fs.writeFile(path.join(outside, "SKILL.md"), "---\nname: x\ndescription: d\n---\n", "utf8");
+      // 逃逸尝试：根内前缀 + .. 上跳
+      const traversal = path.join(home, ".claude", "skills", "..", "..", "..");
+      for (const dir of [outside, traversal]) {
+        await expect(importSkill(skill("review", dir), target, home)).rejects.toThrow(
+          "skill source outside known roots",
+        );
+      }
+      expect(await fs.readdir(target)).toEqual([]);
+    } finally {
+      await fs.rm(target, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("目录/文件 symlink 条目跳过，不递归不复制（防环）", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-link-home-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
+    try {
+      const src = path.join(linkHome, ".claude", "skills", "linked");
+      await fs.mkdir(path.join(src, "sub"), { recursive: true });
+      await fs.writeFile(path.join(src, "SKILL.md"), "---\nname: linked\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(path.join(src, "real.txt"), "real", "utf8");
+      // 目录自环 symlink + 文件 symlink（Windows 无特权时创建失败则跳过本用例）
+      try {
+        await fs.symlink(src, path.join(src, "sub", "cycle"));
+        await fs.symlink(path.join(src, "real.txt"), path.join(src, "file-link.txt"));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EPERM") {
+          ctx.skip();
+          return;
+        }
+        throw err;
+      }
+      await importSkill(skill("linked", src), target, linkHome);
+      expect(await fs.readFile(path.join(target, "linked", "real.txt"), "utf8")).toBe("real");
+      expect(fs.readdir(path.join(target, "linked", "sub"))).resolves.toEqual([]);
+      await expect(fs.lstat(path.join(target, "linked", "file-link.txt"))).rejects.toThrow();
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
 });
