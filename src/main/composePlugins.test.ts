@@ -92,6 +92,22 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(names).toHaveLength(MANIFEST_IDS.length + 2);
   });
 
+  it("equivalence: composePlugins names mirror resolveBuiltinSet active entries", async () => {
+    // T2 等价升级披露：装载中间态（importPlugin+plugins 数组）保持不变，
+    // 但其输入驱动面收敛为 resolveEntries 产出——同一 toggles 下，session
+    // 插件名集与 active 条目集一致（1:1 守卫的条目面镜像）。
+    const ws = await tempWorkspace({ ".innocence/plugins.yml": "plugins:\n  mcp: false\n" });
+    const boot = await composition.ensureBoot();
+    const resolved = await boot.resolveBuiltinSet({ workspaceRoot: ws, userToggles: { subagent: false } });
+    const names = (await composePlugins(ws, { subagent: false })).map((p) => p.name);
+    for (const entry of resolved.entries) {
+      if (entry.disabled) expect(names).not.toContain(entry.id);
+      else if (entry.id !== "example") expect(names).toContain(entry.id);
+    }
+    expect(resolved.active).not.toContain("mcp");
+    expect(resolved.active).not.toContain("subagent");
+  });
+
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
 
   it("inventory 默认全 active：按清单序、title 非空、core/client 标记齐全", async () => {

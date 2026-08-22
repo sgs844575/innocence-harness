@@ -10,7 +10,7 @@ import type {
   ResolvedPluginSet,
 } from "./plugin-toggles-local";
 
-/** 清单条目的运行时投影状态（active / 配置停用 / 依赖连带停用）。 */
+/** 插件清单条目的运行时投影状态（active / 配置停用 / 依赖连带停用）。 */
 export type PluginInventoryState = "active" | "disabled-by-config" | "dependency-disabled";
 
 /** 设置页插件清单的一条投影：清单 id + 展示名 + core/client 标记 + 当前
@@ -31,11 +31,18 @@ export interface PluginInventoryEntry {
 
 export type PluginInventory = PluginInventoryEntry[];
 
+/** projectPluginInventory 消费的最小解析形状（resolvePluginSet 与声明式
+ *  resolveEntries 均结构满足；reason 允许声明式面的扩展枚举值）。 */
+interface ResolvedShape {
+  active: readonly string[];
+  skipped: readonly { id: string; reason: string; via: PluginToggleLayer }[];
+}
+
 /** manifest 描述符 + 解析结果 → 清单投影（跳过项带原因与获胜层，active
  *  项 via 恒 default；title 缺省回落 id——旧 manifest 兼容）。 */
 export function projectPluginInventory(
   descriptors: readonly PluginDescriptor[],
-  resolved: ResolvedPluginSet,
+  resolved: ResolvedShape | ResolvedPluginSet,
 ): PluginInventory {
   const skipped = new Map(resolved.skipped.map((entry) => [entry.id, entry]));
   return descriptors.map((descriptor) => {
@@ -45,7 +52,7 @@ export function projectPluginInventory(
       title: descriptor.title ?? descriptor.id,
       core: descriptor.core === true,
       client: descriptor.client === true,
-      state: skip?.reason ?? "active",
+      state: (skip?.reason as PluginInventoryState | undefined) ?? "active",
       via: skip?.via ?? "default",
     };
   });
