@@ -145,15 +145,13 @@ export type PermissionMode = "auto" | "ask" | "plan" | "full";
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
 export type AgentId = "default" | "plan" | "full";
 
-// 镜像契约：PluginToggleSource 复制自 packages/harness-electron/src/settings.ts
-// （shared 不 import 包），修改任何一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-// 键空间开放（清单派生）：值为布尔的任意插件 id 键，四内置键子集自然兼容。
+// Plugin-toggle source is defined here because both host settings and the
+// main-process resolver consume this IPC-compatible payload. Keys stay open:
+// any plugin id maps to a boolean.
 export type PluginToggleSource = Record<string, boolean>;
 
-// 镜像契约：以下清单投影类型复制自 src/main/plugin-inventory.ts
-// （shared 不 import main），修改任何一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+// Inventory projection DTOs are defined here because both IPC endpoints use
+// the same payload; the main-process projection imports these types.
 /** 插件开关的解析状态（active / 配置停用 / 依赖连带停用 / 配置块校验失败降级）。 */
 export type PluginInventoryState =
   | "active"

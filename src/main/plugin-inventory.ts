@@ -5,44 +5,22 @@
 // 无法 import main），修改任一侧时必须同步另一侧
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
 import type {
+  PluginInventoryEntry,
+  PluginInventory,
+  PluginInventoryState,
+} from "../shared/ipc";
+import type {
   PluginDescriptor,
-  PluginToggleLayer,
   ResolvedPluginSet,
 } from "./plugin-toggles-local";
 
-/** 插件清单条目的运行时投影状态（active / 配置停用 / 依赖连带停用 /
- *  配置块校验失败降级——config-invalid 仅声明式面产出）。 */
-export type PluginInventoryState =
-  | "active"
-  | "disabled-by-config"
-  | "dependency-disabled"
-  | "config-invalid";
-
-/** 设置页插件清单的一条投影：清单 id + 展示名 + core/client 标记 + 当前
- *  解析状态与停用获胜层（active 恒 default）。 */
-export interface PluginInventoryEntry {
-  id: string;
-  /** 中性展示名（build:plugins 从包 description 投影；缺省回落 id）。 */
-  title: string;
-  /** 恒开（开关呈禁用态）。 */
-  core: boolean;
-  /** 是否带渲染层模块（构建后 dist/client.js 存在）。 */
-  client: boolean;
-  /** 清单派生的可开关标记（core 恒 false；开关可操作面）。 */
-  toggleable: boolean;
-  /** 按当前 toggles 现算的解析状态。 */
-  state: PluginInventoryState;
-  /** 停用获胜层（active 恒 default）。 */
-  via: PluginToggleLayer;
-}
-
-export type PluginInventory = PluginInventoryEntry[];
+export type { PluginInventoryEntry, PluginInventory } from "../shared/ipc";
 
 /** projectPluginInventory 消费的最小解析形状（resolvePluginSet 与声明式
  *  resolveEntries 均结构满足；reason 允许声明式面的扩展枚举值）。 */
 interface ResolvedShape {
   active: readonly string[];
-  skipped: readonly { id: string; reason: string; via: PluginToggleLayer }[];
+  skipped: readonly { id: string; reason: string; via: PluginInventoryEntry["via"] }[];
 }
 
 /** manifest 描述符 + 解析结果 → 清单投影（跳过项带原因与获胜层，active

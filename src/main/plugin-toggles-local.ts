@@ -6,9 +6,11 @@
 // phase 2 task 3: the project layer is read by pluginBoot/configSources
 // (open keyspace — the manifest id set), which replaced this copy's
 // hardwired four-key whitelist.
+import type { PluginToggleSource } from "../shared/ipc";
+
 /** 开放键空间（清单 id 集）：布尔值按 manifest 条目 id 校验（键空间由
- *  清单派生，不再硬编码四键；与 shared/ipc 镜像、settings 面同形）。 */
-export type PluginToggleSource = Record<string, boolean>;
+ * 清单派生，不再硬编码四键；shared IPC 是唯一类型来源）。 */
+export type { PluginToggleSource } from "../shared/ipc";
 
 export interface PluginDescriptor {
   id: string;

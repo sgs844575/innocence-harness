@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 槽位环境接线：解析与渲染均包 <SlotProvider> + <BuiltinToolcards />（getToolCard 为渲染期钩子）。
+// 槽位环境接线：解析与渲染均包 <SlotProvider> + <BuiltinToolcards />（useToolCard 为渲染期钩子）。
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ComponentType } from "react";
@@ -7,7 +7,7 @@ import { SlotProvider } from "../../../slots/react";
 import type { ToolCallPart, ToolResultPart } from "../../../../../shared/ipc";
 import { BuiltinToolcards } from "./builtinToolcards";
 import { McpToolCard } from "./McpToolCard";
-import { getToolCard, type ToolCardProps } from "./registry";
+import { useToolCard, type ToolCardProps } from "./registry";
 
 afterEach(cleanup);
 
@@ -18,7 +18,7 @@ const res = (content: string): ToolResultPart =>
 
 /** 渲染期探针：在 Provider 内按名解析卡并渲染（探针自身每次渲染捕获一次）。 */
 function CardProbe({ name, ...card }: { name: string } & ToolCardProps): React.JSX.Element {
-  const Card = getToolCard(name);
+  const Card = useToolCard(name);
   return <Card {...card} />;
 }
 
@@ -26,7 +26,7 @@ function CardProbe({ name, ...card }: { name: string } & ToolCardProps): React.J
 function resolveCard(name: string): ComponentType<ToolCardProps> {
   let resolved: ComponentType<ToolCardProps> | undefined;
   function Capture(): React.JSX.Element | null {
-    resolved = getToolCard(name);
+    resolved = useToolCard(name);
     return null;
   }
   render(
