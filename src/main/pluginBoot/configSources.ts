@@ -10,67 +10,130 @@ import { parse as parseYaml } from "yaml";
 
 export type ConfigLogger = (level: "warn" | "error", msg: string, data?: unknown) => void;
 
-/** 归一后的一个配置层：布尔开关面 + per-plugin 配置块。 */
+/** A normalized child row declared inside one loader group. */
+export interface GroupEntryConfig {
+  id: string;
+  name?: string;
+  config?: unknown;
+  disabled?: boolean;
+}
+
+/** A normalized, ordered loader group declaration. */
+export interface GroupConfig {
+  entries: GroupEntryConfig[];
+}
+
+/** 归一后的一个配置层：布尔开关面 + per-plugin 配置块 + groups。 */
 export interface ConfigLayer {
   /** 布尔开关（旧式布尔条目 + 新式条目的 enabled）。 */
   toggles: Record<string, boolean>;
   /** per-plugin 配置块（新式条目的 config）。 */
   configs: Record<string, unknown>;
+  /** Declarative loader groups keyed by their stable group name. */
+  groups: Record<string, GroupConfig>;
 }
 
-const emptyLayer: () => ConfigLayer = () => ({ toggles: {}, configs: {} });
+const emptyLayer: () => ConfigLayer = () => ({ toggles: {}, configs: {}, groups: {} });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validSegment(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !/[\\/:]/.test(value);
+}
+
+function parseGroups(
+  raw: unknown,
+  layer: ConfigLayer,
+  options: { knownGroups?: readonly string[]; where: string; onWarning?: (msg: string) => void },
+): void {
+  if (raw === undefined) return;
+  if (!isRecord(raw)) {
+    options.onWarning?.(`"groups" in ${options.where} must be a mapping; ignored`);
+    return;
+  }
+  for (const [groupId, value] of Object.entries(raw)) {
+    if (options.knownGroups && !options.knownGroups.includes(groupId)) {
+      options.onWarning?.(`unknown plugin group "${groupId}" in ${options.where}; ignored`);
+      continue;
+    }
+    if (!validSegment(groupId) || !isRecord(value) || !Array.isArray(value.entries)) {
+      options.onWarning?.(`plugin group "${groupId}" in ${options.where} must declare an entries array; ignored`);
+      continue;
+    }
+    const entries: GroupEntryConfig[] = [];
+    let valid = true;
+    for (const child of value.entries) {
+      if (!isRecord(child) || !validSegment(child.id) || (child.name !== undefined && typeof child.name !== "string") ||
+        (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
+        options.onWarning?.(`plugin group "${groupId}" in ${options.where} has invalid child entry; ignored`);
+        valid = false;
+        break;
+      }
+      entries.push({
+        id: child.id,
+        ...(child.name !== undefined ? { name: child.name } : {}),
+        ...(child.config !== undefined ? { config: child.config } : {}),
+        ...(child.disabled !== undefined ? { disabled: child.disabled } : {}),
+      });
+    }
+    if (valid) layer.groups[groupId] = { entries };
+  }
+}
 
 /**
  * 一个配置文件的 plugins 块 → ConfigLayer。两种条目格式：
  * 布尔（`mcp: false`，旧式）→ toggles；对象（`skills: {enabled, config}`，
- * 新式）→ enabled 进 toggles（缺省 true）+ config 进 configs。未知键/非布尔
- * 值告警忽略（键空间不在此持有——knownKeys 由清单 id 集注入，调用方
- * （compose）以 manifest 派生）。`raw` 为已解析的 yaml 文档（顶层
- * mapping）；undefined/空文档产出空层。
+ * 新式）→ enabled 进 toggles（缺省 true）+ config 进 configs。groups 是同一
+ * 文档的独立顶层声明面，由 knownGroups（若提供）限制键空间。
  */
 export function parsePluginConfigLayer(
   raw: unknown,
-  options: { knownKeys: readonly string[]; where?: string; onWarning?: (msg: string) => void },
+  options: {
+    knownKeys: readonly string[];
+    knownGroups?: readonly string[];
+    where?: string;
+    onWarning?: (msg: string) => void;
+  },
 ): ConfigLayer {
   const known = options.knownKeys;
   const where = options.where ?? "config";
   const layer = emptyLayer();
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return layer;
-  const plugins = (raw as Record<string, unknown>).plugins;
-  if (plugins === undefined) return layer;
-  if (typeof plugins !== "object" || plugins === null || Array.isArray(plugins)) {
-    options.onWarning?.(`"plugins" in ${where} must be a mapping; ignored`);
-    return layer;
-  }
-  for (const [key, value] of Object.entries(plugins as Record<string, unknown>)) {
-    if (!known.includes(key)) {
-      options.onWarning?.(`unknown plugin toggle "${key}" in ${where}; ignored`);
-      continue;
-    }
-    if (typeof value === "boolean") {
-      layer.toggles[key] = value;
-      continue;
-    }
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      const entry = value as { enabled?: unknown; config?: unknown };
-      if (entry.enabled !== undefined && typeof entry.enabled !== "boolean") {
+  if (!isRecord(raw)) return layer;
+  const plugins = raw.plugins;
+  if (plugins !== undefined) {
+    if (!isRecord(plugins)) {
+      options.onWarning?.(`"plugins" in ${where} must be a mapping; ignored`);
+    } else {
+      for (const [key, value] of Object.entries(plugins)) {
+        if (!known.includes(key)) {
+          options.onWarning?.(`unknown plugin toggle "${key}" in ${where}; ignored`);
+          continue;
+        }
+        if (typeof value === "boolean") {
+          layer.toggles[key] = value;
+          continue;
+        }
+        if (isRecord(value)) {
+          const entry = value as { enabled?: unknown; config?: unknown };
+          if (entry.enabled !== undefined && typeof entry.enabled !== "boolean") {
+            options.onWarning?.(`plugin toggle "${key}" in ${where} must be a boolean; ignored`);
+            continue;
+          }
+          layer.toggles[key] = entry.enabled ?? true;
+          if (entry.config !== undefined) layer.configs[key] = entry.config;
+          continue;
+        }
         options.onWarning?.(`plugin toggle "${key}" in ${where} must be a boolean; ignored`);
-        continue;
       }
-      layer.toggles[key] = entry.enabled ?? true;
-      if (entry.config !== undefined) layer.configs[key] = entry.config;
-      continue;
     }
-    options.onWarning?.(`plugin toggle "${key}" in ${where} must be a boolean; ignored`);
   }
+  parseGroups(raw.groups, layer, { knownGroups: options.knownGroups, where, onWarning: options.onWarning });
   return layer;
 }
 
-/**
- * 层合成：项目覆盖用户。toggles 与 configs 分别按 key 覆盖（同
- * resolvePluginSet 的 `projectValue ?? userValue` 语义——显式键覆盖，
- * 缺席键透传另一层）。
- */
+/** 层合成：项目覆盖用户；groups 按组名原子覆盖，避免半合并有序子项。 */
 export function mergeConfigLayers(
   user: ConfigLayer | undefined,
   project: ConfigLayer | undefined,
@@ -80,6 +143,9 @@ export function mergeConfigLayers(
     if (!source) continue;
     for (const [key, value] of Object.entries(source.toggles)) merged.toggles[key] = value;
     for (const [key, value] of Object.entries(source.configs)) merged.configs[key] = value;
+    for (const [key, value] of Object.entries(source.groups ?? {})) {
+      merged.groups![key] = { entries: value.entries.map((entry) => ({ ...entry })) };
+    }
   }
   return merged;
 }
@@ -91,6 +157,7 @@ async function readLayer(
   label: string,
   log: ConfigLogger,
   knownKeys: readonly string[],
+  knownGroups?: readonly string[],
 ): Promise<ConfigLayer | undefined> {
   let raw: string;
   try {
@@ -119,6 +186,7 @@ async function readLayer(
   }
   const layer = parsePluginConfigLayer(doc, {
     knownKeys,
+    knownGroups,
     where: file,
     onWarning: (msg) => log("warn", msg),
   });
@@ -133,8 +201,9 @@ export async function loadUserConfigLayer(
   home: string,
   log: ConfigLogger,
   knownKeys: readonly string[],
+  knownGroups?: readonly string[],
 ): Promise<ConfigLayer | undefined> {
-  return readLayer(path.join(home, ".innocence", "cordis.yml"), "user", log, knownKeys);
+  return readLayer(path.join(home, ".innocence", "cordis.yml"), "user", log, knownKeys, knownGroups);
 }
 
 /** 项目级配置：`<root>/.innocence/plugins.yml`（布尔语义的声明式扩展）。
@@ -143,8 +212,9 @@ export async function loadProjectConfigLayer(
   root: string,
   log: ConfigLogger,
   knownKeys: readonly string[],
+  knownGroups?: readonly string[],
 ): Promise<ConfigLayer | undefined> {
-  return readLayer(path.join(root, ".innocence", "plugins.yml"), "project", log, knownKeys);
+  return readLayer(path.join(root, ".innocence", "plugins.yml"), "project", log, knownKeys, knownGroups);
 }
 
 /** 一次性读齐两级配置层（用户 cordis.yml + 项目 plugins.yml）并合成用户层：
@@ -158,15 +228,17 @@ export async function loadConfigLayerPair(
   settingsToggles: Record<string, boolean> | undefined,
   log: ConfigLogger,
   knownKeys: readonly string[],
+  knownGroups?: readonly string[],
 ): Promise<{ user: ConfigLayer; project: ConfigLayer | undefined }> {
   const [userFile, projectLayer] = await Promise.all([
-    loadUserConfigLayer(home, log, knownKeys),
-    workspaceRoot ? loadProjectConfigLayer(workspaceRoot, log, knownKeys) : Promise.resolve(undefined),
+    loadUserConfigLayer(home, log, knownKeys, knownGroups),
+    workspaceRoot ? loadProjectConfigLayer(workspaceRoot, log, knownKeys, knownGroups) : Promise.resolve(undefined),
   ]);
   return {
     user: {
       toggles: { ...(userFile?.toggles ?? {}), ...(settingsToggles ?? {}) },
       configs: userFile?.configs ?? {},
+      groups: userFile?.groups ?? {},
     },
     project: projectLayer,
   };

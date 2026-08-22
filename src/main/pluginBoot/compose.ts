@@ -241,6 +241,17 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   const loader = loaderFiber.ctx.loader;
   const moduleResolver = loaderModule.createFileModuleResolver({ roots: [userRoot, options.builtinRoot] });
   loader.internal = moduleResolver;
+  const groupBuiltin = {
+    name: "group",
+    apply(ctx: KernelContext) {
+      const config = ctx.entry?.options.config;
+      if (!config || typeof config !== "object" || !Array.isArray((config as { entries?: unknown }).entries)) {
+        throw new Error("loader group entry has invalid config");
+      }
+      return spine.group.createGroupPlugin(config as Parameters<typeof spine.group.createGroupPlugin>[0]).apply(ctx);
+    },
+  };
+  loader.builtins.group = groupBuiltin;
 
   // kernel:include builtin hook (optional by the task ruling): absent dist or
   // unloadable carrier degrades to a no-op — the boot never depends on it.

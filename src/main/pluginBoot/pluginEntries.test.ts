@@ -15,8 +15,12 @@ const DESCRIPTORS: readonly PluginDescriptor[] = [
   { id: "todo", dependencies: [] },
 ];
 
-function layer(toggles: Record<string, boolean>, configs: Record<string, unknown> = {}): ConfigLayer {
-  return { toggles, configs };
+function layer(
+  toggles: Record<string, boolean>,
+  configs: Record<string, unknown> = {},
+  groups: ConfigLayer["groups"] = {},
+): ConfigLayer {
+  return { toggles, configs, groups };
 }
 
 describe("resolveEntries (topology passthrough)", () => {
@@ -71,6 +75,48 @@ describe("resolveEntries (topology passthrough)", () => {
       { id: "leaf", reason: "dependency-disabled", via: "user" },
     ]);
     for (const e of resolved.entries) expect(e.disabled).toBe(true);
+  });
+});
+
+
+
+describe("resolveEntries (groups)", () => {
+  it("appends group loader rows after manifest entries", () => {
+    const resolved = resolveEntries(
+      DESCRIPTORS,
+      layer({}, {}, {
+        basic: {
+          entries: [
+            { id: "skills", name: "skills", config: { dirs: ["a"] } },
+            { id: "mcp", name: "mcp", disabled: true },
+          ],
+        },
+      }),
+    );
+    expect(resolved.entries.slice(-1)[0]).toEqual({
+      id: "group:basic",
+      name: "kernel:group",
+      config: {
+        id: "basic",
+        entries: [
+          { id: "skills", name: "skills", config: { dirs: ["a"] } },
+          { id: "mcp", name: "mcp", disabled: true },
+        ],
+      },
+    });
+    expect(resolved.active.slice(-1)).toEqual(["group:basic"]);
+  });
+
+  it("uses project group atomically over user group", () => {
+    const resolved = resolveEntries(
+      DESCRIPTORS,
+      layer({}, {}, { basic: { entries: [{ id: "user", name: "user" }] } }),
+      layer({}, {}, { basic: { entries: [{ id: "project", name: "project" }] } }),
+    );
+    expect(resolved.entries.at(-1)?.config).toEqual({
+      id: "basic",
+      entries: [{ id: "project", name: "project" }],
+    });
   });
 });
 

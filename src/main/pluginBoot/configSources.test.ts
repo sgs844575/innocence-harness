@@ -14,6 +14,8 @@ import {
 
 const KNOWN = ["subagent", "skills", "mcp", "todo"] as const;
 
+const GROUP_KNOWN = ["basic", "tools"] as const;
+
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -97,24 +99,68 @@ describe("parsePluginConfigLayer (format normalization)", () => {
   });
 });
 
+describe("parsePluginConfigLayer (groups)", () => {
+  it("parses ordered group children and preserves child config", () => {
+    const warnings: string[] = [];
+    const parsed = parsePluginConfigLayer(
+      {
+        groups: {
+          basic: {
+            entries: [
+              { id: "skills", name: "skills", config: { dirs: ["a"] } },
+              { id: "mcp", disabled: true },
+            ],
+          },
+        },
+      },
+      { knownKeys: KNOWN, knownGroups: GROUP_KNOWN, onWarning: (m) => warnings.push(m) },
+    );
+    expect(parsed.groups).toEqual({
+      basic: {
+        entries: [
+          { id: "skills", name: "skills", config: { dirs: ["a"] } },
+          { id: "mcp", disabled: true },
+        ],
+      },
+    });
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns and ignores unknown or malformed groups", () => {
+    const warnings: string[] = [];
+    const parsed = parsePluginConfigLayer(
+      { groups: { mystery: { entries: [] }, basic: { entries: [{ id: "" }] } } },
+      { knownKeys: KNOWN, knownGroups: GROUP_KNOWN, where: "<f>", onWarning: (m) => warnings.push(m) },
+    );
+    expect(parsed.groups).toEqual({});
+    expect(warnings).toEqual([
+      'unknown plugin group "mystery" in <f>; ignored',
+      'plugin group "basic" in <f> has invalid child entry; ignored',
+    ]);
+  });
+});
+
 describe("mergeConfigLayers (project overrides user)", () => {
   it("merges toggles and configs independently, per key", () => {
     const merged = mergeConfigLayers(
-      { toggles: { mcp: false, todo: true }, configs: { skills: { a: 1 }, mcp: { s: 1 } } },
-      { toggles: { mcp: true }, configs: { skills: { b: 2 } } },
+      { toggles: { mcp: false, todo: true }, configs: { skills: { a: 1 }, mcp: { s: 1 } }, groups: { basic: { entries: [{ id: "one", name: "one" }] } } },
+      { toggles: { mcp: true }, configs: { skills: { b: 2 } }, groups: { basic: { entries: [{ id: "two", name: "two" }] } } },
     );
     expect(merged.toggles).toEqual({ mcp: true, todo: true });
     expect(merged.configs).toEqual({ skills: { b: 2 }, mcp: { s: 1 } });
+    expect(merged.groups).toEqual({ basic: { entries: [{ id: "two", name: "two" }] } });
   });
 
   it("either side may be absent", () => {
-    expect(mergeConfigLayers(undefined, { toggles: { mcp: false }, configs: {} })).toEqual({
+    expect(mergeConfigLayers(undefined, { toggles: { mcp: false }, configs: {}, groups: {} })).toEqual({
       toggles: { mcp: false },
       configs: {},
+      groups: {},
     });
-    expect(mergeConfigLayers({ toggles: {}, configs: {} }, undefined)).toEqual({
+    expect(mergeConfigLayers({ toggles: {}, configs: {}, groups: {} }, undefined)).toEqual({
       toggles: {},
       configs: {},
+      groups: {},
     });
   });
 });
@@ -128,6 +174,7 @@ describe("layer file readers", () => {
     expect(await loadUserConfigLayer(home, () => {}, KNOWN)).toEqual({
       toggles: { mcp: false },
       configs: {},
+      groups: {},
     });
   });
 
@@ -142,6 +189,7 @@ describe("layer file readers", () => {
     expect(await loadProjectConfigLayer(root, () => {}, KNOWN)).toEqual({
       toggles: { skills: false },
       configs: {},
+      groups: {},
     });
     expect(await loadProjectConfigLayer(tempDir(), () => {}, KNOWN)).toBeUndefined();
   });

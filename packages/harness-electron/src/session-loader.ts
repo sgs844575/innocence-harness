@@ -40,6 +40,18 @@ export async function mountSessionLoader(
   const fiber = nativeScope.plugin(spine.loader.Loader);
   await fiber;
   const loader = fiber.ctx.loader;
+  loader.builtins.group = {
+    name: "group",
+    apply(ctx) {
+      const config = ctx.entry?.options.config;
+      if (!config || typeof config !== "object" || !Array.isArray((config as { entries?: unknown }).entries)) {
+        throw new Error("loader group entry has invalid config");
+      }
+      return spine.group.createGroupPlugin(
+        config as Parameters<typeof spine.group.createGroupPlugin>[0],
+      ).apply(ctx);
+    },
+  };
   const resolver = plugins.find((entry) => entry.resolver)?.resolver;
   if (resolver) loader.internal = resolver;
   const entries: LoaderEntry[] = [];

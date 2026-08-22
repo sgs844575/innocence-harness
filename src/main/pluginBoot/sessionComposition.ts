@@ -100,35 +100,48 @@ function buildProviderFromSettings(settings: HarnessSettings): Provider {
   }
 }
 
-/** Resolve one declarative row into a route loader entry. The factory switch
- * only supplies host-only inputs; resolved entries remain the sole lifecycle
- * and configuration source. */
-function factoryLoaderPlugin(
+/** Resolve a host-only factory plugin before handing it to the loader. */
+async function resolveFactoryPlugin(
   boot: PluginBoot,
   id: "skills" | "mcp",
   options: { dirs: string[] } | { servers: Record<string, unknown> },
-): ObjectPlugin {
-  return {
-    name: id,
-    async apply(ctx) {
-      const factory = await boot.importPlugin(id);
-      const plugin = id === "skills"
-        ? (factory as (input: { dirs: string[] }) => ObjectPlugin)(options as { dirs: string[] })
-        : (factory as (input: { servers: Record<string, unknown> }) => ObjectPlugin)(options as { servers: Record<string, unknown> });
-      if (!plugin || typeof plugin.apply !== "function") {
-        throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
-      }
-      return plugin.apply(ctx);
-    },
-  };
+): Promise<ObjectPlugin> {
+  const factory = await boot.importPlugin(id);
+  const plugin = id === "skills"
+    ? (factory as (input: { dirs: string[] }) => ObjectPlugin)(options as { dirs: string[] })
+    : (factory as (input: { servers: Record<string, unknown> }) => ObjectPlugin)(options as { servers: Record<string, unknown> });
+  if (!plugin || typeof plugin.apply !== "function") {
+    throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
+  }
+  return plugin;
 }
 
-function builtinLoaderEntryFor(
+function groupChildOptions(
+  entry: import("@innocencecode/kernel-loader").EntryOptions,
+  config: InnocenceConfig,
+  workspaceRoot: string,
+): { id: string; name?: string; config?: unknown; disabled?: boolean; plugin?: ObjectPlugin } {
+  const child = { ...entry, name: entry.name ?? entry.id };
+  if (child.name === "skills" || child.name === "kernel:skills") {
+    const dirs = (child.config as { dirs?: unknown } | undefined)?.dirs;
+    child.config = { dirs: Array.isArray(dirs) && dirs.every((dir) => typeof dir === "string")
+      ? dirs as string[]
+      : [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")] };
+  } else if (child.name === "mcp" || child.name === "kernel:mcp") {
+    const servers = (child.config as { servers?: unknown } | undefined)?.servers;
+    child.config = { servers: servers && typeof servers === "object" && !Array.isArray(servers)
+      ? servers as Record<string, unknown>
+      : (config.mcpServers ?? {}) as Record<string, unknown> };
+  }
+  return child;
+}
+
+async function builtinLoaderEntryFor(
   boot: PluginBoot,
   entry: import("@innocencecode/kernel-loader").EntryOptions,
   config: InnocenceConfig,
   workspaceRoot: string,
-): SessionLoaderPlugin {
+): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
   if (id === "skills") {
@@ -139,16 +152,58 @@ function builtinLoaderEntryFor(
           path.join(workspaceRoot, ".innocence", "skills"),
           path.join(os.homedir(), ".innocence", "skills"),
         ];
-    plugin = factoryLoaderPlugin(boot, "skills", { dirs });
+    plugin = await resolveFactoryPlugin(boot, "skills", { dirs });
   } else if (id === "mcp") {
     const configuredServers = (entry.config as { servers?: unknown } | undefined)?.servers;
     const servers = configuredServers && typeof configuredServers === "object" && !Array.isArray(configuredServers)
       ? configuredServers as Record<string, unknown>
       : (config.mcpServers ?? {}) as Record<string, unknown>;
-    plugin = factoryLoaderPlugin(boot, "mcp", { servers });
+    plugin = await resolveFactoryPlugin(boot, "mcp", { servers });
+  } else if (id.startsWith("group:")) {
+    const groupConfig = entry.config as {
+      id?: unknown;
+      entries?: unknown;
+    } | undefined;
+    if (typeof groupConfig?.id !== "string" || !Array.isArray(groupConfig.entries)) {
+      throw new Error(`loader group entry "${id}" has invalid config`);
+    }
+    const children = [];
+    for (const child of groupConfig.entries) {
+      if (!child || typeof child !== "object" || typeof (child as { id?: unknown }).id !== "string") {
+        throw new Error(`loader group entry "${id}" has invalid child`);
+      }
+      const rawChild = child as import("@innocencecode/kernel-loader").EntryOptions;
+      const childOptions = groupChildOptions(rawChild, config, workspaceRoot);
+      if (childOptions.name === "skills" || childOptions.name === "kernel:skills") {
+        childOptions.plugin = await resolveFactoryPlugin(boot, "skills", childOptions.config as { dirs: string[] });
+      } else if (childOptions.name === "mcp" || childOptions.name === "kernel:mcp") {
+        childOptions.plugin = await resolveFactoryPlugin(boot, "mcp", childOptions.config as { servers: Record<string, unknown> });
+      } else if (childOptions.name === "kernel:group") {
+        const nested = childOptions.config as { id?: unknown; entries?: unknown } | undefined;
+        if (typeof nested?.id !== "string" || !Array.isArray(nested.entries)) {
+          throw new Error(`loader group child "${childOptions.id}" has invalid nested config`);
+        }
+        const nestedEntries = [];
+        for (const nestedChild of nested.entries) {
+          if (!nestedChild || typeof nestedChild !== "object" || typeof (nestedChild as { id?: unknown }).id !== "string") {
+            throw new Error(`loader group child "${childOptions.id}" has invalid nested child`);
+          }
+          const nestedOptions = groupChildOptions(nestedChild as import("@innocencecode/kernel-loader").EntryOptions, config, workspaceRoot);
+          if (nestedOptions.name === "skills" || nestedOptions.name === "kernel:skills") {
+            nestedOptions.plugin = await resolveFactoryPlugin(boot, "skills", nestedOptions.config as { dirs: string[] });
+          } else if (nestedOptions.name === "mcp" || nestedOptions.name === "kernel:mcp") {
+            nestedOptions.plugin = await resolveFactoryPlugin(boot, "mcp", nestedOptions.config as { servers: Record<string, unknown> });
+          }
+          nestedEntries.push(nestedOptions);
+        }
+        childOptions.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
+      }
+      children.push(childOptions);
+    }
+    plugin = boot.spine.group.createGroupPlugin({ id: groupConfig.id, entries: children });
   }
   return {
-    name: id,
+    name: entry.name,
     options: entry,
     resolver: boot.moduleResolver,
     ...(plugin ? { plugin } : {}),
@@ -236,7 +291,7 @@ export function createSessionComposition(
       const plugins: SessionPlugin[] = [];
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
-        plugins.push(builtinLoaderEntryFor(boot, entry, config, workspaceRoot));
+        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));

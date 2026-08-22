@@ -9,6 +9,7 @@ const LIBS = [
   "vendor/kernel",
   "vendor/kernel-loader",
   "vendor/kernel-include",
+  "vendor/kernel-group",
   "vendor/kernel-logger",
   // 脊柱八包：能力插件 dist 的跨包裸导入（如 mcp→harness-tools、
   // provider-*→harness-providers、agent-loop→session/tools/permissions/agent）

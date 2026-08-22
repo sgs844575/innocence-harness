@@ -72,9 +72,19 @@ export function resolveEntries(
 ): ResolvedEntries {
   const warnings: string[] = [];
   const layers: WorkingLayers = {
-    user: user ? { toggles: { ...user.toggles }, configs: { ...user.configs } } : { toggles: {}, configs: {} },
+    user: user
+      ? {
+          toggles: { ...user.toggles },
+          configs: { ...user.configs },
+          groups: user.groups ? { ...user.groups } : {},
+        }
+      : { toggles: {}, configs: {}, groups: {} },
     project: project
-      ? { toggles: { ...project.toggles }, configs: { ...project.configs } }
+      ? {
+          toggles: { ...project.toggles },
+          configs: { ...project.configs },
+          groups: project.groups ? { ...project.groups } : {},
+        }
       : undefined,
   };
   const configInvalid = new Map<string, SkippedEntry>();
@@ -143,8 +153,25 @@ export function resolveEntries(
     return row;
   });
 
+  // Groups are independent loader roots rather than manifest plugins. Project
+  // declarations replace user declarations atomically, while preserving the
+  // declaration order within each group and across groups.
+  const groupNames = new Set([
+    ...Object.keys(layers.user.groups ?? {}),
+    ...Object.keys(layers.project?.groups ?? {}),
+  ]);
+  for (const name of groupNames) {
+    const group = layers.project?.groups?.[name] ?? layers.user.groups?.[name];
+    if (!group) continue;
+    entries.push({
+      id: `group:${name}`,
+      name: "kernel:group",
+      config: { id: name, entries: group.entries.map((entry) => ({ ...entry })) },
+    });
+  }
+
   const skippedList: SkippedEntry[] = manifest
     .filter((d) => skippedMap.has(d.id))
     .map((d) => skippedMap.get(d.id)!);
-  return { active: resolved.active, entries, skipped: skippedList, warnings };
+  return { active: [...resolved.active, ...[...groupNames].map((id) => id.startsWith("group:") ? id : `group:${id}`)], entries, skipped: skippedList, warnings };
 }

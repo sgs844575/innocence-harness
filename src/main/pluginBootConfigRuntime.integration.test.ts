@@ -121,6 +121,32 @@ maybeDescribe("plugin boot config and route loader", () => {
     }
   });
 
+  it("mounts declarative groups with composite child ids", async () => {
+    const workspace = tempRoot("ic-group-project-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  basic:\n    entries:\n      - id: todo\n        name: todo\n",
+      "utf8",
+    );
+    const host = composition();
+    const boot = await host.ensureBoot();
+    const resolved = await boot.resolveBuiltinSet({ workspaceRoot: workspace });
+    expect(resolved.entries.at(-1)).toMatchObject({ id: "group:basic", name: "kernel:group" });
+    const session = await AgentSession.create({
+      scope: boot.createSessionScope(),
+      spine: boot.spine,
+      plugins: await host.composePlugins(workspace),
+      provider: createMockProvider({ turns: [{ text: "grouped" }] }),
+      workspaceRoot: workspace,
+      permission: { mode: "auto", decider: { ask: async () => "deny" } },
+    });
+    const group = session.loaderEntries.find((entry) => entry.options.id === "group:basic");
+    expect(group?.subtree?.resolve("todo").id).toBe("group:basic:todo");
+    expect(group?.subtree?.resolve("todo").fiber).toBeDefined();
+    await session.dispose();
+    await host.disposePluginBoot();
+  });
   it("mounts route loader entries and isolates apply and import failures", async () => {
     const resources = tempRoot("ic-route-loader-resources-");
     const pluginRoot = path.join(resources, "plugins");

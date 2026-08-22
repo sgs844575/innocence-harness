@@ -1,9 +1,11 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context, Plugin } from "@innocencecode/kernel";
 import type { EntryCreateOptions } from "@innocencecode/kernel-loader";
 
 export interface GroupEntry extends Omit<EntryCreateOptions, "id" | "name"> {
   id: string;
   name?: string;
+  /** Optional host-resolved plugin; loader ownership remains transactional. */
+  plugin?: Plugin;
 }
 
 export interface GroupOptions {
@@ -25,8 +27,12 @@ export function createGroupPlugin(options: GroupOptions): GroupPlugin {
       if (!owner) throw new Error(`group ${options.id} must be mounted through the loader`);
       const loader = ctx.loader;
       try {
-        for (const { id, name, config, disabled } of options.entries) {
-          await loader.create({ id, name: name ?? id, config, disabled }, owner);
+        for (const { id, name, config, disabled, plugin } of options.entries) {
+          if (plugin) {
+            await loader.createResolved({ id, name: name ?? id, config, disabled }, plugin, owner);
+          } else {
+            await loader.create({ id, name: name ?? id, config, disabled }, owner);
+          }
         }
       } catch (error) {
         await Promise.allSettled(
