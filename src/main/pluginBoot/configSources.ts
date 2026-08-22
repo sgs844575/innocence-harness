@@ -63,6 +63,9 @@ function parseGroups(
       continue;
     }
     if (!options.knownGroups) {
+      // Group names are user-defined in cordis.yml; when no host registry is
+      // supplied, keep the declaration and emit an observable informational
+      // warning rather than inventing a fixed allow-list.
       options.onWarning?.(`plugin group "${groupId}" in ${options.where} has no registered descriptor; accepting declaration`);
     }
     const entries: GroupEntryConfig[] = [];
