@@ -18,7 +18,8 @@ import {
   type PluginDescriptor,
   type PluginToggleSource,
 } from "../plugin-toggles-local";
-import { resolveEntries, type ResolvedEntries } from "./pluginEntries";
+import { resolveEntries, type ConfigSpecs, type ResolvedEntries } from "./pluginEntries";
+import { type SchemaSpec } from "@innocencecode/kernel-schema";
 import { loadConfigLayerPair, type ConfigLogger } from "./configSources";
 import { projectPluginInventory, type PluginInventoryEntry } from "../plugin-inventory";
 
@@ -59,6 +60,8 @@ export interface PluginBoot {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
   }): Promise<PluginInventoryEntry[]>;
+  /** The dual-root resolver shared by route-scope loaders. */
+  readonly moduleResolver: { version: string; import(specifier: string): Promise<unknown> };
   /**
    * Import one builtin plugin module through the dual-root resolver: the
    * module's default export when it has one (plugin object, or the factory
@@ -108,6 +111,21 @@ export interface PluginBootOptions {
    */
   workspaceRoot?: string;
 }
+
+const builtinConfigSpecs: ConfigSpecs = {
+  skills: {
+    type: "object",
+    properties: {
+      dirs: { spec: { type: "array", items: { type: "string" } } },
+    },
+  } satisfies SchemaSpec,
+  mcp: {
+    type: "object",
+    properties: {
+      servers: { spec: { type: "object" } },
+    },
+  } satisfies SchemaSpec,
+};
 
 /** Root-level permission decider: no UI exists at the boot root, so every
  *  ask fails closed. Route sessions carry their own UI-backed decider. */
@@ -221,7 +239,8 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
 
   const loaderFiber = await root.plugin(loaderModule.Loader);
   const loader = loaderFiber.ctx.loader;
-  loader.internal = loaderModule.createFileModuleResolver({ roots: [userRoot, options.builtinRoot] });
+  const moduleResolver = loaderModule.createFileModuleResolver({ roots: [userRoot, options.builtinRoot] });
+  loader.internal = moduleResolver;
 
   // kernel:include builtin hook (optional by the task ruling): absent dist or
   // unloadable carrier degrades to a no-op — the boot never depends on it.
@@ -253,7 +272,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
       log,
       knownKeys,
     );
-    return resolveEntries(descriptors, user, project);
+    return resolveEntries(descriptors, user, project, builtinConfigSpecs);
   };
 
   return {
@@ -262,6 +281,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     root,
     builtinRoot: options.builtinRoot,
     userRoot,
+    moduleResolver,
     resolveBuiltinSet,
     async pluginInventory({ workspaceRoot, userToggles }) {
       // 现算投影：每次调用重跑解析（toggles 变更即时反映）；描述符本身
