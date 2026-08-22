@@ -5,6 +5,7 @@ import path from "node:path";
 import { IPC, type MenuId } from "../shared/ipc";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
+import { authorizeWorkspaceRoot } from "./mcpAuthorization";
 import { TaskIpcChannels } from "../shared/taskIpc";
 import { broadcastTheme, getTheme, setTheme } from "./theme";
 import * as sessions from "./sessions";
@@ -125,11 +126,14 @@ export function registerIpcHandlers(): void {
   // MCP 标准格式导入：解析在 main 侧。text 非空 = 显式内容；text 为空 =
   // 渲染层无文件读权，main 代读 <root>/.mcp.json（发现文件一键导入流）。
   ipcMain.handle(IPC.mcpImport, async (_e, root: string, text: string) => {
-    const content = text || await fs.readFile(path.join(root, ".mcp.json"), "utf8");
+    const authorizedRoot = await authorizeWorkspaceRoot(root, getHarnessSettings().workspaceRoot);
+    const content = text || await fs.readFile(path.join(authorizedRoot, ".mcp.json"), "utf8");
     const parsed = parseMcpImport(content);
-    return importMcpServers(parsed.servers, root, parsed.invalid);
+    return importMcpServers(parsed.servers, authorizedRoot, parsed.invalid);
   });
-  ipcMain.handle(IPC.mcpDiscover, (_e, root: string) => discoverMcpFile(root));
+  ipcMain.handle(IPC.mcpDiscover, async (_e, root: string) =>
+    discoverMcpFile(await authorizeWorkspaceRoot(root, getHarnessSettings().workspaceRoot)),
+  );
   ipcMain.handle(IPC.settingsModelsList, (_e, profileId: string) => {
     const profile = getHarnessSettings().profiles.find((p) => p.id === profileId);
     if (!profile) throw new Error(`profile not found: ${profileId}`);
