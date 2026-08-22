@@ -1,9 +1,9 @@
 // 插件清单投影（IPC plugins:list 的载荷来源）：manifest 描述符元数据 +
 // resolvePluginSet 的当前解析 → 设置页插件节的数据形状。纯函数、无 IO、
 // 无 Electron——被 pluginBoot/compose 的 boot 面聚合（每次调用重跑解析，
-// 状态随 toggles 即时反映）。shared/ipc.ts 持有 DTO 的手工镜像（渲染层
-// 无法 import main），修改任一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+// 状态随 toggles 即时反映）。shared/ipc.ts 是 DTO 的规范来源（渲染层
+// 无法 import main），main 侧在此 re-export；镜像兼容由
+// packages/harness-electron/tests/mirror.test.ts 守护。
 import type {
   PluginInventoryEntry,
   PluginInventory,

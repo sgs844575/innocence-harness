@@ -52,7 +52,7 @@ let memo: SessionSpineSuite | undefined;
  * shared by the boot root, session scopes, disk-loaded capability plugins and
  * spawned child sessions). This static default serves only self-contained
  * sessions and in-repo tests; converging the dual-source static face itself
- * is phase-2 scope.
+ * is phase-3 scope.
  */
 export function staticSpineSuite(): SessionSpineSuite {
   memo ??= {

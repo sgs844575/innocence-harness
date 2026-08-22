@@ -12,8 +12,7 @@ export type { ModelInfo } from "./modelPresets";
 /**
  * User-level builtin plugin toggles (the settings face). Open keyspace
  * (manifest-derived): any plugin-id key with a boolean value; the shared/ipc
- * mirror is the single source of this shape (re-exported here for the T7
- * type convergence). The four legacy builtin keys stay valid unchanged.
+ * (re-exported here for the T7 type convergence). The four legacy builtin keys stay valid unchanged.
  */
 export type { PluginToggleSource } from "../../../src/shared/ipc";
 
