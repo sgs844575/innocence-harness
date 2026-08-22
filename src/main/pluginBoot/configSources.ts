@@ -40,7 +40,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validSegment(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && !/[\\/:]/.test(value);
+  return typeof value === "string" && value.length > 0 && value.trim() === value && !/[\\/:]/.test(value);
 }
 
 function parseGroups(
@@ -54,18 +54,22 @@ function parseGroups(
     return;
   }
   for (const [groupId, value] of Object.entries(raw)) {
+    if (!validSegment(groupId) || !isRecord(value) || !Array.isArray(value.entries)) {
+      options.onWarning?.(`plugin group "${groupId}" in ${options.where} must declare a valid group name and entries array; ignored`);
+      continue;
+    }
     if (options.knownGroups && !options.knownGroups.includes(groupId)) {
       options.onWarning?.(`unknown plugin group "${groupId}" in ${options.where}; ignored`);
       continue;
     }
-    if (!validSegment(groupId) || !isRecord(value) || !Array.isArray(value.entries)) {
-      options.onWarning?.(`plugin group "${groupId}" in ${options.where} must declare an entries array; ignored`);
-      continue;
+    if (!options.knownGroups) {
+      options.onWarning?.(`plugin group "${groupId}" in ${options.where} has no registered descriptor; accepting declaration`);
     }
     const entries: GroupEntryConfig[] = [];
     let valid = true;
     for (const child of value.entries) {
-      if (!isRecord(child) || !validSegment(child.id) || (child.name !== undefined && typeof child.name !== "string") ||
+      if (!isRecord(child) || !validSegment(child.id) ||
+        (child.name !== undefined && (typeof child.name !== "string" || child.name.trim().length === 0)) ||
         (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
         options.onWarning?.(`plugin group "${groupId}" in ${options.where} has invalid child entry; ignored`);
         valid = false;

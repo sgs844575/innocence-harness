@@ -126,6 +126,16 @@ describe("parsePluginConfigLayer (groups)", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("warns and skips an empty child name", () => {
+    const warnings: string[] = [];
+    const parsed = parsePluginConfigLayer(
+      { groups: { basic: { entries: [{ id: "todo", name: "" }] } } },
+      { knownKeys: KNOWN, knownGroups: GROUP_KNOWN, where: "<f>", onWarning: (m) => warnings.push(m) },
+    );
+    expect(parsed.groups).toEqual({});
+    expect(warnings).toEqual(['plugin group "basic" in <f> has invalid child entry; ignored']);
+  });
+
   it("warns and ignores unknown or malformed groups", () => {
     const warnings: string[] = [];
     const parsed = parsePluginConfigLayer(
@@ -138,7 +148,8 @@ describe("parsePluginConfigLayer (groups)", () => {
       'plugin group "basic" in <f> has invalid child entry; ignored',
     ]);
   });
-});
+  });
+
 
 describe("mergeConfigLayers (project overrides user)", () => {
   it("merges toggles and configs independently, per key", () => {

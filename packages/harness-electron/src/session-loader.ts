@@ -16,6 +16,8 @@ export interface SessionLoaderPlugin {
   readonly plugin?: ObjectPlugin;
   /** Core entry failures abort construction; optional entries are isolated. */
   readonly core: boolean;
+  /** Group entries are transactional: route construction must observe failures. */
+  readonly abortOnFailure?: boolean;
 }
 
 
@@ -62,7 +64,7 @@ export async function mountSessionLoader(
         : await loader.create(loaderEntry.options);
       entries.push(entry);
     } catch (error) {
-      if (loaderEntry.core) throw error;
+      if (loaderEntry.core || loaderEntry.abortOnFailure) throw error;
       log("warn", `session loader entry "${loaderEntry.options.id}" failed; isolated`, {
         error: String(error),
       });

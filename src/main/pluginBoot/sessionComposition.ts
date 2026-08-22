@@ -37,8 +37,10 @@ export interface SessionCompositionOptions {
   /** Default workspace root recorded on the boot root (diagnostics anchor). */
   getWorkspaceRoot(): string | undefined;
   /** Severity sink for skipped-plugin notices, resolver warnings and boot
-   *  disposal failures (the host logger). */
+   * disposal failures (the host logger). */
   log(level: "info" | "warn" | "error", msg: string, data?: unknown): void;
+  /** Optional registered group-name policy; absent means user-declared names are allowed. */
+  getAllowedGroupNames?: () => readonly string[] | undefined;
 }
 
 /** The composition face the host glue consumes. */
@@ -116,12 +118,24 @@ async function resolveFactoryPlugin(
   return plugin;
 }
 
+function validGroupSegment(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !/[\\/:]/.test(value);
+}
+
+type ResolvedGroupChild = {
+  id: string;
+  name: string;
+  config?: unknown;
+  disabled?: boolean;
+  plugin?: ObjectPlugin;
+};
+
 function groupChildOptions(
   entry: import("@innocencecode/kernel-loader").EntryOptions,
   config: InnocenceConfig,
   workspaceRoot: string,
-): { id: string; name?: string; config?: unknown; disabled?: boolean; plugin?: ObjectPlugin } {
-  const child = { ...entry, name: entry.name ?? entry.id };
+): ResolvedGroupChild {
+  const child: ResolvedGroupChild = { ...entry, name: entry.name ?? entry.id };
   if (child.name === "skills" || child.name === "kernel:skills") {
     const dirs = (child.config as { dirs?: unknown } | undefined)?.dirs;
     child.config = { dirs: Array.isArray(dirs) && dirs.every((dir) => typeof dir === "string")
@@ -136,6 +150,54 @@ function groupChildOptions(
   return child;
 }
 
+function groupConfigOf(id: string, config: unknown): { id: string; entries: readonly unknown[] } {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(`loader group entry "${id}" has invalid config`);
+  }
+  const value = config as { id?: unknown; entries?: unknown };
+  if (!validGroupSegment(value.id) || !Array.isArray(value.entries)) {
+    throw new Error(`loader group entry "${id}" has invalid config`);
+  }
+  return { id: value.id, entries: value.entries };
+}
+
+async function resolveGroupEntries(
+  boot: PluginBoot,
+  entries: readonly unknown[],
+  config: InnocenceConfig,
+  workspaceRoot: string,
+  ownerId: string,
+): Promise<ResolvedGroupChild[]> {
+  const resolved: ResolvedGroupChild[] = [];
+  for (const raw of entries) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error(`loader group entry "${ownerId}" has invalid child`);
+    }
+    const child = raw as import("@innocencecode/kernel-loader").EntryOptions;
+    if (!validGroupSegment(child.id) ||
+      (child.name !== undefined && (typeof child.name !== "string" || child.name.trim().length === 0)) ||
+      (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
+      throw new Error(`loader group entry "${ownerId}" has invalid child`);
+    }
+    const options = groupChildOptions(child, config, workspaceRoot);
+    if (options.disabled) {
+      resolved.push(options);
+      continue;
+    }
+    if (options.name === "skills" || options.name === "kernel:skills") {
+      options.plugin = await resolveFactoryPlugin(boot, "skills", options.config as { dirs: string[] });
+    } else if (options.name === "mcp" || options.name === "kernel:mcp") {
+      options.plugin = await resolveFactoryPlugin(boot, "mcp", options.config as { servers: Record<string, unknown> });
+    } else if (options.name === "kernel:group") {
+      const nested = groupConfigOf(options.id, options.config);
+      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id);
+      options.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
+    }
+    resolved.push(options);
+  }
+  return resolved;
+}
+
 async function builtinLoaderEntryFor(
   boot: PluginBoot,
   entry: import("@innocencecode/kernel-loader").EntryOptions,
@@ -144,63 +206,22 @@ async function builtinLoaderEntryFor(
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
-  if (id === "skills") {
+  if (!entry.disabled && id === "skills") {
     const configuredDirs = (entry.config as { dirs?: unknown } | undefined)?.dirs;
     const dirs = Array.isArray(configuredDirs) && configuredDirs.every((dir) => typeof dir === "string")
       ? configuredDirs as string[]
-      : [
-          path.join(workspaceRoot, ".innocence", "skills"),
-          path.join(os.homedir(), ".innocence", "skills"),
-        ];
+      : [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")];
     plugin = await resolveFactoryPlugin(boot, "skills", { dirs });
-  } else if (id === "mcp") {
+  } else if (!entry.disabled && id === "mcp") {
     const configuredServers = (entry.config as { servers?: unknown } | undefined)?.servers;
     const servers = configuredServers && typeof configuredServers === "object" && !Array.isArray(configuredServers)
       ? configuredServers as Record<string, unknown>
       : (config.mcpServers ?? {}) as Record<string, unknown>;
     plugin = await resolveFactoryPlugin(boot, "mcp", { servers });
-  } else if (id.startsWith("group:")) {
-    const groupConfig = entry.config as {
-      id?: unknown;
-      entries?: unknown;
-    } | undefined;
-    if (typeof groupConfig?.id !== "string" || !Array.isArray(groupConfig.entries)) {
-      throw new Error(`loader group entry "${id}" has invalid config`);
-    }
-    const children = [];
-    for (const child of groupConfig.entries) {
-      if (!child || typeof child !== "object" || typeof (child as { id?: unknown }).id !== "string") {
-        throw new Error(`loader group entry "${id}" has invalid child`);
-      }
-      const rawChild = child as import("@innocencecode/kernel-loader").EntryOptions;
-      const childOptions = groupChildOptions(rawChild, config, workspaceRoot);
-      if (childOptions.name === "skills" || childOptions.name === "kernel:skills") {
-        childOptions.plugin = await resolveFactoryPlugin(boot, "skills", childOptions.config as { dirs: string[] });
-      } else if (childOptions.name === "mcp" || childOptions.name === "kernel:mcp") {
-        childOptions.plugin = await resolveFactoryPlugin(boot, "mcp", childOptions.config as { servers: Record<string, unknown> });
-      } else if (childOptions.name === "kernel:group") {
-        const nested = childOptions.config as { id?: unknown; entries?: unknown } | undefined;
-        if (typeof nested?.id !== "string" || !Array.isArray(nested.entries)) {
-          throw new Error(`loader group child "${childOptions.id}" has invalid nested config`);
-        }
-        const nestedEntries = [];
-        for (const nestedChild of nested.entries) {
-          if (!nestedChild || typeof nestedChild !== "object" || typeof (nestedChild as { id?: unknown }).id !== "string") {
-            throw new Error(`loader group child "${childOptions.id}" has invalid nested child`);
-          }
-          const nestedOptions = groupChildOptions(nestedChild as import("@innocencecode/kernel-loader").EntryOptions, config, workspaceRoot);
-          if (nestedOptions.name === "skills" || nestedOptions.name === "kernel:skills") {
-            nestedOptions.plugin = await resolveFactoryPlugin(boot, "skills", nestedOptions.config as { dirs: string[] });
-          } else if (nestedOptions.name === "mcp" || nestedOptions.name === "kernel:mcp") {
-            nestedOptions.plugin = await resolveFactoryPlugin(boot, "mcp", nestedOptions.config as { servers: Record<string, unknown> });
-          }
-          nestedEntries.push(nestedOptions);
-        }
-        childOptions.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
-      }
-      children.push(childOptions);
-    }
-    plugin = boot.spine.group.createGroupPlugin({ id: groupConfig.id, entries: children });
+  } else if (!entry.disabled && id.startsWith("group:")) {
+    const group = groupConfigOf(id, entry.config);
+    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
+    plugin = boot.spine.group.createGroupPlugin({ id: group.id, entries: children });
   }
   return {
     name: entry.name,
@@ -208,6 +229,7 @@ async function builtinLoaderEntryFor(
     resolver: boot.moduleResolver,
     ...(plugin ? { plugin } : {}),
     core: id === "fs" || id === "shell",
+    ...(id.startsWith("group:") ? { abortOnFailure: true } : {}),
   };
 }
 
@@ -239,6 +261,7 @@ export function createSessionComposition(
     bootPromise ??= createPluginBoot({
       ...options.resolvePaths(),
       workspaceRoot: options.getWorkspaceRoot(),
+      allowedGroupNames: options.getAllowedGroupNames?.(),
     }).catch((error: unknown) => {
       // A failed boot must not pin the memo — the next session build retries.
       // The kernel/spine module caches intentionally SURVIVE (successful
@@ -278,6 +301,7 @@ export function createSessionComposition(
         boot.resolveBuiltinSet({
           workspaceRoot,
           userToggles,
+          knownGroupNames: options.getAllowedGroupNames?.(),
           // yml 损坏/未知键告警必须进 userData/logs，而非 console 兜底。
           logger: (level, msg, data) =>
             options.log(level === "error" ? "error" : "warn", msg, data),

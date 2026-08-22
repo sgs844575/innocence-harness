@@ -121,30 +121,133 @@ maybeDescribe("plugin boot config and route loader", () => {
     }
   });
 
-  it("mounts declarative groups with composite child ids", async () => {
-    const workspace = tempRoot("ic-group-project-");
+  it("warns and ignores unknown or malformed groups in production resolution", async () => {
+    const workspace = tempRoot("ic-group-warning-");
     mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
     writeFileSync(
       path.join(workspace, ".innocence", "plugins.yml"),
-      "groups:\n  basic:\n    entries:\n      - id: todo\n        name: todo\n",
+      "groups:\n  basic:\n    entries:\n      - id: todo\n        name: \"\"\n  mystery:\n    entries: []\n",
+      "utf8",
+    );
+    const warnings: string[] = [];
+    const host = createSessionComposition({
+      resolvePaths: () => paths,
+      getWorkspaceRoot: () => undefined,
+      getAllowedGroupNames: () => ["basic"],
+      log: (_level, message) => warnings.push(message),
+    });
+    const boot = await host.ensureBoot();
+    const resolved = await boot.resolveBuiltinSet({
+      workspaceRoot: workspace,
+      logger: (_level, message) => warnings.push(message),
+    });
+    expect(resolved.entries.some((entry) => entry.id === "group:basic")).toBe(false);
+    expect(resolved.entries.some((entry) => entry.id === "group:mystery")).toBe(false);
+    expect(warnings.join("\n")).toContain("invalid child entry");
+    expect(warnings.join("\n")).toContain("unknown plugin group");
+    await host.disposePluginBoot();
+  });
+
+  it("warns and ignores malformed groups in production resolution", async () => {
+    const workspace = tempRoot("ic-group-warning-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  bad/name:\n    entries: []\n  basic:\n    entries:\n      - id: todo\n        name: \"\"\n",
+      "utf8",
+    );
+    const warnings: string[] = [];
+    const host = createSessionComposition({
+      resolvePaths: () => paths,
+      getWorkspaceRoot: () => undefined,
+      log: (_level, message) => warnings.push(message),
+    });
+    await host.composePlugins(workspace);
+    expect(warnings.join("\n")).toContain('plugin group "bad/name"');
+    expect(warnings.join("\n")).toContain("invalid child entry");
+    await host.disposePluginBoot();
+  });
+
+  it("does not resolve a disabled factory child", async () => {
+    const resources = tempRoot("ic-disabled-group-factory-resources-");
+    const pluginRoot = path.join(resources, "plugins");
+    cpSync(paths.builtinRoot, pluginRoot, { recursive: true });
+    cpSync(path.join(path.dirname(paths.builtinRoot), "node_modules"), path.join(resources, "node_modules"), {
+      recursive: true,
+    });
+    rmSync(path.join(pluginRoot, "skills"), { recursive: true, force: true });
+    const workspace = tempRoot("ic-disabled-group-factory-workspace-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "plugins:\n  skills: false\ngroups:\n  basic:\n    entries:\n      - id: skills\n        name: skills\n        disabled: true\n",
+      "utf8",
+    );
+    const host = createSessionComposition({
+      resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
+      getWorkspaceRoot: () => undefined,
+      log: () => {},
+    });
+    await expect(host.composePlugins(workspace)).resolves.toBeTruthy();
+    await host.disposePluginBoot();
+  });
+  it("recursively mounts nested groups and resolves deepest factory children", async () => {
+    const workspace = tempRoot("ic-nested-group-project-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  outer:\n    entries:\n      - id: middle\n        name: kernel:group\n        config:\n          id: middle\n          entries:\n            - id: inner\n              name: kernel:group\n              config:\n                id: inner\n                entries:\n                  - id: skills\n                    name: skills\n                  - id: mcp\n                    name: mcp\n",
       "utf8",
     );
     const host = composition();
     const boot = await host.ensureBoot();
-    const resolved = await boot.resolveBuiltinSet({ workspaceRoot: workspace });
-    expect(resolved.entries.at(-1)).toMatchObject({ id: "group:basic", name: "kernel:group" });
     const session = await AgentSession.create({
       scope: boot.createSessionScope(),
       spine: boot.spine,
       plugins: await host.composePlugins(workspace),
-      provider: createMockProvider({ turns: [{ text: "grouped" }] }),
+      provider: createMockProvider({ turns: [{ text: "nested" }] }),
       workspaceRoot: workspace,
       permission: { mode: "auto", decider: { ask: async () => "deny" } },
     });
-    const group = session.loaderEntries.find((entry) => entry.options.id === "group:basic");
-    expect(group?.subtree?.resolve("todo").id).toBe("group:basic:todo");
-    expect(group?.subtree?.resolve("todo").fiber).toBeDefined();
+    const group = session.loaderEntries.find((entry) => entry.options.id === "group:outer");
+    expect(group?.subtree?.resolve("middle:inner:skills").id).toBe("group:outer:middle:inner:skills");
+    expect(group?.subtree?.resolve("middle:inner:mcp").id).toBe("group:outer:middle:inner:mcp");
     await session.dispose();
+    await host.disposePluginBoot();
+  });
+
+  it("rethrows transactional group failures instead of isolating them", async () => {
+    const resources = tempRoot("ic-group-failure-resources-");
+    const pluginRoot = path.join(resources, "plugins");
+    cpSync(paths.builtinRoot, pluginRoot, { recursive: true });
+    cpSync(path.join(path.dirname(paths.builtinRoot), "node_modules"), path.join(resources, "node_modules"), {
+      recursive: true,
+    });
+    const manifestFile = path.join(pluginRoot, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf8")) as { plugins: Array<Record<string, unknown>> };
+    manifest.plugins.push({ id: "missing", dependencies: [] });
+    writeFileSync(manifestFile, JSON.stringify(manifest), "utf8");
+    const workspace = tempRoot("ic-group-failure-workspace-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  broken:\n    entries:\n      - id: missing\n        name: missing\n",
+      "utf8",
+    );
+    const host = createSessionComposition({
+      resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
+      getWorkspaceRoot: () => undefined,
+      log: () => {},
+    });
+    const boot = await host.ensureBoot();
+    await expect(AgentSession.create({
+      scope: boot.createSessionScope(),
+      spine: boot.spine,
+      plugins: await host.composePlugins(workspace),
+      provider: createMockProvider({ turns: [{ text: "unreachable" }] }),
+      workspaceRoot: workspace,
+      permission: { mode: "auto", decider: { ask: async () => "deny" } },
+    })).rejects.toThrow(/missing|broken/);
     await host.disposePluginBoot();
   });
   it("mounts route loader entries and isolates apply and import failures", async () => {

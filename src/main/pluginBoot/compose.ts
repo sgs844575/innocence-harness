@@ -49,6 +49,7 @@ export interface PluginBoot {
   resolveBuiltinSet(options: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
+    knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
   }): Promise<ResolvedEntries>;
   /**
@@ -102,8 +103,10 @@ export interface PluginBootOptions {
   kernelPath: string;
   /** Built-in plugin root (staging `plugins/` or packaged `resources/plugins`). */
   builtinRoot: string;
-  /** User plugin root; defaults to `~/.innocence/plugins`. */
+  /** User plugin root (`~/.innocence/plugins` unless overridden). */
   userRoot?: string;
+  /** Registered group names used to validate configured group declarations. */
+  allowedGroupNames?: readonly string[];
   /**
    * Default workspace root recorded as the boot root's baseUrl (diagnostics
    * and relative-path resolution anchor); per-session workspaces are resolved
@@ -265,10 +268,12 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   const resolveBuiltinSet = async ({
     workspaceRoot,
     userToggles,
+    knownGroupNames,
     logger,
   }: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
+    knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
   }): Promise<ResolvedEntries> => {
     const log: ConfigLogger = (level, msg, data) =>
@@ -282,6 +287,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
       userToggles,
       log,
       knownKeys,
+      knownGroupNames ?? options.allowedGroupNames,
     );
     return resolveEntries(descriptors, user, project, builtinConfigSpecs);
   };
