@@ -23,9 +23,10 @@ const LIBS = [
   "packages/harness-agent-loop",
 ];
 // 内置清单（boot 侧 toggle 解析的描述符来源）：id + core 标记 + 依赖关系，
-// 随 staging 产出 manifest.json。可开关的能力插件——provider/task 等由宿主
-// 组合层按需装配，不进 toggle 面；example 为渲染层示例插件（client-only：
-// 无会话实例化分支，client 标记驱动 webview 侧装载链）。
+// 随 staging 产出 manifest.json；可开关标记（toggleable）由 core 派生
+// （core 恒不可关）。可开关的能力插件——provider/task 等由宿主组合层按需
+// 装配，不进 toggle 面；example 为渲染层示例插件（client-only：无会话
+// 实例化分支，client 标记驱动 webview 侧装载链；manifest 内即 toggleable）。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -132,6 +133,7 @@ const manifestPlugins = BUILTIN_DESCRIPTORS.map((descriptor) => {
       ? stagedPkg.description
       : descriptor.id,
     client: existsSync(join(STAGING, "plugins", descriptor.id, "dist", "client.js")),
+    toggleable: descriptor.core !== true,
   };
 });
 writeFileSync(
@@ -165,6 +167,14 @@ for (const entry of manifest.plugins) {
   }
   if (typeof entry.client !== "boolean") {
     console.error(`staging self-check failed: manifest entry "${entry.id}" lacks a client flag`);
+    process.exit(1);
+  }
+  if (typeof entry.toggleable !== "boolean") {
+    console.error(`staging self-check failed: manifest entry "${entry.id}" lacks a toggleable flag`);
+    process.exit(1);
+  }
+  if (entry.core === true && entry.toggleable !== false) {
+    console.error(`staging self-check failed: manifest entry "${entry.id}" is core but toggleable`);
     process.exit(1);
   }
   if (entry.client && !existsSync(join(STAGING, "plugins", entry.id, "dist", "client.js"))) {

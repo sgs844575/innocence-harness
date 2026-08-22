@@ -140,6 +140,14 @@ describe("mergeSettings", () => {
       mergeSettings({ pluginToggles: { subagent: false, mcp: "yes" } }).pluginToggles,
     ).toEqual({ subagent: false });
   });
+
+  it("pluginToggles 开放键空间（清单派生）：清单内新增插件键（如 example）保留不剔除", () => {
+    // 等价升级：原白名单只认四键，example:false 会被静默剔除；键空间清单
+    // 派生后写路径透传清单内键（cordis.yml 键在 settings 未保存时仍生效）。
+    expect(
+      mergeSettings({ profiles: [], pluginToggles: { example: false, todo: true } }).pluginToggles,
+    ).toEqual({ example: false, todo: true });
+  });
 });
 
 describe("settings v3 迁移", () => {

@@ -23,6 +23,7 @@ const entry = (id: string, over: Partial<PluginInventoryEntry> = {}): PluginInve
   title: id,
   core: false,
   client: true,
+  toggleable: true,
   state: "active",
   via: "default",
   ...over,

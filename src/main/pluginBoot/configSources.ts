@@ -20,21 +20,19 @@ export interface ConfigLayer {
 
 const emptyLayer: () => ConfigLayer = () => ({ toggles: {}, configs: {} });
 
-/** 插件开关键空间（四键，与设置面/清单投影共用语义）。 */
-export const KNOWN_PLUGIN_KEYS: readonly string[] = ["subagent", "skills", "mcp", "todo"];
-
 /**
  * 一个配置文件的 plugins 块 → ConfigLayer。两种条目格式：
  * 布尔（`mcp: false`，旧式）→ toggles；对象（`skills: {enabled, config}`，
- * 新式）→ enabled 进 toggles（缺省 true）+ config 进 configs。布尔语义与
- * 原 loadPluginToggles 逐字一致（未知键/非布尔值告警忽略）。`raw` 为已解析
- * 的 yaml 文档（顶层 mapping）；undefined/空文档产出空层。
+ * 新式）→ enabled 进 toggles（缺省 true）+ config 进 configs。未知键/非布尔
+ * 值告警忽略（键空间不在此持有——knownKeys 由清单 id 集注入，调用方
+ * （compose）以 manifest 派生）。`raw` 为已解析的 yaml 文档（顶层
+ * mapping）；undefined/空文档产出空层。
  */
 export function parsePluginConfigLayer(
   raw: unknown,
-  options: { knownKeys?: readonly string[]; where?: string; onWarning?: (msg: string) => void } = {},
+  options: { knownKeys: readonly string[]; where?: string; onWarning?: (msg: string) => void },
 ): ConfigLayer {
-  const known = options.knownKeys ?? KNOWN_PLUGIN_KEYS;
+  const known = options.knownKeys;
   const where = options.where ?? "config";
   const layer = emptyLayer();
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return layer;
@@ -86,7 +84,8 @@ export function mergeConfigLayers(
   return merged;
 }
 
-/** 读一个 yaml 配置文件并归一；缺文件静默 undefined，损坏回落 undefined。 */
+/** 读一个 yaml 配置文件并归一；缺文件静默 undefined，损坏回落 undefined。
+ *  knownKeys（键空间）必填——清单 id 集由调用方注入。 */
 async function readLayer(
   file: string,
   label: string,
@@ -128,20 +127,22 @@ async function readLayer(
   return layer;
 }
 
-/** 用户级配置：`<home>/.innocence/cordis.yml`（home 通常为 os.homedir()）。 */
+/** 用户级配置：`<home>/.innocence/cordis.yml`（home 通常为 os.homedir()）。
+ *  knownKeys 为清单 id 集（键空间清单派生）。 */
 export async function loadUserConfigLayer(
   home: string,
   log: ConfigLogger,
-  knownKeys: readonly string[] = KNOWN_PLUGIN_KEYS,
+  knownKeys: readonly string[],
 ): Promise<ConfigLayer | undefined> {
   return readLayer(path.join(home, ".innocence", "cordis.yml"), "user", log, knownKeys);
 }
 
-/** 项目级配置：`<root>/.innocence/plugins.yml`（布尔语义的声明式扩展）。 */
+/** 项目级配置：`<root>/.innocence/plugins.yml`（布尔语义的声明式扩展）。
+ *  knownKeys 为清单 id 集（键空间清单派生）。 */
 export async function loadProjectConfigLayer(
   root: string,
   log: ConfigLogger,
-  knownKeys: readonly string[] = KNOWN_PLUGIN_KEYS,
+  knownKeys: readonly string[],
 ): Promise<ConfigLayer | undefined> {
   return readLayer(path.join(root, ".innocence", "plugins.yml"), "project", log, knownKeys);
 }
@@ -149,16 +150,18 @@ export async function loadProjectConfigLayer(
 /** 一次性读齐两级配置层（用户 cordis.yml + 项目 plugins.yml）并合成用户层：
  *  cordis.yml 提供基础开关与 config 块，settings 开关（UI 管理面）按键覆盖；
  *  项目层独立返回（项目覆盖用户由 resolveEntries/resolvePluginSet 完成）。
- *  缺文件/损坏均回落（undefined 分量），不炸调用方。 */
+ *  缺文件/损坏均回落（undefined 分量），不炸调用方。knownKeys 为清单
+ *  id 集（键空间清单派生，双级共用）。 */
 export async function loadConfigLayerPair(
   home: string,
   workspaceRoot: string | undefined,
   settingsToggles: Record<string, boolean> | undefined,
   log: ConfigLogger,
+  knownKeys: readonly string[],
 ): Promise<{ user: ConfigLayer; project: ConfigLayer | undefined }> {
   const [userFile, projectLayer] = await Promise.all([
-    loadUserConfigLayer(home, log),
-    workspaceRoot ? loadProjectConfigLayer(workspaceRoot, log) : Promise.resolve(undefined),
+    loadUserConfigLayer(home, log, knownKeys),
+    workspaceRoot ? loadProjectConfigLayer(workspaceRoot, log, knownKeys) : Promise.resolve(undefined),
   ]);
   return {
     user: {

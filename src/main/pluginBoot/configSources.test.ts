@@ -79,11 +79,21 @@ describe("parsePluginConfigLayer (format normalization)", () => {
   });
 
   it("missing plugins block yields empty layer; missing input too", () => {
-    const parsed = parsePluginConfigLayer({});
+    const parsed = parsePluginConfigLayer({}, { knownKeys: KNOWN });
     expect(parsed.toggles).toEqual({});
-    expect(parsePluginConfigLayer(undefined).toggles).toEqual({});
-    expect(parsePluginConfigLayer(null).toggles).toEqual({});
-    expect(parsePluginConfigLayer("plugins:").toggles).toEqual({});
+    expect(parsePluginConfigLayer(undefined, { knownKeys: KNOWN }).toggles).toEqual({});
+    expect(parsePluginConfigLayer(null, { knownKeys: KNOWN }).toggles).toEqual({});
+    expect(parsePluginConfigLayer("plugins:", { knownKeys: KNOWN }).toggles).toEqual({});
+  });
+
+  it("键空间开放（清单注入）：清单内 id 直接通过、清单外键告警忽略", () => {
+    const warnings: string[] = [];
+    const parsed = parsePluginConfigLayer(
+      { plugins: { example: false, mystery: true } },
+      { knownKeys: [...KNOWN, "example"], where: "<f>", onWarning: (m) => warnings.push(m) },
+    );
+    expect(parsed.toggles).toEqual({ example: false });
+    expect(warnings).toEqual(['unknown plugin toggle "mystery" in <f>; ignored']);
   });
 });
 
@@ -112,10 +122,10 @@ describe("mergeConfigLayers (project overrides user)", () => {
 describe("layer file readers", () => {
   it("user layer reads <home>/.innocence/cordis.yml; missing file is silently undefined", async () => {
     const home = tempDir();
-    expect(await loadUserConfigLayer(home, () => {})).toBeUndefined();
+    expect(await loadUserConfigLayer(home, () => {}, KNOWN)).toBeUndefined();
     mkdirSync(path.join(home, ".innocence"), { recursive: true });
     writeFileSync(path.join(home, ".innocence", "cordis.yml"), "plugins:\n  mcp: false\n", "utf8");
-    expect(await loadUserConfigLayer(home, () => {})).toEqual({
+    expect(await loadUserConfigLayer(home, () => {}, KNOWN)).toEqual({
       toggles: { mcp: false },
       configs: {},
     });
@@ -129,11 +139,11 @@ describe("layer file readers", () => {
       "plugins:\n  skills:\n    enabled: false\n",
       "utf8",
     );
-    expect(await loadProjectConfigLayer(root, () => {})).toEqual({
+    expect(await loadProjectConfigLayer(root, () => {}, KNOWN)).toEqual({
       toggles: { skills: false },
       configs: {},
     });
-    expect(await loadProjectConfigLayer(tempDir(), () => {})).toBeUndefined();
+    expect(await loadProjectConfigLayer(tempDir(), () => {}, KNOWN)).toBeUndefined();
   });
 
   it("corrupt yaml warns and falls back to undefined", async () => {
@@ -141,14 +151,14 @@ describe("layer file readers", () => {
     const home = tempDir();
     mkdirSync(path.join(home, ".innocence"), { recursive: true });
     writeFileSync(path.join(home, ".innocence", "cordis.yml"), "plugins: [unbalanced\n", "utf8");
-    expect(await loadUserConfigLayer(home, (_level, msg) => warnings.push(msg))).toBeUndefined();
+    expect(await loadUserConfigLayer(home, (_level, msg) => warnings.push(msg), KNOWN)).toBeUndefined();
     expect(warnings).toHaveLength(1);
 
     const root = tempDir();
     mkdirSync(path.join(root, ".innocence"), { recursive: true });
     const file = path.join(root, ".innocence", "plugins.yml");
     writeFileSync(file, "plugins: [unbalanced\n", "utf8");
-    expect(await loadProjectConfigLayer(root, (_level, msg) => warnings.push(msg))).toBeUndefined();
+    expect(await loadProjectConfigLayer(root, (_level, msg) => warnings.push(msg), KNOWN)).toBeUndefined();
     expect(warnings).toHaveLength(2);
     expect(warnings[1]).toContain(file);
   });

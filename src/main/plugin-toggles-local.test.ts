@@ -1,15 +1,10 @@
-// 本地 plugin-set/plugin-toggles 拷贝的钉死测试（T11 自已删除的 core 包迁
-// 入 src/main；原件 T12 删除）：不依赖 staging，干净检出恒可跑——覆盖两
-// 级覆盖/依赖连带/core 恒开与 yml 解析告警面。
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import {
-  loadPluginToggles,
-  resolvePluginSet,
-  type PluginDescriptor,
-} from "./plugin-toggles-local";
+// 本地 plugin-set 拷贝的钉死测试（T11 自已删除的 core 包迁入 src/main；原件
+// T12 删除）：不依赖 staging，干净检出恒可跑——覆盖两级覆盖/依赖连带/core
+// 恒开。文件读取面（loadPluginToggles）已在阶段 2 任务 3 删除（项目层由
+// pluginBoot/configSources 读取，开放键空间），其告警文案断言随之迁移
+// （configSources.test 逐字覆盖同一文案族）。
+import { describe, expect, it } from "vitest";
+import { resolvePluginSet, type PluginDescriptor } from "./plugin-toggles-local";
 
 const DESCRIPTORS: readonly PluginDescriptor[] = [
   { id: "fs", dependencies: [], core: true },
@@ -19,20 +14,6 @@ const DESCRIPTORS: readonly PluginDescriptor[] = [
   { id: "mcp", dependencies: [] },
   { id: "todo", dependencies: [] },
 ];
-
-const roots: string[] = [];
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-async function workspaceWith(yml: string): Promise<string> {
-  const root = mkdtempSync(path.join(tmpdir(), "ic-toggles-"));
-  roots.push(root);
-  const file = path.join(root, ".innocence", "plugins.yml");
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, yml, "utf8");
-  return root;
-}
 
 describe("resolvePluginSet (local copy)", () => {
   it("defaults to everything active", () => {
@@ -89,40 +70,17 @@ describe("resolvePluginSet (local copy)", () => {
     ]);
     expect(resolved.active).toHaveLength(DESCRIPTORS.length);
   });
-});
 
-describe("loadPluginToggles (local copy)", () => {
-  it("reads boolean toggles and ignores unknown keys with a warning", async () => {
-    const warnings: string[] = [];
-    const root = await workspaceWith(
-      "plugins:\n  mcp: false\n  mystery: true\n  skills: not-a-bool\n",
-    );
-    const toggles = await loadPluginToggles(root, {
-      logger: (level, msg) => {
-        if (level === "warn") warnings.push(msg);
-      },
-    });
-    expect(toggles).toEqual({ mcp: false });
-    expect(warnings).toEqual([
-      `unknown plugin toggle "mystery" in ${path.join(root, ".innocence", "plugins.yml")}; ignored`,
-      `plugin toggle "skills" in ${path.join(root, ".innocence", "plugins.yml")} must be a boolean; ignored`,
+  it("开放键空间：清单内 id（含 example 等新增插件键）直接生效", () => {
+    const withExample: readonly PluginDescriptor[] = [
+      ...DESCRIPTORS,
+      { id: "example", dependencies: [] },
+    ];
+    const resolved = resolvePluginSet(withExample, { example: false });
+    expect(resolved.active).not.toContain("example");
+    expect(resolved.skipped).toEqual([
+      { id: "example", reason: "disabled-by-config", via: "user" },
     ]);
-  });
-
-  it("missing file resolves undefined silently; corrupt yaml warns", async () => {
-    const warnings: string[] = [];
-    const empty = mkdtempSync(path.join(tmpdir(), "ic-toggles-empty-"));
-    roots.push(empty);
-    expect(await loadPluginToggles(empty, { logger: () => {} })).toBeUndefined();
-    expect(warnings).toEqual([]);
-
-    const broken = await workspaceWith("plugins: [unbalanced\n");
-    const result = await loadPluginToggles(broken, {
-      logger: (level, msg) => {
-        if (level === "warn") warnings.push(msg);
-      },
-    });
-    expect(result).toBeUndefined();
-    expect(warnings).toHaveLength(1);
+    expect(resolved.warnings).toEqual([]);
   });
 });

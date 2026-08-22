@@ -23,12 +23,12 @@ function baseSettings(overrides: Partial<HarnessSettings> = {}): HarnessSettings
 
 // 清单投影 mock（IPC plugins:list 载荷形状；title 即行 label）。
 const INVENTORY: PluginInventory = [
-  { id: "fs", title: "文件系统", core: true, client: false, state: "active", via: "default" },
-  { id: "shell", title: "命令行", core: true, client: false, state: "active", via: "default" },
-  { id: "subagent", title: "子代理", core: false, client: false, state: "active", via: "default" },
-  { id: "skills", title: "技能", core: false, client: false, state: "active", via: "default" },
-  { id: "mcp", title: "MCP 服务器", core: false, client: false, state: "active", via: "default" },
-  { id: "todo", title: "待办工具", core: false, client: false, state: "active", via: "default" },
+  { id: "fs", title: "文件系统", core: true, client: false, toggleable: false, state: "active", via: "default" },
+  { id: "shell", title: "命令行", core: true, client: false, toggleable: false, state: "active", via: "default" },
+  { id: "subagent", title: "子代理", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "skills", title: "技能", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "mcp", title: "MCP 服务器", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "todo", title: "待办工具", core: false, client: false, toggleable: true, state: "active", via: "default" },
 ];
 
 function entry(id: string, patch: Partial<PluginInventory[number]>): PluginInventory {
@@ -125,26 +125,41 @@ describe("PluginsSection（清单投影驱动）", () => {
     expect(screen.getAllByText("UI")).toHaveLength(1);
   });
 
-  it("键空间外条目（渲染层示例插件）：开关禁用恒开、带客户端模块提示、点击不上抛；四键开关仍可操作", () => {
+  it("示例插件（清单 toggleable:true）：开关可操作，关闭写 example:false（等价升级：键空间清单派生）", () => {
     const onSettingsChange = vi.fn();
     const inventory: PluginInventory = [
       ...INVENTORY,
-      { id: "example", title: "示例插件", core: false, client: true, state: "active", via: "default" },
+      { id: "example", title: "示例插件", core: false, client: true, toggleable: true, state: "active", via: "default" },
     ];
     render(
       <PluginsSection t={t} settings={baseSettings()} onSettingsChange={onSettingsChange} inventory={inventory} />,
     );
     const example = screen.getByRole("switch", { name: "示例插件" }) as HTMLButtonElement;
-    // 写路径规范化白名单只认四键——可操作开关会写出被静默剔除的死键
-    //（开关复位 + 清单 off/active 自相矛盾），故键空间外一律禁用恒开。
-    expect(example.getAttribute("aria-checked")).toBe("true");
-    expect(example.disabled).toBe(true);
-    expect(screen.getByText("客户端模块")).toBeTruthy();
+    // 清单派生键空间：example 在清单且非 core → 开关可操作（原为禁用恒开）。
+    expect(example.disabled).toBe(false);
+    expect(screen.queryByText("客户端模块")).toBeNull();
     fireEvent.click(example);
-    expect(onSettingsChange).not.toHaveBeenCalled();
-    // 同一清单内 toggle 键空间条目不受影响（写路径保持可操作）
-    fireEvent.click(screen.getByRole("switch", { name: "MCP 服务器" }));
     expect(onSettingsChange).toHaveBeenCalledTimes(1);
+    expect(onSettingsChange).toHaveBeenCalledWith({
+      ...baseSettings(),
+      pluginToggles: { example: false },
+    });
+  });
+
+  it("toggleable:false 条目（不可开关的渲染层条目）：开关禁用恒开、带客户端模块提示", () => {
+    const onSettingsChange = vi.fn();
+    const inventory: PluginInventory = [
+      ...INVENTORY,
+      { id: "legacy", title: "不可开关插件", core: false, client: true, toggleable: false, state: "active", via: "default" },
+    ];
+    render(
+      <PluginsSection t={t} settings={baseSettings()} onSettingsChange={onSettingsChange} inventory={inventory} />,
+    );
+    const legacy = screen.getByRole("switch", { name: "不可开关插件" }) as HTMLButtonElement;
+    expect(legacy.disabled).toBe(true);
+    expect(screen.getByText("客户端模块")).toBeTruthy();
+    fireEvent.click(legacy);
+    expect(onSettingsChange).not.toHaveBeenCalled();
   });
 
   it("清单未返回（null）：骨架态，无开关无文案行", () => {

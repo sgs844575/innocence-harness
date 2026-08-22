@@ -4,22 +4,18 @@
 
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
 import { AGENT_IDS, type AgentId } from "./agents";
+import type { PluginToggleSource } from "../../../src/shared/ipc";
 
 export type { AgentId } from "./agents";
 export type { ModelInfo } from "./modelPresets";
 
 /**
- * User-level builtin plugin toggles (the settings face). The resolver lives
- * in the host composition (src/main plugin-toggles-local.ts — copy of the
- * retired plugin-set module); this settings-side shape and the shared/ipc
- * mirror are kept aligned by harness-electron's mirror drift-guard tests.
+ * User-level builtin plugin toggles (the settings face). Open keyspace
+ * (manifest-derived): any plugin-id key with a boolean value; the shared/ipc
+ * mirror is the single source of this shape (re-exported here for the T7
+ * type convergence). The four legacy builtin keys stay valid unchanged.
  */
-export interface PluginToggleSource {
-  subagent?: boolean;
-  skills?: boolean;
-  mcp?: boolean;
-  todo?: boolean;
-}
+export type { PluginToggleSource } from "../../../src/shared/ipc";
 
 export type ProviderKind = "openai" | "anthropic";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
@@ -210,18 +206,18 @@ function normalizeLocale(raw: unknown): UiLocale {
   return raw === "zh-CN" || raw === "en-US" ? raw : "";
 }
 
-const PLUGIN_TOGGLE_KEYS = ["subagent", "skills", "mcp", "todo"] as const;
-
-/** 四键中布尔值保留、非布尔剔除；无有效键回落 undefined（undefined =
- *  默认全开，与 resolvePluginSet 的两级覆盖语义一致）。 */
+/** 布尔值键保留、非布尔剔除；无有效键回落 undefined（undefined = 默认全开，
+ *  与 resolvePluginSet 的两级覆盖语义一致）。键空间开放（清单派生）：任意
+ *  插件 id 键均透传——写路径不再静默剔除清单内插件（如 example）的开关，
+ *  cordis.yml 键在 settings 未保存该键时仍生效（settings 按键覆盖文件）。 */
 function normalizePluginToggles(raw: unknown): PluginToggleSource | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const src = raw as Record<string, unknown>;
-  const out: PluginToggleSource = {};
+  const out: Record<string, boolean> = {};
   let hasAny = false;
-  for (const key of PLUGIN_TOGGLE_KEYS) {
-    if (typeof src[key] === "boolean") {
-      out[key] = src[key];
+  for (const [key, value] of Object.entries(src)) {
+    if (typeof value === "boolean") {
+      out[key] = value;
       hasAny = true;
     }
   }

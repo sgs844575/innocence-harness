@@ -25,12 +25,12 @@ const appInfo = { version: "1.2.3", platform: "win32" as const };
 
 /** 插件清单投影 mock（IPC plugins:list 载荷；插件节数据源）。 */
 const PLUGIN_INVENTORY: PluginInventory = [
-  { id: "fs", title: "文件系统", core: true, client: false, state: "active", via: "default" },
-  { id: "shell", title: "命令行", core: true, client: false, state: "active", via: "default" },
-  { id: "subagent", title: "子代理", core: false, client: false, state: "active", via: "default" },
-  { id: "skills", title: "技能", core: false, client: false, state: "active", via: "default" },
-  { id: "mcp", title: "MCP 服务器", core: false, client: false, state: "active", via: "default" },
-  { id: "todo", title: "待办工具", core: false, client: false, state: "active", via: "default" },
+  { id: "fs", title: "文件系统", core: true, client: false, toggleable: false, state: "active", via: "default" },
+  { id: "shell", title: "命令行", core: true, client: false, toggleable: false, state: "active", via: "default" },
+  { id: "subagent", title: "子代理", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "skills", title: "技能", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "mcp", title: "MCP 服务器", core: false, client: false, toggleable: true, state: "active", via: "default" },
+  { id: "todo", title: "待办工具", core: false, client: false, toggleable: true, state: "active", via: "default" },
 ];
 
 function baseSettings(overrides: Partial<HarnessSettings> = {}): HarnessSettings {

@@ -76,30 +76,30 @@ describe("shared AgentId 镜像对齐 harness-electron agents.ts", () => {
 });
 
 describe("shared PluginToggleSource 镜像对齐 harness-electron settings.ts", () => {
-  // shared 不 import 包，PluginToggleSource 手工镜像：settings 增删开关键而忘了
-  // 同步 shared 时，下面的双向键映射会让 typecheck 失败（harness-electron 的
-  // typecheck 覆盖 tests/）。
-  it("类型漂移守卫：shared 镜像与 settings PluginToggleSource 双向兼容", () => {
-    const sample: PluginToggleSource = { subagent: false, skills: true, mcp: false, todo: true };
+  // shared 不 import 包，PluginToggleSource 手工镜像：键空间开放（清单派生，
+  // Record<string, boolean>）后不再钉死四键——双向兼容改为开放键集样本
+  //（清单新增插件 id 无需改镜像），但镜像类型形状漂移仍会被双向赋值拦下。
+  it("类型漂移守卫：shared 镜像与 settings PluginToggleSource 双向兼容（开放键集样本）", () => {
+    const sample: PluginToggleSource = {
+      subagent: false,
+      skills: true,
+      mcp: false,
+      todo: true,
+      example: false,
+    };
     const core: CorePluginToggleSource = sample;
     const back: PluginToggleSource = core;
     expect(back).toEqual(sample);
   });
-  it("四键一一对应（subagent/skills/mcp/todo）", () => {
-    const toCore: Record<keyof PluginToggleSource, keyof CorePluginToggleSource> = {
-      subagent: "subagent",
-      skills: "skills",
-      mcp: "mcp",
-      todo: "todo",
-    };
-    const fromCore: Record<keyof CorePluginToggleSource, keyof PluginToggleSource> = {
-      subagent: "subagent",
-      skills: "skills",
-      mcp: "mcp",
-      todo: "todo",
-    };
-    expect(Object.keys(toCore).sort()).toEqual(["mcp", "skills", "subagent", "todo"]);
-    expect(Object.keys(fromCore).sort()).toEqual(["mcp", "skills", "subagent", "todo"]);
+
+  it("开放键集语义：布尔值键即合法（四内置键子集自然兼容，非布尔值不合法）", () => {
+    const legacy: PluginToggleSource = { subagent: false };
+    const extra: CorePluginToggleSource = { example: true, mcp: false };
+    expect(Object.keys(legacy)).toEqual(["subagent"]);
+    expect(Object.keys(extra).sort()).toEqual(["example", "mcp"]);
+    // @ts-expect-error 开放键空间仍只收布尔值（Record<string, boolean>）
+    const bad: PluginToggleSource = { mcp: "yes" };
+    void bad;
   });
 });
 
@@ -112,6 +112,7 @@ describe("shared PluginInventoryEntry 镜像对齐 main plugin-inventory", () =>
     title: "技能加载器",
     core: false,
     client: true,
+    toggleable: true,
     state: "active",
     via: "default",
   };
@@ -134,6 +135,7 @@ describe("shared PluginInventoryEntry 镜像对齐 main plugin-inventory", () =>
       "active",
       "disabled-by-config",
       "dependency-disabled",
+      "config-invalid",
     ];
     const vias: PluginInventoryEntry["via"][] = ["user", "project", "default"];
     for (const state of states) {

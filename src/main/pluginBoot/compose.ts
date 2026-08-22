@@ -145,14 +145,26 @@ async function readManifest(builtinRoot: string): Promise<PluginDescriptor[]> {
     if (descriptor.client !== undefined && typeof descriptor.client !== "boolean") {
       throw new Error(`builtin plugin manifest malformed (${file}): bad client flag for "${descriptor.id}"`);
     }
+    if (descriptor.toggleable !== undefined && typeof descriptor.toggleable !== "boolean") {
+      throw new Error(`builtin plugin manifest malformed (${file}): bad toggleable flag for "${descriptor.id}"`);
+    }
     return {
       id: descriptor.id,
       dependencies: descriptor.dependencies,
       ...(descriptor.core === true ? { core: true } : {}),
       ...(typeof descriptor.title === "string" ? { title: descriptor.title } : {}),
       ...(descriptor.client === true ? { client: true } : {}),
+      ...(typeof descriptor.toggleable === "boolean" ? { toggleable: descriptor.toggleable } : {}),
     };
   });
+}
+
+/** 键空间投影（清单派生）：toggleable 条目的 id 集即开关键空间——旧
+ *  manifest（无 toggleable 字段）缺省回落"非 core 即可开关"，语义等价。 */
+export function toggleKeyspace(descriptors: readonly PluginDescriptor[]): string[] {
+  return descriptors
+    .filter((d) => (d.toggleable ?? d.core !== true) === true)
+    .map((d) => d.id);
 }
 
 /** Register the include carrier as the `kernel:include` loader builtin (the
@@ -231,11 +243,15 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   }): Promise<ResolvedEntries> => {
     const log: ConfigLogger = (level, msg, data) =>
       (logger ?? (() => {}))(level, msg, data);
+    // 键空间清单派生：项目/用户 yml 的未知键校验用清单 id 集（configSources
+    // 不再持有硬编码白名单）。
+    const knownKeys = toggleKeyspace(descriptors);
     const { user, project } = await loadConfigLayerPair(
       os.homedir(),
       workspaceRoot,
-      userToggles as Record<string, boolean> | undefined,
+      userToggles,
       log,
+      knownKeys,
     );
     return resolveEntries(descriptors, user, project);
   };

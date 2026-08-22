@@ -168,6 +168,54 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     }
   });
 
+  it("example 开关端到端：settings 关 example（normalize 保留）→ inventory disabled → 条目 disabled 短路", async () => {
+    const b = await ensureBoot();
+    // 写路径等价面：settings normalize 开放键空间，example:false 不再被剔除。
+    const { mergeSettings } = await import("@innocencecode/harness-electron");
+    const settings = mergeSettings({ profiles: [], pluginToggles: { example: false } });
+    expect(settings.pluginToggles).toEqual({ example: false });
+    // 清单投影：example 条目 toggleable:true 且呈 disabled-by-config（user 层）。
+    // webview 侧装载消费同一 state 过滤（loader.test：非 active 不装载 client）。
+    const inventory = await b.pluginInventory({
+      workspaceRoot: process.cwd(),
+      userToggles: settings.pluginToggles,
+    });
+    const example = inventory.find((entry) => entry.id === "example");
+    expect(example).toMatchObject({ core: false, toggleable: true, state: "disabled-by-config", via: "user" });
+    // 装载面：disabled 条目短路（loader.startEntry 对 disabled 不导入不挂载；
+    // 同款短路断言见 mountEntries 用例），此处钉死条目面 disabled 显式值。
+    const resolved = await b.resolveBuiltinSet({
+      workspaceRoot: process.cwd(),
+      userToggles: settings.pluginToggles,
+    });
+    expect(resolved.active).not.toContain("example");
+    expect(resolved.entries.find((e) => e.id === "example")).toMatchObject({ disabled: true });
+  });
+
+  it("manifest 键空间派生：example 进入 knownKeys（yml example:false 生效）；旧 yml 未知键仍告警忽略", async () => {
+    const b = await ensureBoot();
+    const resolved = await b.resolveBuiltinSet({ workspaceRoot: process.cwd() });
+    expect(resolved.active).toContain("example");
+    // 项目 yml 键空间 = 清单 id 集：example 可写、清单外键告警。
+    const warnings: string[] = [];
+    const ws = mkdtempSync(path.join(tmpdir(), "ic-keyspace-ws-"));
+    roots.push(ws);
+    mkdirSync(path.join(ws, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(ws, ".innocence", "plugins.yml"),
+      "plugins:\n  example: false\n  mystery: true\n",
+      "utf8",
+    );
+    const projectResolved = await b.resolveBuiltinSet({
+      workspaceRoot: ws,
+      logger: (level, msg) => {
+        if (level === "warn") warnings.push(String(msg));
+      },
+    });
+    expect(projectResolved.active).not.toContain("example");
+    expect(warnings.join("\n")).toContain('unknown plugin toggle "mystery"');
+  });
+
   it("single instance: a staging plugin's KernelError passes the host-side instanceof", async () => {
     const b = await ensureBoot();
     // Fixture plugin below the boot's user root: its apply throws the STAGING

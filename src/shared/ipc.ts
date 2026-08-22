@@ -142,29 +142,31 @@ export type AgentId = "default" | "plan" | "full";
 // 镜像契约：PluginToggleSource 复制自 packages/harness-electron/src/settings.ts
 // （shared 不 import 包），修改任何一侧时必须同步另一侧
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-export interface PluginToggleSource {
-  subagent?: boolean;
-  skills?: boolean;
-  mcp?: boolean;
-  todo?: boolean;
-}
+// 键空间开放（清单派生）：值为布尔的任意插件 id 键，四内置键子集自然兼容。
+export type PluginToggleSource = Record<string, boolean>;
 
 // 镜像契约：以下清单投影类型复制自 src/main/plugin-inventory.ts
 // （shared 不 import main），修改任何一侧时必须同步另一侧
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-/** 插件开关的解析状态（active / 配置停用 / 依赖连带停用）。 */
-export type PluginInventoryState = "active" | "disabled-by-config" | "dependency-disabled";
+/** 插件开关的解析状态（active / 配置停用 / 依赖连带停用 / 配置块校验失败降级）。 */
+export type PluginInventoryState =
+  | "active"
+  | "disabled-by-config"
+  | "dependency-disabled"
+  | "config-invalid";
 
 /** 设置页插件清单的一条投影（IPC plugins:list 载荷）。 */
 export interface PluginInventoryEntry {
-  /** 清单 id（fs/shell/subagent/skills/mcp/todo）。 */
+  /** 清单 id（manifest 派生，如 example/subagent/...）。 */
   id: string;
   /** 中性展示名（包 description 投影）。 */
   title: string;
-  /** 恒开（fs/shell：开关呈禁用态）。 */
+  /** 恒开（core 条目：开关呈禁用态）。 */
   core: boolean;
   /** 是否带渲染层模块（构建后 dist/client.js）。 */
   client: boolean;
+  /** 清单派生的可开关标记（core 恒 false；开关可操作面）。 */
+  toggleable: boolean;
   /** 按当前 toggles 现算的解析状态。 */
   state: PluginInventoryState;
   /** 停用获胜层（active 恒 default）。 */
