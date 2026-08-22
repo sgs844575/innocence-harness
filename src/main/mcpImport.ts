@@ -36,7 +36,21 @@ export function parseMcpJson(text: string): Record<string, McpServerEntry> {
   if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
     throw new Error("invalid mcp config: mcpServers missing or not an object");
   }
-  return servers as Record<string, McpServerEntry>;
+  const valid: Record<string, McpServerEntry> = {};
+  for (const [name, entry] of Object.entries(servers)) {
+    if (!isMcpServerEntry(entry)) continue;
+    valid[name] = entry;
+  }
+  return valid;
+}
+
+function isMcpServerEntry(value: unknown): value is McpServerEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const entry = value as { command?: unknown; args?: unknown; env?: unknown };
+  if (typeof entry.command !== "string" || entry.command.trim() === "") return false;
+  if (entry.args !== undefined && (!Array.isArray(entry.args) || !entry.args.every((arg) => typeof arg === "string"))) return false;
+  if (entry.env !== undefined && (typeof entry.env !== "object" || entry.env === null || Array.isArray(entry.env))) return false;
+  return true;
 }
 
 /** Reads <root>/.innocence/config.json; missing -> {}; corrupt -> rethrow. */

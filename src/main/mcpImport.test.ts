@@ -50,6 +50,16 @@ describe("parseMcpJson", () => {
     expect(() => parseMcpJson(JSON.stringify({ mcpServers: ["a"] }))).toThrow();
     expect(() => parseMcpJson(JSON.stringify({}))).toThrow();
   });
+  it("mcpServers 条目缺少 command 或形状错误时跳过", () => {
+    expect(parseMcpJson(JSON.stringify({
+      mcpServers: {
+        valid: { command: "run" },
+        missing: { args: [] },
+        empty: { command: "   " },
+        scalar: "run",
+      },
+    }))).toEqual({ valid: { command: "run" } });
+  });
 });
 
 describe("importMcpServers", () => {
