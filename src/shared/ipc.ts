@@ -206,7 +206,7 @@ export interface McpServerEntryMirror {
 /** MCP 导入结果（imported 名称清单 + 同名跳过清单）。 */
 export interface McpImportResultMirror {
   imported: string[];
-  skipped: { name: string; reason: "duplicate" }[];
+  skipped: { name: string; reason: "duplicate" | "invalid-entry" }[];
 }
 
 // 镜像契约：以下两个类型复制自 packages/harness-electron/src/modelPresets.ts

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { discoverMcpFile, importMcpServers, parseMcpJson } from "./mcpImport";
+import { discoverMcpFile, importMcpServers, parseMcpImport, parseMcpJson } from "./mcpImport";
 
 let root: string;
 beforeAll(async () => {
@@ -57,8 +57,22 @@ describe("parseMcpJson", () => {
         missing: { args: [] },
         empty: { command: "   " },
         scalar: "run",
+        invalidArgs: { command: "run", args: [1] },
+        invalidEnv: { command: "run", env: { PORT: 3000 } },
       },
     }))).toEqual({ valid: { command: "run" } });
+  });
+
+  it("导入结果保留畸形条目的 invalid-entry 状态", async () => {
+    const parsed = parseMcpImport(JSON.stringify({
+      mcpServers: { valid: { command: "run" }, invalid: { args: [] } },
+    }));
+    const result = await importMcpServers(parsed.servers, root, parsed.invalid);
+    expect(result).toEqual({
+      imported: ["valid"],
+      skipped: [{ name: "invalid", reason: "invalid-entry" }],
+    });
+    await fs.rm(path.join(root, ".innocence"), { recursive: true, force: true });
   });
 });
 

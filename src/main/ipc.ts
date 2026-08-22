@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { IPC, type MenuId } from "../shared/ipc";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
-import { discoverMcpFile, importMcpServers, parseMcpJson } from "./mcpImport";
+import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
 import { TaskIpcChannels } from "../shared/taskIpc";
 import { broadcastTheme, getTheme, setTheme } from "./theme";
 import * as sessions from "./sessions";
@@ -126,7 +126,8 @@ export function registerIpcHandlers(): void {
   // 渲染层无文件读权，main 代读 <root>/.mcp.json（发现文件一键导入流）。
   ipcMain.handle(IPC.mcpImport, async (_e, root: string, text: string) => {
     const content = text || await fs.readFile(path.join(root, ".mcp.json"), "utf8");
-    return importMcpServers(parseMcpJson(content), root);
+    const parsed = parseMcpImport(content);
+    return importMcpServers(parsed.servers, root, parsed.invalid);
   });
   ipcMain.handle(IPC.mcpDiscover, (_e, root: string) => discoverMcpFile(root));
   ipcMain.handle(IPC.settingsModelsList, (_e, profileId: string) => {

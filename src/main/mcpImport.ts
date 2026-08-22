@@ -15,7 +15,12 @@ export interface McpServerEntry {
 /** Import outcome per server name. */
 export interface McpImportResult {
   imported: string[];
-  skipped: { name: string; reason: "duplicate" }[];
+  skipped: { name: string; reason: "duplicate" | "invalid-entry" }[];
+}
+
+interface ParsedMcpImport {
+  servers: Record<string, McpServerEntry>;
+  invalid: string[];
 }
 
 /**
@@ -23,6 +28,10 @@ export interface McpImportResult {
  * non-object roots, and non-object mcpServers throw — the caller degrades.
  */
 export function parseMcpJson(text: string): Record<string, McpServerEntry> {
+  return parseMcpImport(text).servers;
+}
+
+export function parseMcpImport(text: string): ParsedMcpImport {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -37,11 +46,15 @@ export function parseMcpJson(text: string): Record<string, McpServerEntry> {
     throw new Error("invalid mcp config: mcpServers missing or not an object");
   }
   const valid: Record<string, McpServerEntry> = {};
+  const invalid: string[] = [];
   for (const [name, entry] of Object.entries(servers)) {
-    if (!isMcpServerEntry(entry)) continue;
+    if (!isMcpServerEntry(entry)) {
+      invalid.push(name);
+      continue;
+    }
     valid[name] = entry;
   }
-  return valid;
+  return { servers: valid, invalid };
 }
 
 function isMcpServerEntry(value: unknown): value is McpServerEntry {
@@ -49,7 +62,12 @@ function isMcpServerEntry(value: unknown): value is McpServerEntry {
   const entry = value as { command?: unknown; args?: unknown; env?: unknown };
   if (typeof entry.command !== "string" || entry.command.trim() === "") return false;
   if (entry.args !== undefined && (!Array.isArray(entry.args) || !entry.args.every((arg) => typeof arg === "string"))) return false;
-  if (entry.env !== undefined && (typeof entry.env !== "object" || entry.env === null || Array.isArray(entry.env))) return false;
+  if (entry.env !== undefined && (
+    typeof entry.env !== "object"
+    || entry.env === null
+    || Array.isArray(entry.env)
+    || !Object.values(entry.env).every((value) => typeof value === "string")
+  )) return false;
   return true;
 }
 
@@ -71,6 +89,7 @@ async function readConfig(root: string): Promise<Record<string, unknown>> {
 export async function importMcpServers(
   servers: Record<string, McpServerEntry>,
   root: string,
+  invalid: readonly string[] = [],
 ): Promise<McpImportResult> {
   let config: Record<string, unknown> = {};
   try {
@@ -81,7 +100,10 @@ export async function importMcpServers(
   }
   const existing = (config.mcpServers ?? {}) as Record<string, McpServerEntry>;
   const merged: Record<string, McpServerEntry> = { ...existing };
-  const result: McpImportResult = { imported: [], skipped: [] };
+  const result: McpImportResult = {
+    imported: [],
+    skipped: invalid.map((name) => ({ name, reason: "invalid-entry" as const })),
+  };
   for (const [name, entry] of Object.entries(servers)) {
     if (Object.prototype.hasOwnProperty.call(existing, name)) {
       result.skipped.push({ name, reason: "duplicate" });

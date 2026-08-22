@@ -184,7 +184,10 @@ describe("shared MCP 导入 DTO 镜像对齐 main mcpImport", () => {
   };
   const result: McpImportResultMirror = {
     imported: ["a"],
-    skipped: [{ name: "b", reason: "duplicate" }],
+    skipped: [
+      { name: "b", reason: "duplicate" },
+      { name: "invalid", reason: "invalid-entry" },
+    ],
   };
 
   it("类型漂移守卫：entry 与 result 双向兼容", () => {

@@ -1,8 +1,9 @@
 import type { Context } from "@innocencecode/kernel";
-import type { EntryCreateOptions, LoaderEntry } from "@innocencecode/kernel-loader";
+import type { EntryCreateOptions } from "@innocencecode/kernel-loader";
 
-export interface GroupEntry extends EntryCreateOptions {
+export interface GroupEntry extends Omit<EntryCreateOptions, "id" | "name"> {
   id: string;
+  name?: string;
 }
 
 export interface GroupOptions {
@@ -20,14 +21,17 @@ export function createGroupPlugin(options: GroupOptions): GroupPlugin {
   return {
     name: `group:${options.id}`,
     async apply(ctx) {
+      const owner = ctx.entry;
+      if (!owner) throw new Error(`group ${options.id} must be mounted through the loader`);
       const loader = ctx.loader;
-      const mounted: LoaderEntry[] = [];
       try {
-        for (const entry of options.entries) {
-          mounted.push(await loader.create(entry));
+        for (const { id, name, config, disabled } of options.entries) {
+          await loader.create({ id, name: name ?? id, config, disabled }, owner);
         }
       } catch (error) {
-        await Promise.allSettled(mounted.map((entry) => entry.fiber?.dispose()));
+        await Promise.allSettled(
+          [...(owner.subtree?.entries() ?? [])].map((entry) => entry.fiber?.dispose()),
+        );
         throw error;
       }
     },
