@@ -85,6 +85,7 @@ describe("mergeSettings", () => {
       locale: "zh-CN" as const,
       reasoningEffort: "high" as const,
       activeAgent: "full" as const,
+      externalSkillDiscovery: true,
       externalEditorCommand: "code --wait",
     };
     expect(mergeSettings(input)).toEqual(input);
@@ -122,6 +123,11 @@ describe("mergeSettings", () => {
     expect(mergeSettings({ profiles: [] }).activeAgent).toBe("default");
   });
 
+  it("externalSkillDiscovery defaults enabled and normalizes boolean values", () => {
+    expect(mergeSettings({ profiles: [] }).externalSkillDiscovery).toBe(true);
+    expect(mergeSettings({ profiles: [], externalSkillDiscovery: false }).externalSkillDiscovery).toBe(false);
+    expect(mergeSettings({ profiles: [], externalSkillDiscovery: "no" }).externalSkillDiscovery).toBe(true);
+  });
   it("pluginToggles 归一化：布尔键保留，非布尔剔除", () => {
     expect(
       mergeSettings({ profiles: [], pluginToggles: { subagent: false, mcp: "yes" } }).pluginToggles,

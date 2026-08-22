@@ -4,9 +4,10 @@
 // 并列"外部 MCP 配置"块（同分区）：项目根 .mcp.json 发现提示 + 一键导入
 //（合并进 .innocence/config.json，同名跳过），结果反馈 imported/skipped。
 import { useCallback, useEffect, useState } from "react";
-import type { DiscoveredSkillMirror, McpImportResultMirror } from "../../../../shared/ipc";
+import type { DiscoveredSkillMirror, HarnessSettings, McpImportResultMirror } from "../../../../shared/ipc";
 import { api } from "../../lib/ipc";
 import { SettingRow } from "./BasicSections";
+import { Switch } from "../ui/Switch";
 
 type Feedback = { kind: "ok" | "error"; text: string } | null;
 
@@ -73,16 +74,31 @@ function McpImportBlock({ t, workspaceRoot }: { t: (key: string) => string; work
   );
 }
 
-export function SkillsSection({ t, workspaceRoot }: { t: (key: string) => string; workspaceRoot: string }): React.JSX.Element {
+export function SkillsSection({
+  t,
+  workspaceRoot,
+  settings,
+  onSettingsChange,
+}: {
+  t: (key: string) => string;
+  workspaceRoot: string;
+  settings: HarnessSettings;
+  onSettingsChange: (next: HarnessSettings) => void;
+}): React.JSX.Element {
   const [list, setList] = useState<DiscoveredSkillMirror[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const externalDiscoveryEnabled = settings.externalSkillDiscovery !== false;
 
   const refresh = useCallback(() => {
+    if (!externalDiscoveryEnabled) {
+      setList([]);
+      return;
+    }
     void api
       .discoverSkills()
       .then(setList, () => setList([]));
-  }, []);
+  }, [externalDiscoveryEnabled]);
 
   useEffect(refresh, [refresh]);
 
@@ -107,7 +123,21 @@ export function SkillsSection({ t, workspaceRoot }: { t: (key: string) => string
 
   return (
     <div className="card divide-y divide-(--color-app-hairline)">
-      {list === null ? (
+      <SettingRow
+        label={t("settings.skills.discovery")}
+        desc={t("settings.skills.discoveryDesc")}
+      >
+        <Switch
+          checked={externalDiscoveryEnabled}
+          onChange={(value) => onSettingsChange({ ...settings, externalSkillDiscovery: value })}
+          aria-label={t("settings.skills.discovery")}
+        />
+      </SettingRow>
+      {!externalDiscoveryEnabled ? (
+        <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+          {t("settings.skills.discoveryDisabled")}
+        </p>
+      ) : list === null ? (
         <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
           {t("settings.skills.loading")}
         </p>

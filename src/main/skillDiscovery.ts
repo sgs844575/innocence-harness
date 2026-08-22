@@ -42,8 +42,8 @@ async function discoverEntry(
   importedNames: Set<string>,
 ): Promise<DiscoveredSkill | null> {
   const sourceDir = path.join(dir, entry);
-  const stat = await fs.stat(sourceDir).catch(() => null);
-  if (!stat?.isDirectory()) return null;
+  const stat = await fs.lstat(sourceDir).catch(() => null);
+  if (!stat?.isDirectory() || stat.isSymbolicLink()) return null;
   const raw = await fs.readFile(path.join(sourceDir, "SKILL.md"), "utf8").catch(() => null);
   if (raw === null) return null;
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
@@ -132,9 +132,14 @@ export async function importSkill(
   // name comes from external frontmatter via IPC round-trip — never trust it
   assertValidSkillName(discovered.name);
   // sourceDir likewise: re-verify it belongs to a known external root
-  const resolvedSource = path.resolve(discovered.sourceDir);
-  const knownRoots = externalSkillRoots(homedir).map((r) => path.resolve(r.dir));
-  if (!knownRoots.some((r) => isInsideRoot(resolvedSource, r))) {
+  const resolvedSource = await fs.realpath(discovered.sourceDir).catch(() => null);
+  const knownRoots = await Promise.all(
+    externalSkillRoots(homedir).map(async (r) => fs.realpath(r.dir).catch(() => null)),
+  );
+  if (
+    !resolvedSource ||
+    !knownRoots.some((r): r is string => r !== null && isInsideRoot(resolvedSource, r))
+  ) {
     throw new Error("skill source outside known roots");
   }
   let name = discovered.name;

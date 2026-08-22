@@ -282,8 +282,10 @@ export interface HarnessSettings {
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置。与 harness-electron 同步。 */
   pluginToggles?: PluginToggleSource;
+  /** 外部技能目录发现开关；缺失/非法值默认开启。与 harness-electron 同步。 */
+  externalSkillDiscovery?: boolean;
   /** 外部编辑器启动命令（工作台入口，Task 11）；"" = 未配置。与
-   *  harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
+   * harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
   externalEditorCommand?: string;
 }
 

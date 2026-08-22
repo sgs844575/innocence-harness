@@ -80,6 +80,31 @@ describe("discoverExternalSkills", () => {
       await fs.rm(emptyHome, { recursive: true, force: true });
     }
   });
+  it("根内指向根外的顶层目录 symlink 不被发现", async (ctx) => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-discover-outside-"));
+    const link = path.join(home, ".claude", "skills", "linked-outside");
+    try {
+      await fs.writeFile(
+        path.join(outside, "SKILL.md"),
+        "---\nname: linked-outside\ndescription: d\n---\n",
+        "utf8",
+      );
+      try {
+        await fs.symlink(outside, link, "junction");
+      } catch (err) {
+        if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+          ctx.skip();
+          return;
+        }
+        throw err;
+      }
+      const found = await discoverExternalSkills(home);
+      expect(found.map((s) => s.name)).not.toContain("linked-outside");
+    } finally {
+      await fs.rm(link, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("importSkill", () => {
@@ -160,6 +185,39 @@ describe("importSkill", () => {
     } finally {
       await fs.rm(target, { recursive: true, force: true });
       await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("根内 sourceDir symlink 指向根外时拒绝导入", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-link-home-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-link-outside-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
+    const sourceRoot = path.join(linkHome, ".claude", "skills");
+    const link = path.join(sourceRoot, "linked-outside");
+    try {
+      await fs.mkdir(sourceRoot, { recursive: true });
+      await fs.writeFile(
+        path.join(outside, "SKILL.md"),
+        "---\nname: linked-outside\ndescription: d\n---\n",
+        "utf8",
+      );
+      try {
+        await fs.symlink(outside, link, "junction");
+      } catch (err) {
+        if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+          ctx.skip();
+          return;
+        }
+        throw err;
+      }
+      await expect(
+        importSkill(skill("linked-outside", link), target, linkHome),
+      ).rejects.toThrow("skill source outside known roots");
+      expect(await fs.readdir(target)).toEqual([]);
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
     }
   });
 

@@ -99,9 +99,14 @@ export function BuiltinSettingsSections({ deps }: { deps: SettingsSectionDeps })
           labelKey: "settings.section.skills",
           icon: Sparkles,
           render: () => {
-            const { t, settings } = p();
+            const { t, settings, onSettingsChange } = p();
             return settings === null ? null : scroll(
-              <SkillsSection t={t} workspaceRoot={settings.workspaceRoot} />,
+              <SkillsSection
+                t={t}
+                workspaceRoot={settings.workspaceRoot}
+                settings={settings}
+                onSettingsChange={onSettingsChange}
+              />,
             );
           },
         },

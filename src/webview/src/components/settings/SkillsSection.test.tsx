@@ -5,7 +5,7 @@
 // 反馈、未发现时整块不渲染、损坏配置错误降级提示。
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DiscoveredSkillMirror } from "../../../../shared/ipc";
+import type { DiscoveredSkillMirror, HarnessSettings } from "../../../../shared/ipc";
 import { createT } from "../../lib/i18n";
 import { SkillsSection } from "./SkillsSection";
 
@@ -34,8 +34,27 @@ const LIST: DiscoveredSkillMirror[] = [
   { name: "lint", description: "检查", sourceDir: "D:/b/lint", origin: "external-b", imported: true },
 ];
 
-function mount(workspaceRoot = "D:\\proj"): ReturnType<typeof render> {
-  return render(<SkillsSection t={t} workspaceRoot={workspaceRoot} />);
+function baseSettings(overrides: Partial<HarnessSettings> = {}): HarnessSettings {
+  return {
+    profiles: [],
+    activeProfileId: "__mock__",
+    activeModel: "mock",
+    workspaceRoot: "D:\\proj",
+    permissionMode: "ask",
+    externalSkillDiscovery: true,
+    ...overrides,
+  };
+}
+
+function mount(workspaceRoot = "D:\\proj", settings = baseSettings()): ReturnType<typeof render> {
+  return render(
+    <SkillsSection
+      t={t}
+      workspaceRoot={workspaceRoot}
+      settings={settings}
+      onSettingsChange={vi.fn()}
+    />,
+  );
 }
 
 describe("SkillsSection", () => {
@@ -85,53 +104,72 @@ describe("SkillsSection", () => {
     mount();
     expect(await screen.findByText("未发现可导入的技能")).toBeTruthy();
   });
-});
 
-describe("MCP 并列块", () => {
-  it("发现 .mcp.json 时渲染提示与导入按钮；点击触发导入并展示 imported/skipped 反馈", async () => {
-    apiMock.discoverSkills.mockResolvedValue([]);
-    apiMock.discoverMcpFile.mockResolvedValue("D:\\proj\\.mcp.json");
-    apiMock.importMcpServers.mockResolvedValueOnce({
-      imported: ["alpha", "beta"],
-      skipped: [{ name: "dup", reason: "duplicate" }],
+  it("关闭外部技能发现时不扫描并显示关闭开关", async () => {
+    const onSettingsChange = vi.fn();
+    render(
+      <SkillsSection
+        t={t}
+        workspaceRoot="D:\\proj"
+        settings={baseSettings({ externalSkillDiscovery: false })}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+    expect(screen.getByRole("switch", { name: "发现外部技能" }).getAttribute("aria-checked")).toBe("false");
+    expect(apiMock.discoverSkills).not.toHaveBeenCalled();
+    expect(screen.getByText("外部技能发现已关闭")).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "发现外部技能" }));
+    expect(onSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ externalSkillDiscovery: true }),
+    );
+  });
+
+  describe("MCP 并列块", () => {
+    it("发现 .mcp.json 时渲染提示与导入按钮；点击触发导入并展示 imported/skipped 反馈", async () => {
+      apiMock.discoverSkills.mockResolvedValue([]);
+      apiMock.discoverMcpFile.mockResolvedValue("D:\\proj\\.mcp.json");
+      apiMock.importMcpServers.mockResolvedValueOnce({
+        imported: ["alpha", "beta"],
+        skipped: [{ name: "dup", reason: "duplicate" }],
+      });
+      mount();
+      expect(await screen.findByText("外部 MCP 配置")).toBeTruthy();
+      expect(screen.getByText(/D:\\proj\\.mcp\.json/)).toBeTruthy();
+      // 技能列表为空 + MCP 块存在：区块按钮可寻址（与技能导入按钮区分）。
+      const btn = screen.getByRole("button", { name: "导入" });
+      fireEvent.click(btn);
+      await waitFor(() => {
+        expect(apiMock.importMcpServers).toHaveBeenCalledWith("D:\\proj", "");
+      });
+      expect(await screen.findByText(/已导入 2 个服务器，跳过同名 1 个/)).toBeTruthy();
+      expect(screen.getByText(/alpha, beta/)).toBeTruthy();
     });
-    mount();
-    expect(await screen.findByText("外部 MCP 配置")).toBeTruthy();
-    expect(screen.getByText(/D:\\proj\\.mcp\.json/)).toBeTruthy();
-    // 技能列表为空 + MCP 块存在：区块按钮可寻址（与技能导入按钮区分）。
-    const btn = screen.getByRole("button", { name: "导入" });
-    fireEvent.click(btn);
-    await waitFor(() => {
-      expect(apiMock.importMcpServers).toHaveBeenCalledWith("D:\\proj", "");
+
+    it("未发现 .mcp.json 时整块不渲染", async () => {
+      apiMock.discoverSkills.mockResolvedValue([]);
+      apiMock.discoverMcpFile.mockResolvedValue(null);
+      mount();
+      await screen.findByText("未发现可导入的技能");
+      expect(screen.queryByTestId("mcp-import-block")).toBeNull();
+      expect(screen.queryByText("外部 MCP 配置")).toBeNull();
     });
-    expect(await screen.findByText(/已导入 2 个服务器，跳过同名 1 个/)).toBeTruthy();
-    expect(screen.getByText(/alpha, beta/)).toBeTruthy();
-  });
 
-  it("未发现 .mcp.json 时整块不渲染", async () => {
-    apiMock.discoverSkills.mockResolvedValue([]);
-    apiMock.discoverMcpFile.mockResolvedValue(null);
-    mount();
-    await screen.findByText("未发现可导入的技能");
-    expect(screen.queryByTestId("mcp-import-block")).toBeNull();
-    expect(screen.queryByText("外部 MCP 配置")).toBeNull();
-  });
+    it("导入失败（损坏配置）展示降级错误提示，不炸", async () => {
+      apiMock.discoverSkills.mockResolvedValue([]);
+      apiMock.discoverMcpFile.mockResolvedValue("D:\\proj\\.mcp.json");
+      apiMock.importMcpServers.mockRejectedValueOnce(new Error("invalid mcp config"));
+      mount();
+      fireEvent.click(await screen.findByRole("button", { name: "导入" }));
+      expect(await screen.findByText(/导入 MCP 配置失败/)).toBeTruthy();
+    });
 
-  it("导入失败（损坏配置）展示降级错误提示，不炸", async () => {
-    apiMock.discoverSkills.mockResolvedValue([]);
-    apiMock.discoverMcpFile.mockResolvedValue("D:\\proj\\.mcp.json");
-    apiMock.importMcpServers.mockRejectedValueOnce(new Error("invalid mcp config"));
-    mount();
-    fireEvent.click(await screen.findByRole("button", { name: "导入" }));
-    expect(await screen.findByText(/导入 MCP 配置失败/)).toBeTruthy();
-  });
-
-  it("无工作区时整块不渲染", async () => {
-    apiMock.discoverSkills.mockResolvedValue([]);
-    apiMock.discoverMcpFile.mockResolvedValue("D:/x/.mcp.json");
-    mount("");
-    await screen.findByText("未发现可导入的技能");
-    expect(apiMock.discoverMcpFile).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("mcp-import-block")).toBeNull();
+    it("无工作区时整块不渲染", async () => {
+      apiMock.discoverSkills.mockResolvedValue([]);
+      apiMock.discoverMcpFile.mockResolvedValue("D:/x/.mcp.json");
+      mount("");
+      await screen.findByText("未发现可导入的技能");
+      expect(apiMock.discoverMcpFile).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("mcp-import-block")).toBeNull();
+    });
   });
 });

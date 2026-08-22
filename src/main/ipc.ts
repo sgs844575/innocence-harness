@@ -119,7 +119,9 @@ export function registerIpcHandlers(): void {
   // 插件清单投影：main 按当前 toggles 现算（无 boot 时阻塞到 boot 完成）。
   ipcMain.handle(IPC.pluginsList, () => getPluginInventory());
   // 技能发现/导入：main 直连 discovery 模块（无会话状态，无需 boot）。
-  ipcMain.handle(IPC.skillsDiscover, () => discoverExternalSkills());
+  ipcMain.handle(IPC.skillsDiscover, () =>
+    getHarnessSettings().externalSkillDiscovery === false ? [] : discoverExternalSkills(),
+  );
   ipcMain.handle(IPC.skillsImport, (_e, discovered: DiscoveredSkill) =>
     importSkill(discovered),
   );

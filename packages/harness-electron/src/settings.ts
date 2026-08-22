@@ -53,9 +53,15 @@ export interface HarnessSettings {
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置（resolvePluginSet 两级覆盖）。 */
   pluginToggles?: PluginToggleSource;
+  /** 外部技能目录发现开关；缺失/非法值默认开启。 */
+  externalSkillDiscovery?: boolean;
   /** 外部编辑器启动命令（Task 11 工作台入口）；"" = 未配置（入口禁用）。
    *  首个 token 可加引号（含空格的路径）；多余 token 作为前置参数透传。 */
   externalEditorCommand?: string;
+}
+
+function normalizeExternalSkillDiscovery(raw: unknown): boolean {
+  return raw !== false;
 }
 
 function normalizeExternalEditorCommand(raw: unknown): string {
@@ -125,6 +131,7 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   locale: "",
   reasoningEffort: "",
   activeAgent: "default",
+  externalSkillDiscovery: true,
   externalEditorCommand: "",
 };
 
@@ -289,6 +296,7 @@ function migrateFromV1(v1: SettingsV1): HarnessSettings {
     locale: normalizeLocale((v1 as { locale?: unknown }).locale),
     reasoningEffort: normalizeReasoningEffort((v1 as { reasoningEffort?: unknown }).reasoningEffort),
     activeAgent: normalizeActiveAgent((v1 as { activeAgent?: unknown }).activeAgent),
+    externalSkillDiscovery: normalizeExternalSkillDiscovery((v1 as { externalSkillDiscovery?: unknown }).externalSkillDiscovery),
     // pluginToggles：v1 不可能含该键，有意不透传（缺省 = 默认全开）。
   };
 }
@@ -308,6 +316,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
       activeAgent: normalizeActiveAgent(src.activeAgent),
+      externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
       pluginToggles: normalizePluginToggles(src.pluginToggles),
       externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand) };
   }
@@ -329,6 +338,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     locale: normalizeLocale(src.locale),
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
     activeAgent: normalizeActiveAgent(src.activeAgent),
+    externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
   };
