@@ -15,6 +15,7 @@ import type * as SpineSystemPrompt from "@innocencecode/harness-system-prompt";
 import type * as SpineAgents from "@innocencecode/harness-agent";
 import type * as SpineSession from "@innocencecode/harness-session";
 import type * as SpineLoop from "@innocencecode/harness-agent-loop";
+import type * as KernelLoader from "@innocencecode/kernel-loader";
 import * as loggerModule from "@innocencecode/kernel-logger";
 import * as toolsModule from "@innocencecode/harness-tools";
 import * as permissionsModule from "@innocencecode/harness-permissions";
@@ -24,6 +25,7 @@ import * as systemPromptModule from "@innocencecode/harness-system-prompt";
 import * as agentsModule from "@innocencecode/harness-agent";
 import * as sessionModule from "@innocencecode/harness-session";
 import * as loopModule from "@innocencecode/harness-agent-loop";
+import * as loaderModule from "@innocencecode/kernel-loader";
 
 /**
  * The mounting face the session kernel consumes, grouped by owning module.
@@ -40,6 +42,7 @@ export interface SessionSpineSuite {
   readonly agents: typeof SpineAgents;
   readonly session: typeof SpineSession;
   readonly loop: typeof SpineLoop;
+  readonly loader: typeof KernelLoader;
 }
 
 let memo: SessionSpineSuite | undefined;
@@ -65,6 +68,7 @@ export function staticSpineSuite(): SessionSpineSuite {
     agents: agentsModule,
     session: sessionModule,
     loop: loopModule,
+    loader: loaderModule,
   };
   return memo;
 }

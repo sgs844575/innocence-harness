@@ -63,6 +63,23 @@ function findEntry(ctx: Context, id: string) {
 }
 
 describe("kernel loader composition", () => {
+  it("mounts a pre-resolved plugin while preserving its loader entry", async () => {
+    context = new Context();
+    await context.plugin(Loader);
+    const plugin = {
+      name: "resolved-probe",
+      apply(ctx: Context) {
+        expect(ctx.entry?.options.config).toEqual({ tag: "resolved" });
+      },
+    };
+    const entry = await context.loader.createResolved(
+      { id: "resolved-probe", name: "resolved-probe", config: { tag: "resolved" } },
+      plugin,
+    );
+    expect(entry.options.config).toEqual({ tag: "resolved" });
+    expect(entry.fiber?.state).toBe(FiberState.ACTIVE);
+  });
+
   it("exposes the entry to its plugin while it applies", async () => {
     const h = createHarness();
     let entryAtApply: LoaderEntry | undefined;

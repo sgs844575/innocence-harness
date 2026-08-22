@@ -31,6 +31,7 @@ import {
   resolveRegistryProvider,
 } from "./session-mount";
 import { staticSpineSuite, type SessionSpineSuite } from "./session-spine";
+import { isSessionLoaderPlugin, mountSessionLoader, type SessionLoaderPlugin } from "./session-loader";
 
 // kernel-logger publishes its service without a Context augmentation; the
 // session composition declares the typed member (kernel ServiceTable
@@ -59,14 +60,18 @@ export interface SessionKernel {
   readonly provider: Provider;
   readonly services: SessionKernelServices;
   readonly view: SessionRegistryView;
-  /** Session plugin fibers (native and adapted) in activation order; dispose-error collection reads these. */
+  /** Session plugin fibers (native, adapted, and loader owner) in activation order. */
   readonly pluginFibers: readonly Fiber[];
+  /** Loader tree entries created in this route scope. */
+  readonly loaderEntries: readonly import("@innocencecode/kernel-loader").LoaderEntry[];
 }
 
 /** Inputs of {@link mountSessionKernel} (everything AgentSession.create owns). */
 export interface SessionKernelInit {
   sessionId: string;
   plugins: SessionPlugin[];
+  /** Loader-backed builtin entries resolved by the host composition. */
+  loaderEntries?: SessionLoaderPlugin[];
   /**
    * Injected kernel scope: mounts the session below a host-owned context
    * tree (one route scope below a boot root) instead of a fresh root.
@@ -118,6 +123,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
   const log = init.logger;
   // Declared outside the try so the rollback can read what had loaded so far.
   const pluginFibers: Fiber[] = [];
+  let loaderEntries: import("@innocencecode/kernel-loader").LoaderEntry[] = [];
   try {
     await ctx.plugin(spine.logger.LoggerPlugin);
     ctx.logger.addSink(
@@ -160,7 +166,17 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
     const nativeScope = ctx.derive();
     nativeScope.provide("tools", chokepointTools(ctx.tools, view));
     nativeScope.provide("session", chokepointSession(ctx, view));
+    const loaderSet = [
+      ...(init.loaderEntries ?? []),
+      ...init.plugins.filter(isSessionLoaderPlugin),
+    ];
+    if (loaderSet.length > 0) {
+      const mounted = await mountSessionLoader(nativeScope, spine, loaderSet, log);
+      pluginFibers.push(mounted.fiber);
+      loaderEntries = mounted.entries;
+    }
     for (const plugin of init.plugins) {
+      if (isSessionLoaderPlugin(plugin)) continue;
       const fiber = isKernelPlugin(plugin)
         ? nativeScope.plugin(plugin)
         : ctx.plugin(adaptHarnessPlugin(plugin, view));
@@ -217,6 +233,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
       },
       view,
       pluginFibers,
+      loaderEntries,
     };
   } catch (error) {
     // Construction failed after plugins activated: release their resources

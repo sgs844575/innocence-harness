@@ -22,8 +22,10 @@ import {
   type HarnessPlugin,
   type HarnessSettings,
   type SessionPlugin,
+  type SessionLoaderPlugin,
 } from "@innocencecode/harness-electron";
 import type { Provider } from "@innocencecode/harness-providers";
+import type { ObjectPlugin } from "@innocencecode/kernel";
 import { createPluginBoot, type PluginBoot } from "./compose";
 import type { PluginToggleSource } from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
@@ -98,37 +100,60 @@ function buildProviderFromSettings(settings: HarnessSettings): Provider {
   }
 }
 
-/** 磁盘装载一个内置能力插件并按 id 装配：fs/shell/todo/subagent 为插件
- *  对象（default 导出）；skills/mcp 为工厂（default 导出），由组合根注入
- *  配置后实例化。name 与清单 id 同名（composePlugins.test 的 1:1 守卫）。 */
-async function builtinPluginFor(
+/** Resolve one declarative row into a route loader entry. The factory switch
+ * only supplies host-only inputs; resolved entries remain the sole lifecycle
+ * and configuration source. */
+function factoryLoaderPlugin(
   boot: PluginBoot,
-  id: string,
+  id: "skills" | "mcp",
+  options: { dirs: string[] } | { servers: Record<string, unknown> },
+): ObjectPlugin {
+  return {
+    name: id,
+    async apply(ctx) {
+      const factory = await boot.importPlugin(id);
+      const plugin = id === "skills"
+        ? (factory as (input: { dirs: string[] }) => ObjectPlugin)(options as { dirs: string[] })
+        : (factory as (input: { servers: Record<string, unknown> }) => ObjectPlugin)(options as { servers: Record<string, unknown> });
+      if (!plugin || typeof plugin.apply !== "function") {
+        throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
+      }
+      return plugin.apply(ctx);
+    },
+  };
+}
+
+function builtinLoaderEntryFor(
+  boot: PluginBoot,
+  entry: import("@innocencecode/kernel-loader").EntryOptions,
   config: InnocenceConfig,
   workspaceRoot: string,
-): Promise<SessionPlugin> {
-  const value = await boot.importPlugin(id);
-  switch (id) {
-    case "fs":
-    case "shell":
-    case "todo":
-    case "subagent":
-      return value as SessionPlugin;
-    case "skills":
-      // 多根：根序即优先序——项目层先于用户层（同名项目层胜出）。
-      return (value as (options: { dirs: string[] }) => SessionPlugin)({
-        dirs: [
+): SessionLoaderPlugin {
+  const id = entry.id;
+  let plugin: ObjectPlugin | undefined;
+  if (id === "skills") {
+    const configuredDirs = (entry.config as { dirs?: unknown } | undefined)?.dirs;
+    const dirs = Array.isArray(configuredDirs) && configuredDirs.every((dir) => typeof dir === "string")
+      ? configuredDirs as string[]
+      : [
           path.join(workspaceRoot, ".innocence", "skills"),
           path.join(os.homedir(), ".innocence", "skills"),
-        ],
-      });
-    case "mcp":
-      return (value as (options: { servers: Record<string, unknown> }) => SessionPlugin)({
-        servers: (config.mcpServers ?? {}) as Record<string, unknown>,
-      });
-    default:
-      throw new Error(`builtin plugin "${id}" has no composition branch`);
+        ];
+    plugin = factoryLoaderPlugin(boot, "skills", { dirs });
+  } else if (id === "mcp") {
+    const configuredServers = (entry.config as { servers?: unknown } | undefined)?.servers;
+    const servers = configuredServers && typeof configuredServers === "object" && !Array.isArray(configuredServers)
+      ? configuredServers as Record<string, unknown>
+      : (config.mcpServers ?? {}) as Record<string, unknown>;
+    plugin = factoryLoaderPlugin(boot, "mcp", { servers });
   }
+  return {
+    name: id,
+    options: entry,
+    resolver: boot.moduleResolver,
+    ...(plugin ? { plugin } : {}),
+    core: id === "fs" || id === "shell",
+  };
 }
 
 /**
@@ -208,25 +233,15 @@ export function createSessionComposition(
       }
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
-      const active = new Set(resolved.active);
       const plugins: SessionPlugin[] = [];
-      if (active.has("fs")) plugins.push(await builtinPluginFor(boot, "fs", config, workspaceRoot));
-      if (active.has("shell")) plugins.push(await builtinPluginFor(boot, "shell", config, workspaceRoot));
-      // 项目权限规则在关系模型之外（spec 非目标：不可关闭），恒定注入。
+      for (const entry of resolved.entries) {
+        if (entry.id === "example" || entry.disabled) continue;
+        plugins.push(builtinLoaderEntryFor(boot, entry, config, workspaceRoot));
+      }
+      // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
-      if (active.has("subagent")) {
-        plugins.push(await builtinPluginFor(boot, "subagent", config, workspaceRoot));
-      }
-      if (active.has("skills")) {
-        plugins.push(await builtinPluginFor(boot, "skills", config, workspaceRoot));
-      }
-      if (active.has("mcp")) plugins.push(await builtinPluginFor(boot, "mcp", config, workspaceRoot));
-      if (active.has("todo")) plugins.push(await builtinPluginFor(boot, "todo", config, workspaceRoot));
-      // Provider assembly per session (the build-time settings): one provider
-      // plugin named "provider" — the session kernel resolves the registry's
-      // sole registered provider, so this is the only provider path. A caller
-      // that passes no settings (integration probes) gets the default-shaped
-      // settings — the mock-provider path.
+      // Provider assembly per session remains a host concern outside the builtin
+      // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(buildProviderFromSettings(settings ?? DEFAULT_SETTINGS)));
       return plugins;
     },

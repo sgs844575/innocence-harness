@@ -38,6 +38,7 @@ export class AgentSession {
   readonly sessionId: string;
   readonly history: Message[];
   readonly options: AgentSessionOptions;
+  readonly loaderEntries: readonly import("@innocencecode/kernel-loader").LoaderEntry[];
 
   private readonly kernel: SessionKernel;
   private readonly loop: RunLoopFunction;
@@ -64,6 +65,7 @@ export class AgentSession {
     this.workspaceRoot = options.workspaceRoot;
     this.sessionId = sessionId;
     this.history = kernel.services.session.history;
+    this.loaderEntries = kernel.loaderEntries;
     this.logger = options.logger ?? noopLogger;
     this.spawner = makeSessionSpawner(kernel.services.spawner, sessionId, kernel.view);
     this.loop = spine.loop.createRunLoop({
@@ -94,6 +96,7 @@ export class AgentSession {
     const kernel = await mountSessionKernel({
       sessionId,
       plugins: options.plugins,
+      loaderEntries: options.loaderEntries,
       scope: options.scope,
       spine,
       provider: options.provider,

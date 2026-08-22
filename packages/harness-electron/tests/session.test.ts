@@ -95,6 +95,45 @@ describe("AgentSession", () => {
     expect(result.finalText).toContain("echo:");
   });
 
+  it("isolates a non-core loader entry failure and keeps sibling tools available", async () => {
+    const logs: string[] = [];
+    const probe = probeTool();
+    const session = await AgentSession.create({
+      plugins: [],
+      loaderEntries: [
+        {
+          core: false,
+          options: { id: "broken", name: "broken" },
+          plugin: {
+            name: "broken",
+            apply() {
+              throw new Error("broken entry");
+            },
+          },
+        },
+        {
+          core: false,
+          options: { id: "probe", name: "probe", config: { source: "entry" } },
+          plugin: {
+            name: "probe",
+            apply(ctx) {
+              expect(ctx.entry?.options.config).toEqual({ source: "entry" });
+              ctx.tools.register(probe);
+            },
+          },
+        },
+      ],
+      provider: echoProvider(),
+      workspaceRoot: "D:/tmp",
+      permission: { mode: "auto", decider: { ask: async () => "deny" } },
+      logger: (_level, message) => logs.push(message),
+    });
+    expect(session.registry.tools.has("Probe")).toBe(true);
+    expect(session.loaderEntries.map((entry) => entry.id)).toEqual(["broken", "probe"]);
+    expect(logs.join("\n")).toContain("broken");
+    await session.dispose();
+  });
+
   it("throws when the requested provider is missing", async () => {
     await expect(
       AgentSession.create({
@@ -104,6 +143,29 @@ describe("AgentSession", () => {
         permission: { mode: "auto", decider: { ask: async () => "deny" } },
       }),
     ).rejects.toThrow("provider not found: nope");
+  });
+
+  it("rejects a session when a core loader entry fails", async () => {
+    await expect(
+      AgentSession.create({
+        plugins: [],
+        loaderEntries: [
+          {
+            core: true,
+            options: { id: "core-broken", name: "core-broken" },
+            plugin: {
+              name: "core-broken",
+              apply() {
+                throw new Error("core failure");
+              },
+            },
+          },
+        ],
+        provider: echoProvider(),
+        workspaceRoot: "D:/tmp",
+        permission: { mode: "auto", decider: { ask: async () => "deny" } },
+      }),
+    ).rejects.toThrow(/core failure/);
   });
 
   it("resolves the sole registry provider when no explicit provider is given", async () => {

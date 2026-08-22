@@ -79,6 +79,7 @@ export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
           agents,
           session,
           loop,
+          loader,
         } as unknown as SessionSpineSuite,
         loader: loader as LoaderModule,
       };
