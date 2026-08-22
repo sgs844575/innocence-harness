@@ -50,6 +50,14 @@ function Badge({ text }: { text: string }): React.JSX.Element {
   );
 }
 
+function InventoryError({ t }: { t: (key: string) => string }): React.JSX.Element {
+  return (
+    <p role="alert" className="card px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+      {t("settings.plugins.inventoryError")}
+    </p>
+  );
+}
+
 /** 清单未返回时的骨架（无开关、无文案行，避免闪烁出旧状态）。 */
 function InventorySkeleton(): React.JSX.Element {
   return (
@@ -69,12 +77,15 @@ export function PluginsSection({
   settings,
   onSettingsChange,
   inventory,
+  inventoryError = false,
 }: {
   t: (key: string) => string;
   settings: HarnessSettings;
   onSettingsChange: (next: HarnessSettings) => void;
   /** 清单投影（App 层拉取）；null = 未返回（骨架态），[] = 空清单。 */
   inventory: PluginInventory | null;
+  /** 清单读取失败后显示错误态，而不是把失败伪装为空清单。 */
+  inventoryError?: boolean;
 }): React.JSX.Element {
   const toggles = settings.pluginToggles;
 
@@ -87,6 +98,7 @@ export function PluginsSection({
     });
   };
 
+  if (inventoryError) return <InventoryError t={t} />;
   if (inventory === null) return <InventorySkeleton />;
 
   return (

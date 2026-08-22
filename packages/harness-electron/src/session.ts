@@ -6,97 +6,23 @@
 // Home: the harness-electron host-adapter package (the Electron shell's
 // runtime glue) — the session family moved here when the retired core package
 // was deleted; the module itself stays host-agnostic (no Electron imports).
-import type { Context } from "@innocencecode/kernel";
 import type { RunLoopFunction } from "@innocencecode/harness-agent-loop";
-import {
-  nextRouteId,
-  nextSessionId,
-  type ExecutionScopeIdentity,
-} from "@innocencecode/harness-tools";
-import type { HarnessEventListener } from "@innocencecode/harness-session";
-import type {
-  PermissionAuditor,
-  PermissionDecider,
-  PermissionEngine,
-  ResourceValidator,
-} from "@innocencecode/harness-permissions";
-import type { ProjectPermissionConfig } from "@innocencecode/harness-permissions";
-import type { PermissionMode } from "@innocencecode/harness-permissions";
+import { nextRouteId, nextSessionId, type ExecutionScopeIdentity } from "@innocencecode/harness-tools";
+import type { HarnessEventListener, Message } from "@innocencecode/harness-session";
+import type { PermissionEngine, PermissionMode } from "@innocencecode/harness-permissions";
 import type { Provider } from "@innocencecode/harness-providers";
-import type { Logger, SessionPlugin } from "./registry";
+import type { Logger } from "./registry";
 import { mountSessionKernel, type SessionKernel } from "./session-kernel";
 import type { SessionRegistryView } from "./session-registry-view";
 import { createSpawnerChildSession, makeSessionSpawner } from "./session-spawner";
-import { textMessage, type Message } from "@innocencecode/harness-session";
 import type { SubagentSpawner } from "@innocencecode/harness-agent";
 import { staticSpineSuite, type SessionSpineSuite } from "./session-spine";
-
-export interface AgentSessionOptions {
-  /** Legacy HarnessPlugins (activate) and kernel-native plugins (apply); the
-   *  session kernel loads both (dual-track, see session-kernel.ts). */
-  plugins: SessionPlugin[];
-  /**
-   * Injected kernel scope (e.g. one route scope below a host-owned root,
-   * created with the kernel's `createScope`): the session mounts into this
-   * scope's context and fiber instead of a fresh root context. Disposing the
-   * session unwinds the scope fiber, so a host can cascade route teardown
-   * from either side; omitted (the default, and every pre-existing caller)
-   * keeps the self-contained per-session root.
-   */
-  scope?: { ctx: Context };
-  /**
-   * Spine suite the session mounts (see session-spine.ts): hosts that load
-   * the spine from the distributed tree inject the loaded suite so the
-   * session's mounts share those module identities with the boot root and
-   * the disk-loaded capability plugins; omitted (the default, and every
-   * pre-existing caller) mounts the bundled static spine.
-   */
-  spine?: SessionSpineSuite;
-  /** Provider instance, or the id of one registered by a plugin. */
-  provider?: Provider;
-  providerId?: string;
-  workspaceRoot: string;
-  systemPrompt?: string;
-  permission: {
-    mode: PermissionMode;
-    decider: PermissionDecider;
-    projectConfig?: ProjectPermissionConfig;
-    /** Inject an existing engine (e.g. parent session's) to share rules+grants. */
-    engine?: PermissionEngine;
-    /**
-     * Hard resource validation for the session-built engine — runs in every
-     * mode (full only skips asking). Ignored when `engine` is injected (the
-     * injected engine carries its own validator).
-     */
-    validateResource?: ResourceValidator;
-    /**
-     * Audit sink for the session-built engine; one entry per resolution with
-     * the persisted request. Ignored when `engine` is injected.
-     */
-    audit?: PermissionAuditor;
-  };
-  compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
-  maxTurns?: number;
-  toolTimeoutMs?: number;
-  logger?: Logger;
-}
-
-export interface RunSummary {
-  turns: number;
-  finalText: string;
-  aborted: boolean;
-}
+import { canonicalUserMessage, executeSessionRun, settleSessionKernel } from "./session-lifecycle";
+import type { AgentSessionOptions, RunSummary } from "./session-options";
+export type { AgentSessionOptions, RunSummary } from "./session-options";
 
 const noopLogger: Logger = () => {};
 
-/** Converts the run input into a canonical user message or throws. */
-function canonicalUserMessage(input: string | Message): Message {
-  const message = typeof input === "string" ? textMessage("user", input) : input;
-  if (message.role !== "user") {
-    throw new Error(`AgentSession.run() only accepts user messages (got "${message.role}")`);
-  }
-  return message;
-}
 
 /**
  * Ties the kernel context, spine services, provider, permission engine,
@@ -236,7 +162,7 @@ export class AgentSession {
     // BEFORE the first await: a dispose() racing the entry phase (message
     // processing) must wait for this run to settle instead of releasing the
     // kernel underneath it.
-    const running = this.executeRun(canonical, runScope, abort);
+    const running = executeSessionRun(this.kernel, this.loop, canonical, runScope, abort);
     this.activeRun = running;
     try {
       return await running;
@@ -244,19 +170,6 @@ export class AgentSession {
       this.activeRun = undefined;
       this.abort = undefined;
     }
-  }
-
-  /** Processing + loop — the promise activeRun tracks. */
-  private async executeRun(
-    canonical: Message,
-    runScope: ExecutionScopeIdentity,
-    abort: AbortController,
-  ): Promise<RunSummary> {
-    const processed = await this.kernel.services.session.processUserInput(
-      canonical,
-      abort.signal,
-    );
-    return this.loop(processed, { signal: abort.signal, scope: runScope });
   }
 
   stop(): void {
@@ -276,36 +189,12 @@ export class AgentSession {
     this.disposed = true;
     this.abort?.abort();
     const active = this.activeRun;
-    this.disposeInFlight = this.settleKernel(active);
+    this.disposeInFlight = settleSessionKernel(this.kernel, active);
     try {
       await this.disposeInFlight;
     } finally {
       this.disposeInFlight = undefined;
       this.disposeSettled = true;
-    }
-  }
-
-  /**
-   * Unwinds the kernel and surfaces plugin dispose failures with the legacy
-   * registry's shape (AggregateError, `plugin dispose failed: ...`) so hosts
-   * observing session.dispose() rejections keep their error-level handling.
-   */
-  private async settleKernel(active: Promise<unknown> | undefined): Promise<void> {
-    if (active) await active.catch(() => {});
-    const errors: unknown[] = [];
-    try {
-      await this.kernel.ctx.fiber.dispose();
-    } catch (error) {
-      errors.push(error);
-    }
-    for (const fiber of this.kernel.pluginFibers) {
-      errors.push(...fiber.unwindErrors);
-    }
-    if (errors.length > 0) {
-      const detail = errors
-        .map((error) => (error instanceof Error ? error.message : String(error)))
-        .join("; ");
-      throw new AggregateError(errors, `plugin dispose failed: ${detail}`);
     }
   }
 

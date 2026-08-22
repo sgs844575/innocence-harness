@@ -44,6 +44,32 @@ const res = (content: string, over: Partial<ToolResultPart> = {}): ToolResultPar
   ({ type: "toolResult", toolCallId: "c1", content, isError: false, durationMs: 500, ...over });
 
 describe("loadPluginClients", () => {
+  it("并行结算：慢条目未完成时，成功条目已注册", async () => {
+    const registry = createSlotRegistry();
+    let releaseSlow!: () => void;
+    let resolveGood!: () => void;
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const good = new Promise<void>((resolve) => { resolveGood = resolve; });
+    const loading = loadPluginClients({
+      inventory: [entry("slow"), entry("good")],
+      registry,
+      importModule: async (url) => {
+        if (url.includes("slow")) {
+          await slow;
+          return { default: (api) => { api.registerToolCard("slow", {}); } };
+        }
+        await good;
+        return { default: (api) => { api.registerToolCard("good", {}); } };
+      },
+    });
+
+    resolveGood();
+    await vi.waitFor(() => expect(resolveCard(registry, "good")).toBeDefined());
+    expect(resolveCard(registry, "slow")).toBeUndefined();
+    releaseSlow();
+    await loading;
+  });
+
   it("成功链：active+client 条目按协议 URL 装载，default(api) 的注册进槽位", async () => {
     const registry = createSlotRegistry();
     const urls: string[] = [];
@@ -142,6 +168,29 @@ describe("loadPluginClients", () => {
     expect(resolveCard(registry, "example")).toBeUndefined();
   });
 
+  it("重装载撤销仍在结算的回合，迟到注册不会恢复已停用卡", async () => {
+    const registry = createSlotRegistry();
+    let release!: () => void;
+    const delayed = new Promise<void>((resolve) => { release = resolve; });
+    const first = loadPluginClients({
+      inventory: [entry("example")],
+      registry,
+      importModule: async () => {
+        await delayed;
+        return { default: (api) => { api.registerToolCard("example", {}); } };
+      },
+    });
+
+    await loadPluginClients({
+      inventory: [entry("example", { state: "disabled-by-config" })],
+      registry,
+      importModule: async () => ({ default: () => {} }),
+    });
+    release();
+    await first;
+
+    expect(resolveCard(registry, "example")).toBeUndefined();
+  });
   it("不同注册表互不干扰（撤销集按注册表隔离）", async () => {
     const a = createSlotRegistry();
     const b = createSlotRegistry();

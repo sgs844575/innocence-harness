@@ -23,6 +23,8 @@ export interface SettingsSectionDeps {
   onPickWorkspace: () => void;
   /** 插件清单投影（App 层拉取，设置写入后重拉）；null = 未返回。 */
   pluginInventory: PluginInventory | null;
+  /** 清单读取失败标记；插件分区据此显示可恢复的错误态。 */
+  pluginInventoryError?: boolean;
 }
 
 /** 单条注册哑组件：每条贡献独立持钩（T3 范式）。 */
@@ -80,13 +82,14 @@ export function BuiltinSettingsSections({ deps }: { deps: SettingsSectionDeps })
           labelKey: "settings.section.plugins",
           icon: Puzzle,
           render: () => {
-            const { t, settings, onSettingsChange, pluginInventory } = p();
+            const { t, settings, onSettingsChange, pluginInventory, pluginInventoryError } = p();
             return settings === null ? null : scroll(
               <PluginsSection
                 t={t}
                 settings={settings}
                 onSettingsChange={onSettingsChange}
                 inventory={pluginInventory}
+                inventoryError={pluginInventoryError}
               />,
             );
           },

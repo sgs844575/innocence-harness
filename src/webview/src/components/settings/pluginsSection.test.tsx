@@ -168,6 +168,21 @@ describe("PluginsSection（清单投影驱动）", () => {
     expect(screen.queryByText(/plugins\.yml 优先/)).toBeNull();
   });
 
+  it("清单读取失败：显示错误态而非骨架或空清单", () => {
+    render(
+      <PluginsSection
+        t={t}
+        settings={baseSettings()}
+        onSettingsChange={() => {}}
+        inventory={[]}
+        inventoryError
+      />,
+    );
+    expect(screen.getByText("无法读取插件清单")).toBeTruthy();
+    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(screen.queryByText("暂无插件")).toBeNull();
+  });
+
   it("空清单：空态提示", () => {
     render(<PluginsSection t={t} settings={baseSettings()} onSettingsChange={() => {}} inventory={[]} />);
     expect(screen.getByText("暂无插件")).toBeTruthy();
