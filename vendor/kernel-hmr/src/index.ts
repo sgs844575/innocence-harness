@@ -9,27 +9,28 @@ export interface HmrService {
 export const HmrPlugin: ObjectPlugin = {
   name: "kernel-hmr",
   apply(ctx: Context) {
-    const callbacks = new Map<string, () => Promise<void>>();
+    type Registration = { restart: () => Promise<void>; off: () => void | Promise<void> };
+    const callbacks = new Map<string, Registration>();
     const service: HmrService = {
       watch(id, restart) {
-        callbacks.set(id, restart);
-        let active = true;
-        const off = ctx.effect(() => () => {
-          if (active && callbacks.get(id) === restart) callbacks.delete(id);
-          active = false;
+        callbacks.get(id)?.off();
+        const registration = { restart, off: (() => {}) as () => void | Promise<void> };
+        registration.off = ctx.effect(() => () => {
+          if (callbacks.get(id) === registration) callbacks.delete(id);
         }, `hmr ${id}`);
-        return () => { off(); };
+        callbacks.set(id, registration);
+        return () => { registration.off(); };
       },
       async restart(id) {
-        const callback = callbacks.get(id);
-        if (!callback) throw new Error(`hmr target not found: ${id}`);
-        await callback();
+        const registration = callbacks.get(id);
+        if (!registration) throw new Error(`hmr target not found: ${id}`);
+        await registration.restart();
       },
       async stop(id) {
-        const callback = callbacks.get(id);
-        if (!callback) return;
+        const registration = callbacks.get(id);
+        if (!registration) return;
         callbacks.delete(id);
-        // The callback remains owned by its effect; stop only disables its route.
+        await registration.off();
       },
     };
     return ctx.provide("hmr", service);

@@ -31,11 +31,12 @@ describe("kernel hmr service", () => {
   });
 
   it("stops targets idempotently and isolates ids", async () => {
-    const { ctx } = await setup();
+    const { ctx, fiber } = await setup();
     let count = 0;
     ctx.hmr.watch("a", async () => { count += 1; });
     ctx.hmr.watch("b", async () => { count += 10; });
     await ctx.hmr.stop("a");
+    expect(fiber.getEffects().filter(({ label }) => label === "hmr a")).toHaveLength(0);
     await ctx.hmr.stop("a");
     await expect(ctx.hmr.restart("a")).rejects.toThrow();
     await ctx.hmr.restart("b");
