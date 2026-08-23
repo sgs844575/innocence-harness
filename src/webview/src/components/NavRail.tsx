@@ -3,10 +3,10 @@
 // nav (chat sidebar / settings menu) is active; full navigation stays in the
 // overlay drawer. Pure content; the shell column supplies background and
 // borders.
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
 
 export interface RailItem {
-  icon: LucideIcon;
+  icon: ComponentType<{ size?: number; className?: string }>;
   label: string;
   onClick: () => void;
   active?: boolean;

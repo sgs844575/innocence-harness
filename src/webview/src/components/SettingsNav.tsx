@@ -5,7 +5,7 @@
 // 自 1c 起分区清单从 settings.section 槽位派生（内置贡献由
 // builtinSettingsSections 注册；SettingsSection 类型保留内置五值联合）。
 import { ArrowLeft } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
 import { useSlotList } from "../slots/react";
 import { NavRail } from "./NavRail";
 
@@ -15,7 +15,8 @@ export type SettingsSection =
   | "plugins"
   | "skills"
   | "appearance"
-  | "about";
+  | "about"
+  | (string & {});
 
 /** 设置分区槽位标识：每个分区一条贡献（list，注册序即清单序）。 */
 export const SETTINGS_SECTION_SLOT = "settings.section";
@@ -24,7 +25,7 @@ export const SETTINGS_SECTION_SLOT = "settings.section";
 export interface SettingsSectionContribution {
   id: SettingsSection;
   labelKey: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ size?: number; className?: string }>;
   render: () => React.ReactNode;
 }
 

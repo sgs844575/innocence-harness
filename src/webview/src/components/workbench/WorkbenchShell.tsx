@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { zhCN } from "../../lib/i18n";
-import { WorkbenchTabs, type WorkbenchTabId } from "./WorkbenchTabs";
+import { WorkbenchTabs, PANEL_SLOT, type WorkbenchPanelContribution, type WorkbenchTabId } from "./WorkbenchTabs";
+import { useSlotList } from "../../slots/react";
 import { ResizeHandle } from "./ResizeHandle";
 import "../../styles/workbench.css";
 
@@ -139,6 +140,8 @@ export function WorkbenchShell({
     });
   }, []);
 
+  const panelContributions = useSlotList<WorkbenchPanelContribution>(PANEL_SLOT);
+
   const panelBody = (widthStyle: React.CSSProperties | undefined, className: string) => (
     <div
       role="dialog"
@@ -159,7 +162,8 @@ export function WorkbenchShell({
         </button>
       </header>
       <div className="workbench-panel-body scrollbar-thin flex min-h-0 flex-1 flex-col overflow-auto">
-        {(Object.keys(panels) as WorkbenchTabId[]).map((id) => {
+        {panelContributions.map((panel) => {
+          const id = panel.id;
           const visible = id === active;
           // 终端面板常驻挂载（xterm scrollback 不因切页签而丢）；其余页签
           // 按需挂载——卸载即从可访问树移除。
@@ -170,7 +174,7 @@ export function WorkbenchShell({
               className="flex min-h-0 flex-1 flex-col"
               style={{ display: visible ? undefined : "none" }}
             >
-              {panels[id]}
+              {panel.render() ?? panels[id]}
             </div>
           );
         })}

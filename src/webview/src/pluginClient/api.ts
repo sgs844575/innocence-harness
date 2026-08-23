@@ -1,7 +1,7 @@
 // 插件渲染层注册面（PluginClientApi）：描述符式与组件式工具卡、工作台面板、
 // 设置分区注册均经槽位的 subscribe 通道驱动消费组件重渲染；生命周期由装载器
 // 经 dispose 持有（同注册表重装载先撤销旧注册）。
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType } from "react";
 import type { SlotRegistry } from "../slots/registry";
 import {
   createDescriptorCard,
@@ -9,10 +9,8 @@ import {
 } from "../components/chat/toolcards/DescriptorToolCard";
 import type { ToolCardProps } from "../components/chat/toolcards/registry";
 import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
-
-const TOOLCARD_COMPONENT_SLOT = "toolcard";
-const PANEL_SLOT = "panel";
-const SETTINGS_SECTION_SLOT = "settings.section";
+import { PANEL_SLOT } from "../components/workbench/WorkbenchTabs";
+import { SETTINGS_SECTION_SLOT } from "../components/SettingsNav";
 
 /**
  * PluginClientApi：描述符式工具卡与三类组件贡献注册面。
@@ -22,13 +20,8 @@ export interface PluginClientApi {
   registerToolCard(toolName: string, descriptor: ToolCardDescriptor): void;
   registerToolCardPrefix(prefix: string, descriptor: ToolCardDescriptor): void;
   registerToolCardComponent(name: string, component: ComponentType<ToolCardProps>): () => void;
-  registerPanel(id: string, labelKey: string, render: () => ReactNode): () => void;
-  registerSettingsSection(
-    id: string,
-    labelKey: string,
-    icon: ComponentType,
-    render: () => ReactNode,
-  ): () => void;
+  registerPanel(contribution: ExternalPanelContribution): () => void;
+  registerSettingsSection(section: ExternalSettingsContribution): () => void;
 }
 
 /** 工厂产物：api 交 client 模块的 default 注册函数；dispose 撤销该 api
@@ -43,8 +36,7 @@ export function createPluginClientApi(
   registry: SlotRegistry,
   slotName: string,
 ): PluginClientApiHandle {
-  const descriptorSlot = registry.keyed<ComponentType<ToolCardProps>>(slotName);
-  const toolCardSlot = registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_COMPONENT_SLOT);
+  const toolCardSlot = registry.keyed<ComponentType<ToolCardProps>>(slotName);
   const panelSlot = registry.list<ExternalPanelContribution>(PANEL_SLOT);
   const settingsSectionSlot = registry.list<ExternalSettingsContribution>(SETTINGS_SECTION_SLOT);
   const unregisters: Array<() => void> = [];
@@ -56,32 +48,21 @@ export function createPluginClientApi(
   };
   const registerDescriptor = (key: string, descriptor: ToolCardDescriptor): void => {
     if (disposed) return;
-    track(descriptorSlot.register({ key, value: createDescriptorCard(descriptor) }));
+    track(toolCardSlot.register({ key, value: createDescriptorCard(descriptor) }));
   };
   const registerComponent = (
     component: ComponentType<ToolCardProps>,
     name: string,
   ): () => void => {
     if (disposed) return noop;
-    return track(toolCardSlot.register({ key: name, value: component }));
+    return track(toolCardSlot.register({ key: name, priority: 100, value: component }));
   };
-  const registerPanelContribution = (
-    id: string,
-    labelKey: string,
-    render: () => ReactNode,
-  ): () => void => {
+  const registerPanelContribution = (contribution: ExternalPanelContribution): () => void => {
     if (disposed) return noop;
-    const contribution: ExternalPanelContribution = { id, labelKey, render };
     return track(panelSlot.register(contribution));
   };
-  const registerSettingsContribution = (
-    id: string,
-    labelKey: string,
-    icon: ComponentType,
-    render: () => ReactNode,
-  ): () => void => {
+  const registerSettingsContribution = (contribution: ExternalSettingsContribution): () => void => {
     if (disposed) return noop;
-    const contribution: ExternalSettingsContribution = { id, labelKey, icon, render };
     return track(settingsSectionSlot.register(contribution));
   };
   return {

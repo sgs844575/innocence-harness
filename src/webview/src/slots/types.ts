@@ -11,7 +11,7 @@ export interface ExternalPanelContribution {
 export interface ExternalSettingsContribution {
   id: string;
   labelKey: string;
-  icon: ComponentType;
+  icon: ComponentType<{ size?: number; className?: string }>;
   render: () => ReactNode;
 }
 

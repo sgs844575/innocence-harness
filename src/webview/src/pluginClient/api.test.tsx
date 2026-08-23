@@ -71,10 +71,10 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
 
     const off = handle.api.registerToolCardComponent("component-card", Card);
 
-    expect(registry.keyed<ComponentType<ToolCardProps>>("toolcard").resolve("component-card")).toBe(Card);
+    expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("component-card")).toBe(Card);
     expect(typeof off).toBe("function");
     off();
-    expect(registry.keyed<ComponentType<ToolCardProps>>("toolcard").resolve("component-card")).toBeUndefined();
+    expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("component-card")).toBeUndefined();
   });
 
   it("registerPanel：贡献按注册序进入 panel 槽位", () => {
@@ -86,16 +86,12 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
       render: () => "panel",
     };
 
-    const off = api.registerPanel(
-      contribution.id,
-      contribution.labelKey,
-      contribution.render,
-    );
+    const off = api.registerPanel(contribution);
 
-    expect(registry.list<ExternalPanelContribution>("panel").all()).toEqual([contribution]);
+    expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([contribution]);
     expect(typeof off).toBe("function");
     off();
-    expect(registry.list<ExternalPanelContribution>("panel").all()).toEqual([]);
+    expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([]);
   });
 
   it("registerSettingsSection：贡献按注册序进入 settings.section 槽位", () => {
@@ -109,12 +105,7 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
       render: () => "settings",
     };
 
-    const off = api.registerSettingsSection(
-      contribution.id,
-      contribution.labelKey,
-      contribution.icon,
-      contribution.render,
-    );
+    const off = api.registerSettingsSection(contribution);
 
     expect(registry.list<ExternalSettingsContribution>("settings.section").all()).toEqual([contribution]);
     expect(typeof off).toBe("function");
@@ -129,16 +120,16 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
     const Icon: ComponentType = () => null;
 
     handle.api.registerToolCardComponent("component-card", Card);
-    handle.api.registerPanel("panel", "panel", () => null);
-    handle.api.registerSettingsSection("settings", "settings", Icon, () => null);
+    handle.api.registerPanel({ id: "panel", labelKey: "panel", render: () => null });
+    handle.api.registerSettingsSection({ id: "settings", labelKey: "settings", icon: Icon, render: () => null });
     handle.dispose();
 
-    expect(registry.keyed<ComponentType<ToolCardProps>>("toolcard").resolve("component-card")).toBeUndefined();
-    expect(registry.list<ExternalPanelContribution>("panel").all()).toEqual([]);
+    expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("component-card")).toBeUndefined();
+    expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([]);
     expect(registry.list<ExternalSettingsContribution>("settings.section").all()).toEqual([]);
     expect(() => handle.dispose()).not.toThrow();
-    expect(() => handle.api.registerPanel("late", "late", () => null)).not.toThrow();
-    expect(registry.list<ExternalPanelContribution>("panel").all()).toEqual([]);
+    expect(() => handle.api.registerPanel({ id: "late", labelKey: "late", render: () => null })).not.toThrow();
+    expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([]);
   });
 
 });
