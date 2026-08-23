@@ -102,20 +102,45 @@ function buildProviderFromSettings(settings: HarnessSettings): Provider {
   }
 }
 
-/** Resolve a host-only factory plugin before handing it to the loader. */
-async function resolveFactoryPlugin(
+/** Resolve a host-only factory lazily at the loader entry boundary. */
+function factoryPlugin(
   boot: PluginBoot,
   id: "skills" | "mcp",
-  options: { dirs: string[] } | { servers: Record<string, unknown> },
-): Promise<ObjectPlugin> {
-  const factory = await boot.importPlugin(id);
-  const plugin = id === "skills"
-    ? (factory as (input: { dirs: string[] }) => ObjectPlugin)(options as { dirs: string[] })
-    : (factory as (input: { servers: Record<string, unknown> }) => ObjectPlugin)(options as { servers: Record<string, unknown> });
-  if (!plugin || typeof plugin.apply !== "function") {
-    throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
+  options: () => { dirs: string[] } | { servers: Record<string, unknown> },
+): ObjectPlugin {
+    return {
+    name: `factory:${id}`,
+    async apply(ctx) {
+      const factory = await boot.importPlugin(id);
+      const input = options();
+      const create = factory as (value: typeof input) => ObjectPlugin | Promise<ObjectPlugin>;
+      const plugin = await create(input);
+      if (!plugin || typeof plugin.apply !== "function") {
+        throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
+      }
+      return plugin.apply(ctx);
+    },
+  };
+}
+
+function factoryConfig(
+  id: "skills" | "mcp",
+  config: unknown,
+  workspaceRoot: string,
+  project: InnocenceConfig,
+): { dirs: string[] } | { servers: Record<string, unknown> } {
+  if (id === "skills") {
+    const configured = config as { dirs?: unknown } | undefined;
+    if (config !== undefined && (!configured || !Array.isArray(configured.dirs) || !configured.dirs.every((v) => typeof v === "string"))) {
+      throw new Error("invalid skills group config: dirs must be a string array");
+    }
+    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")] };
   }
-  return plugin;
+  const configured = config as { servers?: unknown } | undefined;
+  if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
+    throw new Error("invalid mcp group config: servers must be an object");
+  }
+  return { servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown> };
 }
 
 function validGroupSegment(value: unknown): value is string {
@@ -132,22 +157,8 @@ type ResolvedGroupChild = {
 
 function groupChildOptions(
   entry: import("@innocencecode/kernel-loader").EntryOptions,
-  config: InnocenceConfig,
-  workspaceRoot: string,
 ): ResolvedGroupChild {
-  const child: ResolvedGroupChild = { ...entry, name: entry.name ?? entry.id };
-  if (child.name === "skills" || child.name === "kernel:skills") {
-    const dirs = (child.config as { dirs?: unknown } | undefined)?.dirs;
-    child.config = { dirs: Array.isArray(dirs) && dirs.every((dir) => typeof dir === "string")
-      ? dirs as string[]
-      : [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")] };
-  } else if (child.name === "mcp" || child.name === "kernel:mcp") {
-    const servers = (child.config as { servers?: unknown } | undefined)?.servers;
-    child.config = { servers: servers && typeof servers === "object" && !Array.isArray(servers)
-      ? servers as Record<string, unknown>
-      : (config.mcpServers ?? {}) as Record<string, unknown> };
-  }
-  return child;
+  return { ...entry, name: entry.name ?? entry.id };
 }
 
 function groupConfigOf(id: string, config: unknown): { id: string; entries: readonly unknown[] } {
@@ -179,15 +190,15 @@ async function resolveGroupEntries(
       (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
       throw new Error(`loader group entry "${ownerId}" has invalid child`);
     }
-    const options = groupChildOptions(child, config, workspaceRoot);
+    const options = groupChildOptions(child);
     if (options.disabled) {
       resolved.push(options);
       continue;
     }
     if (options.name === "skills" || options.name === "kernel:skills") {
-      options.plugin = await resolveFactoryPlugin(boot, "skills", options.config as { dirs: string[] });
+      options.plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", options.config, workspaceRoot, config));
     } else if (options.name === "mcp" || options.name === "kernel:mcp") {
-      options.plugin = await resolveFactoryPlugin(boot, "mcp", options.config as { servers: Record<string, unknown> });
+      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config));
     } else if (options.name === "kernel:group") {
       const nested = groupConfigOf(options.id, options.config);
       const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id);
@@ -207,17 +218,9 @@ async function builtinLoaderEntryFor(
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
   if (!entry.disabled && id === "skills") {
-    const configuredDirs = (entry.config as { dirs?: unknown } | undefined)?.dirs;
-    const dirs = Array.isArray(configuredDirs) && configuredDirs.every((dir) => typeof dir === "string")
-      ? configuredDirs as string[]
-      : [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")];
-    plugin = await resolveFactoryPlugin(boot, "skills", { dirs });
+    plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
-    const configuredServers = (entry.config as { servers?: unknown } | undefined)?.servers;
-    const servers = configuredServers && typeof configuredServers === "object" && !Array.isArray(configuredServers)
-      ? configuredServers as Record<string, unknown>
-      : (config.mcpServers ?? {}) as Record<string, unknown>;
-    plugin = await resolveFactoryPlugin(boot, "mcp", { servers });
+    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
     const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
