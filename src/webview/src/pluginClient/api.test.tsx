@@ -64,6 +64,18 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
     ).toBeUndefined();
   });
 
+  it("组件卡优先于同名描述符，注销后回落描述符", () => {
+    const registry = createSlotRegistry();
+    const { api } = createPluginClientApi(registry, TOOLCARD_SLOT);
+    const Card: ComponentType<ToolCardProps> = () => null;
+    api.registerToolCard("example", { title: "描述符" });
+    const descriptor = registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("example");
+    const off = api.registerToolCardComponent({ name: "example", component: Card });
+    expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("example")).toBe(Card);
+    off();
+    expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("example")).toBe(descriptor);
+  });
+
   it("registerToolCardComponent：组件按名称注册到 toolcard 槽位并返回注销句柄", () => {
     const registry = createSlotRegistry();
     const handle = createPluginClientApi(registry, TOOLCARD_SLOT);
