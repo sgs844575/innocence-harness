@@ -142,6 +142,7 @@ export function WorkbenchShell({
 
   const panelContributions = useSlotList<WorkbenchPanelContribution>(PANEL_SLOT);
   const activeContribution = panelContributions.find((panel) => panel.id === active);
+  const activeContent = activeContribution?.render() ?? panels[active];
 
   const panelBody = (widthStyle: React.CSSProperties | undefined, className: string) => (
     <div
@@ -180,7 +181,7 @@ export function WorkbenchShell({
             </div>
           );
         })}
-        {activeContribution === undefined && panels[active] === undefined && (
+        {activeContent === undefined && (
           <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">
             {t("workbench.empty")}
           </div>
