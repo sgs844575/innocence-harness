@@ -34,6 +34,18 @@ export function userSkillsRoot(homedir: string = os.homedir()): string {
   return path.join(homedir, ".innocence", "skills");
 }
 
+type SkillFsPort = Pick<typeof fs, "lstat" | "realpath" | "readdir" | "copyFile" | "mkdir" | "rm" | "rename"> & {
+  beforeRecursiveEntry?: (from: string) => Promise<void>;
+};
+
+type CopyContext = {
+  sourceDir: string;
+  canonicalSource: string;
+  canonicalRoots: readonly string[];
+};
+
+const unsafeSourceError = "skill source outside known roots";
+
 /** Parses one external subdirectory into a discovery entry; null = skipped. */
 async function discoverEntry(
   origin: string,
@@ -100,41 +112,173 @@ function isInsideRoot(resolved: string, root: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
-async function validateSourceDir(sourceDir: string, knownRoots: readonly (string | null)[]): Promise<string> {
-  const stat = await fs.lstat(sourceDir).catch(() => null);
+async function validateSourceDir(
+  sourceDir: string,
+  knownRoots: readonly (string | null)[],
+  fsPort: SkillFsPort,
+): Promise<CopyContext> {
+  const stat = await fsPort.lstat(sourceDir).catch(() => null);
   if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) {
-    throw new Error("skill source outside known roots");
+    throw new Error(unsafeSourceError);
   }
-  const resolvedSource = await fs.realpath(sourceDir).catch(() => null);
+  const canonicalRoots = knownRoots.filter((root): root is string => root !== null);
+  const resolvedSource = await fsPort.realpath(sourceDir).catch(() => null);
   if (
     !resolvedSource
-    || !knownRoots.some((r): r is string => r !== null && isInsideRoot(resolvedSource, r))
+    || !canonicalRoots.some((root) => isInsideRoot(resolvedSource, root))
   ) {
-    throw new Error("skill source outside known roots");
+    throw new Error(unsafeSourceError);
   }
-  const finalStat = await fs.lstat(sourceDir).catch(() => null);
+  const finalStat = await fsPort.lstat(sourceDir).catch(() => null);
   if (!finalStat || !finalStat.isDirectory() || finalStat.isSymbolicLink()) {
-    throw new Error("skill source outside known roots");
+    throw new Error(unsafeSourceError);
   }
-  return resolvedSource;
+  return { sourceDir, canonicalSource: resolvedSource, canonicalRoots };
 }
 
-/** Recursively copies a directory tree; symlink entries are skipped to avoid
- *  cycles and to prevent expanding linked directories into real copies. */
-async function copyDir(source: string, target: string): Promise<void> {
-  await fs.mkdir(target, { recursive: true });
-  for (const entry of await fs.readdir(source)) {
+async function assertDirectoryInsideRoots(
+  source: string,
+  context: CopyContext,
+  fsPort: SkillFsPort,
+): Promise<string> {
+  const stat = await fsPort.lstat(source).catch(() => null);
+  if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(unsafeSourceError);
+  }
+  const resolved = await fsPort.realpath(source).catch(() => null);
+  if (
+    !resolved
+    || !isInsideRoot(resolved, context.canonicalSource)
+    || !context.canonicalRoots.some((root) => isInsideRoot(resolved, root))
+  ) {
+    throw new Error(unsafeSourceError);
+  }
+  const finalStat = await fsPort.lstat(source).catch(() => null);
+  const finalResolved = await fsPort.realpath(source).catch(() => null);
+  if (
+    !finalStat
+    || !finalStat.isDirectory()
+    || finalStat.isSymbolicLink()
+    || finalResolved !== resolved
+  ) {
+    throw new Error(unsafeSourceError);
+  }
+  return resolved;
+}
+
+async function assertFileInsideRoots(
+  source: string,
+  context: CopyContext,
+  fsPort: SkillFsPort,
+): Promise<void> {
+  const stat = await fsPort.lstat(source).catch(() => null);
+  if (!stat || !stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(unsafeSourceError);
+  }
+  const resolved = await fsPort.realpath(source).catch(() => null);
+  if (
+    !resolved
+    || !isInsideRoot(resolved, context.canonicalSource)
+    || !context.canonicalRoots.some((root) => isInsideRoot(resolved, root))
+  ) {
+    throw new Error(unsafeSourceError);
+  }
+  const finalStat = await fsPort.lstat(source).catch(() => null);
+  const finalResolved = await fsPort.realpath(source).catch(() => null);
+  if (
+    !finalStat
+    || !finalStat.isFile()
+    || finalStat.isSymbolicLink()
+    || finalResolved !== resolved
+  ) {
+    throw new Error(unsafeSourceError);
+  }
+}
+
+async function copyDir(
+  source: string,
+  target: string,
+  context: CopyContext,
+  fsPort: SkillFsPort,
+  visited: Set<string>,
+  checked = false,
+): Promise<void> {
+  if (!checked) await fsPort.beforeRecursiveEntry?.(source);
+  const canonical = await assertDirectoryInsideRoots(source, context, fsPort);
+  if (source === context.sourceDir && canonical !== context.canonicalSource) {
+    throw new Error(unsafeSourceError);
+  }
+  if (!isInsideRoot(canonical, context.canonicalSource)) {
+    throw new Error(unsafeSourceError);
+  }
+  if (visited.has(canonical)) return;
+  visited.add(canonical);
+  await fsPort.mkdir(target, { recursive: true });
+  const entries = await fsPort.readdir(source);
+  const currentCanonical = await assertDirectoryInsideRoots(source, context, fsPort);
+  if (currentCanonical !== canonical) throw new Error(unsafeSourceError);
+  for (const entry of entries) {
     const from = path.join(source, entry);
     const to = path.join(target, entry);
-    // lstat: do not follow symlinks (directory link cycles would recurse forever)
-    const stat = await fs.lstat(from);
-    if (stat.isSymbolicLink()) continue; // skipped: symlinks are not copied
-    if (stat.isDirectory()) {
-      await copyDir(from, to);
-    } else {
-      await fs.copyFile(from, to);
+    const before = await fsPort.lstat(from);
+    if (before.isSymbolicLink()) continue;
+    await fsPort.beforeRecursiveEntry?.(from);
+    const after = await fsPort.lstat(from).catch(() => null);
+    if (
+      !after
+      || after.isSymbolicLink()
+      || after.isDirectory() !== before.isDirectory()
+    ) {
+      throw new Error(unsafeSourceError);
+    }
+    if (after.isDirectory()) {
+      await copyDir(from, to, context, fsPort, visited, true);
+      continue;
+    }
+    await assertFileInsideRoots(from, context, fsPort);
+    await fsPort.copyFile(from, to);
+    await assertFileInsideRoots(from, context, fsPort);
+  }
+}
+
+async function readExisting(
+  target: string,
+  fsPort: SkillFsPort,
+): Promise<boolean> {
+  const stat = await fsPort.lstat(target).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  });
+  return stat !== null;
+}
+
+async function createTempDirectory(
+  root: string,
+  name: string,
+  fsPort: SkillFsPort,
+): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const temp = path.join(
+      root,
+      `.${name}.importing-${Date.now().toString(36)}-${attempt.toString(36)}`,
+    );
+    try {
+      await fsPort.mkdir(temp);
+      return temp;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
   }
+}
+
+function importedName(skillName: string, collisionCount: number): string {
+  if (collisionCount === 0) return skillName;
+  if (collisionCount === 1) return `${skillName}-imported`;
+  return `${skillName}-imported-${collisionCount}`;
+}
+
+function isTargetCollision(error: unknown): boolean {
+  return ["EEXIST", "ENOTEMPTY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "");
 }
 
 /**
@@ -142,27 +286,55 @@ async function copyDir(source: string, target: string): Promise<void> {
  * the target gets the "-imported" suffix (first free slot). Failures
  * (unreadable source, etc.) propagate to the caller for user feedback.
  */
+export function importSkill(
+  discovered: DiscoveredSkill,
+  targetRoot?: string,
+  homedir?: string,
+): Promise<void>;
 export async function importSkill(
   discovered: DiscoveredSkill,
   targetRoot?: string,
   homedir: string = os.homedir(),
+  fsPort: SkillFsPort = fs,
 ): Promise<void> {
   const root = targetRoot ?? userSkillsRoot(homedir);
-  // name comes from external frontmatter via IPC round-trip — never trust it
   assertValidSkillName(discovered.name);
-  // sourceDir likewise: re-verify it belongs to a known external root
   const knownRoots = await Promise.all(
-    externalSkillRoots(homedir).map(async (r) => fs.realpath(r.dir).catch(() => null)),
+    externalSkillRoots(homedir).map(async (r) => fsPort.realpath(r.dir).catch(() => null)),
   );
-  await validateSourceDir(discovered.sourceDir, knownRoots);
-  let name = discovered.name;
-  if (await fs.stat(path.join(root, name)).catch(() => null)) {
-    name = `${discovered.name}-imported`;
-    let i = 2;
-    while (await fs.stat(path.join(root, name)).catch(() => null)) {
-      name = `${discovered.name}-imported-${i++}`;
+  const context = await validateSourceDir(discovered.sourceDir, knownRoots, fsPort);
+  await fsPort.mkdir(root, { recursive: true });
+
+  let collisionCount = 0;
+  for (;;) {
+    const name = importedName(discovered.name, collisionCount);
+    if (await readExisting(path.join(root, name), fsPort)) {
+      collisionCount++;
+      continue;
+    }
+    const temp = await createTempDirectory(root, name, fsPort);
+    let published = false;
+    try {
+      await copyDir(context.sourceDir, temp, context, fsPort, new Set());
+      const tempStat = await fsPort.lstat(temp);
+      if (!tempStat.isDirectory() || tempStat.isSymbolicLink()) {
+        throw new Error(unsafeSourceError);
+      }
+      const target = path.join(root, name);
+      if (await readExisting(target, fsPort)) {
+        collisionCount++;
+        continue;
+      }
+      try {
+        await fsPort.rename(temp, target);
+        published = true;
+        return;
+      } catch (error) {
+        if (!isTargetCollision(error) || !(await readExisting(target, fsPort))) throw error;
+        collisionCount++;
+      }
+    } finally {
+      if (!published) await fsPort.rm(temp, { recursive: true, force: true }).catch(() => undefined);
     }
   }
-  const source = await validateSourceDir(discovered.sourceDir, knownRoots);
-  await copyDir(source, path.join(root, name));
 }
