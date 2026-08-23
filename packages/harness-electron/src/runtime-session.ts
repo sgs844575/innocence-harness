@@ -84,6 +84,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         plugins: sessionPlugins,
         ...(scope ? { scope } : {}),
         ...(spine ? { spine } : {}),
+        ...(host.options.sessionSpine ? { requireInjectedSpine: true } : {}),
         workspaceRoot,
         systemPrompt: systemPromptFor(settings.activeAgent ?? "default"),
         permission: {

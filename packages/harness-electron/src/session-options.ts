@@ -10,6 +10,8 @@ export interface AgentSessionOptions {
   loaderEntries?: SessionLoaderPlugin[];
   scope?: { ctx: Context };
   spine?: SessionSpineSuite;
+  /** Host policy: this session must receive a dynamically injected spine. */
+  requireInjectedSpine?: boolean;
   /** Explicit self-contained/test seam for the bundled static spine. */
   allowStaticSpine?: boolean;
   provider?: Provider;
