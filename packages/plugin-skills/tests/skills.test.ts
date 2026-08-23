@@ -78,6 +78,7 @@ describe("createSkillsPlugin", () => {
       },
     };
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [createSkillsPlugin({ dirs: [skillsDir] })],
       provider,
       workspaceRoot: "D:/tmp",
@@ -100,6 +101,7 @@ describe("createSkillsPlugin", () => {
       },
     };
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [createSkillsPlugin({ dirs: [skillsDir] })],
       provider,
       workspaceRoot: "D:/tmp",

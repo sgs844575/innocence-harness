@@ -62,6 +62,7 @@ describe("Task tool via session spawner", () => {
     };
 
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [
         {
           name: "wire",
@@ -156,6 +157,7 @@ describe("Task tool via session spawner", () => {
     };
 
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [
         {
           name: "wire",
@@ -226,6 +228,7 @@ describe("Task tool via session spawner", () => {
       },
     };
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [SubagentPlugin],
       provider,
       workspaceRoot: "D:/tmp",
@@ -259,6 +262,7 @@ describe("Task tool via session spawner", () => {
       },
     };
     const session = await AgentSession.create({
+      allowStaticSpine: true,
       plugins: [
         SubagentPlugin,
         {

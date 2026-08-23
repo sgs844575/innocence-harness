@@ -312,6 +312,7 @@ export async function createSessionWith(
   provider: Provider,
 ): Promise<AgentSession> {
   return AgentSession.create({
+    allowStaticSpine: true,
     plugins: [
       {
         name: "test-tools",
@@ -365,6 +366,7 @@ export async function runParentTaskWithChild(options: {
   };
   const tools = [delegateTool, writeTool];
   const session = await AgentSession.create({
+    allowStaticSpine: true,
     plugins: [
       {
         name: "test-tools",
