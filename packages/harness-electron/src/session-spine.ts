@@ -7,6 +7,7 @@
 // pre-distribution behavior, used by every self-contained session and the
 // in-repo tests).
 import type * as KernelLogger from "@innocencecode/kernel-logger";
+import type * as KernelTimer from "@innocencecode/kernel-timer";
 import type * as SpineTools from "@innocencecode/harness-tools";
 import type * as SpinePermissions from "@innocencecode/harness-permissions";
 import type * as SpineProviders from "@innocencecode/harness-providers";
@@ -18,6 +19,7 @@ import type * as SpineLoop from "@innocencecode/harness-agent-loop";
 import type * as KernelLoader from "@innocencecode/kernel-loader";
 import type * as KernelGroup from "@innocencecode/kernel-group";
 import * as loggerModule from "@innocencecode/kernel-logger";
+import * as timerModule from "@innocencecode/kernel-timer";
 import * as toolsModule from "@innocencecode/harness-tools";
 import * as permissionsModule from "@innocencecode/harness-permissions";
 import * as providersModule from "@innocencecode/harness-providers";
@@ -36,6 +38,7 @@ import * as groupModule from "@innocencecode/kernel-group";
  */
 export interface SessionSpineSuite {
   readonly logger: typeof KernelLogger;
+  readonly timer: typeof KernelTimer;
   readonly tools: typeof SpineTools;
   readonly permissions: typeof SpinePermissions;
   readonly providers: typeof SpineProviders;
@@ -63,6 +66,7 @@ let memo: SessionSpineSuite | undefined;
 export function staticSpineSuite(): SessionSpineSuite {
   memo ??= {
     logger: loggerModule,
+    timer: timerModule,
     tools: toolsModule,
     permissions: permissionsModule,
     providers: providersModule,
