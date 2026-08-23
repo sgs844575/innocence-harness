@@ -107,6 +107,24 @@ describe("importMcpServers", () => {
     }
   });
 
+  it("mkdir 后父目录变为非目录时拒绝临时文件写入", async () => {
+    const isolatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-mcp-parent-race-"));
+    const configDir = path.join(isolatedRoot, ".innocence");
+    const originalMkdir = fs.mkdir.bind(fs) as (directory: any, options?: any) => Promise<string | undefined>;
+    const mkdirSpy = vi.spyOn(fs, "mkdir").mockImplementation(async (directory: any, options?: any) => {
+      const created = await originalMkdir(directory, options);
+      await fs.rm(configDir, { recursive: true, force: true });
+      await fs.writeFile(configDir, "not a directory", "utf8");
+      return created;
+    });
+    try {
+      await expect(importMcpServers({ demo: { command: "run" } }, isolatedRoot)).rejects.toThrow(/non-directory/i);
+    } finally {
+      mkdirSpy.mockRestore();
+      await fs.rm(isolatedRoot, { recursive: true, force: true });
+    }
+  });
+
   it("临时文件写入失败后清理临时文件且不留下目标配置", async () => {
     const isolatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-mcp-write-failure-"));
     const configDir = path.join(isolatedRoot, ".innocence");

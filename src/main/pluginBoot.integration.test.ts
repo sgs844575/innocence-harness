@@ -66,6 +66,51 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     );
   });
 
+  it("keeps dynamic root and session timers isolated across disposal", async () => {
+    const isolatedUserRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-timer-user-"));
+    const isolatedBoot = await createPluginBoot({
+      kernelPath: paths.kernelPath,
+      builtinRoot: paths.builtinRoot,
+      userRoot: isolatedUserRoot,
+      workspaceRoot: process.cwd(),
+    });
+    const rootTimer = isolatedBoot.root.timer;
+    rootTimer.setInterval(() => {}, 60_000);
+    const scope = isolatedBoot.createSessionScope();
+    const session = await AgentSession.create({
+      scope,
+      spine: isolatedBoot.spine,
+      plugins: [],
+      provider: createMockProvider({ turns: [{ text: "ok" }] }),
+      workspaceRoot: process.cwd(),
+      permission: {
+        mode: "auto",
+        decider: { ask: async () => "deny" },
+      },
+    });
+    scope.ctx.timer.setInterval(() => {}, 60_000);
+    const timerFibers = isolatedBoot.root.registry.get(isolatedBoot.spine.timer.TimerPlugin)?.fibers ?? [];
+    const sessionTimerFiber = timerFibers.find(({ parent }) => parent === scope.ctx.fiber);
+    expect(rootTimer).toBeDefined();
+    expect(scope.ctx.timer).not.toBe(rootTimer);
+    expect(isolatedBoot.spine.timer.TimerPlugin).toBeDefined();
+    expect(isolatedBoot.root.fiber.getEffects().some(({ label }) => label === "plugin(kernel-timer)"))
+      .toBe(true);
+    expect(sessionTimerFiber?.getEffects().filter(({ label }) => label.startsWith("timer "))).toHaveLength(1);
+
+    await session.dispose();
+    expect(sessionTimerFiber?.getEffects().filter(({ label }) => label.startsWith("timer "))).toHaveLength(0);
+    expect(scope.ctx.timer).toBe(rootTimer);
+    expect(isolatedBoot.root.fiber.getEffects().some(({ label }) => label === "plugin(kernel-timer)"))
+      .toBe(true);
+
+    expect(isolatedBoot.root.timer).toBe(rootTimer);
+    await isolatedBoot.dispose();
+    expect(isolatedBoot.root.fiber.getEffects()).toEqual([]);
+    await scope.dispose();
+    rmSync(isolatedUserRoot, { recursive: true, force: true });
+  });
+
   it("boots a full session inside a route scope with disk-loaded fs/shell", async () => {
     const b = await ensureBoot();
     const fsPlugin = (await b.importPlugin("fs")) as SessionPlugin;

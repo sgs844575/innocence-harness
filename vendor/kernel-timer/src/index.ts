@@ -1,4 +1,4 @@
-import type { Context, ObjectPlugin } from "@innocencecode/kernel";
+import type { Context, EffectHandle, ObjectPlugin } from "@innocencecode/kernel";
 
 export interface TimerService {
   setTimeout(callback: () => void, delayMs: number): number;
@@ -7,8 +7,8 @@ export interface TimerService {
 }
 
 type TimerHandle = {
-  kind: "timeout" | "interval";
   handle: ReturnType<typeof globalThis.setTimeout>;
+  effect: EffectHandle;
 };
 
 export const TimerPlugin: ObjectPlugin = {
@@ -19,35 +19,33 @@ export const TimerPlugin: ObjectPlugin = {
     const service: TimerService = {
       setTimeout(callback, delayMs) {
         const id = nextId++;
-        const handle = globalThis.setTimeout(() => {
-          handles.delete(id);
-          try { callback(); } catch { /* callbacks cannot break the owner fiber */ }
-        }, delayMs);
-        handles.set(id, { kind: "timeout", handle });
-        ctx.effect(() => () => {
+        let handle!: ReturnType<typeof globalThis.setTimeout>;
+        const effect = ctx.effect(() => () => {
           globalThis.clearTimeout(handle);
           handles.delete(id);
         }, `timer ${id}`);
+        handle = globalThis.setTimeout(() => {
+          try { callback(); } catch { /* callbacks cannot break the owner fiber */ }
+          finally { effect(); }
+        }, delayMs);
+        handles.set(id, { handle, effect });
         return id;
       },
       setInterval(callback, delayMs) {
         const id = nextId++;
-        const handle = globalThis.setInterval(() => {
-          try { callback(); } catch { /* callbacks cannot break the owner fiber */ }
-        }, delayMs);
-        handles.set(id, { kind: "interval", handle });
-        ctx.effect(() => () => {
+        let handle!: ReturnType<typeof globalThis.setInterval>;
+        const effect = ctx.effect(() => () => {
           globalThis.clearInterval(handle);
           handles.delete(id);
         }, `timer ${id}`);
+        handle = globalThis.setInterval(() => {
+          try { callback(); } catch { /* callbacks cannot break the owner fiber */ }
+        }, delayMs);
+        handles.set(id, { handle, effect });
         return id;
       },
       clear(id) {
-        const timer = handles.get(id);
-        if (!timer) return;
-        if (timer.kind === "timeout") globalThis.clearTimeout(timer.handle);
-        else globalThis.clearInterval(timer.handle);
-        handles.delete(id);
+        handles.get(id)?.effect();
       },
     };
     const off = ctx.provide("timer", service);

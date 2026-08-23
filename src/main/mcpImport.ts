@@ -136,6 +136,16 @@ export async function importMcpServers(
   config.mcpServers = merged;
   const serialized = JSON.stringify(config, null, 2);
   await fs.mkdir(dir, { recursive: true });
+  const postMkdirStat = await fs.lstat(dir).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  });
+  if (postMkdirStat?.isSymbolicLink()) {
+    throw new Error("refusing to write through symlink .innocence directory");
+  }
+  if (!postMkdirStat?.isDirectory()) {
+    throw new Error("refusing to write through non-directory .innocence path");
+  }
   const tempPath = path.join(dir, `.config.json.${randomUUID()}.tmp`);
   let committed = false;
   try {

@@ -31,6 +31,7 @@ describe("kernel timer service", () => {
     expect(calls).toBe(1);
     vi.advanceTimersByTime(100);
     expect(calls).toBe(1);
+    expect(fiber.getEffects().filter(({ label }) => label.startsWith("timer "))).toHaveLength(0);
 
     await fiber.dispose();
   });
@@ -57,6 +58,7 @@ describe("kernel timer service", () => {
     const intervalId = ctx.timer.setInterval(() => { intervalCalls += 1; }, 10);
     ctx.timer.clear(timeoutId);
     ctx.timer.clear(intervalId);
+    expect(fiber.getEffects().filter(({ label }) => label.startsWith("timer "))).toHaveLength(0);
     vi.advanceTimersByTime(100);
 
     expect(timeoutCalls).toBe(0);
