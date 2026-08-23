@@ -94,6 +94,16 @@ export async function importMcpServers(
 ): Promise<McpImportResult> {
   const dir = path.join(root, ".innocence");
   const configPath = path.join(dir, "config.json");
+  const dirStat = await fs.lstat(dir).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  });
+  if (dirStat?.isSymbolicLink()) {
+    throw new Error("refusing to write through symlink .innocence directory");
+  }
+  if (dirStat && !dirStat.isDirectory()) {
+    throw new Error("refusing to write through non-directory .innocence path");
+  }
   const targetStat = await fs.lstat(configPath).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") return null;
     throw err;

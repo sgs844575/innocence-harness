@@ -229,6 +229,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   // own spine inside its scope and shadows these names. Root-level permission
   // asks have no UI to answer them — they fail closed (deny).
   await root.plugin(spine.logger.LoggerPlugin);
+  await root.plugin(spine.timer.TimerPlugin);
   await root.plugin(spine.tools.ToolsPlugin);
   await root.plugin(
     spine.permissions.createPermissionsPlugin(

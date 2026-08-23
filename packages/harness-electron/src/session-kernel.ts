@@ -126,6 +126,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
   let loaderEntries: import("@innocencecode/kernel-loader").LoaderEntry[] = [];
   try {
     await ctx.plugin(spine.logger.LoggerPlugin);
+    await ctx.plugin(spine.timer.TimerPlugin);
     ctx.logger.addSink(
       (entry) => {
         if (entry.level !== "debug") log(entry.level, entry.message, entry.data);
