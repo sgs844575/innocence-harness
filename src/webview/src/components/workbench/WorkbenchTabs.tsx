@@ -7,7 +7,7 @@ import { useSlotList } from "../../slots/react";
 
 const tZh = (key: string): string => zhCN[key] ?? key;
 
-export type WorkbenchTabId = "review" | "routes" | "code" | "terminal";
+export type WorkbenchTabId = "review" | "routes" | "code" | "terminal" | (string & {});
 
 /** 面板槽位标识：每个页签一条贡献（render 闭包持有该页签的面板内容）。 */
 export const PANEL_SLOT = "workbench.panel";
