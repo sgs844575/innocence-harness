@@ -93,7 +93,7 @@ export async function importMcpServers(
   invalid: readonly string[] = [],
 ): Promise<McpImportResult> {
   const dir = path.join(root, ".innocence");
-  const configPath = path.join(dir, "config.json");
+  let configPath = path.join(dir, "config.json");
   const dirStat = await fs.lstat(dir).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") return null;
     throw err;
@@ -146,7 +146,15 @@ export async function importMcpServers(
   if (!postMkdirStat?.isDirectory()) {
     throw new Error("refusing to write through non-directory .innocence path");
   }
-  const tempPath = path.join(dir, `.config.json.${randomUUID()}.tmp`);
+  // Bind subsequent writes to the canonical directory. If the lexical
+  // `.innocence` path is swapped after this point, it cannot redirect writes.
+  const stableDir = await fs.realpath(dir);
+  const stableRoot = await fs.realpath(root);
+  if (stableDir !== path.join(stableRoot, ".innocence") && !stableDir.startsWith(path.join(stableRoot, ".innocence") + path.sep)) {
+    throw new Error("refusing to write outside authorized workspace");
+  }
+  configPath = path.join(stableDir, "config.json");
+  const tempPath = path.join(stableDir, `.config.json.${randomUUID()}.tmp`);
   let committed = false;
   try {
     await fs.writeFile(tempPath, serialized, { encoding: "utf8", flag: "wx" });

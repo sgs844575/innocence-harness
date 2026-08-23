@@ -142,7 +142,7 @@ describe("importMcpServers", () => {
         "simulated temporary write failure",
       );
       expect(writePaths).toHaveLength(1);
-      expect(path.dirname(writePaths[0])).toBe(configDir);
+      expect(path.dirname(writePaths[0])).toBe(await fs.realpath(configDir));
       expect(path.basename(writePaths[0])).not.toBe("config.json");
       await expect(fs.lstat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
       expect(await fs.readdir(configDir)).toEqual([]);
