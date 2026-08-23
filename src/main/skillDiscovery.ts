@@ -334,7 +334,7 @@ export async function importSkill(
         collisionCount++;
       }
     } finally {
-      if (!published) await fsPort.rm(temp, { recursive: true, force: true }).catch(() => undefined);
+      if (!published) await fsPort.rm(temp, { recursive: true, force: true });
     }
   }
 }
