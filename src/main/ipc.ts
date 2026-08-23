@@ -122,9 +122,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.skillsDiscover, () =>
     getHarnessSettings().externalSkillDiscovery === false ? [] : discoverExternalSkills(),
   );
-  ipcMain.handle(IPC.skillsImport, (_e, discovered: DiscoveredSkill) =>
-    importSkill(discovered),
-  );
+  ipcMain.handle(IPC.skillsImport, (_e, discovered: DiscoveredSkill) => {
+    if (getHarnessSettings().externalSkillDiscovery === false) {
+      throw new Error("external skill discovery is disabled");
+    }
+    return importSkill(discovered);
+  });
   // MCP 标准格式导入：解析在 main 侧。text 非空 = 显式内容；text 为空 =
   // 渲染层无文件读权，main 代读 <root>/.mcp.json（发现文件一键导入流）。
   ipcMain.handle(IPC.mcpImport, async (_e, root: string, text: string) => {
