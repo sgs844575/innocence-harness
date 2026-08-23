@@ -230,6 +230,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   // asks have no UI to answer them — they fail closed (deny).
   await root.plugin(spine.logger.LoggerPlugin);
   await root.plugin(spine.timer.TimerPlugin);
+  await root.plugin(spine.hmr.HmrPlugin);
   await root.plugin(spine.tools.ToolsPlugin);
   await root.plugin(
     spine.permissions.createPermissionsPlugin(

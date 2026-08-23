@@ -53,11 +53,12 @@ export function resetSuiteCache(): void {
 export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
   if (!suitePromise) {
     const load = async (): Promise<KernelSuite> => {
-      const [kernel, logger, timer, tools, permissions, providers, skills, systemPrompt, agents, session, loop, loader, group] =
+      const [kernel, logger, timer, hmr, tools, permissions, providers, skills, systemPrompt, agents, session, loop, loader, group] =
         await Promise.all([
           loadKernel(kernelPath),
           importLib(kernelPath, "kernel-logger"),
           importLib(kernelPath, "kernel-timer"),
+          importLib(kernelPath, "kernel-hmr"),
           importLib(kernelPath, "harness-tools"),
           importLib(kernelPath, "harness-permissions"),
           importLib(kernelPath, "harness-providers"),
@@ -74,6 +75,7 @@ export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
         spine: {
           logger,
           timer,
+          hmr,
           tools,
           permissions,
           providers,

@@ -127,6 +127,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
   try {
     await ctx.plugin(spine.logger.LoggerPlugin);
     await ctx.plugin(spine.timer.TimerPlugin);
+    await ctx.plugin(spine.hmr.HmrPlugin);
     ctx.logger.addSink(
       (entry) => {
         if (entry.level !== "debug") log(entry.level, entry.message, entry.data);

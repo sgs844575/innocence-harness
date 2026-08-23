@@ -25,6 +25,7 @@
     "@innocencecode/kernel-group": "^0.1.0",
     "@innocencecode/kernel-logger": "^0.1.0",
     "@innocencecode/kernel-timer": "^0.1.0",
+    "@innocencecode/kernel-hmr": "^0.1.0",
     "@innocencecode/task-core": "^0.1.0"
   },
   "devDependencies": {
