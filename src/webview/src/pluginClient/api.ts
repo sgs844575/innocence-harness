@@ -1,24 +1,34 @@
-// 插件渲染层注册面 v1（PluginClientApi）：仅描述符式工具卡注册——client
-// 模块零 import 铁律由描述符方案保证（注册载荷是纯数据，宿主侧
-// DescriptorToolCard 统一渲染；组件级注册延后阶段 2）。命令式注册经键控
-// 槽位的 subscribe 通道驱动消费组件重渲染（T2 语义）；生命周期由装载器
+// 插件渲染层注册面（PluginClientApi）：描述符式与组件式工具卡、工作台面板、
+// 设置分区注册均经槽位的 subscribe 通道驱动消费组件重渲染；生命周期由装载器
 // 经 dispose 持有（同注册表重装载先撤销旧注册）。
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import type { SlotRegistry } from "../slots/registry";
 import {
   createDescriptorCard,
   type ToolCardDescriptor,
 } from "../components/chat/toolcards/DescriptorToolCard";
 import type { ToolCardProps } from "../components/chat/toolcards/registry";
+import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
+
+const TOOLCARD_COMPONENT_SLOT = "toolcard";
+const PANEL_SLOT = "panel";
+const SETTINGS_SECTION_SLOT = "settings.section";
 
 /**
- * v1 client API：仅提供描述符式工具卡注册；组件级卡、工作台面板与设置分区
- * 的注册面属于后续版本，不在本 API 的兼容范围内。前缀注册即 "prefix:"
- * 声明条目（键控槽位原生语义）。
+ * PluginClientApi：描述符式工具卡与三类组件贡献注册面。
+ * 组件贡献的注册方法返回注销句柄；描述符方法保持 v1 的 void 兼容。
  */
 export interface PluginClientApi {
   registerToolCard(toolName: string, descriptor: ToolCardDescriptor): void;
   registerToolCardPrefix(prefix: string, descriptor: ToolCardDescriptor): void;
+  registerToolCardComponent(name: string, component: ComponentType<ToolCardProps>): () => void;
+  registerPanel(id: string, labelKey: string, render: () => ReactNode): () => void;
+  registerSettingsSection(
+    id: string,
+    labelKey: string,
+    icon: ComponentType,
+    render: () => ReactNode,
+  ): () => void;
 }
 
 /** 工厂产物：api 交 client 模块的 default 注册函数；dispose 撤销该 api
@@ -33,19 +43,57 @@ export function createPluginClientApi(
   registry: SlotRegistry,
   slotName: string,
 ): PluginClientApiHandle {
-  const slot = registry.keyed<ComponentType<ToolCardProps>>(slotName);
+  const descriptorSlot = registry.keyed<ComponentType<ToolCardProps>>(slotName);
+  const toolCardSlot = registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_COMPONENT_SLOT);
+  const panelSlot = registry.list<ExternalPanelContribution>(PANEL_SLOT);
+  const settingsSectionSlot = registry.list<ExternalSettingsContribution>(SETTINGS_SECTION_SLOT);
   const unregisters: Array<() => void> = [];
   let disposed = false;
-  const register = (key: string, descriptor: ToolCardDescriptor): void => {
+  const noop = (): void => {};
+  const track = (unregister: () => void): () => void => {
+    unregisters.push(unregister);
+    return unregister;
+  };
+  const registerDescriptor = (key: string, descriptor: ToolCardDescriptor): void => {
     if (disposed) return;
-    unregisters.push(slot.register({ key, value: createDescriptorCard(descriptor) }));
+    track(descriptorSlot.register({ key, value: createDescriptorCard(descriptor) }));
+  };
+  const registerComponent = (
+    component: ComponentType<ToolCardProps>,
+    name: string,
+  ): () => void => {
+    if (disposed) return noop;
+    return track(toolCardSlot.register({ key: name, value: component }));
+  };
+  const registerPanelContribution = (
+    id: string,
+    labelKey: string,
+    render: () => ReactNode,
+  ): () => void => {
+    if (disposed) return noop;
+    const contribution: ExternalPanelContribution = { id, labelKey, render };
+    return track(panelSlot.register(contribution));
+  };
+  const registerSettingsContribution = (
+    id: string,
+    labelKey: string,
+    icon: ComponentType,
+    render: () => ReactNode,
+  ): () => void => {
+    if (disposed) return noop;
+    const contribution: ExternalSettingsContribution = { id, labelKey, icon, render };
+    return track(settingsSectionSlot.register(contribution));
   };
   return {
     api: {
-      registerToolCard: (toolName, descriptor) => register(toolName, descriptor),
-      registerToolCardPrefix: (prefix, descriptor) => register(`prefix:${prefix}`, descriptor),
+      registerToolCard: (toolName, descriptor) => registerDescriptor(toolName, descriptor),
+      registerToolCardPrefix: (prefix, descriptor) => registerDescriptor(`prefix:${prefix}`, descriptor),
+      registerToolCardComponent: (name, component) => registerComponent(component, name),
+      registerPanel: registerPanelContribution,
+      registerSettingsSection: registerSettingsContribution,
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
       for (const off of unregisters.splice(0)) off();
     },

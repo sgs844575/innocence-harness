@@ -1,5 +1,19 @@
-// 槽位系统类型契约——纯类型文件，零运行时逻辑、零宿主依赖。
-// 三类槽位：single（单值，后注覆盖）/ list（保序列表）/ keyed（按键解析，可遮蔽）。
+import type { ComponentType, ReactNode } from "react";
+
+/** 外部工作台面板贡献：注册序即面板清单序。 */
+export interface ExternalPanelContribution {
+  id: string;
+  labelKey: string;
+  render: () => ReactNode;
+}
+
+/** 外部设置分区贡献：注册序即设置分区清单序。 */
+export interface ExternalSettingsContribution {
+  id: string;
+  labelKey: string;
+  icon: ComponentType;
+  render: () => ReactNode;
+}
 
 /** 单值槽位的一次注册（含注销句柄）；供宿主侧扩展使用。 */
 export interface SlotContribution<T> {
