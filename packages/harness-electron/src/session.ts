@@ -92,6 +92,9 @@ export class AgentSession {
 
   static async create(options: AgentSessionOptions): Promise<AgentSession> {
     const sessionId = nextSessionId();
+    if (process.env.NODE_ENV === "production" && !options.spine && !options.allowStaticSpine) {
+      throw new Error("production session requires an injected spine suite");
+    }
     const spine = options.spine ?? staticSpineSuite();
     const kernel = await mountSessionKernel({
       sessionId,

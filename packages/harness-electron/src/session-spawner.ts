@@ -67,10 +67,8 @@ export function createSpawnerChildSession(
     provider: materials.provider,
     workspaceRoot: parentOptions.workspaceRoot,
     systemPrompt: materials.systemPrompt,
-    // spine is process-level injected identity: the child mounts the parent's
-    // suite so every session in the process shares one set of spine module
-    // identities (scope stays session-level and is NOT inherited — the child
-    // is its own session instance on a fresh root).
+    // Preserve the explicit self-contained/test seam for recursively spawned sessions.
+    allowStaticSpine: parentOptions.allowStaticSpine,
     spine: parentOptions.spine,
     permission: {
       mode: materials.permission.getMode(),

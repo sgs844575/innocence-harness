@@ -10,6 +10,8 @@ export interface AgentSessionOptions {
   loaderEntries?: SessionLoaderPlugin[];
   scope?: { ctx: Context };
   spine?: SessionSpineSuite;
+  /** Explicit self-contained/test seam for the bundled static spine. */
+  allowStaticSpine?: boolean;
   provider?: Provider;
   providerId?: string;
   workspaceRoot: string;
