@@ -3,6 +3,7 @@
 // 不丢 permissions 等既有键；已有键在前新键追加）。写入经显式 UTF-8 fs。
 // parse 对损坏输入抛错，由 UI 层降级提示（不炸）。
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 /** One MCP server entry (standard .mcp.json / config.json shape). */
@@ -91,6 +92,16 @@ export async function importMcpServers(
   root: string,
   invalid: readonly string[] = [],
 ): Promise<McpImportResult> {
+  const dir = path.join(root, ".innocence");
+  const configPath = path.join(dir, "config.json");
+  const targetStat = await fs.lstat(configPath).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  });
+  if (targetStat?.isSymbolicLink()) {
+    throw new Error("refusing to write symlink config.json");
+  }
+
   let config: Record<string, unknown> = {};
   try {
     config = await readConfig(root);
@@ -113,9 +124,24 @@ export async function importMcpServers(
     result.imported.push(name);
   }
   config.mcpServers = merged;
-  const dir = path.join(root, ".innocence");
+  const serialized = JSON.stringify(config, null, 2);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, "config.json"), JSON.stringify(config, null, 2), "utf8");
+  const tempPath = path.join(dir, `.config.json.${randomUUID()}.tmp`);
+  let committed = false;
+  try {
+    await fs.writeFile(tempPath, serialized, { encoding: "utf8", flag: "wx" });
+    const finalStat = await fs.lstat(configPath).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
+    if (finalStat?.isSymbolicLink()) {
+      throw new Error("refusing to write symlink config.json");
+    }
+    await fs.rename(tempPath, configPath);
+    committed = true;
+  } finally {
+    if (!committed) await fs.rm(tempPath, { force: true }).catch(() => undefined);
+  }
   return result;
 }
 

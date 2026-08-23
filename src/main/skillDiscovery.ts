@@ -100,6 +100,25 @@ function isInsideRoot(resolved: string, root: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
+async function validateSourceDir(sourceDir: string, knownRoots: readonly (string | null)[]): Promise<string> {
+  const stat = await fs.lstat(sourceDir).catch(() => null);
+  if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("skill source outside known roots");
+  }
+  const resolvedSource = await fs.realpath(sourceDir).catch(() => null);
+  if (
+    !resolvedSource
+    || !knownRoots.some((r): r is string => r !== null && isInsideRoot(resolvedSource, r))
+  ) {
+    throw new Error("skill source outside known roots");
+  }
+  const finalStat = await fs.lstat(sourceDir).catch(() => null);
+  if (!finalStat || !finalStat.isDirectory() || finalStat.isSymbolicLink()) {
+    throw new Error("skill source outside known roots");
+  }
+  return resolvedSource;
+}
+
 /** Recursively copies a directory tree; symlink entries are skipped to avoid
  *  cycles and to prevent expanding linked directories into real copies. */
 async function copyDir(source: string, target: string): Promise<void> {
@@ -132,16 +151,10 @@ export async function importSkill(
   // name comes from external frontmatter via IPC round-trip — never trust it
   assertValidSkillName(discovered.name);
   // sourceDir likewise: re-verify it belongs to a known external root
-  const resolvedSource = await fs.realpath(discovered.sourceDir).catch(() => null);
   const knownRoots = await Promise.all(
     externalSkillRoots(homedir).map(async (r) => fs.realpath(r.dir).catch(() => null)),
   );
-  if (
-    !resolvedSource ||
-    !knownRoots.some((r): r is string => r !== null && isInsideRoot(resolvedSource, r))
-  ) {
-    throw new Error("skill source outside known roots");
-  }
+  await validateSourceDir(discovered.sourceDir, knownRoots);
   let name = discovered.name;
   if (await fs.stat(path.join(root, name)).catch(() => null)) {
     name = `${discovered.name}-imported`;
@@ -150,5 +163,6 @@ export async function importSkill(
       name = `${discovered.name}-imported-${i++}`;
     }
   }
-  await copyDir(discovered.sourceDir, path.join(root, name));
+  const source = await validateSourceDir(discovered.sourceDir, knownRoots);
+  await copyDir(source, path.join(root, name));
 }

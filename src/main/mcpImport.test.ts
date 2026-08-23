@@ -2,7 +2,7 @@
 // 合并进 <root>/.innocence/config.json（新键追加/同名跳过/文件创建/已有键含
 // permissions 保留/保序）、discover（.mcp.json 存在与否）。
 // mkdtemp root fixture，不碰真实项目。
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -77,6 +77,63 @@ describe("parseMcpJson", () => {
 });
 
 describe("importMcpServers", () => {
+  it("拒绝把 config.json symlink 当作写入目标", async (ctx) => {
+    const isolatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-mcp-symlink-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-mcp-outside-"));
+    const configDir = path.join(isolatedRoot, ".innocence");
+    const outsideConfig = path.join(outside, "config.json");
+    const configPath = path.join(configDir, "config.json");
+    try {
+      await fs.mkdir(configDir, { recursive: true });
+      await fs.writeFile(outsideConfig, JSON.stringify({ permissions: { allow: ["outside"] } }), "utf8");
+      try {
+        await fs.symlink(outsideConfig, configPath, "file");
+      } catch (err) {
+        if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+          ctx.skip();
+          return;
+        }
+        throw err;
+      }
+
+      await expect(importMcpServers({ demo: { command: "run" } }, isolatedRoot)).rejects.toThrow(/symlink/i);
+      expect(await fs.readFile(outsideConfig, "utf8")).toBe(
+        JSON.stringify({ permissions: { allow: ["outside"] } }),
+      );
+      expect((await fs.lstat(configPath)).isSymbolicLink()).toBe(true);
+    } finally {
+      await fs.rm(isolatedRoot, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("临时文件写入失败后清理临时文件且不留下目标配置", async () => {
+    const isolatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-mcp-write-failure-"));
+    const configDir = path.join(isolatedRoot, ".innocence");
+    const configPath = path.join(configDir, "config.json");
+    const originalWriteFile = fs.writeFile.bind(fs);
+    const writePaths: string[] = [];
+    const writeSpy = vi.spyOn(fs, "writeFile").mockImplementation(async (...args: any[]) => {
+      const [file, data, encoding] = args;
+      writePaths.push(String(file));
+      await originalWriteFile(file, data, encoding);
+      throw new Error("simulated temporary write failure");
+    });
+    try {
+      await expect(importMcpServers({ demo: { command: "run" } }, isolatedRoot)).rejects.toThrow(
+        "simulated temporary write failure",
+      );
+      expect(writePaths).toHaveLength(1);
+      expect(path.dirname(writePaths[0])).toBe(configDir);
+      expect(path.basename(writePaths[0])).not.toBe("config.json");
+      await expect(fs.lstat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fs.readdir(configDir)).toEqual([]);
+    } finally {
+      writeSpy.mockRestore();
+      await fs.rm(isolatedRoot, { recursive: true, force: true });
+    }
+  });
+
   it("config 不存在时创建 {mcpServers:{}} 并写入新键", async () => {
     const result = await importMcpServers({ alpha: { command: "a" } }, root);
     expect(result).toEqual({ imported: ["alpha"], skipped: [] });

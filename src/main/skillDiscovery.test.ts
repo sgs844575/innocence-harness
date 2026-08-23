@@ -1,6 +1,6 @@
 // 外部技能发现/导入单测：mkdtemp 家目录 fixture（正常/畸形/SKILL.md 缺失
 // 跳过；import 复制/重名后缀/失败传播）。homedir 显式注入，不碰真实主目录。
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -215,6 +215,45 @@ describe("importSkill", () => {
       ).rejects.toThrow("skill source outside known roots");
       expect(await fs.readdir(target)).toEqual([]);
     } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("复制前入口变为根外 symlink 时拒绝导入", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-toctou-home-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-toctou-outside-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-toctou-target-"));
+    const sourceRoot = path.join(linkHome, ".claude", "skills");
+    const source = path.join(sourceRoot, "replace-me");
+    const targetPath = path.join(target, "replace-me");
+    const originalStat = fs.stat.bind(fs);
+    let replaced = false;
+    const statSpy = vi.spyOn(fs, "stat").mockImplementation(async (file, ...args) => {
+      if (!replaced && String(file) === targetPath) {
+        replaced = true;
+        await fs.rm(source, { recursive: true, force: true });
+        await fs.symlink(outside, source, "junction");
+      }
+      return originalStat(file, ...args);
+    });
+    try {
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: replace-me\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(path.join(outside, "SKILL.md"), "---\nname: outside\ndescription: outside\n---\n", "utf8");
+      await expect(importSkill(skill("replace-me", source), target, linkHome)).rejects.toThrow(
+        "skill source outside known roots",
+      );
+      expect(await fs.readdir(target)).toEqual([]);
+    } catch (err) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+        ctx.skip();
+        return;
+      }
+      throw err;
+    } finally {
+      statSpy.mockRestore();
       await fs.rm(linkHome, { recursive: true, force: true });
       await fs.rm(outside, { recursive: true, force: true });
       await fs.rm(target, { recursive: true, force: true });
