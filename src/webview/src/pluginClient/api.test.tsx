@@ -69,7 +69,7 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
     const handle = createPluginClientApi(registry, TOOLCARD_SLOT);
     const Card: ComponentType<ToolCardProps> = () => null;
 
-    const off = handle.api.registerToolCardComponent("component-card", Card);
+    const off = handle.api.registerToolCardComponent({ name: "component-card", component: Card });
 
     expect(registry.keyed<ComponentType<ToolCardProps>>(TOOLCARD_SLOT).resolve("component-card")).toBe(Card);
     expect(typeof off).toBe("function");
@@ -119,7 +119,7 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
     const Card: ComponentType<ToolCardProps> = () => null;
     const Icon: ComponentType = () => null;
 
-    handle.api.registerToolCardComponent("component-card", Card);
+    handle.api.registerToolCardComponent({ name: "component-card", component: Card });
     handle.api.registerPanel({ id: "panel", labelKey: "panel", render: () => null });
     handle.api.registerSettingsSection({ id: "settings", labelKey: "settings", icon: Icon, render: () => null });
     handle.dispose();

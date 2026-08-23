@@ -141,6 +141,7 @@ export function WorkbenchShell({
   }, []);
 
   const panelContributions = useSlotList<WorkbenchPanelContribution>(PANEL_SLOT);
+  const activeContribution = panelContributions.find((panel) => panel.id === active);
 
   const panelBody = (widthStyle: React.CSSProperties | undefined, className: string) => (
     <div
@@ -165,6 +166,7 @@ export function WorkbenchShell({
         {panelContributions.map((panel) => {
           const id = panel.id;
           const visible = id === active;
+          const content = panel.render() ?? panels[id];
           // 终端面板常驻挂载（xterm scrollback 不因切页签而丢）；其余页签
           // 按需挂载——卸载即从可访问树移除。
           if (!visible && id !== "terminal") return null;
@@ -174,11 +176,11 @@ export function WorkbenchShell({
               className="flex min-h-0 flex-1 flex-col"
               style={{ display: visible ? undefined : "none" }}
             >
-              {panel.render() ?? panels[id]}
+              {content}
             </div>
           );
         })}
-        {panels[active] === undefined && (
+        {activeContribution === undefined && panels[active] === undefined && (
           <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">
             {t("workbench.empty")}
           </div>

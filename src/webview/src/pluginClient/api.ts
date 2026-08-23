@@ -19,7 +19,10 @@ import { SETTINGS_SECTION_SLOT } from "../components/SettingsNav";
 export interface PluginClientApi {
   registerToolCard(toolName: string, descriptor: ToolCardDescriptor): void;
   registerToolCardPrefix(prefix: string, descriptor: ToolCardDescriptor): void;
-  registerToolCardComponent(name: string, component: ComponentType<ToolCardProps>): () => void;
+  registerToolCardComponent(contribution: {
+    name: string;
+    component: ComponentType<ToolCardProps>;
+  }): () => void;
   registerPanel(contribution: ExternalPanelContribution): () => void;
   registerSettingsSection(section: ExternalSettingsContribution): () => void;
 }
@@ -69,7 +72,7 @@ export function createPluginClientApi(
     api: {
       registerToolCard: (toolName, descriptor) => registerDescriptor(toolName, descriptor),
       registerToolCardPrefix: (prefix, descriptor) => registerDescriptor(`prefix:${prefix}`, descriptor),
-      registerToolCardComponent: (name, component) => registerComponent(component, name),
+      registerToolCardComponent: (contribution) => registerComponent(contribution.component, contribution.name),
       registerPanel: registerPanelContribution,
       registerSettingsSection: registerSettingsContribution,
     },
