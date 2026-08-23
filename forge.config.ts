@@ -1,10 +1,21 @@
 import path from "node:path";
+import type { HookFunction } from "@electron/packager";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
+import { pruneNodePtyPrebuilds } from "./scripts/packaging/nodePtyPrebuilds";
 
-const config: ForgeConfig = {
+const pruneWindowsX64NodePtyPrebuilds: HookFunction = (buildPath, _electronVersion, platform, arch, callback) => {
+  if (platform !== "win32" || arch !== "x64") {
+    callback();
+    return;
+  }
+
+  void pruneNodePtyPrebuilds(buildPath).then(() => callback(), callback);
+};
+
+export const config: ForgeConfig = {
   packagerConfig: {
     // App icon (Windows .ico with 16..256 PNG entries); rcedit stamps it
     // into the packaged executable at package time.
@@ -44,6 +55,7 @@ const config: ForgeConfig = {
         !file.startsWith("/node_modules/node-pty")
       );
     },
+    afterCopy: [pruneWindowsX64NodePtyPrebuilds],
   },
   rebuildConfig: {},
   makers: [
