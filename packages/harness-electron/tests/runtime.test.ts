@@ -12,8 +12,10 @@ import {
   IN_FLIGHT_BUILD_DISPOSE_TIMEOUT_MS,
   decodeTranscript,
   systemPromptFor,
+  staticSpineSuite,
   type AskResponse,
   type HarnessSettings,
+  type SessionSpineSuite,
   type LiveToolPart,
   type PluginFactoryContext,
   type RuntimeHooks,
@@ -879,6 +881,23 @@ describe("HarnessRuntime route cache", () => {
 describe("HarnessRuntime route scopes", () => {
   // Route scopes (kernel createScope below one shared root): each session
   // build mounts into a FRESH scope; session dispose unwinds the whole scope.
+  it("injects the host-provided spine into each route session", async () => {
+    const suite: SessionSpineSuite = staticSpineSuite();
+    const { sessions, factory } = recordingAgentFactory();
+    const sessionSpine = vi.fn(() => suite);
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "好" }], { workspaceRoot: workspace }),
+      agentFactory: factory,
+      sessionSpine,
+    });
+
+    await chatTurn(runtime, "rt-spine-1", "hello", "m-rt-spine-1");
+
+    expect(sessionSpine).toHaveBeenCalledTimes(1);
+    expect(sessions.get("rt-spine-1:main")?.options.spine).toBe(suite);
+    await runtime.disposeAll();
+  });
+
   it("builds a session inside a fresh scope and unwinds it on dispose", async () => {
     const { Context, createScope, FiberState } = await import("@innocencecode/kernel");
     const root = new Context();

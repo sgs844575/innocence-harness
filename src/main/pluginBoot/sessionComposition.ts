@@ -4,6 +4,7 @@
 // project permission-rules plugin and the settings-based provider assembly
 // that every route session's plugin set is built from.
 import path from "node:path";
+import os from "node:os";
 import {
   loadInnocenceConfig,
   rulesFromConfig,
@@ -21,8 +22,10 @@ import {
   type HarnessPlugin,
   type HarnessSettings,
   type SessionPlugin,
+  type SessionLoaderPlugin,
 } from "@innocencecode/harness-electron";
 import type { Provider } from "@innocencecode/harness-providers";
+import type { ObjectPlugin } from "@innocencecode/kernel";
 import { createPluginBoot, type PluginBoot } from "./compose";
 import type { PluginToggleSource } from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
@@ -34,8 +37,10 @@ export interface SessionCompositionOptions {
   /** Default workspace root recorded on the boot root (diagnostics anchor). */
   getWorkspaceRoot(): string | undefined;
   /** Severity sink for skipped-plugin notices, resolver warnings and boot
-   *  disposal failures (the host logger). */
+   * disposal failures (the host logger). */
   log(level: "info" | "warn" | "error", msg: string, data?: unknown): void;
+  /** Optional registered group-name policy; absent means user-declared names are allowed. */
+  getAllowedGroupNames?: () => readonly string[] | undefined;
 }
 
 /** The composition face the host glue consumes. */
@@ -97,33 +102,138 @@ function buildProviderFromSettings(settings: HarnessSettings): Provider {
   }
 }
 
-/** 磁盘装载一个内置能力插件并按 id 装配：fs/shell/todo/subagent 为插件
- *  对象（default 导出）；skills/mcp 为工厂（default 导出），由组合根注入
- *  配置后实例化。name 与清单 id 同名（composePlugins.test 的 1:1 守卫）。 */
-async function builtinPluginFor(
+/** Resolve a host-only factory lazily at the loader entry boundary. */
+function factoryPlugin(
   boot: PluginBoot,
-  id: string,
+  id: "skills" | "mcp",
+  options: () => { dirs: string[] } | { servers: Record<string, unknown> },
+): ObjectPlugin {
+    return {
+    name: `factory:${id}`,
+    async apply(ctx) {
+      const factory = await boot.importPlugin(id);
+      const input = options();
+      const create = factory as (value: typeof input) => ObjectPlugin | Promise<ObjectPlugin>;
+      const plugin = await create(input);
+      if (!plugin || typeof plugin.apply !== "function") {
+        throw new Error(`builtin plugin "${id}" factory did not return a native plugin`);
+      }
+      return plugin.apply(ctx);
+    },
+  };
+}
+
+function factoryConfig(
+  id: "skills" | "mcp",
+  config: unknown,
+  workspaceRoot: string,
+  project: InnocenceConfig,
+): { dirs: string[] } | { servers: Record<string, unknown> } {
+  if (id === "skills") {
+    const configured = config as { dirs?: unknown } | undefined;
+    if (config !== undefined && (!configured || !Array.isArray(configured.dirs) || !configured.dirs.every((v) => typeof v === "string"))) {
+      throw new Error("invalid skills group config: dirs must be a string array");
+    }
+    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")] };
+  }
+  const configured = config as { servers?: unknown } | undefined;
+  if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
+    throw new Error("invalid mcp group config: servers must be an object");
+  }
+  return { servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown> };
+}
+
+function validGroupSegment(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !/[\\/:]/.test(value);
+}
+
+type ResolvedGroupChild = {
+  id: string;
+  name: string;
+  config?: unknown;
+  disabled?: boolean;
+  plugin?: ObjectPlugin;
+};
+
+function groupChildOptions(
+  entry: import("@innocencecode/kernel-loader").EntryOptions,
+): ResolvedGroupChild {
+  return { ...entry, name: entry.name ?? entry.id };
+}
+
+function groupConfigOf(id: string, config: unknown): { id: string; entries: readonly unknown[] } {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(`loader group entry "${id}" has invalid config`);
+  }
+  const value = config as { id?: unknown; entries?: unknown };
+  if (!validGroupSegment(value.id) || !Array.isArray(value.entries)) {
+    throw new Error(`loader group entry "${id}" has invalid config`);
+  }
+  return { id: value.id, entries: value.entries };
+}
+
+async function resolveGroupEntries(
+  boot: PluginBoot,
+  entries: readonly unknown[],
   config: InnocenceConfig,
   workspaceRoot: string,
-): Promise<SessionPlugin> {
-  const value = await boot.importPlugin(id);
-  switch (id) {
-    case "fs":
-    case "shell":
-    case "todo":
-    case "subagent":
-      return value as SessionPlugin;
-    case "skills":
-      return (value as (options: { dirs: string[] }) => SessionPlugin)({
-        dirs: [path.join(workspaceRoot, ".innocence", "skills")],
-      });
-    case "mcp":
-      return (value as (options: { servers: Record<string, unknown> }) => SessionPlugin)({
-        servers: (config.mcpServers ?? {}) as Record<string, unknown>,
-      });
-    default:
-      throw new Error(`builtin plugin "${id}" has no composition branch`);
+  ownerId: string,
+): Promise<ResolvedGroupChild[]> {
+  const resolved: ResolvedGroupChild[] = [];
+  for (const raw of entries) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error(`loader group entry "${ownerId}" has invalid child`);
+    }
+    const child = raw as import("@innocencecode/kernel-loader").EntryOptions;
+    if (!validGroupSegment(child.id) ||
+      (child.name !== undefined && (typeof child.name !== "string" || child.name.trim().length === 0)) ||
+      (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
+      throw new Error(`loader group entry "${ownerId}" has invalid child`);
+    }
+    const options = groupChildOptions(child);
+    if (options.disabled) {
+      resolved.push(options);
+      continue;
+    }
+    if (options.name === "skills" || options.name === "kernel:skills") {
+      options.plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", options.config, workspaceRoot, config));
+    } else if (options.name === "mcp" || options.name === "kernel:mcp") {
+      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config));
+    } else if (options.name === "kernel:group") {
+      const nested = groupConfigOf(options.id, options.config);
+      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id);
+      options.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
+    }
+    resolved.push(options);
   }
+  return resolved;
+}
+
+async function builtinLoaderEntryFor(
+  boot: PluginBoot,
+  entry: import("@innocencecode/kernel-loader").EntryOptions,
+  config: InnocenceConfig,
+  workspaceRoot: string,
+): Promise<SessionLoaderPlugin> {
+  const id = entry.id;
+  let plugin: ObjectPlugin | undefined;
+  if (!entry.disabled && id === "skills") {
+    plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
+  } else if (!entry.disabled && id === "mcp") {
+    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
+  } else if (!entry.disabled && id.startsWith("group:")) {
+    const group = groupConfigOf(id, entry.config);
+    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
+    plugin = boot.spine.group.createGroupPlugin({ id: group.id, entries: children });
+  }
+  return {
+    name: entry.name,
+    options: entry,
+    resolver: boot.moduleResolver,
+    ...(plugin ? { plugin } : {}),
+    core: id === "fs" || id === "shell",
+    ...(id.startsWith("group:") ? { abortOnFailure: true } : {}),
+  };
 }
 
 /**
@@ -154,6 +264,7 @@ export function createSessionComposition(
     bootPromise ??= createPluginBoot({
       ...options.resolvePaths(),
       workspaceRoot: options.getWorkspaceRoot(),
+      allowedGroupNames: options.getAllowedGroupNames?.(),
     }).catch((error: unknown) => {
       // A failed boot must not pin the memo — the next session build retries.
       // The kernel/spine module caches intentionally SURVIVE (successful
@@ -193,6 +304,7 @@ export function createSessionComposition(
         boot.resolveBuiltinSet({
           workspaceRoot,
           userToggles,
+          knownGroupNames: options.getAllowedGroupNames?.(),
           // yml 损坏/未知键告警必须进 userData/logs，而非 console 兜底。
           logger: (level, msg, data) =>
             options.log(level === "error" ? "error" : "warn", msg, data),
@@ -203,25 +315,15 @@ export function createSessionComposition(
       }
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
-      const active = new Set(resolved.active);
       const plugins: SessionPlugin[] = [];
-      if (active.has("fs")) plugins.push(await builtinPluginFor(boot, "fs", config, workspaceRoot));
-      if (active.has("shell")) plugins.push(await builtinPluginFor(boot, "shell", config, workspaceRoot));
-      // 项目权限规则在关系模型之外（spec 非目标：不可关闭），恒定注入。
+      for (const entry of resolved.entries) {
+        if (entry.id === "example" || entry.disabled) continue;
+        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot));
+      }
+      // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
-      if (active.has("subagent")) {
-        plugins.push(await builtinPluginFor(boot, "subagent", config, workspaceRoot));
-      }
-      if (active.has("skills")) {
-        plugins.push(await builtinPluginFor(boot, "skills", config, workspaceRoot));
-      }
-      if (active.has("mcp")) plugins.push(await builtinPluginFor(boot, "mcp", config, workspaceRoot));
-      if (active.has("todo")) plugins.push(await builtinPluginFor(boot, "todo", config, workspaceRoot));
-      // Provider assembly per session (the build-time settings): one provider
-      // plugin named "provider" — the session kernel resolves the registry's
-      // sole registered provider, so this is the only provider path. A caller
-      // that passes no settings (integration probes) gets the default-shaped
-      // settings — the mock-provider path.
+      // Provider assembly per session remains a host concern outside the builtin
+      // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(buildProviderFromSettings(settings ?? DEFAULT_SETTINGS)));
       return plugins;
     },

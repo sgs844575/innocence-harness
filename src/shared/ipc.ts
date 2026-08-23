@@ -31,6 +31,12 @@ export const IPC = {
   settingsEnrichModels: "settings:enrich-models",
   // 插件清单投影（1c）：main 按当前 toggles 现算的 manifest 投影。
   pluginsList: "plugins:list",
+  // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
+  skillsDiscover: "skills:discover",
+  skillsImport: "skills:import",
+  // MCP 标准格式导入（任务 5）：main 解析项目 .mcp.json / 探测发现提示。
+  mcpImport: "mcp:import",
+  mcpDiscover: "mcp:discover",
   // Task review/route/complete channels (Task 7).
   ...TaskIpcChannels,
 } as const;
@@ -139,32 +145,32 @@ export type PermissionMode = "auto" | "ask" | "plan" | "full";
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
 export type AgentId = "default" | "plan" | "full";
 
-// 镜像契约：PluginToggleSource 复制自 packages/harness-electron/src/settings.ts
-// （shared 不 import 包），修改任何一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-export interface PluginToggleSource {
-  subagent?: boolean;
-  skills?: boolean;
-  mcp?: boolean;
-  todo?: boolean;
-}
+// Plugin-toggle source is defined here because both host settings and the
+// main-process resolver consume this IPC-compatible payload. Keys stay open:
+// any plugin id maps to a boolean.
+export type PluginToggleSource = Record<string, boolean>;
 
-// 镜像契约：以下清单投影类型复制自 src/main/plugin-inventory.ts
-// （shared 不 import main），修改任何一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-/** 插件开关的解析状态（active / 配置停用 / 依赖连带停用）。 */
-export type PluginInventoryState = "active" | "disabled-by-config" | "dependency-disabled";
+// Inventory projection DTOs are defined here because both IPC endpoints use
+// the same payload; the main-process projection imports these types.
+/** 插件开关的解析状态（active / 配置停用 / 依赖连带停用 / 配置块校验失败降级）。 */
+export type PluginInventoryState =
+  | "active"
+  | "disabled-by-config"
+  | "dependency-disabled"
+  | "config-invalid";
 
 /** 设置页插件清单的一条投影（IPC plugins:list 载荷）。 */
 export interface PluginInventoryEntry {
-  /** 清单 id（fs/shell/subagent/skills/mcp/todo）。 */
+  /** 清单 id（manifest 派生，如 example/subagent/...）。 */
   id: string;
   /** 中性展示名（包 description 投影）。 */
   title: string;
-  /** 恒开（fs/shell：开关呈禁用态）。 */
+  /** 恒开（core 条目：开关呈禁用态）。 */
   core: boolean;
   /** 是否带渲染层模块（构建后 dist/client.js）。 */
   client: boolean;
+  /** 清单派生的可开关标记（core 恒 false；开关可操作面）。 */
+  toggleable: boolean;
   /** 按当前 toggles 现算的解析状态。 */
   state: PluginInventoryState;
   /** 停用获胜层（active 恒 default）。 */
@@ -172,6 +178,34 @@ export interface PluginInventoryEntry {
 }
 
 export type PluginInventory = PluginInventoryEntry[];
+
+// 镜像契约：以下发现 DTO 复制自 src/main/skillDiscovery.ts 的
+// DiscoveredSkill（shared 不 import main），修改任何一侧时必须同步另一侧
+// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** 外部技能发现清单的一条条目（IPC skills:discover 载荷）。 */
+export interface DiscoveredSkillMirror {
+  name: string;
+  description: string;
+  sourceDir: string;
+  origin: string;
+  imported: boolean;
+}
+
+// 镜像契约：以下 MCP 导入 DTO 复制自 src/main/mcpImport.ts 的
+// McpServerEntry/McpImportResult（shared 不 import main），修改任何一侧时
+// 必须同步另一侧（packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** .mcp.json 中一条 MCP 服务器条目（IPC mcp:import 载荷形状）。 */
+export interface McpServerEntryMirror {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** MCP 导入结果（imported 名称清单 + 同名跳过清单）。 */
+export interface McpImportResultMirror {
+  imported: string[];
+  skipped: { name: string; reason: "duplicate" | "invalid-entry" }[];
+}
 
 // 镜像契约：以下两个类型复制自 packages/harness-electron/src/modelPresets.ts
 // （shared 不 import 包），修改任何一侧时必须同步另一侧。
@@ -248,8 +282,10 @@ export interface HarnessSettings {
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置。与 harness-electron 同步。 */
   pluginToggles?: PluginToggleSource;
+  /** 外部技能目录发现开关；缺失/非法值默认开启。与 harness-electron 同步。 */
+  externalSkillDiscovery?: boolean;
   /** 外部编辑器启动命令（工作台入口，Task 11）；"" = 未配置。与
-   *  harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
+   * harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
   externalEditorCommand?: string;
 }
 
@@ -310,6 +346,14 @@ export interface InnocenceCodeApi {
   setHarnessSettings(settings: HarnessSettings): Promise<void>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;
+  /** 外部技能发现清单（main 探测已知外部智能体目录）。 */
+  discoverSkills(): Promise<DiscoveredSkillMirror[]>;
+  /** 导入一条已发现的技能到用户技能根（失败抛错由调用方提示）。 */
+  importSkill(discovered: DiscoveredSkillMirror): Promise<void>;
+  /** 解析并合并项目 .mcp.json 文本到 <root>/.innocence/config.json（损坏抛错由调用方提示）。 */
+  importMcpServers(root: string, text: string): Promise<McpImportResultMirror>;
+  /** 项目根 .mcp.json 路径或 null（发现提示用）。 */
+  discoverMcpFile(root: string): Promise<string | null>;
   listProviderModels(profileId: string): Promise<string[]>;
   /** 用 harness-electron 预设目录补全模型元数据（main 侧 modelFromPreset）。 */
   enrichModels(providerName: string, ids: string[]): Promise<ModelInfo[]>;

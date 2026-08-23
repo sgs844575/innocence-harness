@@ -1,14 +1,16 @@
-// Host-local plugin-set / plugin-toggles logic (verbatim copy made at T11
-// from the retired core package's plugin-set.ts and plugin-toggles.ts, whose
-// package was deleted at T12): this module is now the canonical resolver —
-// the host composition never imported those runtime values from the package
-// anyway, so behavior is byte-identical.
-import fs from "node:fs/promises";
-import path from "node:path";
-import { parse as parseYaml } from "yaml";
+// Host-local plugin-set logic (verbatim copy made at T11 from the retired
+// core package's plugin-set.ts, whose package was deleted at T12): this
+// module is now the canonical resolver — the host composition never
+// imported those runtime values from the package anyway, so behavior is
+// byte-identical. The file-reading half (loadPluginToggles) was removed at
+// phase 2 task 3: the project layer is read by pluginBoot/configSources
+// (open keyspace — the manifest id set), which replaced this copy's
+// hardwired four-key whitelist.
+import type { PluginToggleSource } from "../shared/ipc";
 
-/** Severity sink shape (copied with the module). */
-export type Logger = (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
+/** 开放键空间（清单 id 集）：布尔值按 manifest 条目 id 校验（键空间由
+ * 清单派生，不再硬编码四键；shared IPC 是唯一类型来源）。 */
+export type { PluginToggleSource } from "../shared/ipc";
 
 export interface PluginDescriptor {
   id: string;
@@ -18,13 +20,8 @@ export interface PluginDescriptor {
   title?: string;
   /** 是否带渲染层模块（构建后 dist/client.js 存在）。 */
   client?: boolean;
-}
-
-export interface PluginToggleSource {
-  subagent?: boolean;
-  skills?: boolean;
-  mcp?: boolean;
-  todo?: boolean;
+  /** 是否可开关（清单派生：core 恒 false、其余 true；缺省回落 !core）。 */
+  toggleable?: boolean;
 }
 
 export type PluginSkipReason = "disabled-by-config" | "dependency-disabled";
@@ -226,67 +223,4 @@ export function resolvePluginSet(
   }
 
   return { active, skipped: skippedList, warnings };
-}
-
-const KNOWN_TOGGLE_KEYS: readonly string[] = ["subagent", "skills", "mcp", "todo"];
-
-export interface PluginTogglesOptions {
-  logger?: Logger;
-}
-
-const consoleLogger: Logger = (level, msg, data) => {
-  const sink = level === "error" ? console.error : console.warn;
-  if (data === undefined) sink(msg);
-  else sink(msg, data);
-};
-
-export async function loadPluginToggles(
-  root: string,
-  options: PluginTogglesOptions = {},
-): Promise<PluginToggleSource | undefined> {
-  const log = options.logger ?? consoleLogger;
-  const file = path.join(root, ".innocence", "plugins.yml");
-
-  let raw: string;
-  try {
-    raw = await fs.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    log("warn", `failed to read ${file}; ignoring project plugin toggles`, err);
-    return undefined;
-  }
-
-  let doc: unknown;
-  try {
-    doc = parseYaml(raw);
-  } catch (err) {
-    log("warn", `failed to parse ${file} as yaml; ignoring project plugin toggles`, err);
-    return undefined;
-  }
-
-  if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
-    log("warn", `${file} must be a yaml mapping; ignoring project plugin toggles`);
-    return undefined;
-  }
-
-  const plugins = (doc as Record<string, unknown>).plugins;
-  if (plugins === undefined) return undefined;
-  if (plugins === null || typeof plugins !== "object" || Array.isArray(plugins)) {
-    log("warn", `"plugins" in ${file} must be a mapping; ignoring project plugin toggles`);
-    return undefined;
-  }
-
-  const toggles: Record<string, boolean> = {};
-  for (const [key, value] of Object.entries(plugins as Record<string, unknown>)) {
-    if (!KNOWN_TOGGLE_KEYS.includes(key)) {
-      log("warn", `unknown plugin toggle "${key}" in ${file}; ignored`);
-      continue;
-    }
-    if (typeof value !== "boolean") {
-      log("warn", `plugin toggle "${key}" in ${file} must be a boolean; ignored`);
-      continue;
-    }
-    toggles[key] = value;
-  }
-  return toggles;
 }

@@ -8,16 +8,13 @@ import {
   PROVIDER_PRESET_MIRROR,
   type AgentId,
   type ChatPermissionEvent,
-  type PluginInventory,
-  type PluginInventoryEntry,
-  type PluginToggleSource,
+  type DiscoveredSkillMirror as SharedDiscoveredSkill,
+  type McpImportResultMirror,
+  type McpServerEntryMirror,
 } from "../../../src/shared/ipc";
-import type {
-  PluginInventory as MainPluginInventory,
-  PluginInventoryEntry as MainPluginInventoryEntry,
-} from "../../../src/main/plugin-inventory";
+import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
+import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
 import type { PermissionResource } from "@innocencecode/harness-permissions";
-import type { PluginToggleSource as CorePluginToggleSource } from "../src/settings";
 import {
   MOCK_MODEL as PKG_MOCK_MODEL,
   MOCK_PROFILE_ID as PKG_MOCK_PROFILE_ID,
@@ -75,77 +72,47 @@ describe("shared AgentId 镜像对齐 harness-electron agents.ts", () => {
   });
 });
 
-describe("shared PluginToggleSource 镜像对齐 harness-electron settings.ts", () => {
-  // shared 不 import 包，PluginToggleSource 手工镜像：settings 增删开关键而忘了
-  // 同步 shared 时，下面的双向键映射会让 typecheck 失败（harness-electron 的
-  // typecheck 覆盖 tests/）。
-  it("类型漂移守卫：shared 镜像与 settings PluginToggleSource 双向兼容", () => {
-    const sample: PluginToggleSource = { subagent: false, skills: true, mcp: false, todo: true };
-    const core: CorePluginToggleSource = sample;
-    const back: PluginToggleSource = core;
+describe("shared DiscoveredSkillMirror 镜像对齐 main skillDiscovery", () => {
+  // shared 不 import main，发现 DTO 手工镜像：main 增删字段或改语义而忘了
+  // 同步 shared 时，双向赋值与字面量赋值会让 typecheck 失败。
+  const sample: SharedDiscoveredSkill = {
+    name: "review",
+    description: "审查指南",
+    sourceDir: "D:/home/.claude/skills/review",
+    origin: "external-a",
+    imported: false,
+  };
+
+  it("类型漂移守卫：shared 镜像与 main DiscoveredSkill 双向兼容", () => {
+    const main: DiscoveredSkill = sample;
+    const back: SharedDiscoveredSkill = main;
     expect(back).toEqual(sample);
-  });
-  it("四键一一对应（subagent/skills/mcp/todo）", () => {
-    const toCore: Record<keyof PluginToggleSource, keyof CorePluginToggleSource> = {
-      subagent: "subagent",
-      skills: "skills",
-      mcp: "mcp",
-      todo: "todo",
-    };
-    const fromCore: Record<keyof CorePluginToggleSource, keyof PluginToggleSource> = {
-      subagent: "subagent",
-      skills: "skills",
-      mcp: "mcp",
-      todo: "todo",
-    };
-    expect(Object.keys(toCore).sort()).toEqual(["mcp", "skills", "subagent", "todo"]);
-    expect(Object.keys(fromCore).sort()).toEqual(["mcp", "skills", "subagent", "todo"]);
   });
 });
 
-describe("shared PluginInventoryEntry 镜像对齐 main plugin-inventory", () => {
-  // shared 不 import main，清单投影 DTO 手工镜像：main 投影增删字段或改
-  // 联合值而忘了同步 shared 时，下面的双向赋值与字面量赋值会让 typecheck
-  // 失败（root typecheck 与 harness-electron typecheck 均覆盖双方）。
-  const sample: PluginInventoryEntry = {
-    id: "skills",
-    title: "技能加载器",
-    core: false,
-    client: true,
-    state: "active",
-    via: "default",
+describe("shared MCP 导入 DTO 镜像对齐 main mcpImport", () => {
+  // shared 不 import main，MCP 导入 DTO 手工镜像：main 增删字段而忘了同步
+  // shared 时，双向赋值会让 typecheck 失败。
+  const entry: McpServerEntryMirror = {
+    command: "npx",
+    args: ["-y", "server"],
+    env: { K: "v" },
+  };
+  const result: McpImportResultMirror = {
+    imported: ["a"],
+    skipped: [
+      { name: "b", reason: "duplicate" },
+      { name: "invalid", reason: "invalid-entry" },
+    ],
   };
 
-  it("类型漂移守卫：shared 镜像与 main 投影类型双向兼容", () => {
-    const main: MainPluginInventoryEntry = sample;
-    const back: PluginInventoryEntry = main;
-    expect(back).toEqual(sample);
-  });
-
-  it("数组别名双向兼容", () => {
-    const sharedList: PluginInventory = [sample];
-    const mainList: MainPluginInventory = sharedList;
-    const back: PluginInventory = mainList;
-    expect(back).toBe(sharedList);
-  });
-
-  it("state/via 字面量联合逐值双向兼容（任一侧增删枚举值即红）", () => {
-    const states: PluginInventoryEntry["state"][] = [
-      "active",
-      "disabled-by-config",
-      "dependency-disabled",
-    ];
-    const vias: PluginInventoryEntry["via"][] = ["user", "project", "default"];
-    for (const state of states) {
-      const main: MainPluginInventoryEntry["state"] = state;
-      const back: PluginInventoryEntry["state"] = main;
-      expect(back).toBe(state);
-    }
-    for (const via of vias) {
-      const main: MainPluginInventoryEntry["via"] = via;
-      const back: PluginInventoryEntry["via"] = main;
-      expect(back).toBe(via);
-    }
+  it("类型漂移守卫：entry 与 result 双向兼容", () => {
+    const mainEntry: McpServerEntry = entry;
+    const backEntry: McpServerEntryMirror = mainEntry;
+    expect(backEntry).toEqual(entry);
+    const mainResult: McpImportResult = result;
+    const backResult: McpImportResultMirror = mainResult;
+    expect(backResult).toEqual(result);
   });
 });
 

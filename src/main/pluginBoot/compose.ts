@@ -1,26 +1,26 @@
 // Plugin boot composition: one host-owned kernel root (created through the
 // dynamically loaded staging kernel), the registration spine mounted on it
-// (through the dynamically loaded spine suite — the same staging module
-// identities the disk-loaded capability plugins resolve against), the kernel
-// loader plus its dual-root file resolver (user plugins dir first, then the
-// built-in staging root), and the builtin-set resolution (manifest.json +
-// two-level toggles via the local plugin-set copy). Capability plugins are
-// imported through the resolver; route sessions mount them inside per-route
-// kernel scopes (createSessionScope).
+// (the same staging module identities the disk-loaded capability plugins
+// resolve against), the kernel loader plus its dual-root file resolver (user
+// plugins dir first, then the built-in staging root), and the declarative
+// builtin-set resolution (manifest.json + two-level config layers →
+// resolveEntries). Capability plugins are imported through the resolver;
+// route sessions mount them inside per-route kernel scopes (createSessionScope).
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type * as KernelModule from "@innocencecode/kernel";
 import type { SessionSpineSuite } from "@innocencecode/harness-electron";
+import type { EntryOptions } from "@innocencecode/kernel-loader";
 import { loadKernelSuite } from "./spineLoader";
 import type { Kernel } from "./kernelLoader";
 import {
-  loadPluginToggles,
-  resolvePluginSet,
   type PluginDescriptor,
   type PluginToggleSource,
-  type ResolvedPluginSet,
 } from "../plugin-toggles-local";
+import { resolveEntries, type ConfigSpecs, type ResolvedEntries } from "./pluginEntries";
+import { type SchemaSpec } from "@innocencecode/kernel-schema";
+import { loadConfigLayerPair, type ConfigLogger } from "./configSources";
 import { projectPluginInventory, type PluginInventoryEntry } from "../plugin-inventory";
 
 type KernelContext = KernelModule.Context;
@@ -39,16 +39,19 @@ export interface PluginBoot {
   /** User plugin root (`~/.innocence/plugins` unless overridden). */
   readonly userRoot: string;
   /**
-   * Resolve the builtin capability set for one workspace: manifest.json
-   * descriptors + project `.innocence/plugins.yml` + user settings toggles
-   * (project overrides user; core stays on — the local plugin-set semantics).
+   * Resolve the builtin capability set for one workspace (declarative face):
+   * manifest descriptors + project `.innocence/plugins.yml` + user settings
+   * toggles with `~/.innocence/cordis.yml` configs → resolveEntries (same
+   * toggle semantics: project overrides user; core stays on; dependency
+   * closure). Skipped plugins still produce disabled entries (entries() face).
    * An empty workspaceRoot skips the project layer (no cwd-relative reads).
    */
   resolveBuiltinSet(options: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
+    knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
-  }): Promise<ResolvedPluginSet>;
+  }): Promise<ResolvedEntries>;
   /**
    * Manifest projection for the settings inventory (IPC plugins:list):
    * boot-time descriptor metadata + a FRESH resolveBuiltinSet run per call —
@@ -58,6 +61,8 @@ export interface PluginBoot {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
   }): Promise<PluginInventoryEntry[]>;
+  /** The dual-root resolver shared by route-scope loaders. */
+  readonly moduleResolver: { version: string; import(specifier: string): Promise<unknown> };
   /**
    * Import one builtin plugin module through the dual-root resolver: the
    * module's default export when it has one (plugin object, or the factory
@@ -72,6 +77,20 @@ export interface PluginBoot {
    * as a function plugin would silently register nothing.
    */
   mountAtRoot(id: string): Promise<void>;
+  /**
+   * Declarative root mount of a resolved entry set: one loader entry per
+   * plugin row (`boot-<id>`, config and disabled carried verbatim; disabled
+   * entries short-circuit in the loader but stay visible in entries()).
+   * Single-entry failures are isolated (recorded as warnings, never abort
+   * the whole mount) — the boot root keeps whatever else mounted.
+   */
+  mountEntries(
+    entries: readonly EntryOptions[],
+    logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void,
+  ): Promise<{ failures: string[] }>;
+  /** Root loader tree entry ids (composite; `boot-<id>` rows), including
+   *  disabled rows — the entries()-face projection of the declarative set. */
+  loaderEntryIds(): string[];
   /** Create one route-session scope below the boot root (kernel createScope). */
   createSessionScope(): KernelScope;
   /** Unwind the boot root (app shutdown; cascades into live route scopes). */
@@ -84,8 +103,10 @@ export interface PluginBootOptions {
   kernelPath: string;
   /** Built-in plugin root (staging `plugins/` or packaged `resources/plugins`). */
   builtinRoot: string;
-  /** User plugin root; defaults to `~/.innocence/plugins`. */
+  /** User plugin root (`~/.innocence/plugins` unless overridden). */
   userRoot?: string;
+  /** Registered group names used to validate configured group declarations. */
+  allowedGroupNames?: readonly string[];
   /**
    * Default workspace root recorded as the boot root's baseUrl (diagnostics
    * and relative-path resolution anchor); per-session workspaces are resolved
@@ -93,6 +114,21 @@ export interface PluginBootOptions {
    */
   workspaceRoot?: string;
 }
+
+const builtinConfigSpecs: ConfigSpecs = {
+  skills: {
+    type: "object",
+    properties: {
+      dirs: { spec: { type: "array", items: { type: "string" } } },
+    },
+  } satisfies SchemaSpec,
+  mcp: {
+    type: "object",
+    properties: {
+      servers: { spec: { type: "object" } },
+    },
+  } satisfies SchemaSpec,
+};
 
 /** Root-level permission decider: no UI exists at the boot root, so every
  *  ask fails closed. Route sessions carry their own UI-backed decider. */
@@ -130,14 +166,48 @@ async function readManifest(builtinRoot: string): Promise<PluginDescriptor[]> {
     if (descriptor.client !== undefined && typeof descriptor.client !== "boolean") {
       throw new Error(`builtin plugin manifest malformed (${file}): bad client flag for "${descriptor.id}"`);
     }
+    if (descriptor.toggleable !== undefined && typeof descriptor.toggleable !== "boolean") {
+      throw new Error(`builtin plugin manifest malformed (${file}): bad toggleable flag for "${descriptor.id}"`);
+    }
     return {
       id: descriptor.id,
       dependencies: descriptor.dependencies,
       ...(descriptor.core === true ? { core: true } : {}),
       ...(typeof descriptor.title === "string" ? { title: descriptor.title } : {}),
       ...(descriptor.client === true ? { client: true } : {}),
+      ...(typeof descriptor.toggleable === "boolean" ? { toggleable: descriptor.toggleable } : {}),
     };
   });
+}
+
+/** 键空间投影（清单派生）：toggleable 条目的 id 集即开关键空间——旧
+ *  manifest（无 toggleable 字段）缺省回落"非 core 即可开关"，语义等价。 */
+export function toggleKeyspace(descriptors: readonly PluginDescriptor[]): string[] {
+  return descriptors
+    .filter((d) => (d.toggleable ?? d.core !== true) === true)
+    .map((d) => d.id);
+}
+
+/** Register the include carrier as the `kernel:include` loader builtin (the
+ *  config-tree carrier face). Dynamically imported from the staging tree; a
+ *  missing dist or an unloadable carrier is a silent no-op (optional hook). */
+async function attachIncludeBuiltin(
+  loader: { builtins: Record<string, unknown> },
+  kernelPath: string,
+): Promise<void> {
+  try {
+    const includeEntry = path.join(
+      path.dirname(kernelPath), "..", "kernel-include", "dist", "index.js",
+    );
+    const includeModule = (await import(
+      (await import("node:url")).pathToFileURL(includeEntry).href
+    )) as { Include?: unknown };
+    if (includeModule && typeof includeModule.Include === "object") {
+      loader.builtins.include = includeModule.Include;
+    }
+  } catch {
+    // optional hook — absent carrier is not a boot failure
+  }
 }
 
 /**
@@ -172,26 +242,54 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
 
   const loaderFiber = await root.plugin(loaderModule.Loader);
   const loader = loaderFiber.ctx.loader;
-  loader.internal = loaderModule.createFileModuleResolver({ roots: [userRoot, options.builtinRoot] });
+  const moduleResolver = loaderModule.createFileModuleResolver({ roots: [userRoot, options.builtinRoot] });
+  loader.internal = moduleResolver;
+  const groupBuiltin = {
+    name: "group",
+    apply(ctx: KernelContext) {
+      const config = ctx.entry?.options.config;
+      if (!config || typeof config !== "object" || !Array.isArray((config as { entries?: unknown }).entries)) {
+        throw new Error("loader group entry has invalid config");
+      }
+      return spine.group.createGroupPlugin(config as Parameters<typeof spine.group.createGroupPlugin>[0]).apply(ctx);
+    },
+  };
+  loader.builtins.group = groupBuiltin;
+
+  // kernel:include builtin hook (optional by the task ruling): absent dist or
+  // unloadable carrier degrades to a no-op — the boot never depends on it.
+  await attachIncludeBuiltin(loader, options.kernelPath);
 
   const descriptors = await readManifest(options.builtinRoot);
 
-  // Shared resolution: manifest descriptors + project yml + user toggles. An
-  // empty workspaceRoot means "no project layer" (the settings-inventory path
-  // with no workspace picked) — never a cwd-relative plugins.yml read.
+  // Shared declarative resolution: manifest descriptors + project yml layer +
+  // user layer (settings toggles over user cordis.yml). An empty workspaceRoot
+  // means "no project layer" — never a cwd-relative read.
   const resolveBuiltinSet = async ({
     workspaceRoot,
     userToggles,
+    knownGroupNames,
     logger,
   }: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
+    knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
-  }): Promise<ResolvedPluginSet> => {
-    const project = workspaceRoot
-      ? await loadPluginToggles(workspaceRoot, { logger: logger ?? (() => {}) })
-      : undefined;
-    return resolvePluginSet(descriptors, userToggles, project);
+  }): Promise<ResolvedEntries> => {
+    const log: ConfigLogger = (level, msg, data) =>
+      (logger ?? (() => {}))(level, msg, data);
+    // 键空间清单派生：项目/用户 yml 的未知键校验用清单 id 集（configSources
+    // 不再持有硬编码白名单）。
+    const knownKeys = toggleKeyspace(descriptors);
+    const { user, project } = await loadConfigLayerPair(
+      os.homedir(),
+      workspaceRoot,
+      userToggles,
+      log,
+      knownKeys,
+      knownGroupNames ?? options.allowedGroupNames,
+    );
+    return resolveEntries(descriptors, user, project, builtinConfigSpecs);
   };
 
   return {
@@ -200,14 +298,12 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     root,
     builtinRoot: options.builtinRoot,
     userRoot,
+    moduleResolver,
     resolveBuiltinSet,
     async pluginInventory({ workspaceRoot, userToggles }) {
       // 现算投影：每次调用重跑解析（toggles 变更即时反映）；描述符本身
       // 是 boot 时的 manifest 快照（随 staging 树固定）。
-      return projectPluginInventory(
-        descriptors,
-        await resolveBuiltinSet({ workspaceRoot, userToggles }),
-      );
+      return projectPluginInventory(descriptors, await resolveBuiltinSet({ workspaceRoot, userToggles }));
     },
     async importPlugin(id: string): Promise<unknown> {
       // The loader validates the plugin shape (object with apply, or a
@@ -216,6 +312,35 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     },
     async mountAtRoot(id: string): Promise<void> {
       await loader.create({ id: `boot-${id}`, name: id });
+    },
+    async mountEntries(entries, logger = () => {}) {
+      const failures: string[] = [];
+      for (const entry of entries) {
+        try {
+          await loader.create({
+            id: `boot-${entry.id}`,
+            name: entry.name,
+            ...(entry.config !== undefined ? { config: entry.config } : {}),
+            ...(entry.disabled !== undefined ? { disabled: entry.disabled } : {}),
+          });
+        } catch (err) {
+          failures.push(entry.id);
+          logger("warn", `loader entry "${entry.id}" failed to mount; isolated`, {
+            error: String(err),
+          });
+        }
+      }
+      // Aggregate settle for entries mounted by carriers (disabled entries
+      // short-circuit; carrier-subtree failures surface here, also isolated).
+      try {
+        await loader.await();
+      } catch (err) {
+        logger("warn", "loader tree settle reported failures; isolated", { error: String(err) });
+      }
+      return { failures };
+    },
+    loaderEntryIds(): string[] {
+      return [...loader.entries()].map((entry) => entry.id);
     },
     createSessionScope() {
       return kernel.createScope(root);

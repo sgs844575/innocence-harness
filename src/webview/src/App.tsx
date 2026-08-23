@@ -6,54 +6,43 @@
 // 这里只保留跨切片的装配：settings/appInfo、语言、错误 toast、恢复横幅
 // 与各面板的 props 接线。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  MessageSquarePlus,
-  PanelLeftOpen,
-  Settings as SettingsIcon,
-} from "lucide-react";
-import type { AppInfo, HarnessSettings, PluginInventory } from "../../shared/ipc";
+import type { AppInfo, HarnessSettings } from "../../shared/ipc";
 import type { TaskForkRouteRequest } from "../../shared/taskIpc";
-import { api, codeApi, taskApi, terminalApi } from "./lib/ipc";
+import { api, taskApi } from "./lib/ipc";
 import { createT } from "./lib/i18n";
 import { TitleBar } from "./components/TitleBar";
-import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
-import { SettingsView } from "./components/SettingsView";
-import { SettingsNav, SettingsRail } from "./components/SettingsNav";
-import { NavRail } from "./components/NavRail";
+
 import { AppShell, type AppShellNav } from "./components/AppShell";
-import { RecoveryBanner } from "./components/RecoveryBanner";
 import { BuiltinToolcards } from "./components/chat/toolcards/builtinToolcards";
 import { BuiltinPanels } from "./components/workbench/builtinPanels";
 import { BuiltinSettingsSections } from "./components/settings/builtinSettingsSections";
 import { SlotProvider } from "./slots/react";
 import { createSlotRegistry } from "./slots/registry";
-import { importSchemeModule, loadPluginClients } from "./pluginClient/loader";
-import { ReviewPanel } from "./components/task/ReviewPanel";
-import { RoutePanel } from "./components/task/RoutePanel";
 import { ForkRouteDialog } from "./components/task/ForkRouteDialog";
-import { CodePanel } from "./components/code/CodePanel";
-import { TerminalPanel } from "./components/terminal/TerminalPanel";
 import type { ForkMessageCommand, TaskChangeCardCommand } from "./components/MessageItem";
-import { groupHunksByFile, summarizeChanges } from "./components/task/taskViewModel";
+import { summarizeChanges } from "./components/task/taskViewModel";
 import { useSessionController } from "./state/useSessionController";
 import { useChatStream } from "./state/useChatStream";
 import { useWorkbenchState } from "./state/useWorkbenchState";
 import { useTaskReviewData } from "./state/useTaskReviewData";
-import { restartWarningVisible, writeToolsBlocked } from "./state/workbenchState";
+import { usePluginClients } from "./state/usePluginClients";
+import { useWorkbenchPresentation } from "./state/useWorkbenchPresentation";
+import { useAppNavigation } from "./state/useAppNavigation";
+import { writeToolsBlocked } from "./state/workbenchState";
 
 const APP_NAME = "InnocenceCode";
 
 export function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
-  const [pluginInventory, setPluginInventory] = useState<PluginInventory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shellNav = useRef<AppShellNav | null>(null);
   // 槽位注册表（App 持有）：视图钩子经 <SlotProvider registry> 消费；插件
   // client 装载器（命令式、非视图层）经同一实例注册工具卡（订阅通道重渲染）。
   const [slotRegistry] = useState(createSlotRegistry);
+  const { pluginInventory, pluginInventoryError, refreshPluginInventory } = usePluginClients(slotRegistry);
 
   // Persisted locale wins; fall back to the system locale, then zh-CN.
   const lang = settings?.locale || appInfo?.locale || "zh-CN";
@@ -65,21 +54,10 @@ export function App(): React.JSX.Element {
     errorTimer.current = setTimeout(() => setError(null), 4000);
   }, []);
 
-  /** 插件清单投影：main 按当前 toggles 现算，失败保持未返回态（骨架）。
-   *  成功后装载插件渲染层 client 模块（active+client 条目经协议动态导入，
-   *  同一注册表重装载先撤销旧注册；单插件失败仅告警不阻断）。 */
-  const refreshPluginInventory = useCallback(() => {
-    void api.getPluginInventory().then((inventory) => {
-      setPluginInventory(inventory);
-      void loadPluginClients({ inventory, registry: slotRegistry, importModule: importSchemeModule });
-    }, () => {});
-  }, [slotRegistry]);
-
   useEffect(() => {
     void api.getAppInfo().then(setAppInfo);
     void api.getHarnessSettings().then(setSettings);
-    refreshPluginInventory();
-  }, [refreshPluginInventory]);
+  }, []);
 
   /** 设置补丁（合并持久化 + 本地乐观更新）。 */
   const applySettingsPatch = useCallback((patch: Partial<HarnessSettings>) => {
@@ -126,23 +104,7 @@ export function App(): React.JSX.Element {
     taskId: task?.taskId ?? "",
     routeId: workbench.state.activeRouteId,
   });
-  const reviewFiles = useMemo(() => groupHunksByFile(reviewData.hunks), [reviewData.hunks]);
-
-  // 审查/回写命令完成后对账审查面（状态化 hunk 状态随之刷新）。
-  const reviewAndRefresh = useCallback(
-    async (dto: Parameters<typeof workbench.review>[0]) => {
-      await workbench.review(dto);
-      await reviewData.refresh();
-    },
-    [workbench.review, reviewData],
-  );
-  const restoreAndRefresh = useCallback(
-    async (request: Parameters<typeof workbench.restore>[0]) => {
-      await workbench.restore(request);
-      await reviewData.refresh();
-    },
-    [workbench.restore, reviewData],
-  );
+  const { workbenchPanels, banner } = useWorkbenchPresentation({ t, workbench, reviewData });
 
   const openReviewPanel = useCallback(() => {
     shellNav.current?.workbench.setTab("review");
@@ -227,133 +189,14 @@ export function App(): React.JSX.Element {
   const projectName =
     workspaceRoot === "" ? "" : (workspaceRoot.split(/[\\/]/).filter(Boolean).pop() ?? "");
 
-  // 辅助面板：审查/路线/代码以任务上下文的真实 DTO 驱动（无任务为空态）。
-  const workbenchPanels = useMemo(
-    () => ({
-      review: (
-        <ReviewPanel
-          files={reviewFiles}
-          taskId={task?.taskId ?? ""}
-          routeId={workbench.state.activeRouteId}
-          expectedVersion={task?.expectedVersion ?? ""}
-          t={t}
-          onReview={(dto) => void reviewAndRefresh(dto)}
-          onRestore={(request) => void restoreAndRefresh(request)}
-        />
-      ),
-      routes: (
-        <RoutePanel
-          taskId={task?.taskId ?? ""}
-          routes={task?.routes ?? []}
-          activeRouteId={workbench.state.activeRouteId}
-          t={t}
-          switchRoute={workbench.switchRoute}
-        />
-      ),
-      code: (
-        <CodePanel
-          taskId={task?.taskId ?? ""}
-          routeId={workbench.state.activeRouteId}
-          files={reviewData.files}
-          t={t}
-          api={codeApi}
-        />
-      ),
-      // 终端（C2）：真实 preload 桥 + 活动任务路线；面板关闭即卸载
-      // （WorkbenchShell 常驻挂载仅在面板打开期间成立）。
-      terminal: (
-        <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} />
-      ),
-    }),
-    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask],
-  );
-
-  // 恢复横幅：恢复状态 → 可见告警（重试/关闭），与写工具门禁同源。
-  const banner = useMemo(() => {
-    const recovery = workbench.state.recovery;
-    if (!restartWarningVisible(workbench.state)) return null;
-    const message =
-      recovery.eventRecoveryFailed !== null
-        ? t("workbench.warning.eventRecovery")
-        : recovery.worktreeFailure !== null
-          ? t("workbench.warning.worktree")
-          : recovery.checkpointFailed !== null
-            ? t("workbench.warning.checkpoint")
-            : recovery.recoveredFromInconsistent !== null
-              ? t("workbench.warning.inconsistent")
-              : t("workbench.warning.restart");
-    const retryTaskId = recovery.worktreeFailure?.retry.taskId;
-    return (
-      <RecoveryBanner
-        message={message}
-        onRetry={retryTaskId !== undefined ? () => void workbench.retryRecovery(retryTaskId) : undefined}
-        onDismiss={workbench.dismissRestartWarning}
-        retryLabel={t("workbench.warning.retry")}
-        dismissLabel={t("workbench.warning.dismiss")}
-      />
-    );
-  }, [workbench.state, workbench.retryRecovery, workbench.dismissRestartWarning, t]);
-
-  const sidebar = useCallback(
-    (nav: AppShellNav) =>
-      nav.view === "settings" ? (
-        <SettingsNav t={t} section={nav.section} onSelect={nav.selectSection} onBack={nav.backToChat} />
-      ) : (
-        <Sidebar
-          t={t}
-          appName={APP_NAME}
-          sessions={sessions.sessions}
-          activeId={sessions.activeId}
-          onSelect={(id) => {
-            nav.closeDrawerOnNavigate();
-            sessions.selectSession(id);
-          }}
-          onNew={() => {
-            nav.closeDrawerOnNavigate();
-            sessions.newSession();
-          }}
-          onDelete={(id) => void sessions.deleteSession(id)}
-          onOpenSettings={nav.openSettings}
-        />
-      ),
-    [t, sessions],
-  );
-
-  const rail = useCallback(
-    (nav: AppShellNav) =>
-      nav.view === "settings" ? (
-        <SettingsRail t={t} section={nav.section} onSelect={nav.selectSection} onBack={nav.backToChat} />
-      ) : (
-        <NavRail
-          top={{
-            icon: MessageSquarePlus,
-            label: t("sidebar.nav.newChat"),
-            onClick: () => {
-              nav.closeDrawerOnNavigate();
-              sessions.newSession();
-            },
-          }}
-          items={[{ icon: PanelLeftOpen, label: t("sidebar.open"), onClick: nav.expandNav }]}
-          bottom={{ icon: SettingsIcon, label: t("sidebar.settings"), onClick: nav.openSettings }}
-        />
-      ),
-    [t, sessions],
-  );
-
-  const settingsView = useCallback(
-    (nav: AppShellNav) =>
-      settings ? (
-        <SettingsView
-          t={t}
-          section={nav.section}
-          settings={settings}
-          appInfo={appInfo}
-          onSettingsChange={handleSettingsSet}
-          onPickWorkspace={() => void handlePickWorkspace()}
-        />
-      ) : null,
-    [t, settings, appInfo, handleSettingsSet, handlePickWorkspace],
-  );
+  const { sidebar, rail, settingsView } = useAppNavigation({
+    t,
+    sessions,
+    settings,
+    appInfo,
+    onSettingsChange: handleSettingsSet,
+    onPickWorkspace: () => void handlePickWorkspace(),
+  });
 
   return (
     <SlotProvider registry={slotRegistry}>
@@ -368,6 +211,7 @@ export function App(): React.JSX.Element {
           onSettingsChange: handleSettingsSet,
           onPickWorkspace: () => void handlePickWorkspace(),
           pluginInventory,
+          pluginInventoryError,
         }}
       />
       <AppShell

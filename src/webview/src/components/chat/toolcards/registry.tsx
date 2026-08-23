@@ -19,13 +19,13 @@ export const TOOLCARD_SLOT = "toolcards";
  * 渲染期钩子（订阅槽位变更触发重渲染）——每工具行经 ToolCardRow 各调一次，
  * 不可在循环/条件中直接调用。
  */
-export function getToolCard(toolName: string): ComponentType<ToolCardProps> {
+export function useToolCard(toolName: string): ComponentType<ToolCardProps> {
   const card = useSlotKeyedResolve<ComponentType<ToolCardProps>>(TOOLCARD_SLOT, toolName);
   return card ?? UnknownTool; // 未注册工具统一兜底
 }
 
 /** 单个工具行适配：把解析钩子收进独立行组件，槽位注册变化时按名精准重渲染。 */
 export function ToolCardRow(props: ToolCardProps): React.JSX.Element {
-  const Card = getToolCard(props.call.toolName);
+  const Card = useToolCard(props.call.toolName);
   return <Card {...props} />;
 }

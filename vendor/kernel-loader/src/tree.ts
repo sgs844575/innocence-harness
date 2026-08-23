@@ -75,6 +75,12 @@ export class LoaderTree {
    * @throws when any segment names no subtree-carrying entry.
    */
   resolve(id: string): LoaderEntry {
+    // Group entry ids may themselves contain the composite separator (for
+    // example `group:basic`). Prefer the exact root/tree identity before
+    // interpreting separators as subtree boundaries.
+    for (const entry of this.entries()) {
+      if (entry.id === id) return entry;
+    }
     const parts = id.split(LoaderTree.sep);
     const last = parts.pop()!;
     let tree: LoaderTree | undefined = this;

@@ -7,7 +7,7 @@
 // plugins come from the injected spine suite when the host loaded them from
 // the distributed tree (module identity stays single-sourced); without an
 // injection the bundled static spine is used.
-import { Context, type Fiber, type ObjectPlugin } from "@innocencecode/kernel";
+import { Context, type Fiber } from "@innocencecode/kernel";
 import type {
   AgentsService,
   SpawnerService,
@@ -23,7 +23,15 @@ import type { AgentSessionOptions } from "./session";
 import type { Logger, SessionPlugin } from "./registry";
 import { adaptHarnessPlugin } from "./session-adapter";
 import { SessionRegistryView } from "./session-registry-view";
+import {
+  assertSpineServices,
+  chokepointSession,
+  chokepointTools,
+  isKernelPlugin,
+  resolveRegistryProvider,
+} from "./session-mount";
 import { staticSpineSuite, type SessionSpineSuite } from "./session-spine";
+import { isSessionLoaderPlugin, mountSessionLoader, type SessionLoaderPlugin } from "./session-loader";
 
 // kernel-logger publishes its service without a Context augmentation; the
 // session composition declares the typed member (kernel ServiceTable
@@ -52,14 +60,18 @@ export interface SessionKernel {
   readonly provider: Provider;
   readonly services: SessionKernelServices;
   readonly view: SessionRegistryView;
-  /** Session plugin fibers (native and adapted) in activation order; dispose-error collection reads these. */
+  /** Session plugin fibers (native, adapted, and loader owner) in activation order. */
   readonly pluginFibers: readonly Fiber[];
+  /** Loader tree entries created in this route scope. */
+  readonly loaderEntries: readonly import("@innocencecode/kernel-loader").LoaderEntry[];
 }
 
 /** Inputs of {@link mountSessionKernel} (everything AgentSession.create owns). */
 export interface SessionKernelInit {
   sessionId: string;
   plugins: SessionPlugin[];
+  /** Loader-backed builtin entries resolved by the host composition. */
+  loaderEntries?: SessionLoaderPlugin[];
   /**
    * Injected kernel scope: mounts the session below a host-owned context
    * tree (one route scope below a boot root) instead of a fresh root.
@@ -84,88 +96,6 @@ export interface SessionKernelInit {
   spine?: SessionSpineSuite;
   /** Recursion seam: the spawner's child-session factory (back into AgentSession). */
   spawnerSessionFactory: SpawnerSessionFactory;
-}
-
-/** Asserts every named spine service is resolvable on the context (骨架就绪). */
-function assertServices(ctx: Context, names: readonly string[]): void {
-  for (const name of names) {
-    if (ctx.services.resolve(name) === undefined) {
-      throw new Error(`spine service missing after mount: ${name}`);
-    }
-  }
-}
-
-/** Dual-track discrimination at the load site: a kernel-native plugin
- *  exposes `apply`, a legacy HarnessPlugin exposes `activate`. */
-function isKernelPlugin(plugin: SessionPlugin): plugin is ObjectPlugin {
-  return "apply" in plugin && typeof plugin.apply === "function";
-}
-
-/**
- * Tools service face natively mounted plugins register through: `register`
- * flows through the view chokepoint (service gate first, then the mirror
- * maps every host consumer reads — spawner selection base, toolIndex adopt),
- * exactly like adapter-mounted plugins; the remaining members pass through
- * to the spine service untouched.
- */
-function chokepointTools(base: ToolsService, view: SessionRegistryView): ToolsService {
-  return {
-    register: view.registerTool,
-    get: (name) => base.get(name),
-    specs: () => base.specs(),
-    registerMiddleware: (middleware) => base.registerMiddleware(middleware),
-    middlewares: () => base.middlewares(),
-  };
-}
-
-/**
- * Session service face natively mounted plugins register processors
- * through: `registerProcessor` flows through the view chokepoint (queued
- * here in order and flushed 1:1 when the late-mounted session service
- * binds — the same face adapter-mounted plugins use); every other member
- * delegates lazily to the real service on the root scope, which mounts
- * after the host plugins have loaded.
- */
-function chokepointSession(base: Context, view: SessionRegistryView): SessionService {
-  const late = (): SessionService => {
-    const resolved = base.services.resolve<SessionService>("session");
-    if (!resolved) {
-      throw new Error("spine service missing after mount: session");
-    }
-    return resolved;
-  };
-  return {
-    get history() {
-      return late().history;
-    },
-    registerProcessor: view.registerMessageProcessor,
-    processors: () => late().processors(),
-    processUserInput: (input, signal) => late().processUserInput(input, signal),
-    emit: (event) => late().emit(event),
-    get compactor() {
-      return late().compactor;
-    },
-  };
-}
-
-/**
- * Registry-only provider resolution. An explicit providerId must hit the
- * registry (same error text as before); with neither an injected provider
- * nor an id the session takes the registry's SOLE registered provider —
- * exactly one (host compositions register exactly one; a providerFactory
- * seam plugin composed alongside one fails loudly here instead of silently
- * shadowing either) — and any other registry state keeps the pre-kernel
- * "no provider configured" error.
- */
-function resolveRegistryProvider(ctx: Context, providerId: string | undefined): Provider {
-  if (providerId) {
-    const found = ctx.providers.get(providerId);
-    if (!found) throw new Error(`provider not found: ${providerId}`);
-    return found;
-  }
-  const ids = ctx.providers.ids();
-  if (ids.length !== 1) throw new Error("no provider configured");
-  return ctx.providers.get(ids[0])!;
 }
 
 /**
@@ -193,6 +123,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
   const log = init.logger;
   // Declared outside the try so the rollback can read what had loaded so far.
   const pluginFibers: Fiber[] = [];
+  let loaderEntries: import("@innocencecode/kernel-loader").LoaderEntry[] = [];
   try {
     await ctx.plugin(spine.logger.LoggerPlugin);
     ctx.logger.addSink(
@@ -217,7 +148,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
     await ctx.plugin(spine.skills.SkillsPlugin);
     await ctx.plugin(spine.systemPrompt.SystemPromptPlugin);
     await ctx.plugin(spine.agents.AgentsPlugin);
-    assertServices(ctx, [
+    assertSpineServices(ctx, [
       "logger",
       "tools",
       "permissions",
@@ -235,7 +166,17 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
     const nativeScope = ctx.derive();
     nativeScope.provide("tools", chokepointTools(ctx.tools, view));
     nativeScope.provide("session", chokepointSession(ctx, view));
+    const loaderSet = [
+      ...(init.loaderEntries ?? []),
+      ...init.plugins.filter(isSessionLoaderPlugin),
+    ];
+    if (loaderSet.length > 0) {
+      const mounted = await mountSessionLoader(nativeScope, spine, loaderSet, log);
+      pluginFibers.push(mounted.fiber);
+      loaderEntries = mounted.entries;
+    }
     for (const plugin of init.plugins) {
+      if (isSessionLoaderPlugin(plugin)) continue;
       const fiber = isKernelPlugin(plugin)
         ? nativeScope.plugin(plugin)
         : ctx.plugin(adaptHarnessPlugin(plugin, view));
@@ -262,7 +203,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
         logger: init.logger,
       }),
     );
-    assertServices(ctx, [
+    assertSpineServices(ctx, [
       "tools",
       "permissions",
       "providers",
@@ -292,6 +233,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
       },
       view,
       pluginFibers,
+      loaderEntries,
     };
   } catch (error) {
     // Construction failed after plugins activated: release their resources

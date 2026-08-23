@@ -7,6 +7,7 @@ import type { PolicyRule } from "@innocencecode/harness-permissions";
 import type { MessageProcessor } from "@innocencecode/harness-session";
 import type { Provider, ToolSpec } from "@innocencecode/harness-providers";
 import type { Skill } from "@innocencecode/harness-skills";
+import type { SessionLoaderPlugin } from "./session-loader";
 import type { Tool } from "@innocencecode/harness-tools";
 import type { ToolExecutionMiddleware } from "@innocencecode/harness-tools";
 
@@ -60,7 +61,7 @@ export interface HarnessPlugin {
  * kernel-native {@link ObjectPlugin} (apply, mounted directly — see
  * session-kernel.ts).
  */
-export type SessionPlugin = HarnessPlugin | ObjectPlugin;
+export type SessionPlugin = HarnessPlugin | ObjectPlugin | SessionLoaderPlugin;
 
 export class PluginRegistry {
   /**

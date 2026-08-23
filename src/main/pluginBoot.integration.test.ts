@@ -24,9 +24,11 @@ const maybeDescribe = stagingAvailable ? describe : describe.skip;
 
 let boot: PluginBoot | undefined;
 let userRoot: string | undefined;
+const roots: string[] = [];
 afterAll(async () => {
   await boot?.dispose().catch(() => {});
   if (userRoot) rmSync(userRoot, { recursive: true, force: true });
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 async function ensureBoot(): Promise<PluginBoot> {
@@ -103,7 +105,116 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     expect(b.root.fiber.state).toBe(b.kernel.FiberState.ACTIVE);
   });
 
-  // ---- T12 单实例显式验收 ----------------------------------------------
+  // ---- T2 声明式装载收敛 --------------------------------------------------
+
+  it("resolveBuiltinSet drives from entries: toggles become disabled entries", async () => {
+    const b = await ensureBoot();
+    const resolved = await b.resolveBuiltinSet({
+      workspaceRoot: process.cwd(),
+      userToggles: { mcp: false },
+    });
+    expect(resolved.active).not.toContain("mcp");
+    const mcpEntry = resolved.entries.find((e) => e.id === "mcp");
+    expect(mcpEntry).toMatchObject({ name: "mcp", disabled: true });
+    expect(resolved.entries.find((e) => e.id === "fs")).toMatchObject({ disabled: false });
+  });
+
+  it("mountEntries mounts active rows and short-circuits disabled ones (entries() visible)", async () => {
+    const b = await ensureBoot();
+    const resolved = await b.resolveBuiltinSet({
+      workspaceRoot: process.cwd(),
+      userToggles: { todo: false },
+    });
+    const { failures } = await b.mountEntries(resolved.entries, () => {});
+    // todo was disabled: it produced a loader entry that short-circuited
+    // (never imported, never mounted — and never in the failures list).
+    expect(failures).not.toContain("todo");
+    // entries() face: disabled rows are visible in the loader tree.
+    expect(b.loaderEntryIds()).toContain("boot-todo");
+    // fs mounted through the full disk chain (its tools registered).
+    expect(b.root.tools.specs().map((s) => s.name)).toContain("Read");
+  });
+
+  it("user-level cordis.yml disables mcp across the whole chain (session has no mcp plugin)", async () => {
+    const home = mkdtempSync(path.join(tmpdir(), "ic-cordis-home-"));
+    roots.push(home);
+    mkdirSync(path.join(home, ".innocence"), { recursive: true });
+    writeFileSync(path.join(home, ".innocence", "cordis.yml"), "plugins:\n  mcp: false\n", "utf8");
+    const previousHome = process.env.USERPROFILE ?? process.env.HOME;
+    // os.homedir() on Windows follows USERPROFILE; keep the override scoped.
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      const composition = createSessionComposition({
+        resolvePaths: () => paths,
+        getWorkspaceRoot: () => undefined,
+        log: () => {},
+      });
+      const ws = mkdtempSync(path.join(tmpdir(), "ic-cordis-ws-"));
+      roots.push(ws);
+      const names = (await composition.composePlugins(ws)).map((p) => p.name);
+      expect(names).not.toContain("mcp");
+      expect(names).toContain("fs");
+      expect(names).toContain("todo");
+      await composition.disposePluginBoot();
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.USERPROFILE;
+        delete process.env.HOME;
+      } else {
+        process.env.USERPROFILE = previousHome;
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("example 开关端到端：settings 关 example（normalize 保留）→ inventory disabled → 条目 disabled 短路", async () => {
+    const b = await ensureBoot();
+    // 写路径等价面：settings normalize 开放键空间，example:false 不再被剔除。
+    const { mergeSettings } = await import("@innocencecode/harness-electron");
+    const settings = mergeSettings({ profiles: [], pluginToggles: { example: false } });
+    expect(settings.pluginToggles).toEqual({ example: false });
+    // 清单投影：example 条目 toggleable:true 且呈 disabled-by-config（user 层）。
+    // webview 侧装载消费同一 state 过滤（loader.test：非 active 不装载 client）。
+    const inventory = await b.pluginInventory({
+      workspaceRoot: process.cwd(),
+      userToggles: settings.pluginToggles,
+    });
+    const example = inventory.find((entry) => entry.id === "example");
+    expect(example).toMatchObject({ core: false, toggleable: true, state: "disabled-by-config", via: "user" });
+    // 装载面：disabled 条目短路（loader.startEntry 对 disabled 不导入不挂载；
+    // 同款短路断言见 mountEntries 用例），此处钉死条目面 disabled 显式值。
+    const resolved = await b.resolveBuiltinSet({
+      workspaceRoot: process.cwd(),
+      userToggles: settings.pluginToggles,
+    });
+    expect(resolved.active).not.toContain("example");
+    expect(resolved.entries.find((e) => e.id === "example")).toMatchObject({ disabled: true });
+  });
+
+  it("manifest 键空间派生：example 进入 knownKeys（yml example:false 生效）；旧 yml 未知键仍告警忽略", async () => {
+    const b = await ensureBoot();
+    const resolved = await b.resolveBuiltinSet({ workspaceRoot: process.cwd() });
+    expect(resolved.active).toContain("example");
+    // 项目 yml 键空间 = 清单 id 集：example 可写、清单外键告警。
+    const warnings: string[] = [];
+    const ws = mkdtempSync(path.join(tmpdir(), "ic-keyspace-ws-"));
+    roots.push(ws);
+    mkdirSync(path.join(ws, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(ws, ".innocence", "plugins.yml"),
+      "plugins:\n  example: false\n  mystery: true\n",
+      "utf8",
+    );
+    const projectResolved = await b.resolveBuiltinSet({
+      workspaceRoot: ws,
+      logger: (level, msg) => {
+        if (level === "warn") warnings.push(String(msg));
+      },
+    });
+    expect(projectResolved.active).not.toContain("example");
+    expect(warnings.join("\n")).toContain('unknown plugin toggle "mystery"');
+  });
 
   it("single instance: a staging plugin's KernelError passes the host-side instanceof", async () => {
     const b = await ensureBoot();

@@ -53,7 +53,7 @@ export function resetSuiteCache(): void {
 export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
   if (!suitePromise) {
     const load = async (): Promise<KernelSuite> => {
-      const [kernel, logger, tools, permissions, providers, skills, systemPrompt, agents, session, loop, loader] =
+      const [kernel, logger, tools, permissions, providers, skills, systemPrompt, agents, session, loop, loader, group] =
         await Promise.all([
           loadKernel(kernelPath),
           importLib(kernelPath, "kernel-logger"),
@@ -66,6 +66,7 @@ export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
           importLib(kernelPath, "harness-session"),
           importLib(kernelPath, "harness-agent-loop"),
           importLib(kernelPath, "kernel-loader"),
+          importLib(kernelPath, "kernel-group"),
         ]);
       return {
         kernel,
@@ -79,6 +80,8 @@ export function loadKernelSuite(kernelPath: string): Promise<KernelSuite> {
           agents,
           session,
           loop,
+          loader,
+          group,
         } as unknown as SessionSpineSuite,
         loader: loader as LoaderModule,
       };

@@ -11,7 +11,11 @@ import {
 } from "../components/chat/toolcards/DescriptorToolCard";
 import type { ToolCardProps } from "../components/chat/toolcards/registry";
 
-/** v1 client API：前缀注册即 "prefix:" 声明条目（键控槽位原生语义）。 */
+/**
+ * v1 client API：仅提供描述符式工具卡注册；组件级卡、工作台面板与设置分区
+ * 的注册面属于后续版本，不在本 API 的兼容范围内。前缀注册即 "prefix:"
+ * 声明条目（键控槽位原生语义）。
+ */
 export interface PluginClientApi {
   registerToolCard(toolName: string, descriptor: ToolCardDescriptor): void;
   registerToolCardPrefix(prefix: string, descriptor: ToolCardDescriptor): void;

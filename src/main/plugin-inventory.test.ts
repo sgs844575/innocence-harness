@@ -13,12 +13,12 @@ describe("projectPluginInventory (manifest + resolved set 投影)", () => {
     { id: "mcp", dependencies: [], title: "外部工具服务器客户端" },
   ];
 
-  it("默认全 active/via default，按描述符序合并 title/core/client", () => {
+  it("默认全 active/via default，按描述符序合并 title/core/client/toggleable", () => {
     const entries = projectPluginInventory(RICH, resolvePluginSet(RICH));
     expect(entries).toEqual<PluginInventoryEntry[]>([
-      { id: "fs", title: "文件系统工具", core: true, client: false, state: "active", via: "default" },
-      { id: "skills", title: "技能加载器", core: false, client: true, state: "active", via: "default" },
-      { id: "mcp", title: "外部工具服务器客户端", core: false, client: false, state: "active", via: "default" },
+      { id: "fs", title: "文件系统工具", core: true, client: false, toggleable: false, state: "active", via: "default" },
+      { id: "skills", title: "技能加载器", core: false, client: true, toggleable: true, state: "active", via: "default" },
+      { id: "mcp", title: "外部工具服务器客户端", core: false, client: false, toggleable: true, state: "active", via: "default" },
     ]);
   });
 
@@ -28,18 +28,33 @@ describe("projectPluginInventory (manifest + resolved set 投影)", () => {
       { id: "middle", dependencies: ["base"], title: "中层" },
       { id: "free", dependencies: [], title: "独立" },
     ];
-    const resolved = resolvePluginSet(synthetic, { base: false } as never);
+    const resolved = resolvePluginSet(synthetic, { base: false });
     const entries = projectPluginInventory(synthetic, resolved);
     expect(entries).toEqual<PluginInventoryEntry[]>([
-      { id: "base", title: "基座", core: false, client: false, state: "disabled-by-config", via: "user" },
-      { id: "middle", title: "中层", core: false, client: false, state: "dependency-disabled", via: "user" },
-      { id: "free", title: "独立", core: false, client: false, state: "active", via: "default" },
+      { id: "base", title: "基座", core: false, client: false, toggleable: true, state: "disabled-by-config", via: "user" },
+      { id: "middle", title: "中层", core: false, client: false, toggleable: true, state: "dependency-disabled", via: "user" },
+      { id: "free", title: "独立", core: false, client: false, toggleable: true, state: "active", via: "default" },
     ]);
   });
 
-  it("描述符缺 title 时回落 id（旧 manifest 兼容）", () => {
-    const plain: readonly PluginDescriptor[] = [{ id: "todo", dependencies: [] }];
-    const [entry] = projectPluginInventory(plain, resolvePluginSet(plain));
-    expect(entry?.title).toBe("todo");
+  it("描述符缺 title 时回落 id（旧 manifest 兼容）；缺 toggleable 回落 !core", () => {
+    const plain: readonly PluginDescriptor[] = [
+      { id: "todo", dependencies: [] },
+      { id: "fs", dependencies: [], core: true },
+    ];
+    const entries = projectPluginInventory(plain, resolvePluginSet(plain));
+    expect(entries[0]).toMatchObject({ title: "todo", toggleable: true });
+    expect(entries[1]).toMatchObject({ core: true, toggleable: false });
+  });
+
+  it("config-invalid 降级原因受控投影（声明式面 reason 扩展枚举）", () => {
+    const descriptors: readonly PluginDescriptor[] = [{ id: "skills", dependencies: [], title: "技能" }];
+    const entries = projectPluginInventory(descriptors, {
+      active: [],
+      skipped: [{ id: "skills", reason: "config-invalid", via: "user" }],
+    });
+    expect(entries).toEqual<PluginInventoryEntry[]>([
+      { id: "skills", title: "技能", core: false, client: false, toggleable: true, state: "config-invalid", via: "user" },
+    ]);
   });
 });

@@ -4,22 +4,17 @@
 
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
 import { AGENT_IDS, type AgentId } from "./agents";
+import type { PluginToggleSource } from "../../../src/shared/ipc";
 
 export type { AgentId } from "./agents";
 export type { ModelInfo } from "./modelPresets";
 
 /**
- * User-level builtin plugin toggles (the settings face). The resolver lives
- * in the host composition (src/main plugin-toggles-local.ts — copy of the
- * retired plugin-set module); this settings-side shape and the shared/ipc
- * mirror are kept aligned by harness-electron's mirror drift-guard tests.
+ * User-level builtin plugin toggles (the settings face). Open keyspace
+ * (manifest-derived): any plugin-id key with a boolean value; the shared/ipc
+ * (re-exported here for the T7 type convergence). The four legacy builtin keys stay valid unchanged.
  */
-export interface PluginToggleSource {
-  subagent?: boolean;
-  skills?: boolean;
-  mcp?: boolean;
-  todo?: boolean;
-}
+export type { PluginToggleSource } from "../../../src/shared/ipc";
 
 export type ProviderKind = "openai" | "anthropic";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
@@ -58,9 +53,15 @@ export interface HarnessSettings {
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置（resolvePluginSet 两级覆盖）。 */
   pluginToggles?: PluginToggleSource;
+  /** 外部技能目录发现开关；缺失/非法值默认开启。 */
+  externalSkillDiscovery?: boolean;
   /** 外部编辑器启动命令（Task 11 工作台入口）；"" = 未配置（入口禁用）。
    *  首个 token 可加引号（含空格的路径）；多余 token 作为前置参数透传。 */
   externalEditorCommand?: string;
+}
+
+function normalizeExternalSkillDiscovery(raw: unknown): boolean {
+  return raw !== false;
 }
 
 function normalizeExternalEditorCommand(raw: unknown): string {
@@ -130,6 +131,7 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   locale: "",
   reasoningEffort: "",
   activeAgent: "default",
+  externalSkillDiscovery: true,
   externalEditorCommand: "",
 };
 
@@ -210,18 +212,18 @@ function normalizeLocale(raw: unknown): UiLocale {
   return raw === "zh-CN" || raw === "en-US" ? raw : "";
 }
 
-const PLUGIN_TOGGLE_KEYS = ["subagent", "skills", "mcp", "todo"] as const;
-
-/** 四键中布尔值保留、非布尔剔除；无有效键回落 undefined（undefined =
- *  默认全开，与 resolvePluginSet 的两级覆盖语义一致）。 */
+/** 布尔值键保留、非布尔剔除；无有效键回落 undefined（undefined = 默认全开，
+ *  与 resolvePluginSet 的两级覆盖语义一致）。键空间开放（清单派生）：任意
+ *  插件 id 键均透传——写路径不再静默剔除清单内插件（如 example）的开关，
+ *  cordis.yml 键在 settings 未保存该键时仍生效（settings 按键覆盖文件）。 */
 function normalizePluginToggles(raw: unknown): PluginToggleSource | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const src = raw as Record<string, unknown>;
-  const out: PluginToggleSource = {};
+  const out: Record<string, boolean> = {};
   let hasAny = false;
-  for (const key of PLUGIN_TOGGLE_KEYS) {
-    if (typeof src[key] === "boolean") {
-      out[key] = src[key];
+  for (const [key, value] of Object.entries(src)) {
+    if (typeof value === "boolean") {
+      out[key] = value;
       hasAny = true;
     }
   }
@@ -294,6 +296,7 @@ function migrateFromV1(v1: SettingsV1): HarnessSettings {
     locale: normalizeLocale((v1 as { locale?: unknown }).locale),
     reasoningEffort: normalizeReasoningEffort((v1 as { reasoningEffort?: unknown }).reasoningEffort),
     activeAgent: normalizeActiveAgent((v1 as { activeAgent?: unknown }).activeAgent),
+    externalSkillDiscovery: normalizeExternalSkillDiscovery((v1 as { externalSkillDiscovery?: unknown }).externalSkillDiscovery),
     // pluginToggles：v1 不可能含该键，有意不透传（缺省 = 默认全开）。
   };
 }
@@ -313,6 +316,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
       activeAgent: normalizeActiveAgent(src.activeAgent),
+      externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
       pluginToggles: normalizePluginToggles(src.pluginToggles),
       externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand) };
   }
@@ -334,6 +338,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     locale: normalizeLocale(src.locale),
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
     activeAgent: normalizeActiveAgent(src.activeAgent),
+    externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
   };

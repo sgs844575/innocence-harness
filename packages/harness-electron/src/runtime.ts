@@ -3,23 +3,15 @@
 // rebuilds a route's session when settings change, and translates harness
 // events into the host's streaming UI hooks. Types live in runtime-types.ts,
 // transcript persistence in turn-persistence.ts.
-import fs from "node:fs/promises";
-import path from "node:path";
+import type { ExecutionScopeIdentity } from "@innocencecode/harness-tools";
 import type { Route } from "@innocencecode/task-core";
-import type { PermissionDecider } from "@innocencecode/harness-permissions";
-import { createExecutionScope, type ExecutionScopeIdentity } from "@innocencecode/harness-tools";
 import { AgentSession } from "./session";
-import { createProviderPlugin } from "@innocencecode/harness-providers";
-import { decodeTranscript } from "./transcript";
-import { systemPromptFor } from "./agents";
 import { persistTurn } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";
-import { RouteSessionCache, routeCacheKey, sessionDisposedError } from "./route-cache";
+import { RouteSessionCache, routeCacheKey } from "./route-cache";
+import { buildSession, type RouteBuildContext } from "./runtime-session";
 import {
-  createSessionToolIndex,
   DEFAULT_ROUTE_ID,
-  type PermissionAsk,
-  type PluginFactoryContext,
   type RuntimeForkRouteInput,
   type RuntimeOptions,
   type RuntimeSendRequest,
@@ -34,14 +26,6 @@ export {
 let seq = 0;
 const nextId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(seq++).toString(36)}`;
 
-/** Build context the cache's build callback needs, keyed by cache key. */
-interface RouteBuildContext {
-  sessionId: string;
-  routeId: string;
-  taskId: string;
-  messageId: string;
-}
-
 /**
  * Owns one AgentSession per chat-session route, rebuilt when settings
  * change, and translates harness events into the host's streaming UI hooks.
@@ -54,7 +38,13 @@ export class HarnessRuntime {
   constructor(options: RuntimeOptions) {
     this.options = options;
     this.cache = new RouteSessionCache({
-      build: (key) => this.buildSession(key),
+      build: (key) => buildSession({
+        options: this.options,
+        cache: this.cache,
+        buildContexts: this.buildContexts,
+        nextId,
+        settleDispose: (disposeKey, session) => this.settleDispose(disposeKey, session),
+      }, key),
       settleDispose: (key, session) => this.settleDispose(key, session),
       log: (level, msg, data) => this.options.hooks.log(level, msg, data),
     });
@@ -173,152 +163,4 @@ export class HarnessRuntime {
     }
   }
 
-  private async buildSession(key: string): Promise<AgentSession> {
-    const context = this.buildContexts.get(key);
-    if (!context) throw sessionDisposedError(key);
-    const { sessionId, routeId, taskId, messageId } = context;
-    const settings = this.options.settings();
-    const settingsKey = JSON.stringify(settings);
-    const cached = this.cache.peek(key);
-    if (cached && cached.settingsKey === settingsKey) return cached.session;
-
-    // Route-scoped root FIRST (task worktree / session-bound project):
-    // plugins, permission scopes and the session itself all act on it. An
-    // absent hook or empty result keeps the settings root.
-    const settingsRoot = settings.workspaceRoot || process.cwd();
-    const routeRoot = await this.options.workspaceRootFor?.({
-      sessionId,
-      routeId,
-      taskId: taskId || undefined,
-      messageId,
-    });
-    const workspaceRoot = routeRoot || settingsRoot;
-
-    const decider: PermissionDecider = {
-      ask: async (request) => {
-        const ask: PermissionAsk = { requestId: nextId("perm"), call: request };
-        const answer = await this.options.hooks.askPermission(sessionId, messageId, ask);
-        return answer;
-      },
-    };
-
-    const toolIndex = createSessionToolIndex();
-    // Route scope FIRST (when the host provides one): the whole build — plugin
-    // composition, session kernel mounts — happens inside it, so disposing the
-    // session (or the scope) unwinds everything this route loaded and nothing
-    // else. A failed build disposes the fresh scope before rethrowing.
-    const scope = this.options.sessionScope ? await this.options.sessionScope() : undefined;
-    // Same lifecycle as the scope: the spine suite resolves once per BUILD
-    // (cache hits never call it) and is injected into the session create so
-    // the session mounts the host's loaded spine identities.
-    const spine = this.options.sessionSpine ? await this.options.sessionSpine() : undefined;
-    try {
-      // Plugins come from the host composition root — the runtime owns no
-      // concrete capability, so tools/skills/MCP wiring lives in the host.
-      const factoryContext: PluginFactoryContext = {
-        sessionId,
-        routeId,
-        taskId: taskId || undefined,
-        messageId,
-        settings,
-        workspaceRoot,
-        scope: createExecutionScope("session", undefined, {
-          sessionId,
-          routeId,
-          ...(taskId ? { taskId } : {}),
-        }),
-        toolIndex,
-      };
-      const plugins = await this.options.pluginsForSession(factoryContext);
-
-      const create = () => {
-        // Provider registration path is registry-only: the host composition
-        // (harnessGlue) contributes the settings-based provider plugin; the
-        // providerFactory test seam wraps its instance the same way. No session
-        // is ever built with an explicit provider — AgentSession resolves the
-        // registry's sole registered one.
-        const providerFactory = this.options.providerFactory;
-        const sessionPlugins = providerFactory
-          ? [...plugins, createProviderPlugin(providerFactory(settings))]
-          : plugins;
-        return AgentSession.create({
-          plugins: sessionPlugins,
-          ...(scope ? { scope } : {}),
-          ...(spine ? { spine } : {}),
-          workspaceRoot,
-          systemPrompt: systemPromptFor(settings.activeAgent ?? "default"),
-          permission: {
-            mode: settings.permissionMode,
-            decider,
-            // Every resolution (including full mode) is audited through the host
-            // log with the persisted request — raw args never reach this surface.
-            audit: (entry) => {
-              this.options.hooks.log("info", "permission", {
-                mode: entry.mode,
-                tool: entry.request.toolName,
-                resource: `${entry.request.resource.action}:${entry.request.resource.kind}:${entry.request.resource.scope}`,
-                decision: entry.resolution.decision,
-                via: entry.resolution.via,
-              });
-            },
-          },
-          logger: (level, msg, data) => this.options.hooks.log(level, msg, data),
-        });
-      };
-      const session = await (this.options.agentFactory?.(factoryContext, create) ?? create());
-      // The session exists now, so its registry can back the late-bound index.
-      toolIndex.adopt(session.registry.tools);
-
-      if (cached) {
-        // Rebuilds (settings changed) keep the conversation: copy the previous
-        // session's canonical history FIRST, then release the old session —
-        // dispose aborts its in-flight work, so the snapshot must not depend
-        // on anything that teardown touches.
-        session.history.push(
-          ...cached.session.history.map((m) => ({ role: m.role, parts: [...m.parts] })),
-        );
-      } else if (this.options.persistDir && routeId === DEFAULT_ROUTE_ID) {
-        // Fresh runtime after app restart: the MAIN route seeds from the
-        // canonical transcript codec (never renderer/UI-coalesced messages).
-        // Non-main routes keep an empty history — their durable state is the
-        // task system's (turn commit), not the chat transcript.
-        try {
-          const raw = await fs.readFile(
-            path.join(this.options.persistDir, `${sessionId}.jsonl`),
-            "utf8",
-          );
-          const prior = decodeTranscript(raw).history;
-          if (prior.length > 0) {
-            session.history.push(...prior.map((m) => ({ role: m.role, parts: [...m.parts] })));
-          }
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-            this.options.hooks.log("warn", "history seed failed", String(err));
-          }
-        }
-      }
-      if (this.cache.isDisposing(key)) {
-        // dispose() arrived while this build was in flight: release the
-        // product in place — it must never enter the cache or run a turn.
-        // (The previously cached session, if any, was already released by
-        // dispose() itself.)
-        await this.cache.releaseInPlace(key, session);
-        throw sessionDisposedError(key);
-      }
-      this.cache.commit(key, settingsKey, session);
-      if (cached) {
-        // dispose() may have released this old entry mid-build; the second
-        // call is an idempotent no-op (session dispose deduplicates).
-        await this.settleDispose(key, cached.session);
-      }
-      return session;
-    } catch (err) {
-      // The fresh scope never entered the cache: unwind it here so a failed
-      // build (or an in-place release racing dispose) leaks no carrier fiber.
-      // Session.dispose already unwound it on the release paths, and scope
-      // disposal is idempotent, so this joins whatever unwind already ran.
-      await scope?.dispose().catch(() => {});
-      throw err;
-    }
-  }
 }

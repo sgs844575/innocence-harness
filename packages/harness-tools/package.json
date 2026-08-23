@@ -15,6 +15,10 @@
   "dependencies": {
     "@innocencecode/kernel": "^0.1.0"
   },
+  "devDependencies": {
+    "@innocencecode/harness-agent": "^0.1.0",
+    "@innocencecode/harness-permissions": "^0.1.0"
+  },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",
   "repository": {

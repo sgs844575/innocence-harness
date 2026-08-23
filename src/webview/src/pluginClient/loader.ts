@@ -34,36 +34,49 @@ export interface LoadPluginClientsOptions {
   importModule: ImportModule;
 }
 
-/** 每个注册表当前的装载回合（App 生命期单注册表；按注册表隔离撤销集）。 */
+/** 每个注册表已完成的装载回合。 */
 const rounds = new WeakMap<SlotRegistry, ReturnType<typeof createPluginClientApi>>();
+/** 每个注册表正在结算的装载回合；重装载必须同样撤销它。 */
+const pendingRounds = new WeakMap<SlotRegistry, ReturnType<typeof createPluginClientApi>>();
 
 /** 协议布局与 staging 产物一致：plugins/<id>/dist/client.js。 */
 export function clientModuleUrl(id: string): string {
   return `innocence-plugin://${id}/dist/client.js`;
 }
 
+async function loadPluginClient(
+  entry: PluginInventoryEntry,
+  handle: ReturnType<typeof createPluginClientApi>,
+  importModule: ImportModule,
+): Promise<void> {
+  try {
+    const mod = await importModule(clientModuleUrl(entry.id));
+    const register = mod?.default;
+    if (typeof register !== "function") {
+      console.warn(`plugin client "${entry.id}" has no default register function; skipped`);
+      return;
+    }
+    await register(handle.api);
+  } catch (err) {
+    console.warn(`plugin client "${entry.id}" failed to load`, err);
+  }
+}
+
 export async function loadPluginClients(options: LoadPluginClientsOptions): Promise<void> {
   // 先撤销上一轮：本轮未再装载（停用/装载失败）的条目不再持有旧卡。
   const previous = rounds.get(options.registry);
-  if (previous) {
-    previous.dispose();
-    rounds.delete(options.registry);
-  }
+  const pending = pendingRounds.get(options.registry);
+  previous?.dispose();
+  pending?.dispose();
+  rounds.delete(options.registry);
+  pendingRounds.delete(options.registry);
   const candidates = options.inventory.filter((entry) => entry.client && entry.state === "active");
   if (candidates.length === 0) return;
   const handle = createPluginClientApi(options.registry, TOOLCARD_SLOT);
-  rounds.set(options.registry, handle);
-  for (const entry of candidates) {
-    try {
-      const mod = await options.importModule(clientModuleUrl(entry.id));
-      const register = mod?.default;
-      if (typeof register !== "function") {
-        console.warn(`plugin client "${entry.id}" has no default register function; skipped`);
-        continue;
-      }
-      await register(handle.api);
-    } catch (err) {
-      console.warn(`plugin client "${entry.id}" failed to load`, err);
-    }
+  pendingRounds.set(options.registry, handle);
+  await Promise.all(candidates.map((entry) => loadPluginClient(entry, handle, options.importModule)));
+  if (pendingRounds.get(options.registry) === handle) {
+    pendingRounds.delete(options.registry);
+    rounds.set(options.registry, handle);
   }
 }

@@ -85,6 +85,7 @@ describe("mergeSettings", () => {
       locale: "zh-CN" as const,
       reasoningEffort: "high" as const,
       activeAgent: "full" as const,
+      externalSkillDiscovery: true,
       externalEditorCommand: "code --wait",
     };
     expect(mergeSettings(input)).toEqual(input);
@@ -122,6 +123,11 @@ describe("mergeSettings", () => {
     expect(mergeSettings({ profiles: [] }).activeAgent).toBe("default");
   });
 
+  it("externalSkillDiscovery defaults enabled and normalizes boolean values", () => {
+    expect(mergeSettings({ profiles: [] }).externalSkillDiscovery).toBe(true);
+    expect(mergeSettings({ profiles: [], externalSkillDiscovery: false }).externalSkillDiscovery).toBe(false);
+    expect(mergeSettings({ profiles: [], externalSkillDiscovery: "no" }).externalSkillDiscovery).toBe(true);
+  });
   it("pluginToggles 归一化：布尔键保留，非布尔剔除", () => {
     expect(
       mergeSettings({ profiles: [], pluginToggles: { subagent: false, mcp: "yes" } }).pluginToggles,
@@ -139,6 +145,14 @@ describe("mergeSettings", () => {
     expect(
       mergeSettings({ pluginToggles: { subagent: false, mcp: "yes" } }).pluginToggles,
     ).toEqual({ subagent: false });
+  });
+
+  it("pluginToggles 开放键空间（清单派生）：清单内新增插件键（如 example）保留不剔除", () => {
+    // 等价升级：原白名单只认四键，example:false 会被静默剔除；键空间清单
+    // 派生后写路径透传清单内键（cordis.yml 键在 settings 未保存时仍生效）。
+    expect(
+      mergeSettings({ profiles: [], pluginToggles: { example: false, todo: true } }).pluginToggles,
+    ).toEqual({ example: false, todo: true });
   });
 });
 

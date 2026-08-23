@@ -4,13 +4,14 @@
 // 贡献对象经 useMemo 只构造一次（引用稳定，满足 T2 list 槽位不重注册
 // 契约），render 闭包经 ref 读取最新依赖（语言/设置更新即时生效）。
 import { useMemo, useRef } from "react";
-import { Cpu, SlidersHorizontal, Puzzle, Palette, Info } from "lucide-react";
+import { Cpu, SlidersHorizontal, Puzzle, Palette, Info, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { HarnessSettings, PluginInventory } from "../../../../shared/ipc";
 import { useRegisterList } from "../../slots/react";
 import { SETTINGS_SECTION_SLOT, type SettingsSectionContribution } from "../SettingsNav";
 import { AboutSection, AppearanceSection, GeneralSection } from "./BasicSections";
 import { PluginsSection } from "./PluginsSection";
+import { SkillsSection } from "./SkillsSection";
 import { ProviderSettingsPage } from "./provider/ProviderSettingsPage";
 
 /** 分区 render 的共享依赖（SettingsView 的 props 子集；settings 允许未加载）。 */
@@ -22,6 +23,8 @@ export interface SettingsSectionDeps {
   onPickWorkspace: () => void;
   /** 插件清单投影（App 层拉取，设置写入后重拉）；null = 未返回。 */
   pluginInventory: PluginInventory | null;
+  /** 清单读取失败标记；插件分区据此显示可恢复的错误态。 */
+  pluginInventoryError?: boolean;
 }
 
 /** 单条注册哑组件：每条贡献独立持钩（T3 范式）。 */
@@ -79,13 +82,30 @@ export function BuiltinSettingsSections({ deps }: { deps: SettingsSectionDeps })
           labelKey: "settings.section.plugins",
           icon: Puzzle,
           render: () => {
-            const { t, settings, onSettingsChange, pluginInventory } = p();
+            const { t, settings, onSettingsChange, pluginInventory, pluginInventoryError } = p();
             return settings === null ? null : scroll(
               <PluginsSection
                 t={t}
                 settings={settings}
                 onSettingsChange={onSettingsChange}
                 inventory={pluginInventory}
+                inventoryError={pluginInventoryError}
+              />,
+            );
+          },
+        },
+        {
+          id: "skills",
+          labelKey: "settings.section.skills",
+          icon: Sparkles,
+          render: () => {
+            const { t, settings, onSettingsChange } = p();
+            return settings === null ? null : scroll(
+              <SkillsSection
+                t={t}
+                workspaceRoot={settings.workspaceRoot}
+                settings={settings}
+                onSettingsChange={onSettingsChange}
               />,
             );
           },

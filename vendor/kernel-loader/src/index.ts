@@ -67,6 +67,24 @@ export class LoaderService {
     return entry;
   }
 
+  /**
+   * Create one entry for a plugin that the host has already resolved.
+   *
+   * The loader still owns the entry fiber and sets `ctx.entry` before the
+   * plugin runs; only module resolution is bypassed. This is the bridge for
+   * host-configured factories, which must remain object plugins rather than
+   * being invoked as loader callbacks.
+   */
+  async createResolved(
+    options: EntryCreateOptions,
+    plugin: Plugin,
+    parent?: LoaderEntry,
+  ): Promise<LoaderEntry> {
+    const entry = this.add(options, parent);
+    if (!entry.options.disabled) await this.startPlugin(entry, plugin);
+    return entry;
+  }
+
   /** Add an entry to the tree without starting it. */
   add(options: EntryCreateOptions, parent?: LoaderEntry): LoaderEntry {
     const tree = parent ? this.subtreeOf(parent) : this.tree;
@@ -137,6 +155,12 @@ export class LoaderService {
     } catch (reason) {
       throw new Error(`failed to import loader entry ${id} (${name}): ${messageOf(reason)}`, { cause: reason });
     }
+    await this.startPlugin(entry, plugin);
+  }
+
+  /** Start an entry with a plugin value already resolved by the host. */
+  private async startPlugin(entry: LoaderEntry, plugin: Plugin): Promise<void> {
+    const { id, name } = entry.options;
     try {
       const started = entry.tree.ctx.plugin(plugin);
       // The carrier context must carry its entry before the plugin entry
