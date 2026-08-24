@@ -3,7 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanPackageOutput, defaultExecutableName, defaultPackageDirectory, normalizeForComparison, assertKnownPackageDirectory } from "./outPreflight";
+import {
+  assertKnownPackageDirectory,
+  cleanPackageOutput,
+  defaultExecutableName,
+  defaultPackageDirectory,
+  inspectSafePackageDirectory,
+  normalizeForComparison,
+} from "./outPreflight";
 
 const temporaryRoots: string[] = [];
 const repositoryRootForNaming = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -32,6 +39,48 @@ describe("package artifact naming", () => {
     expect(() => assertKnownPackageDirectory(
       path.join(repositoryRootForNaming, "out", "InnocenceCode-win32-x64"),
     )).toThrow();
+  });
+
+  it("rejects temporary package suffixes", () => {
+    expect(() => assertKnownPackageDirectory(
+      path.join(repositoryRootForNaming, "out", "InnocenceHarness-win32-x64-tmp-123"),
+    )).toThrow();
+  });
+});
+
+describe("safe package directory inspection", () => {
+  it("accepts a real allowed package directory", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packageDir = path.join(outputRoot, "InnocenceHarness-win32-x64");
+    await fs.mkdir(packageDir);
+
+    await expect(inspectSafePackageDirectory(packageDir, repositoryRoot, {
+      probeReparsePoint: async () => ({ kind: "ordinary" }),
+    })).resolves.toBe(await fs.realpath(packageDir));
+  });
+
+  it("rejects a linked allowed package directory", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ic-safe-package-link-"));
+    temporaryRoots.push(externalRoot);
+    const externalPackage = path.join(externalRoot, "InnocenceHarness-win32-x64");
+    const packageLink = path.join(outputRoot, "InnocenceHarness-win32-x64");
+    await fs.mkdir(externalPackage);
+    await fs.symlink(externalPackage, packageLink, "junction");
+
+    await expect(inspectSafePackageDirectory(packageLink, repositoryRoot)).rejects.toThrow(
+      "package output must be a real directory",
+    );
+  });
+
+  it("rejects an unknown reparse classification", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packageDir = path.join(outputRoot, "InnocenceHarness-win32-x64");
+    await fs.mkdir(packageDir);
+
+    await expect(inspectSafePackageDirectory(packageDir, repositoryRoot, {
+      probeReparsePoint: async () => ({ kind: "unknown", diagnostic: "test reparse probe" }),
+    })).rejects.toThrow("package output must not be a reparse point");
   });
 });
 

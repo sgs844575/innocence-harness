@@ -6,7 +6,7 @@ import { defaultReparsePointProbe, type ReparseProbeResult } from "./reparseProb
 const DEFAULT_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const OUTPUT_DIRECTORY_NAME = "out";
 const PRODUCT_NAME = "InnocenceHarness";
-const PACKAGE_DIRECTORY_PATTERN = new RegExp(`^${PRODUCT_NAME}-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)(?:-tmp-[A-Za-z0-9._-]+)?$`);
+const PACKAGE_DIRECTORY_PATTERN = new RegExp(`^${PRODUCT_NAME}-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)$`);
 
 export function defaultPackageDirectory(repositoryRoot: string): string {
   return path.join(path.resolve(repositoryRoot), OUTPUT_DIRECTORY_NAME, `${PRODUCT_NAME}-win32-x64`);
@@ -99,6 +99,28 @@ export function assertKnownPackageDirectory(
     throw new Error(`package output must be a known package directory: ${resolvedPackageDirectory}`);
   }
   return resolvedPackageDirectory;
+}
+
+export async function inspectSafePackageDirectory(
+  packageDirectory: string,
+  repositoryRoot: string,
+  options: Pick<OutPreflightOptions, "probeReparsePoint"> = {},
+): Promise<string> {
+  const repository = path.resolve(repositoryRoot);
+  const outputRoot = path.resolve(repository, OUTPUT_DIRECTORY_NAME);
+  const canonicalRepository = await realPathIfPresent(repository);
+  const canonicalOutputRoot = await realPathIfPresent(outputRoot);
+  if (!isWithinPath(canonicalOutputRoot, canonicalRepository) || normalizeForComparison(path.dirname(canonicalOutputRoot)) !== normalizeForComparison(canonicalRepository)) {
+    throw new Error(`canonical package output must be the repository out directory: ${canonicalOutputRoot}`);
+  }
+
+  const resolvedPackageDirectory = assertKnownPackageDirectory(packageDirectory, repository);
+  return inspectRealDirectory(
+    resolvedPackageDirectory,
+    canonicalOutputRoot,
+    "requested package",
+    options.probeReparsePoint ?? defaultReparsePointProbe,
+  );
 }
 
 function formatLockDiagnostic(target: string, error: unknown, attempts: number): string {

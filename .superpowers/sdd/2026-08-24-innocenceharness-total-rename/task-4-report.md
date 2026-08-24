@@ -5,7 +5,7 @@
 - Worktree：`D:\Projects\AiProjects\InnocenceHarness-rename`
 - Branch：`innocenceharness-total-rename`
 - 起始 HEAD：`83687ae1abbd522a3fbedf16032d3ea515abe2c2`
-- Commit：`82ec888` (`chore(packaging): migrate InnocenceHarness artifacts`)
+- Commit：`d39fc95` (`chore(packaging): migrate InnocenceHarness artifacts`)
 
 ## 实现结果
 
@@ -54,6 +54,26 @@
 
 `out/InnocenceHarness-win32-x64/resources/app.asar` 被现有进程锁定。preflight 三次 bounded retry 均返回 EBUSY，并保留原始 cause；实现没有扩大删除范围，也没有终止未知进程。必须释放拥有该文件锁的进程后再次运行 `npm run package:preflight`、`npm run package` 和 `npm run package:smoke`，才能完成真实 packaged-exit smoke。
 
-## 结论
+## 第 1 轮修复
 
-代码迁移和定向验收通过；最终 package/required smoke 受现有 package 输出锁和缺失新 executable 阻塞。全量测试另有独立 Windows 临时资源竞争失败，未修改其无关代码。
+修复内容：
+
+- production allowlist 收紧为严格 `InnocenceHarness-<platform>-<arch>`，移除 `-tmp-*`；新增 tmp suffix 拒绝测试。
+- 抽取 `inspectSafePackageDirectory` 共享安全 API，required smoke 在 availability 检查前验证真实目录、拒绝 symlink/junction/reparse、检查 canonical repo/out direct 边界。
+- required smoke 对 linked package、unknown reparse 和 unknown package path 返回非零，不再依赖 acceptance 的 optional `it.skip` 结果。
+- acceptance runner 捕获子进程输出；退出码为 0 但未出现 `[packaged-exit] residue sweep clean (no processes, no lock leases)` marker 时返回非零。
+- `npm test` 的 optional packaged-exit skip 行为未改动。
+
+本轮验证：
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| 定向 packaging/availability/smoke/packaged-exit tests | 0 | 4 个测试文件通过，37 passed，2 skipped |
+| `npm run typecheck` | 0 | 通过 |
+| `npm run typecheck:packages` | 0 | 通过 |
+| `npm run package:preflight` | 2 | 保留真实 EBUSY：新 output 的 `resources\\app.asar`，attempts=3，含 cause，未强杀 |
+| `npm run package` | 2 | 被同一真实 EBUSY preflight gate 阻止 |
+| `npm run package:smoke` | 2 | 新 executable 缺失，required gate 非零 |
+| `IC_PACKAGE_DIR=...\\out\\InnocenceHarness-win32-x64-tmp-123 npm run package:smoke` | 2 | tmp suffix 被严格 allowlist 拒绝 |
+
+本轮变更提交：`4ccaccc` (`fix(packaging): harden required smoke safety gates`)。
