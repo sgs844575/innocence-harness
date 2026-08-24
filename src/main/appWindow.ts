@@ -79,9 +79,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   // with `undefined` in production builds, so packaged builds always take
   // the innocenceharness:// branch below.
   const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
-  // Optional load verification hook: set InnocenceCode_SMOKE_OUT=<path> and the app
+  // Optional load verification hook: set InnocenceHarness_SMOKE_OUT=<path> and the app
   // writes the load outcome there and exits (used by tools/smoke-test.cjs).
-  const smokeOut = process.env.InnocenceCode_SMOKE_OUT;
+  const smokeOut = process.env.InnocenceHarness_SMOKE_OUT;
   try {
     if (devServerUrl) {
       await win.loadURL(devServerUrl);

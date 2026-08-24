@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
@@ -30,4 +32,11 @@ describe("isAllowedNavigationUrl", () => {
   it("rejects malformed navigation URLs", () => {
     expect(isAllowedNavigationUrl("not a URL", undefined)).toBe(false);
   });
+
+  it("uses the renamed smoke handshake variable", () => {
+    const source = readFileSync(path.join(__dirname, "appWindow.ts"), "utf8");
+    expect(source).toContain("process.env.InnocenceHarness_SMOKE_OUT");
+    expect(source).not.toContain("process.env.InnocenceCode_SMOKE_OUT");
+  });
 });
+
