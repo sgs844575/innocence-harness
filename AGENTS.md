@@ -8,7 +8,7 @@
 
 3. **Inject production sessions through the dynamic staging spine.** Production sessions must be created and wired by the dynamically staged spine rather than by presentation code or hard-coded host imports. Capability plugins load only from the two approved roots: packaged `resources/plugins` and the user's `~/.innocence/plugins` directory. Plugin loading, lifecycle, and disposal must remain explicit and testable.
 
-4. **Integrate hosts and UI clients through ports, adapters, and slots.** Electron, a future CLI, tests, and UI clients must inject capabilities through typed interfaces, callbacks, configuration, factories, events, and slot registry contracts. UI client contributions use the `innocence-plugin://` protocol and the slot registry. Domain packages must not call Electron IPC, `BrowserWindow`, React state, DOM presentation APIs, or CLI stdout directly.
+4. **Integrate hosts and UI clients through ports, adapters, and slots.** Electron, a future CLI, tests, and UI clients must inject capabilities through typed interfaces, callbacks, configuration, factories, events, and slot registry contracts. UI client contributions use the `innocenceharness-plugin://` protocol and the slot registry. Domain packages must not call Electron IPC, `BrowserWindow`, React state, DOM presentation APIs, or CLI stdout directly.
 
 5. **Keep core protocols host- and provider-neutral.** Canonical messages, deltas, tools, providers, skills, policies, permissions, and events must not contain Electron types, React components, IPC channel names, DOM objects, or provider wire payloads. Provider conversion belongs in `provider-*`; host conversion belongs in adapters; unavoidable cross-domain dependencies must be documented.
 
