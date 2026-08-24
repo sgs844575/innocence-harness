@@ -141,7 +141,7 @@ const denyAllDecider = {
 /** Default user plugin root (`~/.innocence/plugins`): shared with the plugin
  *  scheme wiring so the loader resolver and the scheme serve the same roots. */
 export function defaultUserPluginRoot(): string {
-  return path.join(os.homedir(), ".innocence", "plugins");
+  return process.env.INNOCENCE_TEST_USER_PLUGIN_ROOT ?? path.join(os.homedir(), ".innocence", "plugins");
 }
 
 /** Read and validate staging `manifest.json` (build:plugins artifact). */

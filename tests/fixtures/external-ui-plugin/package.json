@@ -1,0 +1,7 @@
+{
+  "name": "external-ui-fixture",
+  "version": "0.0.0-test",
+  "private": true,
+  "type": "module",
+  "description": "External UI acceptance fixture"
+}

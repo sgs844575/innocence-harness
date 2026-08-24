@@ -55,17 +55,18 @@ function transcriptsDir(): string {
  *  import vendor/kernel 的运行时值。插件协议接线（innocence-plugin:// 的
  *  内置根）复用同一双分支，消除打包态 cwd 相对路径的 404。 */
 export function bootPaths(): { kernelPath: string; builtinRoot: string } {
+  const builtinOverride = process.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT;
   if (app.isPackaged) {
     const resources = process.resourcesPath;
     return {
       kernelPath: path.join(resources, "node_modules", "@innocencecode", "kernel", "dist", "index.js"),
-      builtinRoot: path.join(resources, "plugins"),
+      builtinRoot: builtinOverride ?? path.join(resources, "plugins"),
     };
   }
   const staging = path.resolve(process.cwd(), "build", "dist", "resources");
   return {
     kernelPath: path.join(staging, "node_modules", "@innocencecode", "kernel", "dist", "index.js"),
-    builtinRoot: path.join(staging, "plugins"),
+    builtinRoot: builtinOverride ?? path.join(staging, "plugins"),
   };
 }
 

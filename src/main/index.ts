@@ -35,6 +35,9 @@ import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc } from "./taskRuntimeI
 registerAppScheme();
 registerPluginScheme();
 
+const testUserData = process.env.INNOCENCE_TEST_USER_DATA;
+if (testUserData) app.setPath("userData", testUserData);
+
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
 
@@ -64,8 +67,8 @@ if (!gotLock) {
       // root reuses the composition's bootPaths so the packaged layout
       // (resources/plugins) is served instead of a cwd-relative dev path.
       handlePluginScheme({
-        userRoot: defaultUserPluginRoot(),
-        builtinRoot: bootPaths().builtinRoot,
+        userRoot: process.env.INNOCENCE_TEST_USER_PLUGIN_ROOT ?? defaultUserPluginRoot(),
+        builtinRoot: process.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT ?? bootPaths().builtinRoot,
       });
       initSessionStore(app.getPath("userData"));
       registerIpcHandlers();
