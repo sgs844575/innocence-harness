@@ -1,4 +1,5 @@
 import { AgentSession, type SessionPlugin } from "@innocencecode/harness-electron";
+import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import { createExecutionScope, sha256Hex, type Tool } from "@innocencecode/harness-tools";
 import type { Delta, Provider } from "@innocencecode/harness-providers";
 import {
@@ -311,8 +312,7 @@ export async function createSessionWith(
   tools: readonly Tool[],
   provider: Provider,
 ): Promise<AgentSession> {
-  return AgentSession.create({
-    allowStaticSpine: true,
+  return createTestSession({
     plugins: [
       {
         name: "test-tools",
@@ -365,8 +365,7 @@ export async function runParentTaskWithChild(options: {
     },
   };
   const tools = [delegateTool, writeTool];
-  const session = await AgentSession.create({
-    allowStaticSpine: true,
+  const session = await createTestSession({
     plugins: [
       {
         name: "test-tools",

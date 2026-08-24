@@ -10,7 +10,7 @@ import {
   textMessage,
 } from "@innocencecode/harness-session";
 import type { Delta, Provider } from "@innocencecode/harness-providers";
-import { AgentSession } from "@innocencecode/harness-electron";
+import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import { createSkillsPlugin, parseSkillMarkdown } from "../src";
 
 let skillsDir: string;
@@ -77,8 +77,7 @@ describe("createSkillsPlugin", () => {
         yield { type: "text", text: "ok" };
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [createSkillsPlugin({ dirs: [skillsDir] })],
       provider,
       workspaceRoot: "D:/tmp",
@@ -100,8 +99,7 @@ describe("createSkillsPlugin", () => {
         yield { type: "text", text: "ok" };
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [createSkillsPlugin({ dirs: [skillsDir] })],
       provider,
       workspaceRoot: "D:/tmp",

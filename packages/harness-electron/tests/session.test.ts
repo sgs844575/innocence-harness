@@ -3,20 +3,11 @@
 // the spine packages that own each type face).
 import { describe, expect, it, vi } from "vitest";
 import { AgentSession, staticSpineSuite, type HarnessPlugin, type SessionSpineSuite } from "../src";
+import { createTestSession, echoProvider } from "./helpers/testSession";
 import * as loopModule from "@innocencecode/harness-agent-loop";
 import type { Delta, Provider } from "@innocencecode/harness-providers";
 import type { ExecutionScope, Tool } from "@innocencecode/harness-tools";
 import type { MessagePart } from "@innocencecode/harness-session";
-
-function echoProvider(log: string[] = []): Provider {
-  return {
-    id: "echo",
-    async *chat(req): AsyncIterable<Delta> {
-      log.push(req.system);
-      yield { type: "text", text: `echo:${req.messages.at(-1)?.parts[0] ?? ""}` };
-    },
-  };
-}
 
 function baseOptions() {
   return {
@@ -82,7 +73,7 @@ describe("AgentSession", () => {
     vi.stubEnv("NODE_ENV", "production");
     try {
       await expect(
-        AgentSession.create({
+        createTestSession({
           plugins: [],
           ...baseOptions(),
         }),
@@ -92,22 +83,11 @@ describe("AgentSession", () => {
     }
   });
 
-  it("allows an explicit static spine seam in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    try {
-      const session = await AgentSession.create({
-        allowStaticSpine: true,
-        plugins: [],
-        ...baseOptions(),
-      });
-      await expect(session.run("静态脊柱探针")).resolves.toMatchObject({ finalText: expect.stringContaining("echo:") });
-      await expect(session.spawner.run({ systemPrompt: "子", tools: "all", prompt: "继续" })).resolves.toMatchObject({
-        finalText: expect.stringContaining("echo:"),
-      });
-      await session.dispose();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+  it("test helper creates a static spine session", async () => {
+    const session = await createTestSession({ provider: echoProvider() });
+    expect(session.options.allowStaticSpine).toBe(true);
+    expect(session.options.spine).toBe(staticSpineSuite());
+    await session.dispose();
   });
 
   it("loads plugins and resolves providerId from the registry", async () => {
@@ -117,8 +97,7 @@ describe("AgentSession", () => {
         ctx.registerProvider(echoProvider());
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [plugin],
       providerId: "echo",
       workspaceRoot: "D:/tmp",
@@ -131,8 +110,7 @@ describe("AgentSession", () => {
   it("isolates a non-core loader entry failure and keeps sibling tools available", async () => {
     const logs: string[] = [];
     const probe = probeTool();
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       loaderEntries: [
         {
@@ -170,9 +148,9 @@ describe("AgentSession", () => {
 
   it("throws when the requested provider is missing", async () => {
     await expect(
-      AgentSession.create({
-        allowStaticSpine: true,
+      createTestSession({
         plugins: [],
+        provider: undefined,
         providerId: "nope",
         workspaceRoot: "D:/tmp",
         permission: { mode: "auto", decider: { ask: async () => "deny" } },
@@ -182,8 +160,7 @@ describe("AgentSession", () => {
 
   it("rejects a session when a core loader entry fails", async () => {
     await expect(
-      AgentSession.create({
-        allowStaticSpine: true,
+      createTestSession({
         plugins: [],
         loaderEntries: [
           {
@@ -211,8 +188,7 @@ describe("AgentSession", () => {
         ctx.registerProvider(echoProvider());
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [plugin],
       workspaceRoot: "D:/tmp",
       permission: { mode: "auto", decider: { ask: async () => "deny" } },
@@ -230,9 +206,9 @@ describe("AgentSession", () => {
       },
     };
     await expect(
-      AgentSession.create({
-        allowStaticSpine: true,
+      createTestSession({
         plugins: [plugin],
+        provider: undefined,
         workspaceRoot: "D:/tmp",
         permission: { mode: "auto", decider: { ask: async () => "deny" } },
       }),
@@ -241,9 +217,9 @@ describe("AgentSession", () => {
 
   it("still rejects a provider-less session with no registered provider", async () => {
     await expect(
-      AgentSession.create({
-        allowStaticSpine: true,
+      createTestSession({
         plugins: [],
+        provider: undefined,
         workspaceRoot: "D:/tmp",
         permission: { mode: "auto", decider: { ask: async () => "deny" } },
       }),
@@ -253,8 +229,7 @@ describe("AgentSession", () => {
   it("create failures after plugin load dispose the already-activated plugins", async () => {
     const events: string[] = [];
     await expect(
-      AgentSession.create({
-        allowStaticSpine: true,
+      createTestSession({
         plugins: [
           {
             name: "leaky",
@@ -264,6 +239,7 @@ describe("AgentSession", () => {
             },
           },
         ],
+        provider: undefined,
         providerId: "missing-provider",
         workspaceRoot: "D:/tmp",
         permission: { mode: "auto", decider: { ask: async () => "deny" } },
@@ -275,8 +251,7 @@ describe("AgentSession", () => {
   it("passes validateResource and audit through to the session-built engine", async () => {
     const audited: Array<{ toolName: string; scope: string }> = [];
     const validated: string[] = [];
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       provider: echoProvider(),
       workspaceRoot: "D:/tmp",
@@ -305,8 +280,7 @@ describe("AgentSession", () => {
   });
 
   it("hard resource validation passed via options rejects calls in any mode", async () => {
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       provider: echoProvider(),
       workspaceRoot: "D:/tmp",
@@ -371,8 +345,7 @@ describe("AgentSession", () => {
         });
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [skillPlugin],
       provider,
       workspaceRoot: "D:/tmp",
@@ -412,8 +385,7 @@ describe("AgentSession", () => {
         yield { type: "text", text: "never" };
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [plugin],
       provider,
       workspaceRoot: "D:/tmp",
@@ -439,8 +411,7 @@ describe("AgentSession", () => {
     const gate = new Promise<void>((resolve) => {
       releaseProcessor = resolve;
     });
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [
         {
           name: "slow-processor",
@@ -485,8 +456,7 @@ describe("AgentSession", () => {
   });
 
   it("run() after dispose rejects with 会话已释放", async () => {
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       ...baseOptions(),
     });
@@ -507,8 +477,7 @@ describe("AgentSession", () => {
         disposed += 1;
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [plugin],
       ...baseOptions(),
     });
@@ -519,8 +488,7 @@ describe("AgentSession", () => {
 
   it("applies project permission config rules", async () => {
     let asked = 0;
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       provider: echoProvider(),
       workspaceRoot: "D:/tmp",
@@ -544,8 +512,7 @@ describe("AgentSession", () => {
   });
 
   it("processes a canonical user message before storing history", async () => {
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       plugins: [{
         name: "processor",
@@ -569,8 +536,7 @@ describe("AgentSession", () => {
   });
 
   it("converts a string input into a canonical user message before processing", async () => {
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       plugins: [{
         name: "processor",
@@ -594,8 +560,7 @@ describe("AgentSession", () => {
   });
 
   it("rejects a non-user message input without touching history", async () => {
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       plugins: [],
     });
@@ -608,8 +573,7 @@ describe("AgentSession", () => {
   it("runs message processors on real user input only, never on tool-result turns", async () => {
     const seenPartShapes: string[][] = [];
     const probe = probeTool();
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       provider: scriptedProvider([{ toolCalls: [{ toolName: "Probe" }] }, { text: "done" }]),
       plugins: [
@@ -638,8 +602,7 @@ describe("AgentSession", () => {
 
   it("mints a per-run scope inherited by every invocation and patchable via scopePatch", async () => {
     const probe = probeTool();
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       provider: scriptedProvider([{ toolCalls: [{ toolName: "Probe" }] }, { text: "done" }]),
       plugins: [toolsPlugin([probe])],
@@ -671,8 +634,7 @@ describe("AgentSession", () => {
 
   it("a child dispose failure never masks the child run's original error", async () => {
     const logs: Array<{ level: string; msg: string }> = [];
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [
         {
           // Inherited by the child: its run rejects with the processor error.
@@ -710,8 +672,7 @@ describe("AgentSession", () => {
   it("loads a kernel-native plugin (apply) beside legacy plugins with the registry mirror intact", async () => {
     const nativeSpy = { calls: 0 };
     const legacySpy = { calls: 0 };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       provider: scriptedProvider([
         { toolCalls: [{ toolName: "Probe" }, { toolName: "Legacy" }] },
@@ -757,8 +718,7 @@ describe("AgentSession injected scope", () => {
       persistArgs: () => ({}),
       execute: async () => ({ content: "ok" }),
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       ...baseOptions(),
       scope,
       plugins: [{
@@ -798,8 +758,7 @@ describe("AgentSession spine suite", () => {
     };
     const suite: SessionSpineSuite = { ...staticSpineSuite(), loop: markedLoop };
 
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [],
       provider: echoProvider(),
       workspaceRoot: "D:/tmp",

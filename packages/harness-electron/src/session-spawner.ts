@@ -67,8 +67,6 @@ export function createSpawnerChildSession(
     provider: materials.provider,
     workspaceRoot: parentOptions.workspaceRoot,
     systemPrompt: materials.systemPrompt,
-    // Preserve the explicit self-contained/test seam for recursively spawned sessions.
-    allowStaticSpine: parentOptions.allowStaticSpine,
     spine: parentOptions.spine,
     permission: {
       mode: materials.permission.getMode(),

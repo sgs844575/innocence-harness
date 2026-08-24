@@ -87,6 +87,7 @@ function runtimeOptions(
     persistDir,
     providerFactory: () => createMockProvider({ turns }),
     pluginsForSession: () => [FsPlugin, ShellPlugin],
+    sessionSpine: () => staticSpineSuite(),
   };
 }
 

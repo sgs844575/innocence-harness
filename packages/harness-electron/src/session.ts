@@ -92,26 +92,27 @@ export class AgentSession {
 
   static async create(options: AgentSessionOptions): Promise<AgentSession> {
     const sessionId = nextSessionId();
-    if ((options.requireInjectedSpine || process.env.NODE_ENV === "production") && !options.spine && !options.allowStaticSpine) {
+    if (!options.spine && (options.requireInjectedSpine || process.env.NODE_ENV === "production" || !options.allowStaticSpine)) {
       throw new Error("production session requires an injected spine suite");
     }
     const spine = options.spine ?? staticSpineSuite();
+    const sessionOptions: AgentSessionOptions = { ...options, spine };
     const kernel = await mountSessionKernel({
       sessionId,
-      plugins: options.plugins,
-      loaderEntries: options.loaderEntries,
-      scope: options.scope,
+      plugins: sessionOptions.plugins,
+      loaderEntries: sessionOptions.loaderEntries,
+      scope: sessionOptions.scope,
       spine,
-      provider: options.provider,
-      providerId: options.providerId,
-      workspaceRoot: options.workspaceRoot,
-      systemPrompt: options.systemPrompt,
-      permission: options.permission,
-      compaction: options.compaction,
-      logger: options.logger ?? noopLogger,
-      spawnerSessionFactory: (materials) => createSpawnerChildSession(options, materials),
+      provider: sessionOptions.provider,
+      providerId: sessionOptions.providerId,
+      workspaceRoot: sessionOptions.workspaceRoot,
+      systemPrompt: sessionOptions.systemPrompt,
+      permission: sessionOptions.permission,
+      compaction: sessionOptions.compaction,
+      logger: sessionOptions.logger ?? noopLogger,
+      spawnerSessionFactory: (materials) => createSpawnerChildSession(sessionOptions, materials),
     });
-    return new AgentSession(options, kernel, sessionId, spine);
+    return new AgentSession(sessionOptions, kernel, sessionId, spine);
   }
 
   on(listener: HarnessEventListener): () => void {
