@@ -125,6 +125,12 @@ npm run typecheck
 
 结果：定向测试 28 项通过，`npm run typecheck` 通过。
 
+### 本轮修复提交
+
+```text
+f240c65 fix(HMR): 跟踪异步 watcher 清理
+```
+
 ### 修复疑虑
 
 - 保持 `vendor/kernel-hmr` 仅负责注册/restart/stop/fiber 生命周期；真实 fs watcher 仍只位于 host `src/main/pluginBoot/hmrWatcher.ts`。
