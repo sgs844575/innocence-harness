@@ -20,18 +20,18 @@ export interface TestOverrides {
  * Ordinary packaged processes never consult the override paths.
  */
 export function resolveTestOverrides(input: TestOverrideEnvironment): TestOverrides {
-  if (input.env.INNOCENCE_TEST_MODE !== TEST_MODE_MARKER) return { enabled: false };
+  if (input.env.INNOCENCEHARNESS_TEST_MODE !== TEST_MODE_MARKER) return { enabled: false };
   if (input.isPackaged && !input.argv.includes(CONTROLLED_TEST_ARGUMENT)) {
     return { enabled: false };
   }
   return {
     enabled: true,
-    ...(input.env.INNOCENCE_TEST_USER_DATA ? { userData: input.env.INNOCENCE_TEST_USER_DATA } : {}),
-    ...(input.env.INNOCENCE_TEST_USER_PLUGIN_ROOT
-      ? { userPluginRoot: input.env.INNOCENCE_TEST_USER_PLUGIN_ROOT }
+    ...(input.env.INNOCENCEHARNESS_TEST_USER_DATA ? { userData: input.env.INNOCENCEHARNESS_TEST_USER_DATA } : {}),
+    ...(input.env.INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT
+      ? { userPluginRoot: input.env.INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT }
       : {}),
-    ...(input.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT
-      ? { builtinPluginRoot: input.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT }
+    ...(input.env.INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT
+      ? { builtinPluginRoot: input.env.INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT }
       : {}),
   };
 }

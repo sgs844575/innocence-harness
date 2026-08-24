@@ -29,15 +29,15 @@ const fixtureDir = path.join(repoRoot, "tests", "fixtures", "external-ui-plugin"
 const mainEntry = path.join(repoRoot, ".vite", "build", "main.js");
 const stagingRoot = path.join(repoRoot, "build", "dist", "resources");
 const stagedPluginRoot = path.join(stagingRoot, "plugins");
-const packagedRuntimeDir = process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR
-  ? path.resolve(process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR)
+const packagedRuntimeDir = process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_PACKAGE_DIR
+  ? path.resolve(process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_PACKAGE_DIR)
   : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
 const packagedRuntimeEntry = path.join(packagedRuntimeDir, process.platform === "win32" ? "InnocenceHarness.exe" : "InnocenceHarness");
 const children: DesktopChild[] = [];
 const tempRoots: string[] = [];
 
 function desktopRuntimeExecutable(): string | undefined {
-  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
+  if (process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
   try {
     const packageDir = path.dirname(require.resolve("electron/package.json"));
     const executable = path.join(packageDir, "dist", process.platform === "win32" ? "electron.exe" : "electron");
@@ -48,7 +48,7 @@ function desktopRuntimeExecutable(): string | undefined {
 }
 
 function desktopRuntime(): DesktopRuntime | undefined {
-  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
+  if (process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
   const devEntry = desktopRuntimeExecutable();
   if (devEntry !== undefined) return { entry: devEntry, packaged: false };
   try {
@@ -348,10 +348,10 @@ async function launchApp(
     cwd: repoRoot,
     env: {
       ...process.env,
-      INNOCENCE_TEST_USER_PLUGIN_ROOT: userRoot,
-      INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: builtinRoot,
-      INNOCENCE_TEST_USER_DATA: userData,
-      INNOCENCE_TEST_MODE: "1",
+      INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT: userRoot,
+      INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT: builtinRoot,
+      INNOCENCEHARNESS_TEST_USER_DATA: userData,
+      INNOCENCEHARNESS_TEST_MODE: "1",
       ELECTRON_ENABLE_LOGGING: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
