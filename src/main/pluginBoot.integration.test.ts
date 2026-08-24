@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { AgentSession, type SessionPlugin } from "@innocencecode/harness-electron";
 import { createMockProvider } from "@innocencecode/provider-mock";
 import {
@@ -44,6 +44,14 @@ async function ensureBoot(): Promise<PluginBoot> {
   return boot;
 }
 
+async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("condition did not settle");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 maybeDescribe("pluginBoot over the real staging tree", () => {
   it("loads the staging kernel (single module instance) with createScope", async () => {
     const b = await ensureBoot();
@@ -64,6 +72,53 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     expect(names).toEqual(
       expect.arrayContaining(["Edit", "Glob", "Grep", "Read", "Write"]),
     );
+  });
+
+  it("connects a real development watcher and disposes it before root teardown", async () => {
+    const isolatedUserRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-hmr-user-"));
+    const isolatedBoot = await createPluginBoot({
+      kernelPath: paths.kernelPath,
+      builtinRoot: paths.builtinRoot,
+      userRoot: isolatedUserRoot,
+      workspaceRoot: process.cwd(),
+      enableHmrWatcher: true,
+    });
+    const fixtureRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-hmr-fixture-"));
+    roots.push(fixtureRoot);
+    const fixture = path.join(fixtureRoot, "client.js");
+    writeFileSync(fixture, "initial", "utf8");
+    let restarts = 0;
+    await isolatedBoot.watchPlugin("example", fixture, async () => { restarts += 1; });
+    writeFileSync(fixture, "changed", "utf8");
+    await waitUntil(() => restarts === 1);
+    await isolatedBoot.dispose();
+    writeFileSync(fixture, "after-dispose", "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(restarts).toBe(1);
+    rmSync(isolatedUserRoot, { recursive: true, force: true });
+  });
+
+  it("does not create a watcher in production mode", async () => {
+    const factory = vi.fn(() => ({
+      watchPath: async () => async () => {},
+      dispose: async () => {},
+    }));
+    vi.stubEnv("NODE_ENV", "production");
+    const isolatedUserRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-prod-hmr-user-"));
+    const isolatedBoot = await createPluginBoot({
+      kernelPath: paths.kernelPath,
+      builtinRoot: paths.builtinRoot,
+      userRoot: isolatedUserRoot,
+      enableHmrWatcher: true,
+      hmrWatcherFactory: factory,
+    });
+    try {
+      await isolatedBoot.dispose();
+      expect(factory).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(isolatedUserRoot, { recursive: true, force: true });
+    }
   });
 
   it("keeps dynamic root and session timers isolated across disposal", async () => {

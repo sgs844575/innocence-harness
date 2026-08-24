@@ -22,6 +22,7 @@ import { resolveEntries, type ConfigSpecs, type ResolvedEntries } from "./plugin
 import { type SchemaSpec } from "@innocencecode/kernel-schema";
 import { loadConfigLayerPair, type ConfigLogger } from "./configSources";
 import { projectPluginInventory, type PluginInventoryEntry } from "../plugin-inventory";
+import { createHostHmrWatcher, type HostHmrWatcher } from "./hmrWatcher";
 
 type KernelContext = KernelModule.Context;
 type KernelScope = KernelModule.ScopeHandle;
@@ -93,6 +94,7 @@ export interface PluginBoot {
   loaderEntryIds(): string[];
   /** Create one route-session scope below the boot root (kernel createScope). */
   createSessionScope(): KernelScope;
+  watchPlugin(id: string, fileOrDirectory: string, restart: () => Promise<void>): Promise<() => Promise<void>>;
   /** Unwind the boot root (app shutdown; cascades into live route scopes). */
   dispose(): Promise<void>;
 }
@@ -107,12 +109,12 @@ export interface PluginBootOptions {
   userRoot?: string;
   /** Registered group names used to validate configured group declarations. */
   allowedGroupNames?: readonly string[];
-  /**
-   * Default workspace root recorded as the boot root's baseUrl (diagnostics
-   * and relative-path resolution anchor); per-session workspaces are resolved
-   * per route by the runtime, not here.
-   */
+  /** Default workspace root recorded on the boot root (diagnostics anchor). */
   workspaceRoot?: string;
+  /** Explicitly enable host file watching in development mode. */
+  enableHmrWatcher?: boolean;
+  /** Host HMR watcher factory; defaults to the real Node fs.watch adapter. */
+  hmrWatcherFactory?: () => HostHmrWatcher;
 }
 
 const builtinConfigSpecs: ConfigSpecs = {
@@ -263,6 +265,9 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   await attachIncludeBuiltin(loader, options.kernelPath);
 
   const descriptors = await readManifest(options.builtinRoot);
+  const hostHmrWatcher = options.enableHmrWatcher === true && process.env.NODE_ENV !== "production"
+    ? (options.hmrWatcherFactory ?? (() => createHostHmrWatcher()))()
+    : undefined;
 
   // Shared declarative resolution: manifest descriptors + project yml layer +
   // user layer (settings toggles over user cordis.yml). An empty workspaceRoot
@@ -347,7 +352,14 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     createSessionScope() {
       return kernel.createScope(root);
     },
+    watchPlugin(id: string, fileOrDirectory: string, restart: () => Promise<void>) {
+      if (!hostHmrWatcher) {
+        return Promise.reject(new Error("host HMR watcher is not enabled"));
+      }
+      return hostHmrWatcher.watchPath(id, fileOrDirectory, restart);
+    },
     async dispose() {
+      await hostHmrWatcher?.dispose();
       await root.fiber.dispose();
     },
   };
