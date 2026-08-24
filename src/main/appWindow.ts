@@ -6,11 +6,22 @@
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { appIndexUrl } from "./protocol";
+import { APP_SCHEME, appIndexUrl } from "./protocol";
 import { logger } from "./logger";
 import { getTheme, titleBarOverlayFor } from "./theme";
 
 let mainWindow: BrowserWindow | undefined;
+
+export function isAllowedNavigationUrl(url: string, devServerUrl: string | undefined): boolean {
+  try {
+    const candidate = new URL(url);
+    if (candidate.protocol === `${APP_SCHEME}:` && candidate.hostname === "app") return true;
+    if (devServerUrl === undefined) return false;
+    return candidate.origin === new URL(devServerUrl).origin;
+  } catch {
+    return false;
+  }
+}
 
 export function getMainWindow(): BrowserWindow | undefined {
   return mainWindow;
@@ -100,9 +111,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   }
 
   // Block any navigation away from our own origins.
-  const allowed = new Set([devServerUrl, "innocenceharness://app"].filter(Boolean) as string[]);
   win.webContents.on("will-navigate", (event, url) => {
-    if (![...allowed].some((origin) => url.startsWith(origin))) event.preventDefault();
+    if (!isAllowedNavigationUrl(url, devServerUrl)) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 

@@ -75,7 +75,7 @@ function summarizeOutput(output: string): string {
 function resolvePackageSelection(): PackageSelection {
   const requestedPackageDir = process.env.IC_PACKAGE_DIR
     ? path.resolve(process.env.IC_PACKAGE_DIR)
-    : path.join(packageOutputRoot, "InnocenceCode-win32-x64");
+    : path.join(packageOutputRoot, "InnocenceHarness-win32-x64");
 
   try {
     const validatedPackageDir = assertKnownPackageDirectory(requestedPackageDir, repoRoot);
@@ -101,7 +101,7 @@ function resolvePackageSelection(): PackageSelection {
 const packageSelection = resolvePackageSelection();
 const packageDir = packageSelection.packageDir;
 const canonicalPackageDir = packageSelection.canonicalPackageDir;
-const packagedExe = path.join(packageDir, "InnocenceCode.exe");
+const packagedExe = path.join(packageDir, "InnocenceHarness.exe");
 const asarPath = path.join(packageDir, "resources", "app.asar");
 const unpackedNodeModules = path.join(packageDir, "resources", "app.asar.unpacked", "node_modules");
 

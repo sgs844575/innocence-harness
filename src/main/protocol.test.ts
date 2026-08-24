@@ -46,6 +46,11 @@ function schemeHandler(scheme: string): SchemeHandler {
   return call[1] as unknown as SchemeHandler;
 }
 
+/** The handler registered for the application scheme (latest wiring call). */
+function appHandler(): SchemeHandler {
+  return schemeHandler(APP_SCHEME);
+}
+
 /** The handler registered for the plugin scheme (latest wiring call). */
 function pluginHandler(): SchemeHandler {
   return schemeHandler(PLUGIN_SCHEME);
@@ -109,6 +114,17 @@ describe("application and plugin scheme migration", () => {
     await expect(
       handleOldScheme("innocence-plugin://fixture/dist/client.js"),
     ).rejects.toThrow("scheme handler was not registered: innocence-plugin");
+  });
+});
+
+describe("handleAppScheme", () => {
+  it.each([
+    ["wrong hostname", `${APP_SCHEME}://app.evil/index.html`],
+    ["userinfo host", `${APP_SCHEME}://app@evil/index.html`],
+    ["wrong scheme", `innocencecode://app/index.html`],
+  ])("rejects %s before reading renderer files", (_label, url) => {
+    handleAppScheme();
+    expect(appHandler()({ url }).status).toBe(403);
   });
 });
 

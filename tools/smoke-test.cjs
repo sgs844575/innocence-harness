@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const exe = "D:/Projects/AiProjects/InnocenceCode/out/InnocenceCode-win32-x64/InnocenceCode.exe";
+const exe = path.resolve(__dirname, "..", "out", "InnocenceHarness-win32-x64", "InnocenceHarness.exe");
 const marker = path.join(os.tmpdir(), `innocencecode-smoke-${Date.now()}.txt`);
 try { fs.unlinkSync(marker); } catch {}
 

@@ -42,7 +42,15 @@ export function registerAppScheme(): void {
 export function handleAppScheme(): void {
   const rendererRoot = path.join(__dirname, "../renderer");
   protocol.handle(APP_SCHEME, (request) => {
-    const url = new URL(request.url);
+    let url: URL;
+    try {
+      url = new URL(request.url);
+    } catch {
+      return new Response("Forbidden", { status: 403 });
+    }
+    if (url.protocol !== `${APP_SCHEME}:` || url.hostname !== "app") {
+      return new Response("Forbidden", { status: 403 });
+    }
     // innocenceharness://app/<path> -> .vite/renderer/<path>
     const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
     const target = rel === "" || rel.endsWith("/") ? path.join(rel, "index.html") : rel;
