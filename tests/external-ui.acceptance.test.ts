@@ -9,6 +9,19 @@ import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { afterEach, describe, it } from "vitest";
 
+type DesktopChild = ReturnType<typeof spawn>;
+
+type DesktopRuntime = {
+  entry: string;
+  packaged: boolean;
+};
+
+type LaunchState = {
+  child?: DesktopChild;
+  devtools?: DevToolsConnection;
+  output: string;
+};
+
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,20 +29,43 @@ const fixtureDir = path.join(repoRoot, "tests", "fixtures", "external-ui-plugin"
 const mainEntry = path.join(repoRoot, ".vite", "build", "main.js");
 const stagingRoot = path.join(repoRoot, "build", "dist", "resources");
 const stagedPluginRoot = path.join(stagingRoot, "plugins");
-const devRuntimeEntry = desktopRuntimeExecutable();
 const packagedRuntimeDir = process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR
   ? path.resolve(process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR)
   : path.join(repoRoot, "out", "InnocenceCode-win32-x64");
 const packagedRuntimeEntry = path.join(packagedRuntimeDir, process.platform === "win32" ? "InnocenceCode.exe" : "InnocenceCode");
-const desktopRuntimeEntry = existsSync(devRuntimeEntry) ? devRuntimeEntry : packagedRuntimeEntry;
-const runtimeIsPackaged = desktopRuntimeEntry === packagedRuntimeEntry;
-const children: Array<ReturnType<typeof spawn>> = [];
+const children: DesktopChild[] = [];
 const tempRoots: string[] = [];
 
-function desktopRuntimeExecutable(): string {
-  const packageDir = path.dirname(require.resolve("electron/package.json"));
-  return path.join(packageDir, "dist", process.platform === "win32" ? "electron.exe" : "electron");
+function desktopRuntimeExecutable(): string | undefined {
+  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
+  try {
+    const packageDir = path.dirname(require.resolve("electron/package.json"));
+    const executable = path.join(packageDir, "dist", process.platform === "win32" ? "electron.exe" : "electron");
+    return existsSync(executable) ? executable : undefined;
+  } catch {
+    return undefined;
+  }
 }
+
+function desktopRuntime(): DesktopRuntime | undefined {
+  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
+  const devEntry = desktopRuntimeExecutable();
+  if (devEntry !== undefined) return { entry: devEntry, packaged: false };
+  try {
+    if (existsSync(packagedRuntimeEntry) && statSync(packagedRuntimeEntry).isFile()) {
+      return { entry: packagedRuntimeEntry, packaged: true };
+    }
+  } catch {
+    // A disappearing or unreadable packaged executable is a diagnostic skip,
+    // not a module-collection failure.
+  }
+  return undefined;
+}
+
+const runtime = desktopRuntime();
+const runtimeReason = runtime === undefined
+  ? `desktop runtime unavailable: Electron development binary or packaged executable not found (${packagedRuntimeEntry})`
+  : undefined;
 
 function hasGraphics(): boolean {
   if (process.platform === "win32" || process.platform === "darwin") return true;
@@ -187,12 +223,21 @@ async function prepareRoots(userRoot: string, builtinRoot: string): Promise<void
   await runFixtureBuild(userRoot);
 }
 
-async function launchApp(userRoot: string, builtinRoot: string, userData: string, port: number): Promise<{ devtools: DevToolsConnection; diagnostics: () => string }> {
-  if (!existsSync(mainEntry)) throw new Error(`main build missing: ${mainEntry}; run the renderer/main build before acceptance`);
-  const child = spawn(desktopRuntimeEntry, [
+async function launchApp(
+  userRoot: string,
+  builtinRoot: string,
+  userData: string,
+  port: number,
+  launchState: LaunchState,
+): Promise<DevToolsConnection> {
+  if (runtime === undefined) throw new Error(runtimeReason);
+  if (!runtime.packaged && !existsSync(mainEntry)) {
+    throw new Error(`main build missing: ${mainEntry}; run the renderer/main build before acceptance`);
+  }
+  const child = spawn(runtime.entry, [
     `--user-data-dir=${userData}`,
     `--remote-debugging-port=${port}`,
-    ...(runtimeIsPackaged ? [] : [mainEntry]),
+    ...(runtime.packaged ? [] : [mainEntry]),
   ], {
     cwd: repoRoot,
     env: {
@@ -205,18 +250,23 @@ async function launchApp(userRoot: string, builtinRoot: string, userData: string
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  launchState.child = child;
   children.push(child);
-  let output = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => { output += chunk; });
-  child.stderr.on("data", (chunk: string) => { output += chunk; });
-  const list = JSON.parse(await waitForHttp(`http://127.0.0.1:${port}/json/list`, 30_000)) as Array<{ type: string; webSocketDebuggerUrl?: string }>;
-  const page = list.find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl);
-  if (!page?.webSocketDebuggerUrl) throw new Error(`renderer page target missing; output:\n${output}`);
-  const target = new URL(page.webSocketDebuggerUrl);
-  const devtools = await DevToolsConnection.connect({ host: target.hostname, port: Number(target.port), path: target.pathname });
-  return { devtools, diagnostics: () => output };
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => { launchState.output += chunk; });
+  child.stderr?.on("data", (chunk: string) => { launchState.output += chunk; });
+
+  try {
+    const list = JSON.parse(await waitForHttp(`http://127.0.0.1:${port}/json/list`, 30_000)) as Array<{ type: string; webSocketDebuggerUrl?: string }>;
+    const page = list.find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl);
+    if (!page?.webSocketDebuggerUrl) throw new Error("renderer page target missing");
+    const target = new URL(page.webSocketDebuggerUrl);
+    launchState.devtools = await DevToolsConnection.connect({ host: target.hostname, port: Number(target.port), path: target.pathname });
+    return launchState.devtools;
+  } catch (error) {
+    throw new Error(`${String(error)}\nDesktop diagnostics:\n${launchState.output}`);
+  }
 }
 
 async function clickButton(devtools: DevToolsConnection, matcher: string): Promise<void> {
@@ -246,7 +296,7 @@ async function waitForAbsent(devtools: DevToolsConnection, text: string, timeout
   throw new Error(`timed out waiting for text to disappear ${JSON.stringify(text)}; body:\n${body}`);
 }
 
-async function terminateChild(child: ReturnType<typeof spawn>): Promise<void> {
+async function terminateChild(child: DesktopChild): Promise<void> {
   if (child.exitCode !== null) return;
   if (process.platform === "win32" && child.pid !== undefined) {
     await execFileAsync("taskkill", ["/T", "/F", "/PID", String(child.pid)]).catch(() => undefined);
@@ -260,30 +310,48 @@ async function terminateChild(child: ReturnType<typeof spawn>): Promise<void> {
   });
 }
 
+async function cleanupLaunchState(launchState: LaunchState): Promise<void> {
+  launchState.devtools?.close();
+  launchState.devtools = undefined;
+  if (launchState.child !== undefined) {
+    await terminateChild(launchState.child);
+    launchState.child = undefined;
+  }
+}
+
+async function cleanupTempRoot(root: string): Promise<void> {
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  const index = tempRoots.indexOf(root);
+  if (index >= 0) tempRoots.splice(index, 1);
+}
+
 afterEach(async () => {
   for (const child of children.splice(0)) await terminateChild(child);
   for (const root of tempRoots.splice(0)) await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
-const acceptanceIt = hasGraphics() ? it : it.skip;
-if (!hasGraphics()) {
-  console.warn("[external-ui] SKIP: graphical environment unavailable (set DISPLAY/WAYLAND_DISPLAY for real desktop acceptance)");
+const graphicsAvailable = hasGraphics();
+const acceptanceSkipReason = !graphicsAvailable
+  ? "graphical environment unavailable (set DISPLAY/WAYLAND_DISPLAY for real desktop acceptance)"
+  : runtimeReason;
+const acceptanceIt = acceptanceSkipReason === undefined ? it : it.skip;
+if (acceptanceSkipReason !== undefined) {
+  console.warn(`[external-ui] SKIP: ${acceptanceSkipReason}`);
 }
 
 describe("external UI plugin real Electron acceptance", () => {
   acceptanceIt("loads panel/settings through innocence-plugin and revokes both after disabling the fixture", async () => {
-    if (!existsSync(mainEntry)) throw new Error(`renderer/main build missing: ${mainEntry}`);
-    if (!existsSync(stagedPluginRoot)) throw new Error(`staging plugin root missing: ${stagedPluginRoot}`);
-    if (!existsSync(desktopRuntimeEntry) || !statSync(desktopRuntimeEntry).isFile()) {
-      throw new Error(`desktop runtime executable unavailable: ${desktopRuntimeEntry}`);
-    }
-    const userRoot = await tempDir("ic-external-ui-user-");
-    const builtinRoot = await tempDir("ic-external-ui-builtin-");
-    const userData = await tempDir("ic-external-ui-data-");
-    await prepareRoots(userRoot, builtinRoot);
-    const port = await freePort();
-    const { devtools, diagnostics } = await launchApp(userRoot, builtinRoot, userData, port);
+    const launchState: LaunchState = { output: "" };
+    const roots: string[] = [];
     try {
+      if (!existsSync(stagedPluginRoot)) throw new Error(`staging plugin root missing: ${stagedPluginRoot}`);
+      const userRoot = await tempDir("ic-external-ui-user-");
+      const builtinRoot = await tempDir("ic-external-ui-builtin-");
+      const userData = await tempDir("ic-external-ui-data-");
+      roots.push(userRoot, builtinRoot, userData);
+      await prepareRoots(userRoot, builtinRoot);
+      const port = await freePort();
+      const devtools = await launchApp(userRoot, builtinRoot, userData, port, launchState);
       await waitForText(devtools, "InnocenceCode");
       await clickButton(devtools, "auxiliary panel|辅助面板");
       await waitForText(devtools, "fixture.panel");
@@ -306,9 +374,10 @@ describe("external UI plugin real Electron acceptance", () => {
       await waitForAbsent(devtools, "fixture.panel");
       await waitForAbsent(devtools, "Fixture panel content");
     } catch (error) {
-      throw new Error(`${String(error)}\nDesktop diagnostics:\n${diagnostics()}`);
+      throw new Error(`${String(error)}\nDesktop diagnostics:\n${launchState.output}`);
     } finally {
-      devtools.close();
+      await cleanupLaunchState(launchState);
+      for (const root of roots) await cleanupTempRoot(root);
     }
   }, 90_000);
 });
