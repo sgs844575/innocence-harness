@@ -1,7 +1,7 @@
 {
   "name": "@innocencecode/harness-providers",
   "version": "0.1.0",
-  "description": "InnocenceCode providers spine service: Provider chat SPI (streaming deltas) and provider registry",
+  "description": "InnocenceHarness providers spine service: Provider chat SPI (streaming deltas) and provider registry",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

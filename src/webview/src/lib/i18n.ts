@@ -4,7 +4,7 @@ export type Dict = Record<string, string>;
 // zhCN 需被组件直接引用（CodeBlock/MarkdownView 的 t prop 未注入时查表兜底）；
 // enUS 一并导出供字典键集一致性测试（i18n.test.ts）消费。
 export const zhCN: Dict = {
-  "app.name": "InnocenceCode",
+  "app.name": "InnocenceHarness",
   "sidebar.search": "搜索",
   "sidebar.noNotifications": "暂无通知",
   "sidebar.filter": "筛选会话",
@@ -27,10 +27,10 @@ export const zhCN: Dict = {
   "composer.env": "本地",
   "composer.branch": "main",
   "composer.permission": "请求批准",
-  "chat.placeholder": "给 InnocenceCode 发送消息…（Enter 发送，Shift+Enter 换行）",
+  "chat.placeholder": "给 InnocenceHarness 发送消息…（Enter 发送，Shift+Enter 换行）",
   "chat.send": "发送",
   "chat.stop": "停止",
-  "chat.empty.title": "你想让 InnocenceCode 构建什么？",
+  "chat.empty.title": "你想让 InnocenceHarness 构建什么？",
   "chat.card.explore.title": "探索并理解代码",
   "chat.card.build.title": "构建新功能、应用或工具",
   "chat.card.review.title": "审查代码并提出修改建议",
@@ -215,7 +215,7 @@ export const zhCN: Dict = {
 };
 
 export const enUS: Dict = {
-  "app.name": "InnocenceCode",
+  "app.name": "InnocenceHarness",
   "sidebar.search": "Search",
   "sidebar.noNotifications": "No notifications",
   "sidebar.filter": "Filter sessions",
@@ -238,10 +238,10 @@ export const enUS: Dict = {
   "composer.env": "Local",
   "composer.branch": "main",
   "composer.permission": "Request approval",
-  "chat.placeholder": "Message InnocenceCode… (Enter to send, Shift+Enter for newline)",
+  "chat.placeholder": "Message InnocenceHarness… (Enter to send, Shift+Enter for newline)",
   "chat.send": "Send",
   "chat.stop": "Stop",
-  "chat.empty.title": "What do you want InnocenceCode to build?",
+  "chat.empty.title": "What do you want InnocenceHarness to build?",
   "chat.card.explore.title": "Explore and understand code",
   "chat.card.build.title": "Build new features, apps, or tools",
   "chat.card.review.title": "Review code and suggest fixes",

@@ -51,7 +51,7 @@ describe("历史会话恢复渲染（ChatView 全链路）", () => {
     render(
       <ChatView
         t={t}
-        appName="InnocenceCode"
+        appName="InnocenceHarness"
         messages={restored}
         streaming={false}
         settings={null}

@@ -1,5 +1,5 @@
 {
-  "menu.app.name": "InnocenceCode",
+  "menu.app.name": "InnocenceHarness",
   "menu.file": "文件",
   "menu.file.newSession": "新建会话",
   "menu.file.closeWindow": "关闭窗口",
@@ -21,7 +21,7 @@
   "menu.theme.dark": "深色",
   "menu.theme.light": "浅色",
   "menu.help": "帮助",
-  "menu.help.about": "关于 InnocenceCode",
+  "menu.help.about": "关于 InnocenceHarness",
   "menu.window": "窗口",
   "menu.window.minimize": "最小化",
   "menu.window.zoom": "缩放",

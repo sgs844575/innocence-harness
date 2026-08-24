@@ -88,7 +88,7 @@ export function ChatView({
         <div className="flex flex-1 items-center justify-center px-[clamp(12px,3vw,24px)] pb-24">
           <div className="w-full max-w-2xl">
             <h1 className="mb-4 text-center text-[clamp(17px,2vw,21px)] font-medium">
-              {t("chat.empty.title").replace("InnocenceCode", appName)}
+              {t("chat.empty.title").replace("InnocenceHarness", appName)}
             </h1>
             <Composer
               t={t}

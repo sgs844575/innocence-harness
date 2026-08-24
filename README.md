@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="logo.svg" alt="InnocenceCode 图标" width="96" height="96" />
+  <img src="logo.svg" alt="InnocenceHarness 图标" width="96" height="96" />
 </p>
 
-# InnocenceCode
+# InnocenceHarness
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![Made with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)
 
-**InnocenceCode** 是一个基于自研 Agent Harness 的 AI 编程助手桌面客户端：会话侧边栏、流式聊天、
+**InnocenceHarness** 是一个基于自研 Agent Harness 的 AI 编程助手桌面客户端：会话侧边栏、流式聊天、
 工具调用审批卡片、任务工作区（fork / 变更捕获 / 审查 / 应用）与跟随系统主题的界面。
 后端为本项目原创实现的分层内核 + "万物皆插件"架构，支持双协议 Provider 原生接入、文件与终端工具、
 子代理、Skills 与 MCP。全部代码为本项目原创实现。
@@ -207,7 +207,7 @@ innocence-code/
 
 ### 自举验收（M6）
 
-终极验收是**用 InnocenceCode 开发它自己**：启动应用 → 工作区选本仓库 → 让 agent 给 `packages/tools-fs`
+终极验收是**用 InnocenceHarness 开发它自己**：启动应用 → 工作区选本仓库 → 让 agent 给 `packages/tools-fs`
 加一个新工具并补测试（它会真实地 Read/Edit/Write 并跑 `npx vitest run`）。
 仓库内 `packages/harness-electron/tests/bootstrap.test.ts` 是该流程的全自动替身：
 完整运行时 + 真实文件工具 + shell + 审批门控跑通"读 → 改 → 写 → 验证"四步工作流。

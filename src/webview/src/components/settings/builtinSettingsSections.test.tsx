@@ -207,7 +207,7 @@ describe("SettingsView 槽位分发", () => {
   it("about → 关于节（应用名 + 版本号）", () => {
     renderSection("about");
     expect(screen.getByText(SECTION_LABEL.about)).toBeTruthy();
-    expect(screen.getByText("InnocenceCode")).toBeTruthy();
+    expect(screen.getByText("InnocenceHarness")).toBeTruthy();
     expect(screen.getByText("1.2.3")).toBeTruthy();
   });
 });

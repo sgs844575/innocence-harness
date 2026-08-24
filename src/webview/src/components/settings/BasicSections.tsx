@@ -133,7 +133,7 @@ export function AboutSection({
         <span aria-hidden className="font-mono text-2xl font-bold text-(--color-app-accent)">
           &gt;_
         </span>
-        <span className="text-base font-semibold">InnocenceCode</span>
+        <span className="text-base font-semibold">InnocenceHarness</span>
         <span className="text-xs text-(--color-app-muted)">{t("settings.about.desc")}</span>
       </div>
       <SettingRow label={t("settings.about.version")}>

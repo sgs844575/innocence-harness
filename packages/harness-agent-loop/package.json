@@ -1,7 +1,7 @@
 {
   "name": "@innocencecode/harness-agent-loop",
   "version": "0.1.0",
-  "description": "InnocenceCode agent loop driver: replaceable runLoop consuming the spine services",
+  "description": "InnocenceHarness agent loop driver: replaceable runLoop consuming the spine services",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

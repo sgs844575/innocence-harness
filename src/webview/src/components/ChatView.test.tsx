@@ -44,7 +44,7 @@ describe("ChatView review wiring (C3)", () => {
     render(
       <ChatView
         t={t}
-        appName="InnocenceCode"
+        appName="InnocenceHarness"
         messages={messages}
         streaming={false}
         settings={null}
@@ -84,7 +84,7 @@ describe("ChatView review wiring (C3)", () => {
     render(
       <ChatView
         t={t}
-        appName="InnocenceCode"
+        appName="InnocenceHarness"
         messages={messages}
         streaming={false}
         settings={null}
@@ -118,7 +118,7 @@ describe("ChatView review wiring (C3)", () => {
     render(
       <ChatView
         t={t}
-        appName="InnocenceCode"
+        appName="InnocenceHarness"
         messages={messages}
         streaming={false}
         settings={null}
@@ -161,7 +161,7 @@ function ForkHarness() {
     <div>
       <ChatView
         t={t}
-        appName="InnocenceCode"
+        appName="InnocenceHarness"
         messages={messages}
         streaming={false}
         settings={null}

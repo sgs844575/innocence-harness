@@ -1,7 +1,7 @@
 {
   "name": "@innocencecode/harness-permissions",
   "version": "0.1.0",
-  "description": "InnocenceCode permissions spine service: permission engine pipeline, policy rules and project rule config",
+  "description": "InnocenceHarness permissions spine service: permission engine pipeline, policy rules and project rule config",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

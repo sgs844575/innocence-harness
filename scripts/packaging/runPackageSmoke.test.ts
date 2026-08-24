@@ -24,7 +24,7 @@ describe("package smoke launcher", () => {
         runner,
       ], {
         cwd: repoRoot,
-        env: { ...process.env, IC_PACKAGE_DIR: path.join(missingOut, "InnocenceCode-win32-x64") },
+        env: { ...process.env, IC_PACKAGE_DIR: path.join(missingOut, "InnocenceHarness-win32-x64") },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

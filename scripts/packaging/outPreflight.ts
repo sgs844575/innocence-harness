@@ -5,7 +5,7 @@ import { defaultReparsePointProbe, type ReparseProbeResult } from "./reparseProb
 
 const DEFAULT_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const OUTPUT_DIRECTORY_NAME = "out";
-const PACKAGE_DIRECTORY_PATTERN = /^InnocenceCode-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)(?:-tmp-[A-Za-z0-9._-]+)?$/;
+const PACKAGE_DIRECTORY_PATTERN = /^InnocenceHarness-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)(?:-tmp-[A-Za-z0-9._-]+)?$/;
 
 export interface OutPreflightResult {
   outputRoot: string;

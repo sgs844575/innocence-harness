@@ -1,4 +1,4 @@
-// InnocenceCode main entry: single-instance lock, protocol registration,
+// InnocenceHarness main entry: single-instance lock, protocol registration,
 // then window.
 import { app, Menu } from "electron";
 import {

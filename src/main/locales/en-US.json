@@ -1,5 +1,5 @@
 {
-  "menu.app.name": "InnocenceCode",
+  "menu.app.name": "InnocenceHarness",
   "menu.file": "File",
   "menu.file.newSession": "New Session",
   "menu.file.closeWindow": "Close Window",
@@ -21,7 +21,7 @@
   "menu.theme.dark": "Dark",
   "menu.theme.light": "Light",
   "menu.help": "Help",
-  "menu.help.about": "About InnocenceCode",
+  "menu.help.about": "About InnocenceHarness",
   "menu.window": "Window",
   "menu.window.minimize": "Minimize",
   "menu.window.zoom": "Zoom",

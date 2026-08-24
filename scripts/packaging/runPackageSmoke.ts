@@ -19,12 +19,12 @@ export function requirePackagedSmoke(availability: SmokeAvailability): void {
 function packageDirectory(repoRoot: string): string {
   return process.env.IC_PACKAGE_DIR
     ? path.resolve(process.env.IC_PACKAGE_DIR)
-    : path.join(repoRoot, "out", "InnocenceCode-win32-x64");
+    : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
 }
 
 function inspectAvailability(repoRoot: string): SmokeAvailability {
   const packageDir = packageDirectory(repoRoot);
-  const packagedExe = path.join(packageDir, "InnocenceCode.exe");
+  const packagedExe = path.join(packageDir, "InnocenceHarness.exe");
   const archivePath = path.join(packageDir, "resources", "app.asar");
   const packageReason = path.dirname(packageDir) !== path.join(repoRoot, "out")
     ? `IC_PACKAGE_DIR must point to a direct package directory under ${path.join(repoRoot, "out")}: ${packageDir}`

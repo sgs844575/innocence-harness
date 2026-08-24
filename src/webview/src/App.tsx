@@ -31,7 +31,7 @@ import { useWorkbenchPresentation } from "./state/useWorkbenchPresentation";
 import { useAppNavigation } from "./state/useAppNavigation";
 import { writeToolsBlocked } from "./state/workbenchState";
 
-const APP_NAME = "InnocenceCode";
+const APP_NAME = "InnocenceHarness";
 
 export function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);

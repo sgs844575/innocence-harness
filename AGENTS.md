@@ -1,4 +1,4 @@
-# InnocenceCode Repository Guidelines
+# InnocenceHarness Repository Guidelines
 
 ## Architecture
 
@@ -32,8 +32,10 @@
 
 12. **Use safe UTF-8 file operations.** On Windows, do not rewrite repository text with PowerShell `Get-Content`/`Set-Content`, CMD redirection, or other locale-dependent commands. Use repository-aware edit tools or Node APIs with explicit UTF-8 encoding.
 
-13. **Keep documentation out of Git.** Never add, stage, commit, or push documentation files. The `docs/`, `documentation/`, and `.superpowers/` directories are local-only and must remain ignored. The only documentation files permitted in Git are `AGENTS.md` and files named `README.md`; all other plans, specifications, reports, notes, and documentation artifacts are prohibited. `AGENTS.md` is the required repository-instruction exception.
+13. **等待子代理、后台任务或异步工具结果时不设置超时时间。** 使用阻塞等待直到结果完成、明确失败或用户取消；不得通过短超时轮询制造假失败。
+
+14. **Keep documentation out of Git.** Never add, stage, commit, or push documentation files. The `docs/`, `documentation/`, and `.superpowers/` directories are local-only and must remain ignored. The only documentation files permitted in Git are `AGENTS.md` and files named `README.md`; all other plans, specifications, reports, notes, and documentation artifacts are prohibited. `AGENTS.md` is the required repository-instruction exception.
 
 ## Expression
 
-14. **Keep third-party names and trademarks out of development artifacts.** Code identifiers, comments, commit messages, changelogs, user-facing documentation, UI copy, and log output must not mention third-party product, company, or model names or trademarks; use neutral terms (for example "the plugin kernel", "the reference project") instead. Exemptions: dependency declarations and import specifiers required to resolve packages, opaque API key strings defined by external code, legal attribution files (`LICENSE`, `THIRD_PARTY_NOTICES.md`), and vendored third-party sources under `vendor/` (kept verbatim for upstream synchronization). Local, uncommitted working documents may reference upstream names when needed for development.
+15. **Keep third-party names and trademarks out of development artifacts.** Code identifiers, comments, commit messages, changelogs, user-facing documentation, UI copy, and log output must not mention third-party product, company, or model names or trademarks; use neutral terms (for example "the plugin kernel", "the reference project") instead. Exemptions: dependency declarations and import specifiers required to resolve packages, opaque API key strings defined by external code, legal attribution files (`LICENSE`, `THIRD_PARTY_NOTICES.md`), and vendored third-party sources under `vendor/` (kept verbatim for upstream synchronization). Local, uncommitted working documents may reference upstream names when needed for development.

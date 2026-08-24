@@ -1,7 +1,7 @@
 {
   "name": "@innocencecode/harness-system-prompt",
   "version": "0.1.0",
-  "description": "InnocenceCode system-prompt spine service: base + ordered sections + skills index assembly",
+  "description": "InnocenceHarness system-prompt spine service: base + ordered sections + skills index assembly",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

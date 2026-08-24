@@ -80,7 +80,7 @@ function helpMenu(win: BrowserWindow, t: Dict): MenuItemConstructorOptions[] {
         void dialog.showMessageBox(win, {
           type: "info",
           title: t["menu.help.about"],
-          message: `InnocenceCode ${app.getVersion()}`,
+          message: `InnocenceHarness ${app.getVersion()}`,
           detail: "AI coding assistant desktop client (Electron + Forge + Vite + React).",
         });
       },

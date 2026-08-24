@@ -34,7 +34,7 @@ export function useAppNavigation({
       ) : (
         <Sidebar
           t={t}
-          appName="InnocenceCode"
+          appName="InnocenceHarness"
           sessions={sessions.sessions}
           activeId={sessions.activeId}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}

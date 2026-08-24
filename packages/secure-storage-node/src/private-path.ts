@@ -1,5 +1,5 @@
 /**
- * Private on-disk storage for InnocenceCode task data.
+ * Private on-disk storage for InnocenceHarness task data.
  *
  * Every path this package hands out lives under a caller-provided root and is
  * hardened on creation:

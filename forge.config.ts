@@ -26,7 +26,7 @@ export const config: ForgeConfig = {
       // require("node-pty") works from the bundled main process.
       unpack: "**/node_modules/node-pty/**",
     },
-    executableName: "InnocenceCode",
+    executableName: "InnocenceHarness",
     // Prebuilt kernel libraries and plugins live outside the ASAR archive:
     // plugins are loaded at runtime via dynamic import from resources/, so
     // they must stay as real files on disk (spec D10). @electron/packager
@@ -60,8 +60,8 @@ export const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      name: "InnocenceCode",
-      setupExe: "InnocenceCodeSetup.exe",
+      name: "InnocenceHarness",
+      setupExe: "InnocenceHarnessSetup.exe",
       // The setup exe and the uninstaller icon (iconUrl) use our own icon —
       // Squirrel otherwise falls back to the platform default.
       setupIcon: path.resolve(__dirname, "assets", "icon.ico"),
