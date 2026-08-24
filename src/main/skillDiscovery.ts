@@ -255,7 +255,7 @@ async function copyDir(
     const from = path.join(source, entry);
     const to = path.join(target, entry);
     const before = await fsPort.lstat(from);
-    if (before.isSymbolicLink()) throw new Error(unsafeSourceError);
+    if (before.isSymbolicLink()) continue;
     await fsPort.beforeRecursiveEntry?.(from);
     const after = await fsPort.lstat(from).catch(() => null);
     if (
