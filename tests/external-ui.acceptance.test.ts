@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 type DesktopChild = ReturnType<typeof spawn>;
 
@@ -72,6 +72,30 @@ function hasGraphics(): boolean {
   return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 }
 
+function waitForChildStart(child: DesktopChild, launchState: LaunchState): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const onSpawn = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`Electron child failed to start: ${String(error)}\nDesktop diagnostics:\n${launchState.output}`));
+    };
+    const cleanup = () => {
+      child.off("spawn", onSpawn);
+      child.off("error", onError);
+    };
+    child.once("spawn", onSpawn);
+    child.once("error", onError);
+  });
+}
+
 async function tempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
@@ -121,18 +145,65 @@ class DevToolsConnection {
     });
   }
 
-  static async connect(endpoint: { host: string; port: number; path: string }): Promise<DevToolsConnection> {
+  static async connect(endpoint: { host: string; port: number; path: string; timeoutMs?: number }): Promise<DevToolsConnection> {
+    const timeoutMs = endpoint.timeoutMs ?? 10_000;
     const socket = await new Promise<Socket>((resolve, reject) => {
       const next = new Socket();
-      next.once("error", reject);
-      next.connect(endpoint.port, endpoint.host, () => resolve(next));
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        next.destroy();
+        reject(new Error(`DevTools TCP connection timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      const cleanup = () => {
+        clearTimeout(timer);
+        next.off("error", onError);
+        next.off("close", onClose);
+        next.off("end", onEnd);
+      };
+      const onError = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        next.destroy();
+        reject(error);
+      };
+      const onClose = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        next.destroy();
+        reject(new Error("DevTools TCP socket closed before connect"));
+      };
+      const onEnd = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        next.destroy();
+        reject(new Error("DevTools TCP socket ended before connect"));
+      };
+      next.once("error", onError);
+      next.once("close", onClose);
+      next.once("end", onEnd);
+      next.connect(endpoint.port, endpoint.host, () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(next);
+      });
     });
-    const key = Buffer.from(`${Date.now()}-${Math.random()}`).toString("base64");
-    socket.write(
-      `GET ${endpoint.path} HTTP/1.1\r\nHost: ${endpoint.host}:${endpoint.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
-    );
-    await readHttpUpgrade(socket);
-    return new DevToolsConnection(socket);
+    try {
+      const key = Buffer.from(`${Date.now()}-${Math.random()}`).toString("base64");
+      socket.write(
+        `GET ${endpoint.path} HTTP/1.1\r\nHost: ${endpoint.host}:${endpoint.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
+      );
+      await readHttpUpgrade(socket, timeoutMs);
+      return new DevToolsConnection(socket);
+    } catch (error) {
+      socket.destroy();
+      throw error;
+    }
   }
 
   async evaluate(expression: string): Promise<unknown> {
@@ -195,19 +266,53 @@ class DevToolsConnection {
   }
 }
 
-async function readHttpUpgrade(socket: Socket): Promise<void> {
+async function readHttpUpgrade(socket: Socket, timeoutMs = 10_000): Promise<void> {
   let data = Buffer.alloc(0);
-  while (!data.includes(Buffer.from("\r\n\r\n"))) {
-    const chunk = await new Promise<Buffer>((resolve, reject) => {
-      const onData = (value: Buffer) => { cleanup(); resolve(value); };
-      const onError = (error: Error) => { cleanup(); reject(error); };
-      const cleanup = () => { socket.off("data", onData); socket.off("error", onError); };
-      socket.on("data", onData);
-      socket.on("error", onError);
-    });
-    data = Buffer.concat([data, chunk]);
-  }
-  if (!data.toString("utf8").startsWith("HTTP/1.1 101")) throw new Error(`DevTools websocket upgrade failed: ${data.toString("utf8")}`);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      socket.destroy();
+      reject(new Error(`DevTools websocket upgrade timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("data", onData);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+      socket.off("end", onEnd);
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error !== undefined) {
+        socket.destroy();
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+    const onData = (value: Buffer) => {
+      data = Buffer.concat([data, value]);
+      if (!data.includes(Buffer.from("\r\n\r\n"))) return;
+      const response = data.toString("utf8");
+      if (!response.startsWith("HTTP/1.1 101")) {
+        finish(new Error(`DevTools websocket upgrade failed: ${response}`));
+        return;
+      }
+      finish();
+    };
+    const onError = (error: Error) => finish(error);
+    const onClose = () => finish(new Error("DevTools websocket socket closed before upgrade"));
+    const onEnd = () => finish(new Error("DevTools websocket socket ended before upgrade"));
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+    socket.once("end", onEnd);
+  });
 }
 
 async function runFixtureBuild(userRoot: string): Promise<void> {
@@ -250,15 +355,23 @@ async function launchApp(
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  const childStarted = waitForChildStart(child, launchState);
   launchState.child = child;
   children.push(child);
   child.stdout?.setEncoding("utf8");
   child.stderr?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => { launchState.output += chunk; });
   child.stderr?.on("data", (chunk: string) => { launchState.output += chunk; });
+  const childStartFailure = childStarted.then(
+    () => new Promise<never>(() => {}),
+    (error: Error) => Promise.reject(error),
+  );
 
   try {
-    const list = JSON.parse(await waitForHttp(`http://127.0.0.1:${port}/json/list`, 30_000)) as Array<{ type: string; webSocketDebuggerUrl?: string }>;
+    const list = JSON.parse(await Promise.race([
+      waitForHttp(`http://127.0.0.1:${port}/json/list`, 30_000),
+      childStartFailure,
+    ])) as Array<{ type: string; webSocketDebuggerUrl?: string }>;
     const page = list.find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl);
     if (!page?.webSocketDebuggerUrl) throw new Error("renderer page target missing");
     const target = new URL(page.webSocketDebuggerUrl);
@@ -338,6 +451,38 @@ const acceptanceIt = acceptanceSkipReason === undefined ? it : it.skip;
 if (acceptanceSkipReason !== undefined) {
   console.warn(`[external-ui] SKIP: ${acceptanceSkipReason}`);
 }
+
+describe("external UI harness lifecycle", () => {
+  it("wraps asynchronous child spawn errors with collected diagnostics", async () => {
+    const launchState: LaunchState = { output: "fixture stdout\nfixture stderr" };
+    const child = spawn(path.join(repoRoot, "missing-external-ui-runtime.exe"), [], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    await expect(waitForChildStart(child, launchState)).rejects.toThrow(
+      /Electron child failed to start:.*fixture stdout.*fixture stderr/s,
+    );
+    await terminateChild(child);
+  });
+
+  it("destroys a socket when the DevTools upgrade rejects", async () => {
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (typeof address !== "object" || address === null) throw new Error("test server did not bind");
+    try {
+      await expect(DevToolsConnection.connect({ host: "127.0.0.1", port: address.port, path: "/devtools", timeoutMs: 1_000 }))
+        .rejects.toThrow(/upgrade|ended|closed/i);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
 
 describe("external UI plugin real Electron acceptance", () => {
   acceptanceIt("loads panel/settings through innocence-plugin and revokes both after disabling the fixture", async () => {

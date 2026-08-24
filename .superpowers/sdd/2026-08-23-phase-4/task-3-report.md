@@ -110,3 +110,28 @@ Tests 1 skipped (1)
 ## 结论
 
 审查指出的四个 harness 问题均已修复并验证。真实 runtime 路径通过；runtime 缺失路径显式 skip 且输出实际诊断；工作树待本 follow-up commit 后确认干净。
+
+## 第 2 轮 Important 修复
+
+本轮只处理 child spawn 与 DevTools socket 生命周期：
+
+1. `launchApp` 在 `spawn` 后立即注册 `spawn`/`error` 监听。异步 ENOENT、权限等启动失败会 reject 为 `Electron child failed to start: ...`，并附当前 stdout/stderr；child 已放入 `LaunchState` 和全局兜底列表，outer `finally`/`afterEach` 均可终止。
+2. `DevToolsConnection.connect` 的 TCP connect 阶段增加 timeout、error、close、end 清理；upgrade 阶段的非 101、error、close、end 和 timeout 都显式 destroy socket 并 reject。连接失败时 `connect` 的 catch 再次兜底 destroy。
+3. 增加 deterministic harness tests：
+   - 不存在的 runtime executable 触发异步 child error，并断言错误包含 stdout/stderr 诊断。
+   - 本地 TCP server 返回 503 upgrade response，断言 DevTools connect reject；测试 finally 先销毁 server sockets 再关闭 server，避免 fixture 自身半开连接阻塞。
+
+本轮曾先捕获并修正一处测试夹具问题：初版 503 response 使用字面量 `\\r\\n`，导致 reader 等待 header 分隔符超时；改为真实 CRLF 后又发现 server.close 等待仍会阻塞，遂在 fixture finally 显式销毁 server-side sockets。该失败未来自真实 Electron 路径。
+
+本轮最终结果：
+
+```text
+✓ tests/external-ui.acceptance.test.ts (3 tests)
+  - async child spawn error diagnostic
+  - DevTools upgrade rejection/socket cleanup
+  - real Electron panel/settings acceptance
+Test Files 1 passed (1)
+Tests 3 passed (3)
+```
+
+真实 panel/settings 成功路径、runtime skip、packaged 分支和三个生产测试环境变量保持不变。
