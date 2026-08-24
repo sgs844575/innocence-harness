@@ -1,9 +1,11 @@
 # 阶段 4 统一修复最终报告（任务 6）
 
-日期：2026-08-24  
-分支：`phase4-development`  
+日期：2026-08-24
+分支：`phase4-development`
 基线：`98164cd`
-状态：`DONE_WITH_CONCERNS`（三项 Important 已完成；完整 `npm test` 在并发资源敏感用例上出现既有环境抖动，定向重跑通过）
+最终实现提交：`98164cd` (`fix(phase4): complete final review gates`)
+HMR cache-busting 提交：`aa800fe` (`fix(plugin-client): cache-bust HMR client reload`)
+状态：`DONE_WITH_CONCERNS`。实现和定向复审均 clean，但阶段完成所需的真实 Forge package、packaged markers 以及最新全量测试尚未达到无条件通过。
 
 ## 修复范围
 
@@ -40,30 +42,34 @@
 
 ## 验证记录
 
-### 通过
+### 实现与定向复审（clean）
 
-- `npm test -- --run src/webview/src/pluginClient/loader.test.tsx src/webview/src/pluginClient/api.test.tsx src/webview/src/state/usePluginClients.test.tsx src/webview/src/lib/ipc.test.ts src/main/ipc.skillDiscovery.test.ts src/main/protocol.test.ts src/main/pluginBoot/hmrWiring.test.ts`：7 files passed，50 tests passed。
-- `npm test -- --run tests/external-ui.acceptance.test.ts`：1 file passed，3 tests passed。
-- `npm run typecheck`：通过。
-- `npm run typecheck:packages`：通过。
-- `git diff --check`：通过。
-- 既有关键定向 acceptance/integration：8 files passed，48 tests passed，packaged-exit 2 tests因缺 executable明确 skip。
-- 既有 `npm test -- --run packages/tools-shell/tests/shell.test.ts src/main/codeReader.test.ts src/main/taskRuntimeBridge.test.ts packages/task-cli/tests/cli-integration.test.ts --testTimeout=15000`：4 files passed，55 tests passed。
-- 既有 renderer 插件相关：2 files passed，16 tests passed。
-- `npm run typecheck`：通过。
-- `npm run typecheck:packages`：通过。
-- `git diff --check`：通过。
-- `npm run package:smoke`：按 required gate 返回 2；诊断为 packaged executable 缺失：`D:\Projects\AiProjects\InnocenceCode-phase4\out\InnocenceCode-win32-x64\InnocenceCode.exe`。
+- HMR cache-busting 定向复审：`npm test -- --run src/webview/src/pluginClient/loader.test.tsx src/webview/src/pluginClient/api.test.tsx src/webview/src/state/usePluginClients.test.tsx src/webview/src/lib/ipc.test.ts src/main/ipc.skillDiscovery.test.ts src/main/protocol.test.ts src/main/pluginBoot/hmrWiring.test.ts`：7 files passed，50 tests passed。
+- 真实开发 Electron 验收：`npm test -- --run tests/external-ui.acceptance.test.ts`：1 file passed，3 tests passed。
+- 既有关键定向 acceptance/integration：8 files passed，48 tests passed；packaged-exit 的 2 个测试因缺 executable 明确 skip。
+- 资源敏感用例提高超时后的独立重跑：4 files passed，55 tests passed。
+- `npm run typecheck`：退出 0。
+- `npm run typecheck:packages`：退出 0。
+- `git diff --check`：通过；提交后工作树 clean。
 
-### 有限失败/阻塞
+### 最新独立验证
 
-- `npm run package:preflight`：返回 2。现有 `out\InnocenceCode-win32-x64\resources\app.asar` 被占用，输出 `EBUSY`，有限重试 3 次后真实失败；未强杀未知进程。
-- `npm run package`：返回 2，在 `prepackage -> package:preflight` 阶段停止，Forge 未运行；原因同上。
-- `npm test`：165 files passed、4 files failed、1 file skipped（1350 passed、5 failed、4 skipped）。失败均为既有并发资源敏感用例：临时目录 `EBUSY/ENOTEMPTY` 及 shell/codeReader/taskRuntimeBridge/task-cli 超时；本次修改相关的 7-file 定向集、external UI acceptance 与类型检查均通过。
-- 因 package 输出锁定且 executable 缺失，无法运行真实 packaged markers；required runner 已证明缺产物时非零失败。
+- `npm test`：退出 1；**不能称全量通过**。结果为 165 files passed、4 files failed、1 file skipped；1350 passed、5 failed、4 skipped。
+  - 失败为资源敏感用例：`packages/tools-shell/tests/shell.test.ts` 的 oversized output 超时；`src/main/taskRuntimeBridge.test.ts` 的 lifecycle 资源释放超时；`packages/task-cli/tests/cli-integration.test.ts` 的跨进程锁竞争失败/超时。
+  - 这些失败与本次实现路径无直接重叠，但它们是最新全量套件的真实失败，未被忽略或改写为成功。
+- `npm run typecheck`：退出 0。
+- `npm run typecheck:packages`：退出 0。
+- `npm run package:preflight`：退出 2；现有 `out\InnocenceCode-win32-x64\resources\app.asar` 被外部进程占用，有限重试后仍为 `EBUSY`。
+- `npm run package`：退出 2；在 `prepackage -> package:preflight` 阶段因相同 `EBUSY` 停止，Forge 未运行。
+- `npm run package:smoke`：退出 2；required gate 正确报告 packaged executable 缺失，未把 skip 伪报为成功。
+- 工作树 clean，`git diff --check` clean。
+
+## 最终账本状态
+
+- 实现与定向复审：clean。
+- 阶段完成定义要求的真实 Forge package 和 packaged markers：仍被外部 `app.asar` `EBUSY` 锁及缺少 packaged executable 阻塞。
+- 最新 `npm test` 全量套件：仍有资源敏感失败；不得将阶段标为无条件完成。
 
 ## 结论
 
-三项 Important 的实现与定向验证完成。生产默认路径保持 app userData/resources/plugins；测试 override 需显式受控标记。开发 HMR 已从 manifest 到 watcher、IPC、renderer loader 完整接线。package smoke 已成为真正 required gate。
-
-提交：`98164cd` (`fix(phase4): complete final review gates`)；本次新增提交另行记录。
+三项 Important 的实现已提交：生产默认路径保留 app userData/resources/plugins；测试 override 仅在显式受控 marker 下启用；开发 HMR 已从 manifest 到 watcher、IPC、renderer loader 完整接线并通过 cache-busting 防止旧 client module 缓存；package smoke 已成为 required gate。阶段状态保持 `DONE_WITH_CONCERNS`，直至外部 package 锁解除、可生成 packaged executable 并运行真实 packaged markers，且最新全量测试不再失败。
