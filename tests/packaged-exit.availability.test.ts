@@ -31,6 +31,24 @@ describe("inspectPackagedSmoke", () => {
     );
   });
 
+  it("skips when the executable exists but the archive is missing", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "ic-packaged-missing-archive-"));
+    temporaryRoots.push(root);
+    const executable = path.join(root, "InnocenceCode.exe");
+    await fs.writeFile(executable, "fixture");
+
+    expect(inspectPackagedSmoke(selectionReason, executable, path.join(root, "app.asar"), () => [])).toEqual(
+      expect.objectContaining({ status: "missing-archive" }),
+    );
+  });
+
+  it("reports an available smoke entry when the archive contains it", async () => {
+    const { executable, archive } = await createPackageFixture();
+
+    expect(inspectPackagedSmoke(selectionReason, executable, archive, () => [".vite/build/smoke.js"])).toEqual(
+      expect.objectContaining({ status: "available" }),
+    );
+  });
   it("skips when the archive has no smoke entry", async () => {
     const { executable, archive } = await createPackageFixture();
 

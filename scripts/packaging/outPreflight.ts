@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultReparsePointProbe, type ReparseProbeResult } from "./reparseProbe.ts";
 
 const DEFAULT_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const OUTPUT_DIRECTORY_NAME = "out";
@@ -15,6 +16,7 @@ export interface OutPreflightResult {
 export interface OutPreflightOptions {
   retryDelayMs?: number;
   remove?: (target: string) => Promise<void>;
+  probeReparsePoint?: (target: string) => Promise<ReparseProbeResult>;
 }
 
 export function normalizeForComparison(value: string): string {
@@ -41,7 +43,12 @@ async function realPathIfPresent(candidate: string): Promise<string> {
   }
 }
 
-async function inspectRealDirectory(target: string, canonicalParent: string, label: string): Promise<string> {
+async function inspectRealDirectory(
+  target: string,
+  canonicalParent: string,
+  label: string,
+  probeReparsePoint: (target: string) => Promise<ReparseProbeResult>,
+): Promise<string> {
   let entry: import("node:fs").Stats;
   try {
     entry = await fs.lstat(target);
@@ -51,9 +58,15 @@ async function inspectRealDirectory(target: string, canonicalParent: string, lab
   if (!entry.isDirectory() || entry.isSymbolicLink()) {
     throw new Error(`package output must be a real directory (${label}): ${target}`);
   }
+  const reparse = await probeReparsePoint(target);
+  if (reparse.kind !== "ordinary") {
+    throw new Error(
+      `package output must not be a reparse point (${label}): ${target}; kind=${reparse.kind}; diagnostic=${reparse.diagnostic ?? "none"}`,
+    );
+  }
 
   const canonicalTarget = await realPathIfPresent(target);
-  if (!isWithinPath(canonicalTarget, canonicalParent) || path.dirname(canonicalTarget) !== canonicalParent) {
+  if (!isWithinPath(canonicalTarget, canonicalParent) || normalizeForComparison(path.dirname(canonicalTarget)) !== normalizeForComparison(canonicalParent)) {
     throw new Error(`package output canonical path escaped repository out (${label}): ${canonicalTarget}`);
   }
   return canonicalTarget;
@@ -105,7 +118,11 @@ async function removeWithBoundedRetry(
   return formatLockDiagnostic(target, lastError, DEFAULT_RETRY_DELAYS_MS.length);
 }
 
-async function knownPackageChildren(outputRoot: string, canonicalOutputRoot: string): Promise<string[]> {
+async function knownPackageChildren(
+  outputRoot: string,
+  canonicalOutputRoot: string,
+  probeReparsePoint: (target: string) => Promise<ReparseProbeResult>,
+): Promise<string[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(outputRoot, { withFileTypes: true });
@@ -119,7 +136,7 @@ async function knownPackageChildren(outputRoot: string, canonicalOutputRoot: str
     .map((entry) => entry.name)
     .sort();
   for (const packageName of packageNames) {
-    await inspectRealDirectory(path.join(outputRoot, packageName), canonicalOutputRoot, "package child");
+    await inspectRealDirectory(path.join(outputRoot, packageName), canonicalOutputRoot, "package child", probeReparsePoint);
   }
   return packageNames;
 }
@@ -152,11 +169,12 @@ export async function cleanPackageOutput(
     throw new Error(`package output must be a known package directory: ${resolvedOutputRoot}`);
   }
 
+  const probeReparsePoint = options.probeReparsePoint ?? defaultReparsePointProbe;
   const packageNames = isRepositoryOutputRoot
-    ? await knownPackageChildren(resolvedOutputRoot, canonicalRepositoryOutputRoot)
+    ? await knownPackageChildren(resolvedOutputRoot, canonicalRepositoryOutputRoot, probeReparsePoint)
     : [path.basename(resolvedOutputRoot)];
   if (!isRepositoryOutputRoot) {
-    await inspectRealDirectory(resolvedOutputRoot, canonicalRepositoryOutputRoot, "requested package");
+    await inspectRealDirectory(resolvedOutputRoot, canonicalRepositoryOutputRoot, "requested package", probeReparsePoint);
   }
   const packageTargets = isRepositoryOutputRoot
     ? packageNames.map((packageName) => path.resolve(resolvedOutputRoot, packageName))

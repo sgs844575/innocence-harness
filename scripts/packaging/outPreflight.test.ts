@@ -144,6 +144,30 @@ describe("cleanPackageOutput", () => {
     await expect(fs.lstat(packageLink)).resolves.toMatchObject({ isSymbolicLink: expect.any(Function) });
     await expect(fs.stat(externalPackage)).resolves.toBeTruthy();
   });
+  it("rejects an unknown Windows reparse classification without deleting the package", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packageDir = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.mkdir(packageDir, { recursive: true });
+
+    await expect(
+      cleanPackageOutput(outputRoot, repositoryRoot, {
+        probeReparsePoint: async () => ({ kind: "unknown", diagnostic: "test cannot inspect reparse tag" }),
+      }),
+    ).rejects.toThrow("package output must not be a reparse point");
+    await expect(fs.stat(packageDir)).resolves.toBeTruthy();
+  });
+
+  it("treats ordinary directories as safe through the injected reparse probe", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packageDir = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.mkdir(packageDir, { recursive: true });
+
+    const result = await cleanPackageOutput(outputRoot, repositoryRoot, {
+      probeReparsePoint: async () => ({ kind: "ordinary" }),
+    });
+
+    expect(result.removed).toEqual(["InnocenceCode-win32-x64"]);
+  });
   it("rejects a known package name nested below the repository out root", async () => {
     const { repositoryRoot, outputRoot } = await createTempOutRoot();
     const nestedPackageDir = path.join(outputRoot, "nested", "InnocenceCode-win32-x64");

@@ -20,7 +20,7 @@ export function inspectPackagedSmoke(
   if (!existsSync(archivePath)) {
     return { status: "missing-archive", reason: `packaged archive missing: ${archivePath}` };
   }
-  const entry = listArchive().find((key) => key.replaceAll("\\", "/").endsWith("/.vite/build/smoke.js"));
+  const entry = listArchive().find((key) => key.replaceAll("\\", "/").replace(/^\/+/, "").endsWith(".vite/build/smoke.js"));
   if (entry === undefined) {
     return { status: "missing-smoke", reason: `smoke entry missing from packaged archive: ${archivePath}` };
   }
