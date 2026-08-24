@@ -101,6 +101,29 @@ describe("pruneNodePtyPrebuilds", () => {
     expect(packagerConfig.afterCopy).toHaveLength(1);
   });
 
+  it("includes the path and original cause when a non-target prebuild cannot be removed", async () => {
+    const stagingRoot = await createStagingFixture();
+    const lockedPlatformRoot = path.join(
+      stagingRoot,
+      "node_modules",
+      "node-pty",
+      "prebuilds",
+      "darwin-x64",
+    );
+    const cause = new Error("fixture lock");
+    const remove = async (target: string): Promise<void> => {
+      if (target === lockedPlatformRoot) throw cause;
+      await fs.rm(target, { recursive: true, force: true });
+    };
+
+    await expect(pruneNodePtyPrebuilds(stagingRoot, { remove })).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toMatchObject({ cause });
+      expect(String(error)).toContain(lockedPlatformRoot);
+      expect(String(error)).toContain("fixture lock");
+      return true;
+    });
+  });
   it("does nothing when node-pty prebuilds are absent", async () => {
     const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ic-node-pty-empty-"));
     temporaryRoots.push(stagingRoot);

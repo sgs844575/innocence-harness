@@ -20,28 +20,94 @@
 // entry) is present, so plain `npm test` stays green on clean checkouts.
 import { execFile, spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, symlinkSync, type Dirent } from "node:fs";
+import { existsSync, realpathSync, symlinkSync, type Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import url from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { assertKnownPackageDirectory } from "../scripts/packaging/outPreflight";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
+const packageOutputRoot = path.join(repoRoot, "out");
 
-const packageDir = process.env.IC_PACKAGE_DIR
-  ? path.resolve(process.env.IC_PACKAGE_DIR)
-  : path.join(repoRoot, "out", "InnocenceCode-win32-x64");
+interface PackageSelection {
+  packageDir: string;
+  canonicalPackageDir: string;
+  reason?: string;
+}
+
+function canonicalPath(value: string): string {
+  try {
+    return realpathSync(value);
+  } catch {
+    return path.resolve(value);
+  }
+}
+
+function normalizedPath(value: string): string {
+  return path.resolve(value).replace(/[\\/]+$/, "").toLowerCase();
+}
+
+function canonicalPackagePrefix(packageDir: string): string {
+  return `${normalizedPath(packageDir)}${path.sep}`;
+}
+
+function isUnderCanonicalPackage(imagePath: string, packageDir: string): boolean {
+  return normalizedPath(imagePath).startsWith(canonicalPackagePrefix(packageDir));
+}
+
+function summarizeOutput(output: string): string {
+  const summary = output.replace(/\s+/g, " ").trim();
+  return summary.length > 1_000 ? `${summary.slice(0, 1_000)}…` : summary || "<empty>";
+}
+
+function resolvePackageSelection(): PackageSelection {
+  const requestedPackageDir = process.env.IC_PACKAGE_DIR
+    ? path.resolve(process.env.IC_PACKAGE_DIR)
+    : path.join(packageOutputRoot, "InnocenceCode-win32-x64");
+
+  try {
+    const validatedPackageDir = assertKnownPackageDirectory(requestedPackageDir, repoRoot);
+    const canonicalOutputRoot = canonicalPath(packageOutputRoot);
+    const canonicalPackageDir = canonicalPath(validatedPackageDir);
+    if (!normalizedPath(canonicalPackageDir).startsWith(canonicalPackagePrefix(canonicalOutputRoot))) {
+      return {
+        packageDir: validatedPackageDir,
+        canonicalPackageDir,
+        reason: `package directory resolves outside repository out: ${canonicalPackageDir}`,
+      };
+    }
+    return { packageDir: validatedPackageDir, canonicalPackageDir };
+  } catch (error) {
+    return {
+      packageDir: requestedPackageDir,
+      canonicalPackageDir: canonicalPath(requestedPackageDir),
+      reason: `IC_PACKAGE_DIR must resolve to a known package directory inside repository out: ${String(error)}`,
+    };
+  }
+}
+
+const packageSelection = resolvePackageSelection();
+const packageDir = packageSelection.packageDir;
+const canonicalPackageDir = packageSelection.canonicalPackageDir;
 const packagedExe = path.join(packageDir, "InnocenceCode.exe");
 const asarPath = path.join(packageDir, "resources", "app.asar");
 const unpackedNodeModules = path.join(packageDir, "resources", "app.asar.unpacked", "node_modules");
 
 /** The packaged build must expose the smoke entry inside app.asar. */
+function packagedSmokeSkipReason(): string {
+  if (packageSelection.reason !== undefined) return packageSelection.reason;
+  if (!existsSync(packagedExe)) return `packaged executable missing: ${packagedExe}`;
+  if (!existsSync(asarPath)) return `packaged archive missing: ${asarPath}`;
+  return "smoke entry missing from packaged archive or archive inspection unavailable";
+}
+
 function packagedSmokeAvailable(): boolean {
-  if (!existsSync(packagedExe) || !existsSync(asarPath)) return false;
+  if (packageSelection.reason !== undefined || !existsSync(packagedExe) || !existsSync(asarPath)) return false;
   try {
     return smokeEntryKey() !== null;
   } catch {
@@ -194,8 +260,14 @@ describe("packaged-exit acceptance (requires `npm run package` first)", () => {
     const exitCode = await exited;
     clearTimeout(timeout);
 
-    const evidence = `exit=${exitCode}\n${stdout.trim()}\n${stderr.trim()}`.trim();
-    console.log(`[packaged-exit] ${path.basename(packageDir)}\n[packaged-exit] ${evidence}`);
+    const evidence = [
+      `package=${path.basename(packageDir)}`,
+      `packageDir=${canonicalPackageDir}`,
+      `exit=${exitCode}`,
+      `stdout=${summarizeOutput(stdout)}`,
+      `stderr=${summarizeOutput(stderr)}`,
+    ].join("\n");
+    console.log(`[packaged-exit] ${evidence}`);
     expect(exitCode, `smoke output:\n${evidence}`).toBe(0);
     expect(stdout).toContain("PKG_SMOKE pty ok");
     expect(stdout).toContain("PKG_SMOKE task ok");
@@ -209,6 +281,7 @@ describe("packaged-exit acceptance (requires `npm run package` first)", () => {
     expect(await fs.stat(path.join(locksRoot, "workspace")).then(() => true, () => false)).toBe(true);
     expect(await fs.stat(path.join(locksRoot, "task")).then(() => true, () => false)).toBe(true);
     const leakedLocks = await lockFilesUnder(locksRoot);
+    console.log(`[packaged-exit] lock sweep: ${leakedLocks.length} lock files`);
     expect(leakedLocks, "lock lease files must not survive the packaged exit").toEqual([]);
 
     // residue sweep 2: a beat after exit, no process image from the packaged
@@ -221,12 +294,8 @@ describe("packaged-exit acceptance (requires `npm run package` first)", () => {
     // system processes (Windows Terminal keeps an OpenConsole.exe alive for
     // every console pane on dev machines).
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const packageDirLower = packageDir.toLowerCase();
-    const unpackedTreeLower = path.join(packageDir, "resources", "app.asar.unpacked").toLowerCase();
-    const residuals = (await processImagePaths()).filter((image) => {
-      const lower = image.toLowerCase();
-      return lower.startsWith(packageDirLower) || lower.startsWith(unpackedTreeLower);
-    });
+    const residuals = (await processImagePaths()).filter((image) => isUnderCanonicalPackage(image, canonicalPackageDir));
+    console.log(`[packaged-exit] process sweep: ${residuals.length} packaged-tree processes`);
     expect(residuals, "no packaged-tree process may survive the exit").toEqual([]);
     console.log("[packaged-exit] residue sweep clean (no processes, no lock leases)");
   }, 180_000);
@@ -234,5 +303,6 @@ describe("packaged-exit acceptance (requires `npm run package` first)", () => {
 
 if (!packagedSmokeAvailable()) {
   // A visible reason next to the skip (vitest shows it.skip without one).
-  it.skip("packaged build not found — run `npm run package` then `npm run package:smoke`", () => {});
+  console.log(`[packaged-exit] skip: ${packagedSmokeSkipReason()}`);
+  it.skip(`packaged smoke skipped: ${packagedSmokeSkipReason()}`, () => {});
 }
