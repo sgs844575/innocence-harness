@@ -17,8 +17,9 @@ export interface OutPreflightOptions {
   remove?: (target: string) => Promise<void>;
 }
 
-function normalizeForComparison(value: string): string {
-  return path.resolve(value).replace(/[\\/]+/g, path.sep).replace(/[\\/]$/, "").toLowerCase();
+export function normalizeForComparison(value: string): string {
+  const normalized = path.resolve(value).replace(/[\\/]+/g, path.sep).replace(/[\\/]$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function isWithinPath(candidate: string, parent: string): boolean {
@@ -38,6 +39,24 @@ async function realPathIfPresent(candidate: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return path.resolve(candidate);
     throw new Error(`Unable to resolve package output path ${candidate}: ${String(error)}`, { cause: error });
   }
+}
+
+async function inspectRealDirectory(target: string, canonicalParent: string, label: string): Promise<string> {
+  let entry: import("node:fs").Stats;
+  try {
+    entry = await fs.lstat(target);
+  } catch (error) {
+    throw new Error(`package output must be a real directory (${label}): ${target}`, { cause: error });
+  }
+  if (!entry.isDirectory() || entry.isSymbolicLink()) {
+    throw new Error(`package output must be a real directory (${label}): ${target}`);
+  }
+
+  const canonicalTarget = await realPathIfPresent(target);
+  if (!isWithinPath(canonicalTarget, canonicalParent) || path.dirname(canonicalTarget) !== canonicalParent) {
+    throw new Error(`package output canonical path escaped repository out (${label}): ${canonicalTarget}`);
+  }
+  return canonicalTarget;
 }
 
 export function assertKnownPackageDirectory(packageDirectory: string, repositoryRoot: string): string {
@@ -86,7 +105,7 @@ async function removeWithBoundedRetry(
   return formatLockDiagnostic(target, lastError, DEFAULT_RETRY_DELAYS_MS.length);
 }
 
-async function knownPackageChildren(outputRoot: string): Promise<string[]> {
+async function knownPackageChildren(outputRoot: string, canonicalOutputRoot: string): Promise<string[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(outputRoot, { withFileTypes: true });
@@ -95,10 +114,14 @@ async function knownPackageChildren(outputRoot: string): Promise<string[]> {
     throw new Error(`Unable to inspect package output at ${outputRoot}: ${String(error)}`, { cause: error });
   }
 
-  return entries
-    .filter((entry) => entry.isDirectory() && isKnownPackageDirectory(path.join(outputRoot, entry.name)))
+  const packageNames = entries
+    .filter((entry) => isKnownPackageDirectory(path.join(outputRoot, entry.name)))
     .map((entry) => entry.name)
     .sort();
+  for (const packageName of packageNames) {
+    await inspectRealDirectory(path.join(outputRoot, packageName), canonicalOutputRoot, "package child");
+  }
+  return packageNames;
 }
 
 export async function cleanPackageOutput(
@@ -111,13 +134,9 @@ export async function cleanPackageOutput(
   const resolvedOutputRoot = path.resolve(outputRoot);
   const canonicalRepository = await realPathIfPresent(repository);
   const canonicalRepositoryOutputRoot = await realPathIfPresent(repositoryOutputRoot);
-  const canonicalResolvedOutputRoot = await realPathIfPresent(resolvedOutputRoot);
 
-  if (!isWithinPath(canonicalRepositoryOutputRoot, canonicalRepository)) {
-    throw new Error(`canonical package output must be inside repository: ${canonicalRepositoryOutputRoot}`);
-  }
-  if (!isWithinPath(canonicalResolvedOutputRoot, canonicalRepositoryOutputRoot)) {
-    throw new Error(`canonical package output must be inside repository: ${canonicalResolvedOutputRoot}`);
+  if (!isWithinPath(canonicalRepositoryOutputRoot, canonicalRepository) || path.dirname(canonicalRepositoryOutputRoot) !== canonicalRepository) {
+    throw new Error(`canonical package output must be the repository out directory: ${canonicalRepositoryOutputRoot}`);
   }
 
   const isRepositoryOutputRoot = normalizeForComparison(resolvedOutputRoot) === normalizeForComparison(repositoryOutputRoot);
@@ -134,8 +153,11 @@ export async function cleanPackageOutput(
   }
 
   const packageNames = isRepositoryOutputRoot
-    ? await knownPackageChildren(resolvedOutputRoot)
+    ? await knownPackageChildren(resolvedOutputRoot, canonicalRepositoryOutputRoot)
     : [path.basename(resolvedOutputRoot)];
+  if (!isRepositoryOutputRoot) {
+    await inspectRealDirectory(resolvedOutputRoot, canonicalRepositoryOutputRoot, "requested package");
+  }
   const packageTargets = isRepositoryOutputRoot
     ? packageNames.map((packageName) => path.resolve(resolvedOutputRoot, packageName))
     : [resolvedOutputRoot];

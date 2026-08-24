@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanPackageOutput } from "./outPreflight";
+import { cleanPackageOutput, normalizeForComparison } from "./outPreflight";
 
 const temporaryRoots: string[] = [];
 
@@ -19,6 +19,17 @@ async function createTempOutRoot(): Promise<{ repositoryRoot: string; outputRoot
 }
 
 describe("cleanPackageOutput", () => {
+  it("preserves case on case-sensitive platforms", () => {
+    const upper = normalizeForComparison("/tmp/InnocenceCode-Out");
+    const lower = normalizeForComparison("/tmp/innocencecode-out");
+
+    if (process.platform === "win32") {
+      expect(upper).toBe(lower);
+    } else {
+      expect(upper).not.toBe(lower);
+    }
+  });
+
   it("rejects cleaning an out path outside the repository", async () => {
     const { repositoryRoot } = await createTempOutRoot();
 
@@ -89,6 +100,50 @@ describe("cleanPackageOutput", () => {
     await expect(fs.stat(packageDir)).resolves.toBeTruthy();
   });
 
+  it("rejects an ordinary file supplied as a known package path", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packagePath = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.writeFile(packagePath, "not a directory");
+
+    await expect(cleanPackageOutput(packagePath, repositoryRoot)).rejects.toThrow("package output must be a real directory");
+    await expect(fs.stat(packagePath)).resolves.toBeTruthy();
+  });
+
+  it("rejects a symlinked known package path and leaves the link intact", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ic-out-preflight-package-link-"));
+    temporaryRoots.push(externalRoot);
+    const externalPackage = path.join(externalRoot, "InnocenceCode-win32-x64");
+    const packageLink = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.mkdir(externalPackage, { recursive: true });
+    await fs.symlink(externalPackage, packageLink, "junction");
+
+    await expect(cleanPackageOutput(packageLink, repositoryRoot)).rejects.toThrow("package output must be a real directory");
+    await expect(fs.lstat(packageLink)).resolves.toMatchObject({ isSymbolicLink: expect.any(Function) });
+    await expect(fs.stat(externalPackage)).resolves.toBeTruthy();
+  });
+  it("rejects a known package file among output children without deleting it", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const packageFile = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.writeFile(packageFile, "not a directory");
+
+    await expect(cleanPackageOutput(outputRoot, repositoryRoot)).rejects.toThrow("package output must be a real directory");
+    await expect(fs.stat(packageFile)).resolves.toBeTruthy();
+  });
+
+  it("rejects a junction among output children without deleting the link or target", async () => {
+    const { repositoryRoot, outputRoot } = await createTempOutRoot();
+    const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ic-out-preflight-child-link-"));
+    temporaryRoots.push(externalRoot);
+    const externalPackage = path.join(externalRoot, "InnocenceCode-win32-x64");
+    const packageLink = path.join(outputRoot, "InnocenceCode-win32-x64");
+    await fs.mkdir(externalPackage, { recursive: true });
+    await fs.symlink(externalPackage, packageLink, "junction");
+
+    await expect(cleanPackageOutput(outputRoot, repositoryRoot)).rejects.toThrow("package output must be a real directory");
+    await expect(fs.lstat(packageLink)).resolves.toMatchObject({ isSymbolicLink: expect.any(Function) });
+    await expect(fs.stat(externalPackage)).resolves.toBeTruthy();
+  });
   it("rejects a known package name nested below the repository out root", async () => {
     const { repositoryRoot, outputRoot } = await createTempOutRoot();
     const nestedPackageDir = path.join(outputRoot, "nested", "InnocenceCode-win32-x64");
@@ -106,7 +161,7 @@ describe("cleanPackageOutput", () => {
     await fs.symlink(externalOut, path.join(repositoryRoot, "out"), "junction");
 
     await expect(cleanPackageOutput(path.join(repositoryRoot, "out"), repositoryRoot)).rejects.toThrow(
-      "canonical package output must be inside repository",
+      "canonical package output must be the repository out directory",
     );
   });
 });

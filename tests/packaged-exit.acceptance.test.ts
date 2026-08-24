@@ -28,6 +28,7 @@ import { promisify } from "node:util";
 import url from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { assertKnownPackageDirectory } from "../scripts/packaging/outPreflight";
+import { inspectPackagedSmoke } from "../scripts/packaging/packagedAvailability";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(url.fileURLToPath(import.meta.url));
@@ -40,6 +41,11 @@ interface PackageSelection {
   reason?: string;
 }
 
+interface PackageAvailability {
+  status: "missing-exe" | "missing-archive" | "missing-smoke" | "available";
+  reason: string;
+}
+
 function canonicalPath(value: string): string {
   try {
     return realpathSync(value);
@@ -49,7 +55,8 @@ function canonicalPath(value: string): string {
 }
 
 function normalizedPath(value: string): string {
-  return path.resolve(value).replace(/[\\/]+$/, "").toLowerCase();
+  const normalized = path.resolve(value).replace(/[\\/]+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function canonicalPackagePrefix(packageDir: string): string {
@@ -98,29 +105,17 @@ const packagedExe = path.join(packageDir, "InnocenceCode.exe");
 const asarPath = path.join(packageDir, "resources", "app.asar");
 const unpackedNodeModules = path.join(packageDir, "resources", "app.asar.unpacked", "node_modules");
 
-/** The packaged build must expose the smoke entry inside app.asar. */
-function packagedSmokeSkipReason(): string {
-  if (packageSelection.reason !== undefined) return packageSelection.reason;
-  if (!existsSync(packagedExe)) return `packaged executable missing: ${packagedExe}`;
-  if (!existsSync(asarPath)) return `packaged archive missing: ${asarPath}`;
-  return "smoke entry missing from packaged archive or archive inspection unavailable";
-}
-
-function packagedSmokeAvailable(): boolean {
-  if (packageSelection.reason !== undefined || !existsSync(packagedExe) || !existsSync(asarPath)) return false;
-  try {
-    return smokeEntryKey() !== null;
-  } catch {
-    return false; // @electron/asar unavailable — cannot verify the entry
+function inspectPackagedSmokeAvailability(): PackageAvailability {
+  let listArchive: () => string[];
+  if (packageSelection.reason !== undefined) {
+    return inspectPackagedSmoke(packageSelection.reason, packagedExe, asarPath, () => []);
   }
-}
-
-/** Archive key of the smoke entry (archive keys keep the platform separator). */
-function smokeEntryKey(): string | null {
+  if (!existsSync(packagedExe) || !existsSync(asarPath)) {
+    return inspectPackagedSmoke(undefined, packagedExe, asarPath, () => []);
+  }
   const asar = createRequire(import.meta.url)("@electron/asar") as AsarApi;
-  return (
-    asar.listPackage(asarPath).find((entry) => entry.replaceAll("\\", "/").endsWith("/.vite/build/smoke.js")) ?? null
-  );
+  listArchive = () => asar.listPackage(asarPath);
+  return inspectPackagedSmoke(undefined, packagedExe, asarPath, listArchive);
 }
 
 interface AsarApi {
@@ -228,7 +223,8 @@ async function lockFilesUnder(root: string): Promise<string[]> {
   return found;
 }
 
-const maybeIt = packagedSmokeAvailable() ? it : it.skip;
+const packageAvailability = inspectPackagedSmokeAvailability();
+const maybeIt = packageAvailability.status === "available" ? it : it.skip;
 
 describe("packaged-exit acceptance (requires `npm run package` first)", () => {
   maybeIt("the packaged main drives a PTY and the task lease pair, then exits with no residue", async () => {
@@ -301,8 +297,8 @@ describe("packaged-exit acceptance (requires `npm run package` first)", () => {
   }, 180_000);
 });
 
-if (!packagedSmokeAvailable()) {
+if (packageAvailability.status !== "available") {
   // A visible reason next to the skip (vitest shows it.skip without one).
-  console.log(`[packaged-exit] skip: ${packagedSmokeSkipReason()}`);
-  it.skip(`packaged smoke skipped: ${packagedSmokeSkipReason()}`, () => {});
+  console.log(`[packaged-exit] skip: ${packageAvailability.reason}`);
+  it.skip(`packaged smoke skipped: ${packageAvailability.reason}`, () => {});
 }
