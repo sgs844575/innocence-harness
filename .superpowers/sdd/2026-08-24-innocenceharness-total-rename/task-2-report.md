@@ -3,7 +3,7 @@
 - 状态：通过（第 2 轮修复）
 - 基础提交：`b489546 refactor(protocol): migrate application and plugin schemes`
 - 第 1 轮修复提交：`0706260 fix(protocol): harden scheme origins and package paths`
-- 第 2 轮修复提交：`867587f fix(smoke): align harness handshake naming`
+- 第 2 轮修复提交：`22e30e3 fix(smoke): align harness handshake naming`
 - 工作树：`D:\Projects\AiProjects\InnocenceHarness-rename`
 
 ## 第 1 轮修复
@@ -30,7 +30,7 @@
   5 files passed; 39 tests passed; 1 acceptance test skipped because no packaged executable was available
   ```
 - typecheck：`npm run typecheck` 通过。
-- smoke/protocol/appWindow/acceptance 定向验证通过；external UI acceptance 在本轮因 package 输出被锁定后不存在可用 executable，按测试既有规则明确 skip。
+- smoke/protocol 定向验证：`node --check tools/smoke-test.cjs` 通过；`tools/smoke-test.test.ts`、`scripts/packaging/runPackageSmoke.test.ts`、`src/main/protocol.test.ts`、`src/main/appWindow.test.ts` 共 36 tests passed。
 - 第 1 轮已验证 `npm run typecheck:packages` 通过；本轮仅触及 appWindow/smoke naming，无 package 类型边界变化。
 - 第 1 轮 package 仍受 `out/InnocenceHarness-win32-x64/resources/app.asar` 文件锁阻塞；本轮未强制删除或绕过 preflight。
 - 活动代码 grep：`src/main/appWindow.ts` 与 `tools/smoke-test.cjs` 仅使用 `InnocenceHarness_SMOKE_OUT` 和 `innocenceharness-smoke-*`；旧名称只出现在测试中的负断言。
