@@ -62,7 +62,7 @@ describe("StdioJsonRpcClient", () => {
     const init = await client.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "t", version: "0" },
+      clientInfo: { name: "InnocenceHarness", version: "0" },
     });
     expect((init as { serverInfo?: { name?: string } }).serverInfo?.name).toBe(
       "echo-fixture",
