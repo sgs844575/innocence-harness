@@ -90,6 +90,35 @@ describe("loadPluginClients", () => {
     expect(resolveCard(registry, "example")).toBeDefined();
   });
 
+  it("HMR revision 使新模块 URL 失效缓存并替换旧模块注册内容", async () => {
+    const registry = createSlotRegistry();
+    const urls: string[] = [];
+    const OldCard: ComponentType<ToolCardProps> = () => null;
+    const NewCard: ComponentType<ToolCardProps> = () => null;
+    const importModule = async (url: string) => {
+      urls.push(url);
+      return {
+        default: (api: PluginClientApi) => {
+          api.registerToolCardComponent({
+            name: "example",
+            component: new URL(url).searchParams.get("hmr") === "1" ? NewCard : OldCard,
+          });
+        },
+      };
+    };
+
+    await loadPluginClients({ inventory: [entry("example")], registry, importModule });
+    expect(resolveCard(registry, "example")).toBe(OldCard);
+
+    await loadPluginClients({ inventory: [entry("example")], registry, revision: 1, importModule });
+
+    expect(urls).toEqual([
+      "innocence-plugin://example/dist/client.js",
+      "innocence-plugin://example/dist/client.js?hmr=1",
+    ]);
+    expect(resolveCard(registry, "example")).toBe(NewCard);
+  });
+
   it("失败隔离：importModule 拒绝只 warn 含插件 id，其余条目继续注册", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const registry = createSlotRegistry();

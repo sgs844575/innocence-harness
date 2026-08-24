@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginInventory } from "../../../shared/ipc";
 import { api } from "../lib/ipc";
 import { importSchemeModule, loadPluginClients } from "../pluginClient/loader";
@@ -14,14 +14,15 @@ export interface PluginClientsState {
 export function usePluginClients(registry: SlotRegistry): PluginClientsState {
   const [pluginInventory, setPluginInventory] = useState<PluginInventory | null>(null);
   const [pluginInventoryError, setPluginInventoryError] = useState(false);
+  const hmrRevision = useRef(0);
 
-  const refreshPluginInventory = useCallback(() => {
+  const refreshPluginInventoryWithRevision = useCallback((revision?: number) => {
     void (async () => {
       try {
         const inventory = await api.getPluginInventory();
         setPluginInventory(inventory);
         setPluginInventoryError(false);
-        await loadPluginClients({ inventory, registry, importModule: importSchemeModule });
+        await loadPluginClients({ inventory, registry, importModule: importSchemeModule, revision });
       } catch {
         setPluginInventory([]);
         setPluginInventoryError(true);
@@ -29,10 +30,17 @@ export function usePluginClients(registry: SlotRegistry): PluginClientsState {
     })();
   }, [registry]);
 
+  const refreshPluginInventory = useCallback(() => {
+    refreshPluginInventoryWithRevision();
+  }, [refreshPluginInventoryWithRevision]);
+
   useEffect(() => {
     refreshPluginInventory();
-    return api.onPluginsChanged(refreshPluginInventory);
-  }, [refreshPluginInventory]);
+    return api.onPluginsChanged(() => {
+      const revision = ++hmrRevision.current;
+      refreshPluginInventoryWithRevision(revision);
+    });
+  }, [refreshPluginInventory, refreshPluginInventoryWithRevision]);
 
   return { pluginInventory, pluginInventoryError, refreshPluginInventory };
 }

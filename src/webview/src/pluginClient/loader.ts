@@ -32,6 +32,7 @@ export interface LoadPluginClientsOptions {
   registry: SlotRegistry;
   /** 动态导入端口（注入式设计，避开打包器对变量 URL 的静态转译）。 */
   importModule: ImportModule;
+  revision?: number;
 }
 
 /** 每个注册表已完成的装载回合。 */
@@ -40,17 +41,19 @@ const rounds = new WeakMap<SlotRegistry, ReturnType<typeof createPluginClientApi
 const pendingRounds = new WeakMap<SlotRegistry, ReturnType<typeof createPluginClientApi>>();
 
 /** 协议布局与 staging 产物一致：plugins/<id>/dist/client.js。 */
-export function clientModuleUrl(id: string): string {
-  return `innocence-plugin://${id}/dist/client.js`;
+export function clientModuleUrl(id: string, revision?: number): string {
+  const base = `innocence-plugin://${id}/dist/client.js`;
+  return revision === undefined ? base : `${base}?hmr=${encodeURIComponent(String(revision))}`;
 }
 
 async function loadPluginClient(
   entry: PluginInventoryEntry,
   handle: ReturnType<typeof createPluginClientApi>,
   importModule: ImportModule,
+  revision?: number,
 ): Promise<void> {
   try {
-    const mod = await importModule(clientModuleUrl(entry.id));
+    const mod = await importModule(clientModuleUrl(entry.id, revision));
     const register = mod?.default;
     if (typeof register !== "function") {
       console.warn(`plugin client "${entry.id}" has no default register function; skipped`);
@@ -74,7 +77,7 @@ export async function loadPluginClients(options: LoadPluginClientsOptions): Prom
   if (candidates.length === 0) return;
   const handle = createPluginClientApi(options.registry, TOOLCARD_SLOT);
   pendingRounds.set(options.registry, handle);
-  await Promise.all(candidates.map((entry) => loadPluginClient(entry, handle, options.importModule)));
+  await Promise.all(candidates.map((entry) => loadPluginClient(entry, handle, options.importModule, options.revision)));
   if (pendingRounds.get(options.registry) === handle) {
     pendingRounds.delete(options.registry);
     rounds.set(options.registry, handle);
