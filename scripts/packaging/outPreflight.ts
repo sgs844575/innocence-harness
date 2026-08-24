@@ -5,7 +5,16 @@ import { defaultReparsePointProbe, type ReparseProbeResult } from "./reparseProb
 
 const DEFAULT_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const OUTPUT_DIRECTORY_NAME = "out";
-const PACKAGE_DIRECTORY_PATTERN = /^InnocenceHarness-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)(?:-tmp-[A-Za-z0-9._-]+)?$/;
+const PRODUCT_NAME = "InnocenceHarness";
+const PACKAGE_DIRECTORY_PATTERN = new RegExp(`^${PRODUCT_NAME}-(?:win32|darwin|linux)-(?:x64|arm64|ia32|arm)(?:-tmp-[A-Za-z0-9._-]+)?$`);
+
+export function defaultPackageDirectory(repositoryRoot: string): string {
+  return path.join(path.resolve(repositoryRoot), OUTPUT_DIRECTORY_NAME, `${PRODUCT_NAME}-win32-x64`);
+}
+
+export function defaultExecutableName(): string {
+  return `${PRODUCT_NAME}.exe`;
+}
 
 export interface OutPreflightResult {
   outputRoot: string;
@@ -72,7 +81,10 @@ async function inspectRealDirectory(
   return canonicalTarget;
 }
 
-export function assertKnownPackageDirectory(packageDirectory: string, repositoryRoot: string): string {
+export function assertKnownPackageDirectory(
+  packageDirectory: string,
+  repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+): string {
   const repository = path.resolve(repositoryRoot);
   const outputRoot = path.resolve(repository, OUTPUT_DIRECTORY_NAME);
   const resolvedPackageDirectory = path.resolve(packageDirectory);

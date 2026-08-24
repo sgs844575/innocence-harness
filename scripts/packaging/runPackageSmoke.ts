@@ -3,6 +3,11 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectPackagedSmoke, type PackageAvailability } from "./packagedAvailability.ts";
+import {
+  assertKnownPackageDirectory,
+  defaultExecutableName as defaultPackagedExecutableName,
+  defaultPackageDirectory as defaultPackagedDirectory,
+} from "./outPreflight.ts";
 
 export interface SmokeAvailability {
   status: PackageAvailability["status"];
@@ -19,16 +24,19 @@ export function requirePackagedSmoke(availability: SmokeAvailability): void {
 function packageDirectory(repoRoot: string): string {
   return process.env.IC_PACKAGE_DIR
     ? path.resolve(process.env.IC_PACKAGE_DIR)
-    : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
+    : defaultPackagedDirectory(repoRoot);
 }
 
 function inspectAvailability(repoRoot: string): SmokeAvailability {
   const packageDir = packageDirectory(repoRoot);
-  const packagedExe = path.join(packageDir, "InnocenceHarness.exe");
+  const packagedExe = path.join(packageDir, defaultPackagedExecutableName());
+  let packageReason: string | undefined;
+  try {
+    assertKnownPackageDirectory(packageDir, repoRoot);
+  } catch (error) {
+    packageReason = `IC_PACKAGE_DIR must point to a known direct package directory under ${path.join(repoRoot, "out")}: ${String(error)}`;
+  }
   const archivePath = path.join(packageDir, "resources", "app.asar");
-  const packageReason = path.dirname(packageDir) !== path.join(repoRoot, "out")
-    ? `IC_PACKAGE_DIR must point to a direct package directory under ${path.join(repoRoot, "out")}: ${packageDir}`
-    : undefined;
   const asar = createRequire(import.meta.url)("@electron/asar") as { listPackage(archive: string): string[] };
   return inspectPackagedSmoke(
     packageReason,

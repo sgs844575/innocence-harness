@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanPackageOutput, normalizeForComparison } from "./outPreflight";
+import { cleanPackageOutput, defaultExecutableName, defaultPackageDirectory, normalizeForComparison, assertKnownPackageDirectory } from "./outPreflight";
 
 const temporaryRoots: string[] = [];
+const repositoryRootForNaming = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
@@ -17,6 +19,21 @@ async function createTempOutRoot(): Promise<{ repositoryRoot: string; outputRoot
   await fs.mkdir(outputRoot, { recursive: true });
   return { repositoryRoot, outputRoot };
 }
+
+describe("package artifact naming", () => {
+  it("uses the InnocenceHarness package directory and executable name", () => {
+    expect(defaultPackageDirectory(repositoryRootForNaming)).toBe(
+      path.join(repositoryRootForNaming, "out", "InnocenceHarness-win32-x64"),
+    );
+    expect(defaultExecutableName()).toBe("InnocenceHarness.exe");
+  });
+
+  it("rejects the retired InnocenceCode package directory", () => {
+    expect(() => assertKnownPackageDirectory(
+      path.join(repositoryRootForNaming, "out", "InnocenceCode-win32-x64"),
+    )).toThrow();
+  });
+});
 
 describe("cleanPackageOutput", () => {
   it("preserves case on case-sensitive platforms", () => {
