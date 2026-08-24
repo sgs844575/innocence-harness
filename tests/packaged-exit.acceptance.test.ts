@@ -77,8 +77,8 @@ function summarizeOutput(output: string): string {
 }
 
 function resolvePackageSelection(): PackageSelection {
-  const requestedPackageDir = process.env.IC_PACKAGE_DIR
-    ? path.resolve(process.env.IC_PACKAGE_DIR)
+  const requestedPackageDir = process.env.INNOCENCEHARNESS_PACKAGE_DIR
+    ? path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR)
     : defaultPackageDirectory(repoRoot);
 
   try {
@@ -97,7 +97,7 @@ function resolvePackageSelection(): PackageSelection {
     return {
       packageDir: requestedPackageDir,
       canonicalPackageDir: canonicalPath(requestedPackageDir),
-      reason: `IC_PACKAGE_DIR must resolve to a known package directory inside repository out: ${String(error)}`,
+      reason: `INNOCENCEHARNESS_PACKAGE_DIR must resolve to a known package directory inside repository out: ${String(error)}`,
     };
   }
 }

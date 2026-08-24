@@ -40,22 +40,22 @@ export function registerAppScheme(): void {
 }
 
 export function handleAppScheme(): void {
-  const rendererRoot = path.join(__dirname, "../renderer");
+  const rendererRoot = path.resolve(__dirname, "../renderer");
   protocol.handle(APP_SCHEME, (request) => {
-    let url: URL;
+    let resolved: string;
     try {
-      url = new URL(request.url);
+      const url = new URL(request.url);
+      if (url.protocol !== `${APP_SCHEME}:` || url.hostname !== "app") {
+        return new Response("Forbidden", { status: 403 });
+      }
+      // innocenceharness://app/<path> -> .vite/renderer/<path>
+      const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+      const target = rel === "" || rel.endsWith("/") ? path.join(rel, "index.html") : rel;
+      resolved = path.normalize(path.join(rendererRoot, target));
     } catch {
       return new Response("Forbidden", { status: 403 });
     }
-    if (url.protocol !== `${APP_SCHEME}:` || url.hostname !== "app") {
-      return new Response("Forbidden", { status: 403 });
-    }
-    // innocenceharness://app/<path> -> .vite/renderer/<path>
-    const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-    const target = rel === "" || rel.endsWith("/") ? path.join(rel, "index.html") : rel;
-    const resolved = path.normalize(path.join(rendererRoot, target));
-    if (!resolved.startsWith(rendererRoot)) {
+    if (resolved !== rendererRoot && !resolved.startsWith(rendererRoot + path.sep)) {
       return new Response("Forbidden", { status: 403 });
     }
     try {

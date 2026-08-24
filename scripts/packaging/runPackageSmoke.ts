@@ -60,8 +60,8 @@ export async function inspectRequiredPackageAvailability(
 }
 
 function packageDirectory(repoRoot: string): string {
-  return process.env.IC_PACKAGE_DIR
-    ? path.resolve(process.env.IC_PACKAGE_DIR)
+  return process.env.INNOCENCEHARNESS_PACKAGE_DIR
+    ? path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR)
     : defaultPackagedDirectory(repoRoot);
 }
 

@@ -2,6 +2,7 @@
 // 模块后直接调用捕获的 handler（Response 为 Node 全局，与 protocol.handle
 // 消费的形态一致）；fixture 用 mkdtemp 真实文件验证双根 shadow、pluginId
 // 恶意形态 403、路径逃逸 403、未命中 404 与 content-type 映射。
+import fs from "node:fs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -125,6 +126,29 @@ describe("handleAppScheme", () => {
   ])("rejects %s before reading renderer files", (_label, url) => {
     handleAppScheme();
     expect(appHandler()({ url }).status).toBe(403);
+  });
+
+  it("returns 403 for malformed percent-encoding without throwing", () => {
+    handleAppScheme();
+    expect(() => appHandler()({ url: `${APP_SCHEME}://app/%E0%A4%A` })).not.toThrow();
+    expect(appHandler()({ url: `${APP_SCHEME}://app/%E0%A4%A` }).status).toBe(403);
+  });
+
+  it("rejects encoded traversal into a renderer-root prefix sibling", () => {
+    handleAppScheme();
+    expect(appHandler()({ url: `${APP_SCHEME}://app/..%2frenderer-evil/index.html` }).status).toBe(403);
+  });
+
+  it("serves a legal app path", () => {
+    const readFile = vi.spyOn(fs, "readFileSync").mockReturnValue(Buffer.from("<!doctype html>"));
+    try {
+      handleAppScheme();
+      const response = appHandler()({ url: `${APP_SCHEME}://app/index.html` });
+      expect(response.status).toBe(200);
+      expect(readFile).toHaveBeenCalled();
+    } finally {
+      readFile.mockRestore();
+    }
   });
 });
 
