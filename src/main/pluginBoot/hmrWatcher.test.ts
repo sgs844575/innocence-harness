@@ -8,18 +8,28 @@ import { createHostHmrWatcher } from "./hmrWatcher";
 interface FakeWatchEvents {
   watch: typeof import("node:fs").watch;
   emit(event: string, filename: string): void;
+  emitError(error: unknown): void;
   closeCount(): number;
+  openCount(): number;
 }
 
 function createFakeWatchEvents(): FakeWatchEvents {
   const listeners = new Set<(event: string, filename: string) => void>();
+  const errorListeners = new Set<(error: unknown) => void>();
   let closes = 0;
+  let opens = 0;
   const watch = ((_path: string, listener: (event: string, filename: string) => void) => {
     listeners.add(listener);
+    opens += 1;
     return {
+      on(event: string, errorListener: (error: unknown) => void) {
+        if (event === "error") errorListeners.add(errorListener);
+        return this;
+      },
       close() {
         closes += 1;
         listeners.delete(listener);
+        errorListeners.clear();
       },
     } as FSWatcher;
   }) as typeof import("node:fs").watch;
@@ -28,7 +38,11 @@ function createFakeWatchEvents(): FakeWatchEvents {
     emit(event, filename) {
       for (const listener of [...listeners]) listener(event, filename);
     },
+    emitError(error) {
+      for (const listener of [...errorListeners]) listener(error);
+    },
     closeCount: () => closes,
+    openCount: () => opens,
   };
 }
 
@@ -110,6 +124,58 @@ describe("host HMR watcher", () => {
     await expect(watcher.watchPath("example", "missing.js", async () => {}))
       .rejects.toMatchObject({ cause: startupError });
     await watcher.dispose();
+  });
+
+  it("handles asynchronous watcher errors without an uncaught exception", async () => {
+    const events = createFakeWatchEvents();
+    const errors: unknown[] = [];
+    const watcher = createHostHmrWatcher({
+      fsWatch: events.watch,
+      log: (_level, _message, data) => errors.push(data),
+    });
+
+    await watcher.watchPath("example", "fixture/client.js", async () => {});
+    events.emitError(new Error("watcher failed"));
+    await waitUntil(() => events.closeCount() === 1);
+    expect(errors).toHaveLength(1);
+    events.emit("change", "fixture/client.js");
+    await watcher.dispose();
+    expect(events.closeCount()).toBe(1);
+  });
+
+  it("serializes concurrent replacement of the same id and closes every watcher", async () => {
+    const events = createFakeWatchEvents();
+    const watcher = createHostHmrWatcher({ fsWatch: events.watch });
+
+    const first = watcher.watchPath("example", "fixture/one.js", async () => {});
+    const second = watcher.watchPath("example", "fixture/two.js", async () => {});
+    await Promise.all([first, second]);
+    expect(events.openCount()).toBe(2);
+    await watcher.dispose();
+    expect(events.closeCount()).toBe(2);
+  });
+
+  it("waits for an in-flight restart before disposing its watcher", async () => {
+    const events = createFakeWatchEvents();
+    let release!: () => void;
+    const running = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    const watcher = createHostHmrWatcher({ fsWatch: events.watch, debounceMs: 0 });
+    await watcher.watchPath("example", "fixture/client.js", async () => {
+      started();
+      return running;
+    });
+    events.emit("change", "fixture/client.js");
+    await startedPromise;
+    const disposing = watcher.dispose();
+    let settled = false;
+    void disposing.then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    release();
+    await disposing;
+    expect(events.closeCount()).toBe(1);
   });
 
   it("uses the real Node watcher for file changes", async () => {

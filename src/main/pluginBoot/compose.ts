@@ -359,8 +359,15 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
       return hostHmrWatcher.watchPath(id, fileOrDirectory, restart);
     },
     async dispose() {
-      await hostHmrWatcher?.dispose();
-      await root.fiber.dispose();
+      let watcherError: unknown;
+      try {
+        await hostHmrWatcher?.dispose();
+      } catch (error) {
+        watcherError = error;
+      } finally {
+        await root.fiber.dispose();
+      }
+      if (watcherError !== undefined) throw watcherError;
     },
   };
 }

@@ -121,6 +121,24 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     }
   });
 
+  it("tears down the root even when watcher disposal rejects", async () => {
+    const isolatedUserRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-hmr-reject-user-"));
+    const disposeError = new Error("watcher dispose failed");
+    const isolatedBoot = await createPluginBoot({
+      kernelPath: paths.kernelPath,
+      builtinRoot: paths.builtinRoot,
+      userRoot: isolatedUserRoot,
+      enableHmrWatcher: true,
+      hmrWatcherFactory: () => ({
+        watchPath: async () => async () => {},
+        dispose: async () => { throw disposeError; },
+      }),
+    });
+    await expect(isolatedBoot.dispose()).rejects.toBe(disposeError);
+    expect(isolatedBoot.root.fiber.getEffects()).toEqual([]);
+    rmSync(isolatedUserRoot, { recursive: true, force: true });
+  });
+
   it("keeps dynamic root and session timers isolated across disposal", async () => {
     const isolatedUserRoot = mkdtempSync(path.join(tmpdir(), "ic-boot-timer-user-"));
     const isolatedBoot = await createPluginBoot({
