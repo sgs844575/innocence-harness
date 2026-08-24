@@ -49,6 +49,13 @@ describe("inspectPackagedSmoke", () => {
       expect.objectContaining({ status: "available" }),
     );
   });
+  it("rejects a nested smoke entry as missing", async () => {
+    const { executable, archive } = await createPackageFixture();
+
+    expect(inspectPackagedSmoke(selectionReason, executable, archive, () => ["nested/.vite/build/smoke.js"])).toEqual(
+      expect.objectContaining({ status: "missing-smoke" }),
+    );
+  });
   it("skips when the archive has no smoke entry", async () => {
     const { executable, archive } = await createPackageFixture();
 
