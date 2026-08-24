@@ -30,13 +30,17 @@ import { logger } from "./logger";
 import { ShutdownGate } from "./shutdown";
 import { createTerminalIpcService, registerTerminalIpc, type TerminalIpcService } from "./terminalIpc";
 import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc } from "./taskRuntimeIpc";
+import { currentTestOverrides } from "./testOverrides";
+
+// Test roots are opt-in through the centralized controlled marker. Packaged
+// production ignores all test override variables unless the acceptance launcher
+// also supplies the dedicated argument.
+const testOverrides = currentTestOverrides(app.isPackaged);
+if (testOverrides.userData) app.setPath("userData", testOverrides.userData);
 
 // Custom schemes must be registered before app ready.
 registerAppScheme();
 registerPluginScheme();
-
-const testUserData = process.env.INNOCENCE_TEST_USER_DATA;
-if (testUserData) app.setPath("userData", testUserData);
 
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
@@ -67,8 +71,8 @@ if (!gotLock) {
       // root reuses the composition's bootPaths so the packaged layout
       // (resources/plugins) is served instead of a cwd-relative dev path.
       handlePluginScheme({
-        userRoot: process.env.INNOCENCE_TEST_USER_PLUGIN_ROOT ?? defaultUserPluginRoot(),
-        builtinRoot: process.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT ?? bootPaths().builtinRoot,
+        userRoot: testOverrides.userPluginRoot ?? defaultUserPluginRoot(),
+        builtinRoot: testOverrides.builtinPluginRoot ?? bootPaths().builtinRoot,
       });
       initSessionStore(app.getPath("userData"));
       registerIpcHandlers();

@@ -27,7 +27,7 @@
     "prepackage": "npm run package:preflight && npm run build:plugins",
     "package": "electron-forge package",
     "package:preflight": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/outPreflight.ts",
-    "package:smoke": "vitest run tests/packaged-exit.acceptance.test.ts",
+    "package:smoke": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/runPackageSmoke.ts",
     "premake": "npm run build:plugins",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",

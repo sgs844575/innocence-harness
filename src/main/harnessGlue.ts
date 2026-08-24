@@ -18,7 +18,7 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocencecode/harness-electron";
-import type { PermissionChoice, PluginInventory } from "../shared/ipc";
+import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { createRuntimeHooks } from "./runtimeHooks";
@@ -27,6 +27,7 @@ import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
 import { broadcastSessions } from "./sessionEvents";
+import { currentTestOverrides } from "./testOverrides";
 import {
   createTaskRuntimeBridge,
   resolveTaskWorkspaceRoot,
@@ -55,7 +56,7 @@ function transcriptsDir(): string {
  *  import vendor/kernel 的运行时值。插件协议接线（innocence-plugin:// 的
  *  内置根）复用同一双分支，消除打包态 cwd 相对路径的 404。 */
 export function bootPaths(): { kernelPath: string; builtinRoot: string } {
-  const builtinOverride = process.env.INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT;
+  const builtinOverride = currentTestOverrides(app.isPackaged).builtinPluginRoot;
   if (app.isPackaged) {
     const resources = process.resourcesPath;
     return {
@@ -77,6 +78,12 @@ export function bootPaths(): { kernelPath: string; builtinRoot: string } {
 const sessionComposition = createSessionComposition({
   resolvePaths: bootPaths,
   getWorkspaceRoot: () => settings.workspaceRoot || undefined,
+  getUserPluginRoot: () => currentTestOverrides(app.isPackaged).userPluginRoot ?? undefined,
+  enableHmrWatcher: !app.isPackaged && process.env.NODE_ENV !== "production",
+  onPluginClientChange: () => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) win.webContents.send(IPC.pluginsChanged);
+  },
   log: (level, msg, data) => logger[level](msg, data),
 });
 

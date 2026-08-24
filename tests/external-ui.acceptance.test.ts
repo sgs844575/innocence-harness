@@ -339,17 +339,19 @@ async function launchApp(
   if (!runtime.packaged && !existsSync(mainEntry)) {
     throw new Error(`main build missing: ${mainEntry}; run the renderer/main build before acceptance`);
   }
-  const child = spawn(runtime.entry, [
+  const args = [
     `--user-data-dir=${userData}`,
     `--remote-debugging-port=${port}`,
-    ...(runtime.packaged ? [] : [mainEntry]),
-  ], {
+    ...(runtime.packaged ? ["--innocence-controlled-test"] : [mainEntry]),
+  ];
+  const child = spawn(runtime.entry, args, {
     cwd: repoRoot,
     env: {
       ...process.env,
       INNOCENCE_TEST_USER_PLUGIN_ROOT: userRoot,
       INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: builtinRoot,
       INNOCENCE_TEST_USER_DATA: userData,
+      INNOCENCE_TEST_MODE: "1",
       ELECTRON_ENABLE_LOGGING: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],

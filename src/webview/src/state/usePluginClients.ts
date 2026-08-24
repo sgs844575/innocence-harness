@@ -31,6 +31,7 @@ export function usePluginClients(registry: SlotRegistry): PluginClientsState {
 
   useEffect(() => {
     refreshPluginInventory();
+    return api.onPluginsChanged(refreshPluginInventory);
   }, [refreshPluginInventory]);
 
   return { pluginInventory, pluginInventoryError, refreshPluginInventory };
