@@ -70,9 +70,25 @@ function runtimeManifest(pkgDir) {
 }
 
 function assertWorkspacePackageMetadata(file, expectedName) {
-  const pkg = JSON.parse(readFileSync(file, "utf8"));
+  const raw = readFileSync(file, "utf8");
+  const pkg = JSON.parse(raw);
+  const retiredScope = `${WORKSPACE_SCOPE.slice(0, -7)}code`;
   if (pkg.name !== expectedName || !pkg.name.startsWith(`${WORKSPACE_SCOPE}/`)) {
     console.error(`staging self-check failed: package metadata scope mismatch in ${file}`);
+    process.exit(1);
+  }
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+    const dependencies = pkg[section];
+    if (!dependencies || typeof dependencies !== "object") continue;
+    const invalidDependency = Object.keys(dependencies).find((name) =>
+      name.startsWith("@innocence") && !name.startsWith(`${WORKSPACE_SCOPE}/`));
+    if (invalidDependency) {
+      console.error(`staging self-check failed: dependency scope mismatch in ${file}: ${invalidDependency}`);
+      process.exit(1);
+    }
+  }
+  if (raw.includes(`${retiredScope}/`)) {
+    console.error(`staging self-check failed: retired package scope in ${file}`);
     process.exit(1);
   }
 }
@@ -123,6 +139,7 @@ for (const dir of LIBS) {
 for (const { dir, id } of PLUGINS) {
   build(dir);
   const pkg = runtimeManifest(dir);
+  assertWorkspacePackageMetadata(join(dir, "package.json"), pkg.name);
   const target = join(STAGING, "plugins", id);
   mkdirSync(target, { recursive: true });
   cpSync(join(dir, "dist"), join(target, "dist"), { recursive: true });

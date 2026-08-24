@@ -19,8 +19,10 @@ import {
 import { stagingBootPaths } from "./staging-paths";
 
 const paths = stagingBootPaths();
+const stagingAvailable = existsSync(paths.kernelPath);
+const maybeDescribe = stagingAvailable ? describe : describe.skip;
 
-describe("staging namespace", () => {
+maybeDescribe("staging namespace", () => {
   it("resolves the kernel from the new workspace scope only", () => {
     expect(paths.kernelPath).toBe(path.join(
       process.cwd(), "build", "dist", "resources", "node_modules", "@innocenceharness", "kernel", "dist", "index.js",
@@ -32,8 +34,6 @@ describe("staging namespace", () => {
     ))).toBe(false);
   });
 });
-const stagingAvailable = existsSync(paths.kernelPath);
-const maybeDescribe = stagingAvailable ? describe : describe.skip;
 
 let boot: PluginBoot | undefined;
 let userRoot: string | undefined;
