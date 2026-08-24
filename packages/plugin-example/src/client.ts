@@ -1,5 +1,5 @@
 // 渲染层 client 注册模块（示例插件）：零 import 铁律——宿主经
-// innocence-plugin://example/dist/client.js 动态 import 后调用 default，
+// innocenceharness-plugin://example/dist/client.js 动态 import 后调用 default，
 // 以纯数据描述符注册工具卡；宿主侧统一渲染（组件级注册延后阶段 2）。
 // 类型形状内联声明（结构化类型，勿 import 宿主渲染层类型）。
 

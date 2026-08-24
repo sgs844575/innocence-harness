@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:packages": "npm run typecheck --workspaces --if-present",
     "lint": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --maxWorkers=1",
     "test:watch": "vitest"
   },
   "devDependencies": {
