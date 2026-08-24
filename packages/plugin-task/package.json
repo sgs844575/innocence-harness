@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/plugin-task",
   "version": "0.1.0",
-  "description": "Task workspace-change capture middleware: declared-path snapshots, attribution gating and delegated change accounting",
+  "description": "InnocenceHarness Task workspace-change capture middleware: declared-path snapshots, attribution gating and delegated change accounting",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -16,7 +16,7 @@ const t = (key: string) => {
   return dict[key] ?? key;
 };
 const recent = [
-  { path: "D:/Projects/AiProjects/InnocenceCode", count: 3 },
+  { path: "D:/Projects/AiProjects/InnocenceHarness", count: 3 },
   { path: "D:/Projects/AiProjects/cherry-studio", count: 1 },
 ];
 
@@ -27,7 +27,7 @@ describe("ProjectPicker（落地态项目选择）", () => {
     fireEvent.click(screen.getByRole("button", { name: "选择项目" }));
     expect(await screen.findByText("不在项目中工作")).toBeTruthy();
     expect(screen.getByText("打开项目…")).toBeTruthy();
-    expect(screen.getByText(/D:.Projects.AiProjects.InnocenceCode/)).toBeTruthy();
+    expect(screen.getByText(/D:.Projects.AiProjects.InnocenceHarness/)).toBeTruthy();
     expect(screen.getByText("3 次会话")).toBeTruthy();
     expect(screen.getByText("1 次会话")).toBeTruthy();
   });

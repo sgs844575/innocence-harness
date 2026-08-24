@@ -1,7 +1,7 @@
 // 字典完整性：zh/en 键集必须一致（缺键静默回落英文会造成半翻译 UI）；
 // agent=plan 与权限模式 plan 的语义区分文案必须成对存在（spec 2.2）。
 import { describe, expect, it } from "vitest";
-import { enUS, zhCN } from "./i18n";
+import { createT, enUS, zhCN } from "./i18n";
 
 describe("i18n dictionaries", () => {
   it("zh/en 键集完全一致", () => {
@@ -13,5 +13,11 @@ describe("i18n dictionaries", () => {
     expect(zhCN["agent.plan.desc"]).toContain("提示词级");
     expect(zhCN["agent.plan.desc"]).not.toBe(zhCN["permission.mode.plan.desc"]);
     expect(enUS["agent.plan.desc"]).not.toBe(enUS["permission.mode.plan.desc"]);
+  });
+
+  it("产品名称和关于菜单文案统一为 InnocenceHarness", () => {
+    expect(createT("en-US")("app.name")).toBe("InnocenceHarness");
+    expect(createT("en-US")("menu.help.about")).toContain("InnocenceHarness");
+    expect(createT("zh-CN")("menu.help.about")).toContain("InnocenceHarness");
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/plugin-skills",
   "version": "0.1.0",
-  "description": "SKILL.md loader: frontmatter index + on-demand body injection",
+  "description": "InnocenceHarness SKILL.md loader: frontmatter index + on-demand body injection",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

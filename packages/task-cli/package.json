@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/task-cli",
   "version": "0.1.0",
-  "description": "Electron-free CLI adapter over task-core's TaskCommandService: same ports, review rendering through an injected output",
+  "description": "InnocenceHarness Electron-free CLI adapter over task-core's TaskCommandService: same ports, review rendering through an injected output",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

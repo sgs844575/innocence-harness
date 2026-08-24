@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/task-core",
   "version": "0.1.0",
-  "description": "Pure task state machine domain: events, reducer, routes, checkpoints, review statuses",
+  "description": "InnocenceHarness Pure task state machine domain: events, reducer, routes, checkpoints, review statuses",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -58,7 +58,7 @@ async function connect(
     await client.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: "innocencecode", version: "0.1.0" },
+      clientInfo: { name: "innocenceharness", version: "0.1.0" },
     });
     client.notify("notifications/initialized", {});
     const list = await client.request<{ tools?: McpToolDef[] }>("tools/list", {});

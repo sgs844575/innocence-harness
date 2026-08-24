@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/provider-mock",
   "version": "0.1.0",
-  "description": "Scripted mock provider for offline harness development and tests",
+  "description": "InnocenceHarness Scripted mock provider for offline harness development and tests",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

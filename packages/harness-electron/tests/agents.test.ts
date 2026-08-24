@@ -34,6 +34,12 @@ describe("BUILTIN_AGENTS", () => {
     expect(systemPromptFor("default")).toBe(DEFAULT_SYSTEM_PROMPT);
   });
 
+  it("内置系统提示词使用 InnocenceHarness 产品名", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("InnocenceHarness");
+    expect(systemPromptFor("plan")).toContain("InnocenceHarness");
+    expect(systemPromptFor("full")).toContain("InnocenceHarness");
+  });
+
   it("systemPromptFor 未知值回落 default", () => {
     expect(systemPromptFor("nope" as AgentId)).toBe(systemPromptFor("default"));
   });

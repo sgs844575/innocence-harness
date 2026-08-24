@@ -5,6 +5,8 @@ export type Dict = Record<string, string>;
 // enUS 一并导出供字典键集一致性测试（i18n.test.ts）消费。
 export const zhCN: Dict = {
   "app.name": "InnocenceHarness",
+  "menu.app.name": "InnocenceHarness",
+  "menu.help.about": "关于 InnocenceHarness",
   "sidebar.search": "搜索",
   "sidebar.noNotifications": "暂无通知",
   "sidebar.filter": "筛选会话",
@@ -216,6 +218,8 @@ export const zhCN: Dict = {
 
 export const enUS: Dict = {
   "app.name": "InnocenceHarness",
+  "menu.app.name": "InnocenceHarness",
+  "menu.help.about": "About InnocenceHarness",
   "sidebar.search": "Search",
   "sidebar.noNotifications": "No notifications",
   "sidebar.filter": "Filter sessions",
