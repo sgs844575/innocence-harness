@@ -125,7 +125,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(byId.get("shell")?.core).toBe(true);
     expect(byId.get("mcp")?.core).toBe(false);
     // example：渲染层示例插件——client 标记为真（dist/client.js 产出），
-    // 是 webview 侧 client 装载链（innocence-plugin://example/dist/client.js）的数据源。
+    // 是 webview 侧 client 装载链（innocenceharness-plugin://example/dist/client.js）的数据源。
     expect(byId.get("example")).toMatchObject({ core: false, client: true, state: "active", via: "default" });
   });
 

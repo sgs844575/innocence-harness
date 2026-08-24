@@ -1,13 +1,13 @@
-// Custom `innocencecode://` protocol (`protocol.handle` + a dedicated app
+// Custom `innocenceharness://` protocol (`protocol.handle` + a dedicated app
 // scheme) so the renderer is served from a stable, secure origin and the CSP
-// can lock script-src to 'self'. The sibling `innocence-plugin://` protocol
+// can lock script-src to 'self'. The sibling `innocenceharness-plugin://` protocol
 // serves plugin assets (UI slots, scripts) from the dual plugin roots.
 import { protocol } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
-export const APP_SCHEME = "innocencecode";
-export const PLUGIN_SCHEME = "innocence-plugin";
+export const APP_SCHEME = "innocenceharness";
+export const PLUGIN_SCHEME = "innocenceharness-plugin";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -43,7 +43,7 @@ export function handleAppScheme(): void {
   const rendererRoot = path.join(__dirname, "../renderer");
   protocol.handle(APP_SCHEME, (request) => {
     const url = new URL(request.url);
-    // innocencecode://app/<path> -> .vite/renderer/<path>
+    // innocenceharness://app/<path> -> .vite/renderer/<path>
     const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
     const target = rel === "" || rel.endsWith("/") ? path.join(rel, "index.html") : rel;
     const resolved = path.normalize(path.join(rendererRoot, target));
@@ -128,7 +128,7 @@ function isInsideRoot(resolved: string, root: string): boolean {
 export function handlePluginScheme(options: PluginSchemeRoots): void {
   const roots = [path.resolve(options.userRoot), path.resolve(options.builtinRoot)];
   protocol.handle(PLUGIN_SCHEME, (request) => {
-    // innocence-plugin://<pluginId>/<file...>: host carries the plugin id,
+    // innocenceharness-plugin://<pluginId>/<file...>: host carries the plugin id,
     // pathname the file relative to the plugin directory.
     let pluginId = "";
     let rel = "";

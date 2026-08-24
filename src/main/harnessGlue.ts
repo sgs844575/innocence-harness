@@ -53,20 +53,20 @@ function transcriptsDir(): string {
 /** dev：仓库 staging 树；prod：打包 resources 下的同一布局（forge
  *  extraResource 把 build/dist/resources/{plugins,node_modules} 复制到
  *  resources/）。内核与脊柱经动态 import 装载（单实例），src/main 不再静态
- *  import vendor/kernel 的运行时值。插件协议接线（innocence-plugin:// 的
- *  内置根）复用同一双分支，消除打包态 cwd 相对路径的 404。 */
+ *  import vendor/kernel 的运行时值。插件协议接线（innocenceharness-plugin:// 的
+ * 内置根）复用同一双分支，消除打包态 cwd 相对路径的 404。 */
 export function bootPaths(): { kernelPath: string; builtinRoot: string } {
   const builtinOverride = currentTestOverrides(app.isPackaged).builtinPluginRoot;
   if (app.isPackaged) {
     const resources = process.resourcesPath;
     return {
-      kernelPath: path.join(resources, "node_modules", "@innocencecode", "kernel", "dist", "index.js"),
+      kernelPath: path.join(resources, "node_modules", "@innocenceharness", "kernel", "dist", "index.js"),
       builtinRoot: builtinOverride ?? path.join(resources, "plugins"),
     };
   }
   const staging = path.resolve(process.cwd(), "build", "dist", "resources");
   return {
-    kernelPath: path.join(staging, "node_modules", "@innocencecode", "kernel", "dist", "index.js"),
+    kernelPath: path.join(staging, "node_modules", "@innocenceharness", "kernel", "dist", "index.js"),
     builtinRoot: builtinOverride ?? path.join(staging, "plugins"),
   };
 }

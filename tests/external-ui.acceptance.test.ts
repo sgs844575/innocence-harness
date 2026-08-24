@@ -31,8 +31,8 @@ const stagingRoot = path.join(repoRoot, "build", "dist", "resources");
 const stagedPluginRoot = path.join(stagingRoot, "plugins");
 const packagedRuntimeDir = process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR
   ? path.resolve(process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR)
-  : path.join(repoRoot, "out", "InnocenceCode-win32-x64");
-const packagedRuntimeEntry = path.join(packagedRuntimeDir, process.platform === "win32" ? "InnocenceCode.exe" : "InnocenceCode");
+  : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
+const packagedRuntimeEntry = path.join(packagedRuntimeDir, process.platform === "win32" ? "InnocenceHarness.exe" : "InnocenceHarness");
 const children: DesktopChild[] = [];
 const tempRoots: string[] = [];
 
@@ -487,7 +487,7 @@ describe("external UI harness lifecycle", () => {
 });
 
 describe("external UI plugin real Electron acceptance", () => {
-  acceptanceIt("loads panel/settings through innocence-plugin and revokes both after disabling the fixture", async () => {
+  acceptanceIt("loads panel/settings through innocenceharness-plugin and revokes both after disabling the fixture", async () => {
     const launchState: LaunchState = { output: "" };
     const roots: string[] = [];
     try {
@@ -499,7 +499,7 @@ describe("external UI plugin real Electron acceptance", () => {
       await prepareRoots(userRoot, builtinRoot);
       const port = await freePort();
       const devtools = await launchApp(userRoot, builtinRoot, userData, port, launchState);
-      await waitForText(devtools, "InnocenceCode");
+      await waitForText(devtools, "InnocenceHarness");
       await clickButton(devtools, "auxiliary panel|辅助面板");
       await waitForText(devtools, "fixture.panel");
       await clickButton(devtools, "^fixture\\.panel$");

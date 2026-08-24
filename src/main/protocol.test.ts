@@ -1,4 +1,4 @@
-// innocence-plugin:// 协议的 Node 级钉死测试：mock 掉 Electron 的 protocol
+// innocenceharness-plugin:// 协议的 Node 级钉死测试：mock 掉 Electron 的 protocol
 // 模块后直接调用捕获的 handler（Response 为 Node 全局，与 protocol.handle
 // 消费的形态一致）；fixture 用 mkdtemp 真实文件验证双根 shadow、pluginId
 // 恶意形态 403、路径逃逸 403、未命中 404 与 content-type 映射。
@@ -15,7 +15,15 @@ vi.mock("electron", () => ({
   },
 }));
 
-import { PLUGIN_SCHEME, handlePluginScheme, registerPluginScheme } from "./protocol";
+import {
+  APP_SCHEME,
+  PLUGIN_SCHEME,
+  appIndexUrl,
+  handleAppScheme,
+  handlePluginScheme,
+  registerAppScheme,
+  registerPluginScheme,
+} from "./protocol";
 
 /** Minimal request shape consumed by the scheme handlers (url only). */
 type SchemeHandler = (request: { url: string }) => Response;
@@ -30,12 +38,21 @@ function write(root: string, rel: string, data: string | Uint8Array): void {
   writeFileSync(file, data);
 }
 
+/** The handler registered for one exact scheme (latest wiring call). */
+function schemeHandler(scheme: string): SchemeHandler {
+  const calls = vi.mocked(protocol.handle).mock.calls;
+  const call = calls.find(([registeredScheme]) => registeredScheme === scheme);
+  if (!call) throw new Error(`scheme handler was not registered: ${scheme}`);
+  return call[1] as unknown as SchemeHandler;
+}
+
 /** The handler registered for the plugin scheme (latest wiring call). */
 function pluginHandler(): SchemeHandler {
-  const calls = vi.mocked(protocol.handle).mock.calls;
-  const call = calls.find(([scheme]) => scheme === PLUGIN_SCHEME);
-  if (!call) throw new Error("plugin scheme handler was not registered");
-  return call[1] as unknown as SchemeHandler;
+  return schemeHandler(PLUGIN_SCHEME);
+}
+
+async function handleOldScheme(url: string): Promise<Response> {
+  return schemeHandler(new URL(url).protocol.slice(0, -1))({ url });
 }
 
 const get = (url: string): Response => pluginHandler()({ url });
@@ -65,6 +82,36 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+describe("application and plugin scheme migration", () => {
+  it("uses the new application and plugin scheme names", () => {
+    expect(APP_SCHEME).toBe("innocenceharness");
+    expect(PLUGIN_SCHEME).toBe("innocenceharness-plugin");
+    expect(appIndexUrl()).toBe("innocenceharness://app/index.html");
+  });
+
+  it("registers only the new privileged application and plugin schemes", () => {
+    registerAppScheme();
+    registerPluginScheme();
+    const registered = vi.mocked(protocol.registerSchemesAsPrivileged).mock.calls.flatMap(
+      ([schemes]) => schemes.map(({ scheme }) => scheme),
+    );
+    expect(registered).toContain("innocenceharness");
+    expect(registered).toContain("innocenceharness-plugin");
+    expect(registered).not.toContain("innocencecode");
+    expect(registered).not.toContain("innocence-plugin");
+  });
+
+  it("does not register handlers for either legacy scheme", async () => {
+    handleAppScheme();
+    await expect(handleOldScheme("innocencecode://app/index.html")).rejects.toThrow(
+      "scheme handler was not registered: innocencecode",
+    );
+    await expect(
+      handleOldScheme("innocence-plugin://fixture/dist/client.js"),
+    ).rejects.toThrow("scheme handler was not registered: innocence-plugin");
+  });
+});
+
 describe("registerPluginScheme", () => {
   it("registers the scheme with standard/secure/supportFetchAPI/corsEnabled privileges", () => {
     registerPluginScheme();
@@ -90,7 +137,7 @@ describe("handlePluginScheme", () => {
   });
 
   it("user root shadows the builtin root for the same plugin id", async () => {
-    const res = get("innocence-plugin://fs/dist/index.js");
+    const res = get("innocenceharness-plugin://fs/dist/index.js");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("export const root = 'user';\n");
   });
