@@ -13,3 +13,22 @@ AGENTS.md
 CLAUDE.md
 .playwright-mcp/
 documentation/
+
+# Documentation is local-only except for AGENTS.md and README.md files.
+*.md
+*.mdx
+*.rst
+*.adoc
+*.asciidoc
+*.txt
+*.rtf
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+!AGENTS.md
+!README.md
+!**/README.md

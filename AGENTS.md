@@ -32,7 +32,7 @@
 
 12. **Use safe UTF-8 file operations.** On Windows, do not rewrite repository text with PowerShell `Get-Content`/`Set-Content`, CMD redirection, or other locale-dependent commands. Use repository-aware edit tools or Node APIs with explicit UTF-8 encoding.
 
-13. **Keep documentation out of Git.** Never add, stage, or commit documentation files. In particular, files under `docs/` or `documentation/`, as well as repository plans, specifications, and other documentation artifacts, are local-only and must remain ignored; `AGENTS.md` is the required repository-instruction exception.
+13. **Keep documentation out of Git.** Never add, stage, commit, or push documentation files. The `docs/`, `documentation/`, and `.superpowers/` directories are local-only and must remain ignored. The only documentation files permitted in Git are `AGENTS.md` and files named `README.md`; all other plans, specifications, reports, notes, and documentation artifacts are prohibited. `AGENTS.md` is the required repository-instruction exception.
 
 ## Expression
 
