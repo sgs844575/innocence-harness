@@ -5,7 +5,8 @@
 - Worktree：`D:\Projects\AiProjects\InnocenceHarness-rename`
 - Branch：`innocenceharness-total-rename`
 - 起始 HEAD：`83687ae1abbd522a3fbedf16032d3ea515abe2c2`
-- Commit：`d39fc95` (`chore(packaging): migrate InnocenceHarness artifacts`)
+- 前一轮实现提交：`d39fc95` (`chore(packaging): migrate InnocenceHarness artifacts`)
+- 本轮修复提交：`5ec9b34` (`fix(packaging): harden required smoke safety gates`)
 
 ## 实现结果
 
@@ -76,4 +77,4 @@
 | `npm run package:smoke` | 2 | 新 executable 缺失，required gate 非零 |
 | `IC_PACKAGE_DIR=...\\out\\InnocenceHarness-win32-x64-tmp-123 npm run package:smoke` | 2 | tmp suffix 被严格 allowlist 拒绝 |
 
-本轮变更提交：`4ccaccc` (`fix(packaging): harden required smoke safety gates`)。
+本轮变更提交：`5ec9b34` (`fix(packaging): harden required smoke safety gates`)。
