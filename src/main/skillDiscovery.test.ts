@@ -1,12 +1,12 @@
 // 外部技能发现/导入单测：mkdtemp 家目录 fixture（正常/畸形/SKILL.md 缺失
 // 跳过；import 复制/重名后缀/失败传播）。homedir 显式注入，不碰真实主目录。
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   discoverExternalSkills,
-  importSkill,
+  importSkill as productionImportSkill,
   userSkillsRoot,
   type DiscoveredSkill,
 } from "./skillDiscovery";
@@ -45,6 +45,84 @@ afterAll(async () => {
 
 function skill(name: string, sourceDir: string): DiscoveredSkill {
   return { name, description: "d", sourceDir, origin: "external-a", imported: false };
+}
+
+type TestFsPort = {
+  lstat: typeof fs.lstat;
+  realpath: typeof fs.realpath;
+  readdirNoFollow: typeof fs.readdir;
+  copyFileNoFollow: typeof fs.copyFile;
+  mkdir: typeof fs.mkdir;
+  rm: typeof fs.rm;
+  publishDirectoryNoReplace: (from: string, to: string) => Promise<void>;
+  supportsSecureImport: boolean;
+  readdirNoFollowCalls: number;
+  copyFileNoFollowCalls: number;
+  publishDirectoryNoReplaceCalls: number;
+  beforeRecursiveEntry?: (from: string) => Promise<void>;
+};
+
+function createFsPortWithHook(hook?: (from: string) => Promise<void>): TestFsPort {
+  const fsPort: TestFsPort = {
+    lstat: fs.lstat,
+    realpath: fs.realpath,
+    readdirNoFollow: fs.readdir,
+    copyFileNoFollow: fs.copyFile,
+    mkdir: fs.mkdir,
+    rm: fs.rm,
+    publishDirectoryNoReplace: (from, to) => fs.rename(from, to),
+    supportsSecureImport: true,
+    readdirNoFollowCalls: 0,
+    copyFileNoFollowCalls: 0,
+    publishDirectoryNoReplaceCalls: 0,
+    beforeRecursiveEntry: hook,
+  };
+  const readdirNoFollow = fsPort.readdirNoFollow;
+  fsPort.readdirNoFollow = (async (...args: Parameters<typeof fs.readdir>) => {
+    fsPort.readdirNoFollowCalls++;
+    return readdirNoFollow(...args);
+  }) as typeof fs.readdir;
+  const copyFileNoFollow = fsPort.copyFileNoFollow;
+  fsPort.copyFileNoFollow = (async (...args: Parameters<typeof fs.copyFile>) => {
+    fsPort.copyFileNoFollowCalls++;
+    return copyFileNoFollow(...args);
+  }) as typeof fs.copyFile;
+  const publishDirectoryNoReplace = fsPort.publishDirectoryNoReplace;
+  fsPort.publishDirectoryNoReplace = async (from, to) => {
+    fsPort.publishDirectoryNoReplaceCalls++;
+    return publishDirectoryNoReplace(from, to);
+  };
+  return fsPort;
+}
+
+function importWithFsPort(
+  discovered: DiscoveredSkill,
+  targetRoot: string,
+  homedir: string,
+  fsPort: TestFsPort,
+): Promise<void> {
+  return (productionImportSkill as unknown as (
+    discovered: DiscoveredSkill,
+    targetRoot: string,
+    homedir: string,
+    fsPort: TestFsPort,
+  ) => Promise<void>)(discovered, targetRoot, homedir, fsPort);
+}
+
+function importSkill(
+  discovered: DiscoveredSkill,
+  targetRoot: string,
+  homedir: string,
+): Promise<void> {
+  return importWithFsPort(discovered, targetRoot, homedir, createFsPortWithHook());
+}
+
+function importProductionSkill(
+  discovered: DiscoveredSkill,
+  targetRoot: string,
+  homedir: string,
+): Promise<void> {
+  return productionImportSkill(discovered, targetRoot, homedir);
 }
 
 describe("discoverExternalSkills", () => {
@@ -108,16 +186,178 @@ describe("discoverExternalSkills", () => {
 });
 
 describe("importSkill", () => {
+  it("缺少 no-follow/no-replace 平台原语时 fail-closed", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-unsupported-target-"));
+    try {
+      await expect(
+        importProductionSkill(
+          skill("review-unsupported", path.join(home, ".claude", "skills", "review")),
+          target,
+          home,
+        ),
+      ).rejects.toThrow("skill import unavailable on this platform");
+      await expect(
+        importProductionSkill(
+          skill("../invalid", path.join(home, ".claude", "skills", "review")),
+          target,
+          home,
+        ),
+      ).rejects.toThrow("skill import unavailable on this platform");
+      expect(await fs.readdir(target)).toEqual([]);
+    } finally {
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("私有 fs seam 跳过初始目录 symlink 条目", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-dir-link-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const nested = path.join(source, "fake-directory-link");
+    const originalLstat = fs.lstat.bind(fs);
+    const linkStat = {
+      isSymbolicLink: () => true,
+      isDirectory: () => true,
+      isFile: () => false,
+    } as Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      await fs.mkdir(nested, { recursive: true });
+      const fsPort = createFsPortWithHook();
+      fsPort.lstat = (async (entry: string) => {
+        if (entry === nested) return linkStat;
+        return originalLstat(entry);
+      }) as typeof fs.lstat;
+      await importWithFsPort(skill("review", source), target, home, fsPort);
+      await expect(fs.lstat(path.join(target, "review", "SKILL.md"))).resolves.toBeDefined();
+      await expect(fs.lstat(path.join(target, "review", "fake-directory-link"))).rejects.toThrow();
+    } finally {
+      await fs.rm(nested, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("私有 fs seam 跳过初始文件 symlink 条目", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-file-link-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const file = path.join(source, "fake-file-link.txt");
+    const originalLstat = fs.lstat.bind(fs);
+    const linkStat = {
+      isSymbolicLink: () => true,
+      isDirectory: () => false,
+      isFile: () => false,
+    } as Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      await fs.writeFile(file, "file", "utf8");
+      const fsPort = createFsPortWithHook();
+      fsPort.lstat = (async (entry: string) => {
+        if (entry === file) return linkStat;
+        return originalLstat(entry);
+      }) as typeof fs.lstat;
+      await importWithFsPort(skill("review", source), target, home, fsPort);
+      await expect(fs.lstat(path.join(target, "review", "SKILL.md"))).resolves.toBeDefined();
+      await expect(fs.lstat(path.join(target, "review", "fake-file-link.txt"))).rejects.toThrow();
+    } finally {
+      await fs.rm(file, { force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+
+  it("私有 fs seam 跳过初始 symlink 并继续复制普通文件", async () => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-link-home-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-link-target-"));
+    const source = path.join(linkHome, ".claude", "skills", "mixed-links");
+    const ordinary = path.join(source, "ordinary.txt");
+    const fakeLink = path.join(source, "fake-link.txt");
+    const originalLstat = fs.lstat.bind(fs);
+    const linkStat = {
+      isSymbolicLink: () => true,
+      isDirectory: () => false,
+      isFile: () => false,
+    } as Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: mixed-links\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(ordinary, "ordinary", "utf8");
+      await fs.writeFile(fakeLink, "not copied", "utf8");
+      const fsPort = createFsPortWithHook();
+      fsPort.lstat = (async (entry: string) => {
+        if (entry === fakeLink) return linkStat;
+        return originalLstat(entry);
+      }) as typeof fs.lstat;
+
+      await importWithFsPort(skill("mixed-links", source), target, linkHome, fsPort);
+
+      await expect(fs.readFile(path.join(target, "mixed-links", "ordinary.txt"), "utf8")).resolves.toBe("ordinary");
+      await expect(fs.lstat(path.join(target, "mixed-links", "fake-link.txt"))).rejects.toThrow();
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("私有 fs seam 跳过目录自环 symlink", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-cycle-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const cycle = path.join(source, "cycle");
+    const originalLstat = fs.lstat.bind(fs);
+    const linkStat = {
+      isSymbolicLink: () => true,
+      isDirectory: () => true,
+      isFile: () => false,
+    } as Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      await fs.mkdir(cycle, { recursive: true });
+      const fsPort = createFsPortWithHook();
+      fsPort.lstat = (async (entry: string) => {
+        if (entry === cycle) return linkStat;
+        return originalLstat(entry);
+      }) as typeof fs.lstat;
+      await importWithFsPort(skill("review", source), target, home, fsPort);
+      await expect(fs.lstat(path.join(target, "review", "SKILL.md"))).resolves.toBeDefined();
+      await expect(fs.lstat(path.join(target, "review", "cycle"))).rejects.toThrow();
+    } finally {
+      await fs.rm(cycle, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("私有 fs seam 遇到重复目录身份时不递归", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-fake-cycle-identity-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const cycle = path.join(source, "cycle-dir");
+    const originalRealpath = fs.realpath.bind(fs);
+    try {
+      await fs.mkdir(cycle, { recursive: true });
+      const fsPort = createFsPortWithHook();
+      const canonicalSource = await originalRealpath(source);
+      fsPort.realpath = (async (entry: string) => {
+        if (entry === cycle) return canonicalSource;
+        return originalRealpath(entry);
+      }) as typeof fs.realpath;
+      await importWithFsPort(skill("review", source), target, home, fsPort);
+      expect(fsPort.readdirNoFollowCalls).toBe(1);
+      await expect(fs.lstat(path.join(target, "review", "cycle-dir"))).rejects.toThrow();
+    } finally {
+      await fs.rm(cycle, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
   it("复制目录到目标根（递归含子文件，UTF-8 内容完整）", async () => {
     const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-"));
+    const fsPort = createFsPortWithHook();
     try {
-      await importSkill(
+      await importWithFsPort(
         skill("review", path.join(home, ".claude", "skills", "review")),
         target,
         home,
+        fsPort,
       );
       const copied = await fs.readFile(path.join(target, "review", "SKILL.md"), "utf8");
       expect(copied).toContain("审查指南");
+      expect(fsPort.readdirNoFollowCalls).toBeGreaterThan(0);
+      expect(fsPort.copyFileNoFollowCalls).toBeGreaterThan(0);
+      expect(fsPort.publishDirectoryNoReplaceCalls).toBe(1);
     } finally {
       await fs.rm(target, { recursive: true, force: true });
     }
@@ -227,24 +467,90 @@ describe("importSkill", () => {
     const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-toctou-target-"));
     const sourceRoot = path.join(linkHome, ".claude", "skills");
     const source = path.join(sourceRoot, "replace-me");
-    const targetPath = path.join(target, "replace-me");
-    const originalStat = fs.stat.bind(fs);
-    let replaced = false;
-    const statSpy = vi.spyOn(fs, "stat").mockImplementation(async (file, ...args) => {
-      if (!replaced && String(file) === targetPath) {
-        replaced = true;
-        await fs.rm(source, { recursive: true, force: true });
-        await fs.symlink(outside, source, "junction");
-      }
-      return originalStat(file, ...args);
-    });
     try {
       await fs.mkdir(source, { recursive: true });
       await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: replace-me\ndescription: d\n---\n", "utf8");
       await fs.writeFile(path.join(outside, "SKILL.md"), "---\nname: outside\ndescription: outside\n---\n", "utf8");
-      await expect(importSkill(skill("replace-me", source), target, linkHome)).rejects.toThrow(
+      const fsPort = createFsPortWithHook(async (from) => {
+        if (from === source) {
+          await fs.rm(source, { recursive: true, force: true });
+          await fs.symlink(outside, source, "junction");
+        }
+      });
+      await expect(importWithFsPort(skill("replace-me", source), target, linkHome, fsPort)).rejects.toThrow(
         "skill source outside known roots",
       );
+      await expect(fs.stat(path.join(target, "replace-me"))).rejects.toThrow();
+    } catch (err) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+        ctx.skip();
+        return;
+      }
+      throw err;
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("拒绝深层目录在校验后变为根外 symlink", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-deep-home-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-deep-outside-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-deep-target-"));
+    const source = path.join(linkHome, ".claude", "skills", "review");
+    const nested = path.join(source, "nested");
+    try {
+      await fs.mkdir(nested, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: review\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(path.join(nested, "visible.txt"), "visible", "utf8");
+      await fs.writeFile(path.join(outside, "secret.txt"), "secret", "utf8");
+      const fsPort = createFsPortWithHook(async (from) => {
+        if (from === nested) {
+          await fs.rm(nested, { recursive: true, force: true });
+          await fs.symlink(outside, nested, "junction");
+        }
+      });
+      await expect(importWithFsPort(skill("review", source), target, linkHome, fsPort)).rejects.toThrow(
+        "skill source outside known roots",
+      );
+      await expect(fs.stat(path.join(target, "review"))).rejects.toThrow();
+    } catch (err) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+        ctx.skip();
+        return;
+      }
+      throw err;
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("目录校验后被替换为根外 symlink 时拒绝读取", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-readdir-race-home-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-readdir-race-outside-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-readdir-race-target-"));
+    const source = path.join(linkHome, ".claude", "skills", "review");
+    let replaced = false;
+    try {
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: review\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(path.join(outside, "secret.txt"), "secret", "utf8");
+      const fsPort = createFsPortWithHook();
+      fsPort.readdirNoFollow = (async (directory: string) => {
+        if (!replaced && directory === source) {
+          replaced = true;
+          await fs.rm(source, { recursive: true, force: true });
+          await fs.symlink(outside, source, "junction");
+        }
+        return fs.readdir(directory);
+      }) as typeof fs.readdir;
+      await expect(importWithFsPort(skill("review", source), target, linkHome, fsPort)).rejects.toThrow(
+        "skill source outside known roots",
+      );
+      await expect(fs.stat(path.join(target, "review"))).rejects.toThrow();
       expect(await fs.readdir(target)).toEqual([]);
     } catch (err) {
       if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
@@ -253,9 +559,106 @@ describe("importSkill", () => {
       }
       throw err;
     } finally {
-      statSpy.mockRestore();
       await fs.rm(linkHome, { recursive: true, force: true });
       await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("文件在 lstat 后变为 symlink 或目录时拒绝", async (ctx) => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-file-race-home-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-file-race-outside-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-file-race-target-"));
+    const source = path.join(linkHome, ".claude", "skills", "review");
+    const entry = path.join(source, "entry.txt");
+    try {
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: review\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(entry, "entry", "utf8");
+      const fsPort = createFsPortWithHook(async (from) => {
+        if (from === entry) {
+          await fs.rm(entry, { force: true });
+          await fs.symlink(outside, entry, "junction");
+        }
+      });
+      await expect(importWithFsPort(skill("review", source), target, linkHome, fsPort)).rejects.toThrow(
+        "skill source outside known roots",
+      );
+      await expect(fs.stat(path.join(target, "review"))).rejects.toThrow();
+    } catch (err) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+        ctx.skip();
+        return;
+      }
+      throw err;
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("文件在 lstat 后变为目录时拒绝", async () => {
+    const linkHome = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-file-type-home-"));
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-file-type-target-"));
+    const source = path.join(linkHome, ".claude", "skills", "review");
+    const entry = path.join(source, "entry.txt");
+    try {
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: review\ndescription: d\n---\n", "utf8");
+      await fs.writeFile(entry, "entry", "utf8");
+      const fsPort = createFsPortWithHook(async (from) => {
+        if (from === entry) {
+          await fs.rm(entry, { force: true });
+          await fs.mkdir(entry);
+        }
+      });
+      await expect(importWithFsPort(skill("review", source), target, linkHome, fsPort)).rejects.toThrow(
+        "skill source outside known roots",
+      );
+      await expect(fs.stat(path.join(target, "review"))).rejects.toThrow();
+    } finally {
+      await fs.rm(linkHome, { recursive: true, force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("copyFile 抛错时清理临时目录且最终目标不存在", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-copy-fail-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const fsPort = createFsPortWithHook();
+    fsPort.copyFileNoFollow = (async () => {
+      throw new Error("copy failed");
+    }) as typeof fs.copyFile;
+    try {
+      await expect(importWithFsPort(skill("copy-fail", source), target, home, fsPort)).rejects.toThrow("copy failed");
+      expect(await fs.readdir(target)).toEqual([]);
+    } finally {
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("最终名称竞争时不覆盖已有目录", async () => {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-import-race-target-"));
+    const source = path.join(home, ".claude", "skills", "review");
+    const fsPort = createFsPortWithHook();
+    let firstPublish = true;
+    const originalRename = fs.rename.bind(fs);
+    fsPort.publishDirectoryNoReplace = (async (from, to) => {
+      if (firstPublish) {
+        firstPublish = false;
+        await fs.mkdir(String(to));
+        const error = new Error("target exists") as NodeJS.ErrnoException;
+        error.code = "EEXIST";
+        throw error;
+      }
+      return originalRename(from, to);
+    }) as typeof fs.rename;
+    try {
+      await importWithFsPort(skill("review", source), target, home, fsPort);
+      await expect(fs.readdir(path.join(target, "review"))).resolves.toEqual([]);
+      await expect(fs.readFile(path.join(target, "review-imported", "SKILL.md"), "utf8")).resolves.toContain("审查指南");
+    } finally {
       await fs.rm(target, { recursive: true, force: true });
     }
   });

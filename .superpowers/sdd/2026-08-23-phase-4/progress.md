@@ -1,0 +1,31 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-08-23-phase-4.md
+
+Baseline: `npm test` on phase4-development had 1265 passed, 35 skipped, and one existing timeout in `src/main/taskRuntimeBridge.test.ts`; exact focused rerun did not match the test and skipped all cases, so no phase-4 change is attributed to it.
+Task 1: initial dispatch BLOCKED by coordinator-generated empty brief; no code changed, no implementation attempt.
+Task 1: review found 2 critical security gaps (path I/O can still follow a symlink after checks; rename is not no-replace), 2 important gaps (symlink coverage can skip on Windows; repository-required validation incomplete), and 1 minor size observation. Entering fix round 1.
+Task 1: fix round 1/5 (0 addressed, 2 critical + 2 important open; Windows standard Node API cannot prove no-follow I/O or no-replace directory rename; npm test also has 2 suites/3 baseline failures; no new commit).
+Task 1: fix round 2/5 (0 addressed, 2 critical + 1 important open; fail-closed design and deterministic fs seam drafted, but agent exited before commit/cleanup; worktree contains uncommitted changes; platform adapter decision still needs review).
+Task 1: fix round 3/5 (2 critical + 2 important addressed; re-review found 1 important regression: pre-existing symlink entries now abort the whole import instead of being skipped; commit 8293efd, targeted validation passed).
+Task 1: fix round 4/5 (1 important addressed; commit 9b53bba; targeted review clean, no new Critical/Important; one real symlink test remains environment-skipped, deterministic seam covers behavior).
+Task 1: complete (commits d0cafba..9b53bba, review clean; npm test baseline remains unrelated failing evidence in report).
+Task 2: review found 1 critical (async FSWatcher error unhandled) and 3 important lifecycle issues (concurrent replacement leak, dispose does not await in-flight restart, watcher dispose failure blocks root teardown). Entering fix round 1.
+Task 2: fix round 1/5 (3 lifecycle findings addressed; re-review found 1 important async-error disposal race not tracked by global dispose, plus inaccurate commit hash in report; commit 2fa8eb9).
+Task 2: fix round 2/5 (async disposal race addressed in f240c65; final review found report omitted current commit hash only; no code issue open).
+Task 2: complete (commits d4d93ca..6fdcf11, review clean; 28 targeted tests passed, typecheck passed).
+Task 3: initial implementation agent stopped after leaving uncommitted fixture/acceptance/host changes; no commit or report. Existing changes must be audited before continuation.
+Task 3: review found 1 critical runtime-missing skip issue and 3 important acceptance reliability issues (packaged main guard, startup diagnostics, finally/resource cleanup). Entering fix round 1.
+Task 3: fix round 1/5 (runtime skip, packaged guard, diagnostics, finally cleanup addressed; re-review found 2 important startup/socket cleanup gaps: child error path and DevTools upgrade socket lifecycle; commit f040678).
+Task 3: fix round 2/5 (child error and socket cleanup addressed in 8d597e1; final re-review clean, no new Critical/Important).
+Task 3: complete (commits 229410d..8d597e1, review clean; quick UI 34/34, real Electron 3/3, runtime skip diagnostic, typechecks passed; Forge output lock concern recorded).
+Task 4: review found 2 important gaps: bootstrap test omitted explicit test spine, and runtime/session-spine docs still claimed omitted spine uses static fallback. Entering fix round 1.
+Task 4: fix round 1/5 (bootstrap/runtime explicit test spine and docs corrected in 53e1f12; final review clean, no new Critical/Important; session-kernel old internal fallback comment remains scope-out).
+Task 4: complete (commits c2e30af..53e1f12, review clean; targeted 58 tests and package typecheck passed; grep only test helper).
+Task 5: review found 2 critical path-safety gaps (unconditional lowercase comparison, package child junction not canonical-checked) and 2 important gaps (corrupt archive silently skipped, exported cleaner can delete same-name regular file). Entering fix round 1.
+Task 5: fix round 1/5 (case-fold, child/target canonical/type checks, archive discriminated availability addressed in eb994dd; re-review found 1 important residual reparse-point detection gap and 1 important missing-archive test coverage gap; package remains EBUSY-blocked).
+Task 5: fix round 2/5 (reparse fail-closed and availability branch coverage addressed in d481d60; re-review found one important over-broad smoke entry suffix match; package remains EBUSY-blocked).
+Task 5: fix round 3/5 (strict smoke key match and nested regression addressed in 8b31e8b; final re-review clean, no new Critical/Important).
+Task 5: complete (commits 041822d..8b31e8b, review clean; preflight/path tests and typechecks passed; Forge/package smoke honestly blocked/skipped by external app.asar EBUSY lock).
+Task 6: targeted stage-4 acceptance passed (20 files, 215 passed, 3 skipped with explicit packaged executable reason); npm test, typecheck, and typecheck:packages all exited 0; final full-branch review pending.
+Final review: 3 important findings — test-only env overrides are active in packaged production, HMR watcher is not wired to any real boot call point, and package:smoke skip exits 0 so missing artifacts can look successful. One consolidated fix round required.
+Final fix review: override isolation and required smoke gate addressed in 98164cd; 1 important remains — HMR refresh uses a fixed module URL and may serve cached client code; task-6 report commit hash also needs correction.
+31. Task 6 final evidence: baseline and final implementation commit are `98164cd`; HMR cache-busting is `aa800fe`. Implementation and targeted re-review are clean. Latest independent `npm test` exits 1 (165 files passed, 4 failed, 1 skipped; 1350 passed, 5 failed, 4 skipped) with resource-sensitive failures in tools-shell, taskRuntimeBridge, and task-cli; it is not recorded as fully passing. `npm run typecheck` and `npm run typecheck:packages` exit 0. `npm run package:preflight` exits 2 on external `app.asar` EBUSY; `npm run package` stops at preflight with exit 2; required `npm run package:smoke` exits 2 because the packaged executable is missing. Real Forge package and packaged markers remain blocked; phase completion is conditional, not unconditional.

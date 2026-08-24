@@ -31,6 +31,7 @@ export const IPC = {
   settingsEnrichModels: "settings:enrich-models",
   // 插件清单投影（1c）：main 按当前 toggles 现算的 manifest 投影。
   pluginsList: "plugins:list",
+  pluginsChanged: "plugins:changed",
   // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
   skillsDiscover: "skills:discover",
   skillsImport: "skills:import",
@@ -346,6 +347,8 @@ export interface InnocenceCodeApi {
   setHarnessSettings(settings: HarnessSettings): Promise<void>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;
+  /** Fired after a development plugin client reload request. */
+  onPluginsChanged(cb: () => void): () => void;
   /** 外部技能发现清单（main 探测已知外部智能体目录）。 */
   discoverSkills(): Promise<DiscoveredSkillMirror[]>;
   /** 导入一条已发现的技能到用户技能根（失败抛错由调用方提示）。 */

@@ -27,6 +27,7 @@ import {
 import type { Provider } from "@innocencecode/harness-providers";
 import type { ObjectPlugin } from "@innocencecode/kernel";
 import { createPluginBoot, type PluginBoot } from "./compose";
+import type { HostHmrWatcher } from "./hmrWatcher";
 import type { PluginToggleSource } from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
 
@@ -41,6 +42,14 @@ export interface SessionCompositionOptions {
   log(level: "info" | "warn" | "error", msg: string, data?: unknown): void;
   /** Optional registered group-name policy; absent means user-declared names are allowed. */
   getAllowedGroupNames?: () => readonly string[] | undefined;
+  /** User plugin root resolved by the host for this boot attempt. */
+  getUserPluginRoot?: () => string | undefined;
+  /** Development-only watcher factory owned by the host composition. */
+  createHmrWatcher?: () => HostHmrWatcher;
+  /** Enable host file watching for development boot. */
+  enableHmrWatcher?: boolean;
+  /** Called after a watched plugin client changes. */
+  onPluginClientChange?: (id: string) => void;
 }
 
 /** The composition face the host glue consumes. */
@@ -264,7 +273,11 @@ export function createSessionComposition(
     bootPromise ??= createPluginBoot({
       ...options.resolvePaths(),
       workspaceRoot: options.getWorkspaceRoot(),
+      userRoot: options.getUserPluginRoot?.(),
       allowedGroupNames: options.getAllowedGroupNames?.(),
+      enableHmrWatcher: options.enableHmrWatcher ?? process.env.NODE_ENV !== "production",
+      ...(options.createHmrWatcher ? { hmrWatcherFactory: options.createHmrWatcher } : {}),
+      ...(options.onPluginClientChange ? { onPluginClientChange: options.onPluginClientChange } : {}),
     }).catch((error: unknown) => {
       // A failed boot must not pin the memo — the next session build retries.
       // The kernel/spine module caches intentionally SURVIVE (successful

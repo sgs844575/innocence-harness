@@ -166,13 +166,13 @@ export interface RuntimeOptions {
    */
   sessionScope?: () => SessionScope | Promise<SessionScope>;
   /**
-   * Spine suite factory for route sessions: called once per session BUILD
-   * (cache hits reuse the existing session and never call it); the returned
-   * suite is injected into AgentSession.create so the session mounts the
-   * SAME spine module identities the host loaded from its distribution tree
+   * Spine suite factory for route sessions: production and ordinary runtime
+   * composition roots must provide this factory for every session build. The
+   * returned suite is injected into AgentSession.create so the session mounts
+   * the SAME spine module identities the host loaded from its distribution tree
    * (boot root, session scopes and disk-loaded capability plugins stay
-   * single-sourced). Omitted = every session mounts the bundled static spine
-   * (pre-distribution behavior, and what every spine-agnostic test uses).
+   * single-sourced). Tests may provide staticSpineSuite() through an explicit
+   * test composition root or helper; omission is not a production fallback.
    */
   sessionSpine?: () => SessionSpineSuite | Promise<SessionSpineSuite>;
   /**

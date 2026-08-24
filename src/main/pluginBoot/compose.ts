@@ -22,6 +22,7 @@ import { resolveEntries, type ConfigSpecs, type ResolvedEntries } from "./plugin
 import { type SchemaSpec } from "@innocencecode/kernel-schema";
 import { loadConfigLayerPair, type ConfigLogger } from "./configSources";
 import { projectPluginInventory, type PluginInventoryEntry } from "../plugin-inventory";
+import { createHostHmrWatcher, type HostHmrWatcher } from "./hmrWatcher";
 
 type KernelContext = KernelModule.Context;
 type KernelScope = KernelModule.ScopeHandle;
@@ -93,6 +94,7 @@ export interface PluginBoot {
   loaderEntryIds(): string[];
   /** Create one route-session scope below the boot root (kernel createScope). */
   createSessionScope(): KernelScope;
+  watchPlugin(id: string, fileOrDirectory: string, restart: () => Promise<void>): Promise<() => Promise<void>>;
   /** Unwind the boot root (app shutdown; cascades into live route scopes). */
   dispose(): Promise<void>;
 }
@@ -107,12 +109,16 @@ export interface PluginBootOptions {
   userRoot?: string;
   /** Registered group names used to validate configured group declarations. */
   allowedGroupNames?: readonly string[];
-  /**
-   * Default workspace root recorded as the boot root's baseUrl (diagnostics
-   * and relative-path resolution anchor); per-session workspaces are resolved
-   * per route by the runtime, not here.
-   */
+  /** Default workspace root recorded on the boot root (diagnostics anchor). */
   workspaceRoot?: string;
+  /** Explicitly enable host file watching in development mode. */
+  enableHmrWatcher?: boolean;
+  /** Host HMR watcher factory; defaults to the real Node fs.watch adapter. */
+  hmrWatcherFactory?: () => HostHmrWatcher;
+  /** Host callback invoked after a watched client file changes. */
+  onPluginClientChange?: (id: string) => Promise<void> | void;
+  /** Diagnostic sink for watcher startup and refresh failures. */
+  log?: (level: "warn" | "error", msg: string, data?: unknown) => void;
 }
 
 const builtinConfigSpecs: ConfigSpecs = {
@@ -186,6 +192,61 @@ export function toggleKeyspace(descriptors: readonly PluginDescriptor[]): string
   return descriptors
     .filter((d) => (d.toggleable ?? d.core !== true) === true)
     .map((d) => d.id);
+}
+
+export interface ClientPluginWatchTarget {
+  id: string;
+  userPath: string;
+  builtinPath: string;
+}
+
+export function clientPluginWatchTargets(
+  descriptors: readonly Pick<PluginDescriptor, "id" | "client">[],
+  userRoot: string,
+  builtinRoot: string,
+): ClientPluginWatchTarget[] {
+  return descriptors
+    .filter((descriptor) => descriptor.client === true)
+    .map((descriptor) => ({
+      id: descriptor.id,
+      userPath: path.join(userRoot, descriptor.id, "dist", "client.js"),
+      builtinPath: path.join(builtinRoot, descriptor.id, "dist", "client.js"),
+    }));
+}
+
+export async function watchClientPluginTargets(
+  descriptors: readonly Pick<PluginDescriptor, "id" | "client">[],
+  userRoot: string,
+  builtinRoot: string,
+  watcher: HostHmrWatcher,
+  onChange: (id: string) => Promise<void> | void,
+  log: (level: "warn" | "error", msg: string, data?: unknown) => void = () => {},
+): Promise<void> {
+  for (const target of clientPluginWatchTargets(descriptors, userRoot, builtinRoot)) {
+    for (const [scope, watchedPath] of [["user", target.userPath], ["builtin", target.builtinPath]] as const) {
+      try {
+        await watcher.watchPath(
+          `${target.id}:${scope}`,
+          watchedPath,
+          () => Promise.resolve(onChange(target.id)).catch((error: unknown) => {
+            log("error", "plugin client refresh failed; continuing", {
+              id: target.id,
+              scope,
+              path: watchedPath,
+              error: String(error),
+            });
+          }),
+        );
+      } catch (error) {
+        log("warn", "plugin client watcher setup failed; continuing", {
+          id: target.id,
+          scope,
+          path: watchedPath,
+          error: String(error),
+        });
+      }
+    }
+  }
 }
 
 /** Register the include carrier as the `kernel:include` loader builtin (the
@@ -263,6 +324,25 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
   await attachIncludeBuiltin(loader, options.kernelPath);
 
   const descriptors = await readManifest(options.builtinRoot);
+  const logHmr = options.log ?? (() => {});
+  let hostHmrWatcher: HostHmrWatcher | undefined;
+  if (options.enableHmrWatcher === true && process.env.NODE_ENV !== "production") {
+    try {
+      hostHmrWatcher = (options.hmrWatcherFactory ?? (() => createHostHmrWatcher()))();
+    } catch (error) {
+      logHmr("error", "plugin client watcher creation failed; continuing", { error: String(error) });
+    }
+  }
+  if (hostHmrWatcher) {
+    await watchClientPluginTargets(
+      descriptors,
+      userRoot,
+      options.builtinRoot,
+      hostHmrWatcher,
+      (id) => Promise.resolve(options.onPluginClientChange?.(id)),
+      logHmr,
+    );
+  }
 
   // Shared declarative resolution: manifest descriptors + project yml layer +
   // user layer (settings toggles over user cordis.yml). An empty workspaceRoot
@@ -347,8 +427,22 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     createSessionScope() {
       return kernel.createScope(root);
     },
+    watchPlugin(id: string, fileOrDirectory: string, restart: () => Promise<void>) {
+      if (!hostHmrWatcher) {
+        return Promise.reject(new Error("host HMR watcher is not enabled"));
+      }
+      return hostHmrWatcher.watchPath(id, fileOrDirectory, restart);
+    },
     async dispose() {
-      await root.fiber.dispose();
+      let watcherError: unknown;
+      try {
+        await hostHmrWatcher?.dispose();
+      } catch (error) {
+        watcherError = error;
+      } finally {
+        await root.fiber.dispose();
+      }
+      if (watcherError !== undefined) throw watcherError;
     },
   };
 }

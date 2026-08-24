@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Context } from "@innocencecode/kernel";
 import { ToolsPlugin } from "@innocencecode/harness-tools";
 import { AgentSession } from "@innocencecode/harness-electron";
+import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import {
   createExecutionScope,
   sha256Hex,
@@ -61,8 +62,7 @@ describe("Task tool via session spawner", () => {
       },
     };
 
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [
         {
           name: "wire",
@@ -156,8 +156,7 @@ describe("Task tool via session spawner", () => {
       },
     };
 
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [
         {
           name: "wire",
@@ -227,8 +226,7 @@ describe("Task tool via session spawner", () => {
         }
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [SubagentPlugin],
       provider,
       workspaceRoot: "D:/tmp",
@@ -261,8 +259,7 @@ describe("Task tool via session spawner", () => {
         }
       },
     };
-    const session = await AgentSession.create({
-      allowStaticSpine: true,
+    const session = await createTestSession({
       plugins: [
         SubagentPlugin,
         {

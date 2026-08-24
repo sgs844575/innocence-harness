@@ -137,6 +137,13 @@ describe("handlePluginScheme", () => {
     expect(res.headers.get("content-type")).toBe(type);
   });
 
+  it("query 不影响 pathname，仍读取同一插件文件", async () => {
+    const plain = get(`${PLUGIN_SCHEME}://probe/dist/app.js`);
+    const withQuery = get(`${PLUGIN_SCHEME}://probe/dist/app.js?hmr=1`);
+    expect(withQuery.status).toBe(plain.status);
+    expect(await withQuery.text()).toBe(await plain.text());
+  });
+
   it("opts responses into credential-free cross-origin reads (renderer origin differs)", async () => {
     const ok = get(`${PLUGIN_SCHEME}://fs/dist/index.js`);
     expect(ok.headers.get("access-control-allow-origin")).toBe("*");

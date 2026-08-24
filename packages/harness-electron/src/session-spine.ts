@@ -3,9 +3,9 @@
 // spine dynamically from the distributed tree (staging/resources node_modules)
 // injects the suite it loaded, so every mount — boot root, session scopes,
 // disk-loaded capability plugins — shares ONE set of spine module identities.
-// Hosts that do not inject get the bundled static suite below (the
-// pre-distribution behavior, used by every self-contained session and the
-// in-repo tests).
+// Hosts and ordinary runtime composition roots must inject the suite loaded
+// from their distribution tree. Only test helpers and explicit test seams may
+// opt into the bundled static suite below; production must never rely on it.
 import type * as KernelLogger from "@innocencecode/kernel-logger";
 import type * as KernelTimer from "@innocencecode/kernel-timer";
 import type * as KernelHmr from "@innocencecode/kernel-hmr";
@@ -57,14 +57,13 @@ export interface SessionSpineSuite {
 let memo: SessionSpineSuite | undefined;
 
 /**
- * The bundled static spine (workspace sources; the no-injection default).
- * WARNING: production hosts MUST inject the dynamically loaded spine suite
- * through AgentSessionOptions.spine — the production domain relies on the
- * single-instance invariant (one set of spine module identities per process,
- * shared by the boot root, session scopes, disk-loaded capability plugins and
- * spawned child sessions). This static default serves only self-contained
- * sessions and in-repo tests; converging the dual-source static face itself
- * is phase-3 scope.
+ * The bundled static spine (workspace sources; explicit test seam only).
+ * WARNING: production hosts and ordinary runtime composition roots MUST inject
+ * the dynamically loaded spine suite through AgentSessionOptions.spine — the
+ * production domain relies on the single-instance invariant (one set of spine
+ * module identities per process, shared by the boot root, session scopes,
+ * disk-loaded capability plugins and spawned child sessions). This static
+ * suite serves only test helpers and explicit test composition roots.
  */
 export function staticSpineSuite(): SessionSpineSuite {
   memo ??= {

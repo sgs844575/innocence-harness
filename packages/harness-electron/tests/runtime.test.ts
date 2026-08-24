@@ -87,6 +87,7 @@ function runtimeOptions(
     persistDir,
     providerFactory: () => createMockProvider({ turns }),
     pluginsForSession: () => [FsPlugin, ShellPlugin],
+    sessionSpine: () => staticSpineSuite(),
   };
 }
 
@@ -939,6 +940,7 @@ describe("HarnessRuntime route scopes", () => {
       persistDir,
       providerFactory: () => createMockProvider({ turns: [{ text: "好" }] }),
       pluginsForSession: () => [],
+      sessionSpine: () => staticSpineSuite(),
       sessionScope: () => {
         scopes += 1;
         const built = scopes;

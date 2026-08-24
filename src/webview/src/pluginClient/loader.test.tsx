@@ -12,6 +12,10 @@ import { createSlotRegistry, type SlotRegistry } from "../slots/registry";
 import { useToolCard, TOOLCARD_SLOT, type ToolCardProps } from "../components/chat/toolcards/registry";
 import registerExampleClient from "../../../../packages/plugin-example/src/client";
 import { loadPluginClients, type PluginClientModule } from "./loader";
+import type { PluginClientApi } from "./api";
+import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
+import { PANEL_SLOT } from "../components/workbench/WorkbenchTabs";
+import { SETTINGS_SECTION_SLOT } from "../components/SettingsNav";
 
 afterEach(() => {
   cleanup();
@@ -84,6 +88,35 @@ describe("loadPluginClients", () => {
     // 协议布局与 staging 一致：<id>/dist/client.js（构建产物目录段不可省）。
     expect(urls).toEqual(["innocence-plugin://example/dist/client.js"]);
     expect(resolveCard(registry, "example")).toBeDefined();
+  });
+
+  it("HMR revision 使新模块 URL 失效缓存并替换旧模块注册内容", async () => {
+    const registry = createSlotRegistry();
+    const urls: string[] = [];
+    const OldCard: ComponentType<ToolCardProps> = () => null;
+    const NewCard: ComponentType<ToolCardProps> = () => null;
+    const importModule = async (url: string) => {
+      urls.push(url);
+      return {
+        default: (api: PluginClientApi) => {
+          api.registerToolCardComponent({
+            name: "example",
+            component: new URL(url).searchParams.get("hmr") === "1" ? NewCard : OldCard,
+          });
+        },
+      };
+    };
+
+    await loadPluginClients({ inventory: [entry("example")], registry, importModule });
+    expect(resolveCard(registry, "example")).toBe(OldCard);
+
+    await loadPluginClients({ inventory: [entry("example")], registry, revision: 1, importModule });
+
+    expect(urls).toEqual([
+      "innocence-plugin://example/dist/client.js",
+      "innocence-plugin://example/dist/client.js?hmr=1",
+    ]);
+    expect(resolveCard(registry, "example")).toBe(NewCard);
   });
 
   it("失败隔离：importModule 拒绝只 warn 含插件 id，其余条目继续注册", async () => {
@@ -190,6 +223,38 @@ describe("loadPluginClients", () => {
     await first;
 
     expect(resolveCard(registry, "example")).toBeUndefined();
+  });
+  it("同一 client 同时注册 panel/settings，停用重载后两类贡献一起撤销", async () => {
+    const registry = createSlotRegistry();
+    const registerBoth = (api: PluginClientApi) => {
+      api.registerPanel({ id: "fixture-panel", labelKey: "fixture.panel", render: () => "Fixture panel content" });
+      api.registerSettingsSection({ id: "fixture-settings", labelKey: "fixture.settings", icon: () => null, render: () => "Fixture settings content" });
+    };
+    await loadPluginClients({ inventory: [entry("fixture")], registry, importModule: async () => ({ default: registerBoth }) });
+    expect(registry.list(PANEL_SLOT).all()).toHaveLength(1);
+    expect(registry.list(SETTINGS_SECTION_SLOT).all()).toHaveLength(1);
+    await loadPluginClients({ inventory: [entry("fixture", { state: "disabled-by-config" })], registry, importModule: async () => ({ default: registerBoth }) });
+    expect(registry.list(PANEL_SLOT).all()).toEqual([]);
+    expect(registry.list(SETTINGS_SECTION_SLOT).all()).toEqual([]);
+  });
+  it("失败 client 不影响其他 client 的 panel/settings 贡献", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const registry = createSlotRegistry();
+    const registerBoth = (api: PluginClientApi) => {
+      api.registerPanel({ id: "good-panel", labelKey: "good.panel", render: () => "Good panel" });
+      api.registerSettingsSection({ id: "good-settings", labelKey: "good.settings", icon: () => null, render: () => "Good settings" });
+    };
+    await loadPluginClients({
+      inventory: [entry("bad"), entry("good")],
+      registry,
+      importModule: async (url) => {
+        if (url.includes("bad")) return { default: async () => { throw new Error("fixture registration failed"); } };
+        return { default: registerBoth };
+      },
+    });
+    expect(Array.from(registry.list<ExternalPanelContribution>(PANEL_SLOT).all(), (item) => item.id)).toEqual(["good-panel"]);
+    expect(Array.from(registry.list<ExternalSettingsContribution>(SETTINGS_SECTION_SLOT).all(), (item) => item.id)).toEqual(["good-settings"]);
+    expect(warn.mock.calls[0]?.join(" ")).toContain("bad");
   });
   it("不同注册表互不干扰（撤销集按注册表隔离）", async () => {
     const a = createSlotRegistry();

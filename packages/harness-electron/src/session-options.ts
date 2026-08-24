@@ -12,7 +12,10 @@ export interface AgentSessionOptions {
   spine?: SessionSpineSuite;
   /** Host policy: this session must receive a dynamically injected spine. */
   requireInjectedSpine?: boolean;
-  /** Explicit self-contained/test seam for the bundled static spine. */
+  /**
+   * Test-only compatibility seam for self-contained sessions; production still
+   * requires an injected spine suite.
+   */
   allowStaticSpine?: boolean;
   provider?: Provider;
   providerId?: string;

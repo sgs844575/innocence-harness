@@ -8,6 +8,7 @@ import { ShellPlugin } from "@innocencecode/tools-shell";
 import {
   DEFAULT_SETTINGS,
   HarnessRuntime,
+  staticSpineSuite,
   type AskResponse,
   type HarnessSettings,
   type LiveToolPart,
@@ -107,6 +108,7 @@ describe("agent workflow end-to-end (bootstrap stand-in)", () => {
       // The test acts as its own composition root: the runtime no longer
       // hardcodes any plugin; the workflow needs the fs + shell tools.
       pluginsForSession: () => [FsPlugin, ShellPlugin],
+      sessionSpine: () => staticSpineSuite(),
     });
 
     await runtime.send({

@@ -25,9 +25,14 @@ describe("kernel hmr service", () => {
 
   it("keeps a failed restart registered", async () => {
     const { ctx } = await setup();
-    ctx.hmr.watch("a", async () => { throw new Error("restart failed"); });
+    let attempts = 0;
+    ctx.hmr.watch("a", async () => {
+      attempts += 1;
+      throw new Error("restart failed");
+    });
     await expect(ctx.hmr.restart("a")).rejects.toThrow("restart failed");
     await expect(ctx.hmr.restart("a")).rejects.toThrow("restart failed");
+    expect(attempts).toBe(2);
   });
 
   it("stops targets idempotently and isolates ids", async () => {

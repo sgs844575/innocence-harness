@@ -54,6 +54,7 @@ const api: InnocenceCodeApi = {
   getHarnessSettings: () => ipcRenderer.invoke(IPC.settingsGet),
   setHarnessSettings: (settings) => ipcRenderer.invoke(IPC.settingsSet, settings),
   getPluginInventory: () => ipcRenderer.invoke(IPC.pluginsList),
+  onPluginsChanged: (cb) => subscribe(IPC.pluginsChanged, cb as never),
   discoverSkills: (): Promise<DiscoveredSkillMirror[]> => ipcRenderer.invoke(IPC.skillsDiscover),
   importSkill: (discovered: DiscoveredSkillMirror) =>
     ipcRenderer.invoke(IPC.skillsImport, discovered),
