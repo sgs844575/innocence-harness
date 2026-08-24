@@ -34,7 +34,16 @@ export function userSkillsRoot(homedir: string = os.homedir()): string {
   return path.join(homedir, ".innocence", "skills");
 }
 
-type SkillFsPort = Pick<typeof fs, "lstat" | "realpath" | "readdir" | "copyFile" | "mkdir" | "rm" | "rename"> & {
+type SkillFsPort = {
+  lstat: typeof fs.lstat;
+  realpath: typeof fs.realpath;
+  mkdir: typeof fs.mkdir;
+  rm: typeof fs.rm;
+  /** True only for an adapter that proves no-follow reads and no-replace publish. */
+  supportsSecureImport: boolean;
+  readdirNoFollow: typeof fs.readdir;
+  copyFileNoFollow: typeof fs.copyFile;
+  publishDirectoryNoReplace: (from: string, to: string) => Promise<void>;
   beforeRecursiveEntry?: (from: string) => Promise<void>;
 };
 
@@ -45,6 +54,31 @@ type CopyContext = {
 };
 
 const unsafeSourceError = "skill source outside known roots";
+const unsupportedImportError = "skill import unavailable on this platform";
+
+/**
+ * Node's standard path-based fs/promises operations do not provide the
+ * no-follow and no-replace primitives required by this importer on the
+ * supported desktop runtime. Keep the production entry point fail-closed
+ * until a host adapter with those proofs is installed. Tests inject a private
+ * adapter implementing the same contract.
+ */
+const defaultFsPort: SkillFsPort = {
+  lstat: fs.lstat,
+  realpath: fs.realpath,
+  mkdir: fs.mkdir,
+  rm: fs.rm,
+  supportsSecureImport: false,
+  readdirNoFollow: async () => {
+    throw new Error(unsupportedImportError);
+  },
+  copyFileNoFollow: async () => {
+    throw new Error(unsupportedImportError);
+  },
+  publishDirectoryNoReplace: async () => {
+    throw new Error(unsupportedImportError);
+  },
+};
 
 /** Parses one external subdirectory into a discovery entry; null = skipped. */
 async function discoverEntry(
@@ -214,14 +248,14 @@ async function copyDir(
   if (visited.has(canonical)) return;
   visited.add(canonical);
   await fsPort.mkdir(target, { recursive: true });
-  const entries = await fsPort.readdir(source);
+  const entries = await fsPort.readdirNoFollow(source);
   const currentCanonical = await assertDirectoryInsideRoots(source, context, fsPort);
   if (currentCanonical !== canonical) throw new Error(unsafeSourceError);
   for (const entry of entries) {
     const from = path.join(source, entry);
     const to = path.join(target, entry);
     const before = await fsPort.lstat(from);
-    if (before.isSymbolicLink()) continue;
+    if (before.isSymbolicLink()) throw new Error(unsafeSourceError);
     await fsPort.beforeRecursiveEntry?.(from);
     const after = await fsPort.lstat(from).catch(() => null);
     if (
@@ -236,7 +270,7 @@ async function copyDir(
       continue;
     }
     await assertFileInsideRoots(from, context, fsPort);
-    await fsPort.copyFile(from, to);
+    await fsPort.copyFileNoFollow(from, to);
     await assertFileInsideRoots(from, context, fsPort);
   }
 }
@@ -295,9 +329,10 @@ export async function importSkill(
   discovered: DiscoveredSkill,
   targetRoot?: string,
   homedir: string = os.homedir(),
-  fsPort: SkillFsPort = fs,
+  fsPort: SkillFsPort = defaultFsPort,
 ): Promise<void> {
   const root = targetRoot ?? userSkillsRoot(homedir);
+  if (!fsPort.supportsSecureImport) throw new Error(unsupportedImportError);
   assertValidSkillName(discovered.name);
   const knownRoots = await Promise.all(
     externalSkillRoots(homedir).map(async (r) => fsPort.realpath(r.dir).catch(() => null)),
@@ -326,7 +361,7 @@ export async function importSkill(
         continue;
       }
       try {
-        await fsPort.rename(temp, target);
+        await fsPort.publishDirectoryNoReplace(temp, target);
         published = true;
         return;
       } catch (error) {
