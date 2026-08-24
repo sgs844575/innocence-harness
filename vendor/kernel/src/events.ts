@@ -22,7 +22,7 @@ export interface UnwindErrorPayload {
  * the catalog through declaration merging:
  *
  * ```ts
- * declare module "@innocencecode/kernel" {
+ * declare module "@innocenceharness/kernel" {
  *   interface Events {
  *     "my/event"(payload: string): void
  *   }

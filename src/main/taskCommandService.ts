@@ -14,15 +14,15 @@ import {
   type TaskCommandService as CoreTaskCommandService,
   type TaskEvent,
   type TaskRouteSummaryDto,
-} from "@innocencecode/task-core";
-import { foldAttributionDecisions } from "@innocencecode/plugin-task";
+} from "@innocenceharness/task-core";
+import { foldAttributionDecisions } from "@innocenceharness/plugin-task";
 import {
   createGitAdapter,
   GitWorkspaceError,
   type GitAdapter,
   type GitBaseline,
   type WorktreeLease,
-} from "@innocencecode/task-git";
+} from "@innocenceharness/task-git";
 import {
   canonicalWorkspaceKey,
   createTaskMutationLock,
@@ -34,7 +34,7 @@ import {
   scanWorkspace,
   type TaskRepository,
   type WorkspaceSnapshot,
-} from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-workspace";
 import type { TaskRuntimeBridge } from "./taskRuntimeBridge";
 import type { TaskCommandPort } from "./taskIpcHandlers";
 import type { TaskApplyResponse, TaskGetResponse, TaskStartResponse, TaskRouteSummary } from "../shared/taskIpc";

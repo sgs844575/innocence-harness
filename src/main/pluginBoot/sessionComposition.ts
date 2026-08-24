@@ -10,11 +10,11 @@ import {
   rulesFromConfig,
   type InnocenceConfig,
   type ProjectPermissionConfig,
-} from "@innocencecode/harness-permissions";
-import { createProviderPlugin } from "@innocencecode/harness-providers";
-import { createOpenAIProvider } from "@innocencecode/provider-openai";
-import { createAnthropicProvider } from "@innocencecode/provider-anthropic";
-import { createMockProvider } from "@innocencecode/provider-mock";
+} from "@innocenceharness/harness-permissions";
+import { createProviderPlugin } from "@innocenceharness/harness-providers";
+import { createOpenAIProvider } from "@innocenceharness/provider-openai";
+import { createAnthropicProvider } from "@innocenceharness/provider-anthropic";
+import { createMockProvider } from "@innocenceharness/provider-mock";
 import {
   DEFAULT_SETTINGS,
   MOCK_GREETING,
@@ -23,9 +23,9 @@ import {
   type HarnessSettings,
   type SessionPlugin,
   type SessionLoaderPlugin,
-} from "@innocencecode/harness-electron";
-import type { Provider } from "@innocencecode/harness-providers";
-import type { ObjectPlugin } from "@innocencecode/kernel";
+} from "@innocenceharness/harness-electron";
+import type { Provider } from "@innocenceharness/harness-providers";
+import type { ObjectPlugin } from "@innocenceharness/kernel";
 import { createPluginBoot, type PluginBoot } from "./compose";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type { PluginToggleSource } from "../plugin-toggles-local";
@@ -165,7 +165,7 @@ type ResolvedGroupChild = {
 };
 
 function groupChildOptions(
-  entry: import("@innocencecode/kernel-loader").EntryOptions,
+  entry: import("@innocenceharness/kernel-loader").EntryOptions,
 ): ResolvedGroupChild {
   return { ...entry, name: entry.name ?? entry.id };
 }
@@ -193,7 +193,7 @@ async function resolveGroupEntries(
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error(`loader group entry "${ownerId}" has invalid child`);
     }
-    const child = raw as import("@innocencecode/kernel-loader").EntryOptions;
+    const child = raw as import("@innocenceharness/kernel-loader").EntryOptions;
     if (!validGroupSegment(child.id) ||
       (child.name !== undefined && (typeof child.name !== "string" || child.name.trim().length === 0)) ||
       (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
@@ -220,7 +220,7 @@ async function resolveGroupEntries(
 
 async function builtinLoaderEntryFor(
   boot: PluginBoot,
-  entry: import("@innocencecode/kernel-loader").EntryOptions,
+  entry: import("@innocenceharness/kernel-loader").EntryOptions,
   config: InnocenceConfig,
   workspaceRoot: string,
 ): Promise<SessionLoaderPlugin> {

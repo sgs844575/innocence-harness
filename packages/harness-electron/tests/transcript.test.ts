@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message } from "@innocencecode/harness-session";
+import type { Message } from "@innocenceharness/harness-session";
 import {
   canonicalizeHistory,
   decodeTranscript,

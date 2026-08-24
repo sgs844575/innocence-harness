@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { openPrivateTaskStorage, taskRootPath, assertSafeTaskId } from "../src/private-task-storage.ts";
 import { openTaskRepository } from "../src/task-repository.ts";
-import { createTaskHead, taskCreatedEvent, turnCheckpointedEvent } from "@innocencecode/task-core";
+import { createTaskHead, taskCreatedEvent, turnCheckpointedEvent } from "@innocenceharness/task-core";
 
 const exec = promisify(execFile);
 

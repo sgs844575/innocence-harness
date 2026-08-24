@@ -2,10 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Context } from "@innocencecode/kernel";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
-import { PermissionEngine, type PermissionRequest } from "@innocencecode/harness-permissions";
-import { createExecutionScope, type ToolContext } from "@innocencecode/harness-tools";
+import { Context } from "@innocenceharness/kernel";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { PermissionEngine, type PermissionRequest } from "@innocenceharness/harness-permissions";
+import { createExecutionScope, type ToolContext } from "@innocenceharness/harness-tools";
 import { TodoPlugin, todoWriteTool } from "../src/index";
 
 let root: string;

@@ -1,6 +1,6 @@
 # tools-shell — Shell 命令执行工具插件（Bash）
 
-`@innocencecode/tools-shell` 注册 `Bash` 工具：在工作区根执行 shell 命令（Windows 用 cmd，其他平台用 sh），
+`@innocenceharness/tools-shell` 注册 `Bash` 工具：在工作区根执行 shell 命令（Windows 用 cmd，其他平台用 sh），
 适合跑测试、构建、装依赖。跨平台进程树终止、超时上限与输出截断内置。
 
 ## 作用
@@ -22,7 +22,7 @@ Bash 工具参数：`command`（必填）、`timeoutMs`（可选，默认 120000
 ## 使用
 
 ```ts
-import { shellPlugin } from "@innocencecode/tools-shell";
+import { shellPlugin } from "@innocenceharness/tools-shell";
 
 plugins.push(shellPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件开关 id: shell，core 恒开）
 ```

@@ -7,7 +7,7 @@
  * a put of known content never rewrites the object file.
  */
 import { createHash } from "node:crypto";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
 
 export interface ContentKey {
   key: string;

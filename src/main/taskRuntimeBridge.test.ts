@@ -10,17 +10,17 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { createExecutionScope } from "@innocencecode/harness-tools";
-import { createGitAdapter, type GitAdapter, type GitWorkspaceInfo } from "@innocencecode/task-git";
-import type { TaskEvent, TaskScope } from "@innocencecode/plugin-task";
+import { createExecutionScope } from "@innocenceharness/harness-tools";
+import { createGitAdapter, type GitAdapter, type GitWorkspaceInfo } from "@innocenceharness/task-git";
+import type { TaskEvent, TaskScope } from "@innocenceharness/plugin-task";
 import {
   reduceTask,
   turnCommittedEvent,
   turnPreparedEvent,
   turnCheckpointedEvent,
   type Checkpoint,
-} from "@innocencecode/task-core";
-import { openTaskRepository, sha256Bytes } from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-core";
+import { openTaskRepository, sha256Bytes } from "@innocenceharness/task-workspace";
 import {
   createTaskRuntimeBridge,
   resolveTaskWorkspaceRoot,

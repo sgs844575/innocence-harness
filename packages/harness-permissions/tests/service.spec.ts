@@ -1,11 +1,11 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   createPermissionsPlugin,
   createPermissionsService,
   type PermissionAuditEntry,
   type PermissionsService,
   type PolicyRule,
-} from "@innocencecode/harness-permissions";
+} from "@innocenceharness/harness-permissions";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

@@ -23,8 +23,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createPtyManager } from "@innocencecode/terminal-pty";
-import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocencecode/task-cli";
+import { createPtyManager } from "@innocenceharness/terminal-pty";
+import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocenceharness/task-cli";
 
 const SMOKE_TIMEOUT_MS = 90_000;
 

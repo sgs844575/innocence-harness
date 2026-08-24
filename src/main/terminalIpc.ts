@@ -6,7 +6,7 @@
 // pushes output/exit events to the renderer through an injected send port.
 // registerTerminalIpc() is the only Electron touchpoint and is imported
 // lazily so this module stays loadable in Node tests.
-import { createPtyManager, type PtyEvent, type PtyManager } from "@innocencecode/terminal-pty";
+import { createPtyManager, type PtyEvent, type PtyManager } from "@innocenceharness/terminal-pty";
 import {
   TerminalIpcChannels,
   type TerminalCreateRequest,

@@ -2,21 +2,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Context } from "@innocencecode/kernel";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
+import { Context } from "@innocenceharness/kernel";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import { ShellPlugin, bashTool, runCommand } from "../src";
 import {
   parseRuleSpec,
   PermissionEngine,
   type PermissionRequest,
-} from "@innocencecode/harness-permissions";
+} from "@innocenceharness/harness-permissions";
 import {
   createExecutionScope,
   redactCommand,
   redactCommandSummary,
   sha256Hex,
   type ToolContext,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 
 let root: string;
 beforeAll(async () => {

@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-tools",
+  "name": "@innocenceharness/harness-tools",
   "version": "0.1.0",
   "description": "InnocenceHarness tools spine service: Tool SPI, fail-closed persistence gate, middleware pipeline and executor",
   "type": "module",
@@ -13,11 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "devDependencies": {
-    "@innocencecode/harness-agent": "^0.1.0",
-    "@innocencecode/harness-permissions": "^0.1.0"
+    "@innocenceharness/harness-agent": "^0.1.0",
+    "@innocenceharness/harness-permissions": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

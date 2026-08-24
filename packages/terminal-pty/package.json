@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/terminal-pty",
+  "name": "@innocenceharness/terminal-pty",
   "version": "0.1.0",
   "description": "Route-bound PTY sessions (node-pty wrapper): keyed by taskId+routeId, tree-killed via taskkill /T /F on Windows",
   "type": "module",

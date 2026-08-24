@@ -7,7 +7,7 @@
 
 export type TaskHunkStatus = "pending" | "accepted" | "restored" | "conflict";
 
-/** 渲染侧 hunk 输入（与 @innocencecode/task-core 的 Hunk 结构等价）。 */
+/** 渲染侧 hunk 输入（与 @innocenceharness/task-core 的 Hunk 结构等价）。 */
 export interface TaskHunk {
   ref: string;
   path: string;

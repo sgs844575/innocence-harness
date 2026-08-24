@@ -1,7 +1,7 @@
-import { AgentSession, type SessionPlugin } from "@innocencecode/harness-electron";
+import { AgentSession, type SessionPlugin } from "@innocenceharness/harness-electron";
 import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
-import { createExecutionScope, sha256Hex, type Tool } from "@innocencecode/harness-tools";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
+import { createExecutionScope, sha256Hex, type Tool } from "@innocenceharness/harness-tools";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import {
   createTaskPlugin,
   hasUnresolvedAttribution,

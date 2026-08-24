@@ -12,8 +12,8 @@ import {
   taskCreatedEvent,
   turnPreparedEvent,
   type TaskEvent,
-} from "@innocencecode/task-core";
-import { openTaskRepository } from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-core";
+import { openTaskRepository } from "@innocenceharness/task-workspace";
 import type { TaskRuntimeBridge } from "./taskRuntimeBridge";
 import { recoverPersistedTaskRuntimes, toTaskUiEvent, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import type { TaskUiNotice } from "../shared/taskIpc";

@@ -10,7 +10,7 @@ import path from "node:path";
 export function stagingBootPaths(): { kernelPath: string; builtinRoot: string } {
   const staging = path.resolve(process.cwd(), "build", "dist", "resources");
   return {
-    kernelPath: path.join(staging, "node_modules", "@innocencecode", "kernel", "dist", "index.js"),
+    kernelPath: path.join(staging, "node_modules", "@innocenceharness", "kernel", "dist", "index.js"),
     builtinRoot: path.join(staging, "plugins"),
   };
 }

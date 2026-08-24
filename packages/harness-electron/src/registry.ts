@@ -2,14 +2,14 @@
 // pre-kernel PluginRegistry): lives with the session family in the
 // harness-electron host-adapter package; the type vocabulary comes from the
 // spine packages (single sources after the T6 convergence).
-import type { ObjectPlugin } from "@innocencecode/kernel";
-import type { PolicyRule } from "@innocencecode/harness-permissions";
-import type { MessageProcessor } from "@innocencecode/harness-session";
-import type { Provider, ToolSpec } from "@innocencecode/harness-providers";
-import type { Skill } from "@innocencecode/harness-skills";
+import type { ObjectPlugin } from "@innocenceharness/kernel";
+import type { PolicyRule } from "@innocenceharness/harness-permissions";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { Provider, ToolSpec } from "@innocenceharness/harness-providers";
+import type { Skill } from "@innocenceharness/harness-skills";
 import type { SessionLoaderPlugin } from "./session-loader";
-import type { Tool } from "@innocencecode/harness-tools";
-import type { ToolExecutionMiddleware } from "@innocencecode/harness-tools";
+import type { Tool } from "@innocenceharness/harness-tools";
+import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 
 export type LogLevel = "info" | "warn" | "error";
 export type Logger = (level: LogLevel, msg: string, data?: unknown) => void;

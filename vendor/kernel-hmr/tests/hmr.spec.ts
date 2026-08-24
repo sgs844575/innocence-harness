@@ -1,4 +1,4 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import { HmrPlugin } from "../src";
 import { afterEach, describe, expect, it } from "vitest";
 

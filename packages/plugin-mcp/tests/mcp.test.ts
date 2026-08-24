@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Context } from "@innocencecode/kernel";
-import { LoggerPlugin } from "@innocencecode/kernel-logger";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
-import { createExecutionScope, sha256Hex, type ToolContext } from "@innocencecode/harness-tools";
+import { Context } from "@innocenceharness/kernel";
+import { LoggerPlugin } from "@innocenceharness/kernel-logger";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { createExecutionScope, sha256Hex, type ToolContext } from "@innocenceharness/harness-tools";
 import { StdioJsonRpcClient, createMcpPlugin, type StdioServerOptions } from "../src";
 
 const fixture = path.join(

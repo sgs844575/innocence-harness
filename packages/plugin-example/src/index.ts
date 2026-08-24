@@ -1,8 +1,8 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 
 // 插件为自己发布的事件登记类型：Events 目录经声明合并扩展，emit/on 才能收窄。
 // 消费方可再次合并同一事件（签名一致即合法），见 tests/example.spec.ts。
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Events {
     "example/ready"(payload: { greeting: string }): void;
   }

@@ -1,18 +1,18 @@
-import { ContextManager } from "@innocencecode/harness-session";
-import { createExecutionScope, type ExecutionScopeIdentity } from "@innocencecode/harness-tools";
-import type { HarnessEventListener } from "@innocencecode/harness-session";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import type { PermissionRequest, PermissionResource } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
+import { ContextManager } from "@innocenceharness/harness-session";
+import { createExecutionScope, type ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
+import type { HarnessEventListener } from "@innocenceharness/harness-session";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import type { PermissionRequest, PermissionResource } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
 import {
   executeToolInvocation,
   isAbortError,
   toolErrorOutcome,
   type ToolOutcome,
-} from "@innocencecode/harness-tools";
-import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocencecode/harness-session";
-import type { Tool, ToolContext, ToolsService } from "@innocencecode/harness-tools";
-import { bindSubagentSpawner, type SubagentSpawner } from "@innocencecode/harness-agent";
+} from "@innocenceharness/harness-tools";
+import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
+import type { Tool, ToolContext, ToolsService } from "@innocenceharness/harness-tools";
+import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 
 export interface LoopOptions {
   provider: Provider;

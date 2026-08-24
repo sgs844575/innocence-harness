@@ -9,17 +9,17 @@ import {
   type SpawnerService,
   type SpawnerSessionFactory,
   type SubagentResult,
-} from "@innocencecode/harness-agent";
-import { Context } from "@innocencecode/kernel";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
-import type { MessageProcessor } from "@innocencecode/harness-session";
+} from "@innocenceharness/harness-agent";
+import { Context } from "@innocenceharness/kernel";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
 import {
   createExecutionScope,
   type ExecutionScopeIdentity,
   type Tool,
   type ToolExecutionMiddleware,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 import { describe, expect, it, vi } from "vitest";
 
 // Service-level doubles: the spawner semantics are pinned through a

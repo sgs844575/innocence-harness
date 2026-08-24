@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Context } from "@innocencecode/kernel";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
-import { runLoop } from "@innocencecode/harness-agent-loop";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import { SUMMARIZE_SYSTEM_PROMPT, textMessage } from "@innocencecode/harness-session";
-import { ProvidersPlugin } from "@innocencecode/harness-providers";
+import { Context } from "@innocenceharness/kernel";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { runLoop } from "@innocenceharness/harness-agent-loop";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import { SUMMARIZE_SYSTEM_PROMPT, textMessage } from "@innocenceharness/harness-session";
+import { ProvidersPlugin } from "@innocenceharness/harness-providers";
 import { createMockPlugin, createMockProvider } from "../src";
 
 describe("createMockProvider", () => {

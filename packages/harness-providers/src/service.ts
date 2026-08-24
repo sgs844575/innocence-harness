@@ -1,11 +1,11 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import type { Provider } from "./provider";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while
 // the ProvidersPlugin fiber publishing it is active; before load and after
 // its unwind the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     providers: ProvidersService;
   }

@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/kernel-schema",
+  "name": "@innocenceharness/kernel-schema",
   "version": "0.1.0",
   "description": "Minimal standard-schema shaped validator for the plugin kernel",
   "type": "module",

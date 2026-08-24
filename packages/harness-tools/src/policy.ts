@@ -4,4 +4,4 @@ export type {
   PermissionResource,
   ToolCallInfo,
   ToolSideEffect,
-} from "@innocencecode/harness-permissions";
+} from "@innocenceharness/harness-permissions";

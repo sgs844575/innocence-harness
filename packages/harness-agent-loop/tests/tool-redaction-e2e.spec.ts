@@ -5,7 +5,7 @@
 // persistArgs runs exactly once per invocation, and that preparation
 // failures never leak raw args.
 import { describe, expect, it } from "vitest";
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   ToolsPlugin,
   redactCommand,
@@ -13,14 +13,14 @@ import {
   redactUrl,
   sha256Hex,
   type Tool,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 import {
   PermissionEngine,
   type PermissionAuditEntry,
   type PermissionRequest,
-} from "@innocencecode/harness-permissions";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import { textMessage, toTranscript, type HarnessEvent, type Message } from "@innocencecode/harness-session";
+} from "@innocenceharness/harness-permissions";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import { textMessage, toTranscript, type HarnessEvent, type Message } from "@innocenceharness/harness-session";
 import { runLoop } from "../src";
 
 /**

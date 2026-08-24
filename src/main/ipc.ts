@@ -20,8 +20,8 @@ import {
   stopChatTurn,
   disposeSession,
 } from "./harnessGlue";
-import type { HarnessSettings } from "@innocencecode/harness-electron";
-import { modelFromPreset, resolvePresetMeta } from "@innocencecode/harness-electron";
+import type { HarnessSettings } from "@innocenceharness/harness-electron";
+import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { getMainWindow } from "./appWindow";
 import { popupMenu } from "./menu";
 import { logger } from "./logger";

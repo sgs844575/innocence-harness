@@ -4,16 +4,16 @@
 // gates (duplicate checks, persistence SPI) stay authoritative while the
 // map-shaped views mirror them for host consumers (runtime.ts adopts
 // `session.registry.tools`; probes register through createContext).
-import type { PermissionsService } from "@innocencecode/harness-permissions";
-import type { ProvidersService } from "@innocencecode/harness-providers";
-import type { SessionService } from "@innocencecode/harness-session";
-import type { MessageProcessor } from "@innocencecode/harness-session";
-import type { SkillsService } from "@innocencecode/harness-skills";
-import type { Tool, ToolExecutionMiddleware, ToolsService } from "@innocencecode/harness-tools";
-import type { PolicyRule } from "@innocencecode/harness-permissions";
-import type { Provider, ToolSpec } from "@innocencecode/harness-providers";
+import type { PermissionsService } from "@innocenceharness/harness-permissions";
+import type { ProvidersService } from "@innocenceharness/harness-providers";
+import type { SessionService } from "@innocenceharness/harness-session";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { SkillsService } from "@innocenceharness/harness-skills";
+import type { Tool, ToolExecutionMiddleware, ToolsService } from "@innocenceharness/harness-tools";
+import type { PolicyRule } from "@innocenceharness/harness-permissions";
+import type { Provider, ToolSpec } from "@innocenceharness/harness-providers";
 import type { Logger, PluginContext } from "./registry";
-import type { Skill } from "@innocencecode/harness-skills";
+import type { Skill } from "@innocenceharness/harness-skills";
 
 /**
  * Read-only compat view over the spine services. Tools/providers/skills are

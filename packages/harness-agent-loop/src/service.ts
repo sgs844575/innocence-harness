@@ -1,20 +1,20 @@
-import type { SubagentSpawner } from "@innocencecode/harness-agent";
-import type { PermissionEngine } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
+import type { SubagentSpawner } from "@innocenceharness/harness-agent";
+import type { PermissionEngine } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
 import type {
   ContextManager,
   HarnessEventListener,
   Message,
-} from "@innocencecode/harness-session";
-import type { ExecutionScopeIdentity, ToolsService } from "@innocencecode/harness-tools";
-import type { Context } from "@innocencecode/kernel";
+} from "@innocenceharness/harness-session";
+import type { ExecutionScopeIdentity, ToolsService } from "@innocenceharness/harness-tools";
+import type { Context } from "@innocenceharness/kernel";
 import { runLoop, type LoopResult } from "./loop";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while the
 // loop plugin fiber publishing it is active; before load and after its unwind
 // the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     loop: RunLoopFunction;
   }

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createMockProvider, type MockTurn } from "@innocencecode/provider-mock";
-import { FsPlugin } from "@innocencecode/tools-fs";
-import { ShellPlugin } from "@innocencecode/tools-shell";
+import { createMockProvider, type MockTurn } from "@innocenceharness/provider-mock";
+import { FsPlugin } from "@innocenceharness/tools-fs";
+import { ShellPlugin } from "@innocenceharness/tools-shell";
 import {
   DEFAULT_SETTINGS,
   HarnessRuntime,

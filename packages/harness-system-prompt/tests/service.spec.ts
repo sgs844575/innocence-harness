@@ -1,9 +1,9 @@
-import type { Skill } from "@innocencecode/harness-skills";
-import { Context } from "@innocencecode/kernel";
+import type { Skill } from "@innocenceharness/harness-skills";
+import { Context } from "@innocenceharness/kernel";
 import {
   SystemPromptPlugin,
   type SystemPromptService,
-} from "@innocencecode/harness-system-prompt";
+} from "@innocenceharness/harness-system-prompt";
 import { describe, expect, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

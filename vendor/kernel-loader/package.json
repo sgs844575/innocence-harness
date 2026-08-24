@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/kernel-loader",
+  "name": "@innocenceharness/kernel-loader",
   "version": "0.1.0",
   "description": "Config tree loader for the plugin kernel",
   "type": "module",
@@ -10,13 +10,13 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@innocencecode/kernel-include": "^0.1.0"
+    "@innocenceharness/kernel-include": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

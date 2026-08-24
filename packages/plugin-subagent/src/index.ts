@@ -1,9 +1,9 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import {
   sha256Hex,
   type Tool,
   type ToolContext,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 
 export type AgentType = "explore" | "general";
 

@@ -1,5 +1,5 @@
 /**
- * @innocencecode/task-git — Git worktree/baseline/apply adapter.
+ * @innocenceharness/task-git — Git worktree/baseline/apply adapter.
  *
  * Talks to Git exclusively through allowlisted CLI invocations
  * (spawn, shell:false); never mutates the index, never stashes, never

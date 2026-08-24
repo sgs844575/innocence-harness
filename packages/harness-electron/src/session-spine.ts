@@ -6,32 +6,32 @@
 // Hosts and ordinary runtime composition roots must inject the suite loaded
 // from their distribution tree. Only test helpers and explicit test seams may
 // opt into the bundled static suite below; production must never rely on it.
-import type * as KernelLogger from "@innocencecode/kernel-logger";
-import type * as KernelTimer from "@innocencecode/kernel-timer";
-import type * as KernelHmr from "@innocencecode/kernel-hmr";
-import type * as SpineTools from "@innocencecode/harness-tools";
-import type * as SpinePermissions from "@innocencecode/harness-permissions";
-import type * as SpineProviders from "@innocencecode/harness-providers";
-import type * as SpineSkills from "@innocencecode/harness-skills";
-import type * as SpineSystemPrompt from "@innocencecode/harness-system-prompt";
-import type * as SpineAgents from "@innocencecode/harness-agent";
-import type * as SpineSession from "@innocencecode/harness-session";
-import type * as SpineLoop from "@innocencecode/harness-agent-loop";
-import type * as KernelLoader from "@innocencecode/kernel-loader";
-import type * as KernelGroup from "@innocencecode/kernel-group";
-import * as loggerModule from "@innocencecode/kernel-logger";
-import * as timerModule from "@innocencecode/kernel-timer";
-import * as hmrModule from "@innocencecode/kernel-hmr";
-import * as toolsModule from "@innocencecode/harness-tools";
-import * as permissionsModule from "@innocencecode/harness-permissions";
-import * as providersModule from "@innocencecode/harness-providers";
-import * as skillsModule from "@innocencecode/harness-skills";
-import * as systemPromptModule from "@innocencecode/harness-system-prompt";
-import * as agentsModule from "@innocencecode/harness-agent";
-import * as sessionModule from "@innocencecode/harness-session";
-import * as loopModule from "@innocencecode/harness-agent-loop";
-import * as loaderModule from "@innocencecode/kernel-loader";
-import * as groupModule from "@innocencecode/kernel-group";
+import type * as KernelLogger from "@innocenceharness/kernel-logger";
+import type * as KernelTimer from "@innocenceharness/kernel-timer";
+import type * as KernelHmr from "@innocenceharness/kernel-hmr";
+import type * as SpineTools from "@innocenceharness/harness-tools";
+import type * as SpinePermissions from "@innocenceharness/harness-permissions";
+import type * as SpineProviders from "@innocenceharness/harness-providers";
+import type * as SpineSkills from "@innocenceharness/harness-skills";
+import type * as SpineSystemPrompt from "@innocenceharness/harness-system-prompt";
+import type * as SpineAgents from "@innocenceharness/harness-agent";
+import type * as SpineSession from "@innocenceharness/harness-session";
+import type * as SpineLoop from "@innocenceharness/harness-agent-loop";
+import type * as KernelLoader from "@innocenceharness/kernel-loader";
+import type * as KernelGroup from "@innocenceharness/kernel-group";
+import * as loggerModule from "@innocenceharness/kernel-logger";
+import * as timerModule from "@innocenceharness/kernel-timer";
+import * as hmrModule from "@innocenceharness/kernel-hmr";
+import * as toolsModule from "@innocenceharness/harness-tools";
+import * as permissionsModule from "@innocenceharness/harness-permissions";
+import * as providersModule from "@innocenceharness/harness-providers";
+import * as skillsModule from "@innocenceharness/harness-skills";
+import * as systemPromptModule from "@innocenceharness/harness-system-prompt";
+import * as agentsModule from "@innocenceharness/harness-agent";
+import * as sessionModule from "@innocenceharness/harness-session";
+import * as loopModule from "@innocenceharness/harness-agent-loop";
+import * as loaderModule from "@innocenceharness/kernel-loader";
+import * as groupModule from "@innocenceharness/kernel-group";
 
 /**
  * The mounting face the session kernel consumes, grouped by owning module.

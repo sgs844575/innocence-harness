@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 import { createContentStore } from "../src/content-store.ts";
 
 let base: string;

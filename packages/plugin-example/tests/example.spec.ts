@@ -1,11 +1,11 @@
-import { Context, FiberState } from "@innocencecode/kernel";
-import ExamplePlugin, { ExamplePlugin as namedExport } from "@innocencecode/plugin-example";
+import { Context, FiberState } from "@innocenceharness/kernel";
+import ExamplePlugin, { ExamplePlugin as namedExport } from "@innocenceharness/plugin-example";
 import { describe, expect, it } from "vitest";
 
 // The example plugin announces itself through the kernel event catalog;
 // consumers type the payload through declaration merging, the same way
 // kernel-logger's tests extend `Context`.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Events {
     "example/ready"(payload: { greeting: string }): void;
   }

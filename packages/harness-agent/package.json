@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-agent",
+  "name": "@innocenceharness/harness-agent",
   "version": "0.1.0",
   "description": "InnocenceHarness agents spine service: agent registry and subagent spawner service",
   "type": "module",
@@ -13,11 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-permissions": "^0.1.0",
-    "@innocencecode/harness-providers": "^0.1.0",
-    "@innocencecode/harness-session": "^0.1.0",
-    "@innocencecode/harness-tools": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/harness-permissions": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0",
+    "@innocenceharness/harness-session": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

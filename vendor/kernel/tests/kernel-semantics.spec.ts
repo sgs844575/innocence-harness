@@ -1,7 +1,7 @@
-import { Context, FiberState, KernelError } from "@innocencecode/kernel";
+import { Context, FiberState, KernelError } from "@innocenceharness/kernel";
 import { describe, expect, it } from "vitest";
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Events {
     "probe/ping"(): void;
     "probe/echo"(n: number): void;

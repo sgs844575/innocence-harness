@@ -15,8 +15,8 @@
 //     replay failure) and worktree recovery with its retry command
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { TaskEvent as CoreTaskEvent } from "@innocencecode/task-core";
-import { openTaskRepository, type TaskRepository } from "@innocencecode/task-workspace";
+import type { TaskEvent as CoreTaskEvent } from "@innocenceharness/task-core";
+import { openTaskRepository, type TaskRepository } from "@innocenceharness/task-workspace";
 import type { TaskRuntimeBridge } from "./taskRuntimeBridge";
 import { TaskIpcHandlers } from "./taskIpcHandlers";
 import { createTaskCommandService } from "./taskCommandService";

@@ -1,6 +1,6 @@
 # kernel-include — YAML 条目清单 include 内建
 
-`@innocencecode/kernel-include` 提供加载器内建 `Include`：把一份 YAML 顶层数组格式的条目清单挂载为子树。
+`@innocenceharness/kernel-include` 提供加载器内建 `Include`：把一份 YAML 顶层数组格式的条目清单挂载为子树。
 
 ## 作用
 
@@ -12,9 +12,9 @@
 ## 使用
 
 ```ts
-import { Context } from "@innocencecode/kernel";
-import { Loader } from "@innocencecode/kernel-loader";
-import { Include } from "@innocencecode/kernel-include";
+import { Context } from "@innocenceharness/kernel";
+import { Loader } from "@innocenceharness/kernel-loader";
+import { Include } from "@innocenceharness/kernel-include";
 
 const ctx = new Context();
 await ctx.plugin(Loader);

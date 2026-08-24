@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { AgentSession, type SessionPlugin } from "@innocencecode/harness-electron";
-import { createMockProvider } from "@innocencecode/provider-mock";
+import { AgentSession, type SessionPlugin } from "@innocenceharness/harness-electron";
+import { createMockProvider } from "@innocenceharness/provider-mock";
 import {
   createPluginBoot,
   createSessionComposition,
@@ -19,6 +19,19 @@ import {
 import { stagingBootPaths } from "./staging-paths";
 
 const paths = stagingBootPaths();
+
+describe("staging namespace", () => {
+  it("resolves the kernel from the new workspace scope only", () => {
+    expect(paths.kernelPath).toBe(path.join(
+      process.cwd(), "build", "dist", "resources", "node_modules", "@innocenceharness", "kernel", "dist", "index.js",
+    ));
+    expect(existsSync(paths.kernelPath)).toBe(true);
+    const retiredScope = "@innocence" + "code";
+    expect(existsSync(path.join(
+      process.cwd(), "build", "dist", "resources", "node_modules", retiredScope, "kernel", "dist", "index.js",
+    ))).toBe(false);
+  });
+});
 const stagingAvailable = existsSync(paths.kernelPath);
 const maybeDescribe = stagingAvailable ? describe : describe.skip;
 
@@ -289,7 +302,7 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
   it("example 开关端到端：settings 关 example（normalize 保留）→ inventory disabled → 条目 disabled 短路", async () => {
     const b = await ensureBoot();
     // 写路径等价面：settings normalize 开放键空间，example:false 不再被剔除。
-    const { mergeSettings } = await import("@innocencecode/harness-electron");
+    const { mergeSettings } = await import("@innocenceharness/harness-electron");
     const settings = mergeSettings({ profiles: [], pluginToggles: { example: false } });
     expect(settings.pluginToggles).toEqual({ example: false });
     // 清单投影：example 条目 toggleable:true 且呈 disabled-by-config（user 层）。
@@ -379,7 +392,7 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     const staged = path.join(
       path.dirname(paths.kernelPath), "..", "..", "harness-tools", "dist", "index.js",
     );
-    const stagedTools = (await import(pathToFileURL(staged).href)) as typeof import("@innocencecode/harness-tools");
+    const stagedTools = (await import(pathToFileURL(staged).href)) as typeof import("@innocenceharness/harness-tools");
     // Module-object identity: the suite the host mounts IS the module the
     // staging tree serves to disk-loaded plugins (no second spine copy).
     expect(b.spine.tools.ToolsPlugin).toBe(stagedTools.ToolsPlugin);
@@ -387,7 +400,7 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     const loggerEntry = path.join(
       path.dirname(paths.kernelPath), "..", "..", "kernel-logger", "dist", "index.js",
     );
-    const stagedLogger = (await import(pathToFileURL(loggerEntry).href)) as typeof import("@innocencecode/kernel-logger");
+    const stagedLogger = (await import(pathToFileURL(loggerEntry).href)) as typeof import("@innocenceharness/kernel-logger");
     expect(b.spine.logger.LoggerPlugin).toBe(stagedLogger.LoggerPlugin);
     // And the boot's mount face really registers through that staged spine.
     expect(b.root.tools.specs().length).toBeGreaterThan(0);

@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/task-git",
+  "name": "@innocenceharness/task-git",
   "version": "0.1.0",
   "description": "Git worktree/baseline/apply adapter for task review workflows (allowlisted Git CLI usage only)",
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/secure-storage-node": "*"
+    "@innocenceharness/secure-storage-node": "*"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

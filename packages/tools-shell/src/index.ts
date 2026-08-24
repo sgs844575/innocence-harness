@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import {
   redactCommandSummary,
   sha256Hex,
   type Tool,
   type ToolContext,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 30_000;

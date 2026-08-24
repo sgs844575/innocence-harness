@@ -1,4 +1,4 @@
-import type { Context, ObjectPlugin } from "@innocencecode/kernel";
+import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
 
 export interface HmrService {
   watch(id: string, restart: () => Promise<void>): () => void;
@@ -37,6 +37,6 @@ export const HmrPlugin: ObjectPlugin = {
   },
 };
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context { hmr: HmrService }
 }

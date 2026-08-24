@@ -4,7 +4,7 @@
  * mutation acquires its TaskMutationLease INSIDE this service (task lease →
  * workspace lease, the fixed order) and enforces ownership, expectedVersion
  * CAS and the completion/attribution gates here. Adapters (Electron IPC
- * handlers, the CLI adapter in @innocencecode/task-cli) only delegate — they
+ * handlers, the CLI adapter in @innocenceharness/task-cli) only delegate — they
  * never touch task storage directly.
  *
  * Split by responsibility (public surface unchanged — every name below is

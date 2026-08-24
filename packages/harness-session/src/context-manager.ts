@@ -1,4 +1,4 @@
-import type { Provider } from "@innocencecode/harness-providers";
+import type { Provider } from "@innocenceharness/harness-providers";
 import { isPlainText, toTranscript, type Message } from "./types";
 
 export const SUMMARIZE_SYSTEM_PROMPT =

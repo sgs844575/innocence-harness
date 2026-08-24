@@ -1,4 +1,4 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   createSessionPlugin,
   DEFAULT_COMPACTION,
@@ -7,7 +7,7 @@ import {
   type MessageProcessor,
   type Provider,
   type SessionService,
-} from "@innocencecode/harness-session";
+} from "@innocenceharness/harness-session";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

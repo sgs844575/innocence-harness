@@ -1,5 +1,5 @@
 /**
- * plugin-task event vocabulary: the shared @innocencecode/task-core events
+ * plugin-task event vocabulary: the shared @innocenceharness/task-core events
  * plus the change-capture and attribution events this plugin appends through
  * the TaskRuntimePort. The plugin event TYPES moved into task-core's union
  * (Task 6): the task event log is a single log, so reduceTask accepts every
@@ -12,7 +12,7 @@
  * envelope fields are left unset by the middleware so the port's persistence
  * layer stamps identity if it needs one.
  */
-import type { TaskEvent as CoreTaskEvent } from "@innocencecode/task-core";
+import type { TaskEvent as CoreTaskEvent } from "@innocenceharness/task-core";
 
 export type {
   ChangeRecordedEvent,
@@ -21,7 +21,7 @@ export type {
   AttributionResolvedEvent,
   TaskChangeSource,
   TaskAttribution,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 
 /** Union appended through {@link TaskRuntimePort.append}. */
 export type TaskEvent = CoreTaskEvent;

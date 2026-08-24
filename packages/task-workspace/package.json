@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/task-workspace",
+  "name": "@innocenceharness/task-workspace",
   "version": "0.1.0",
   "description": "Task workspace snapshots, content objects, patch engine, apply journal and cross-process locks",
   "type": "module",
@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/secure-storage-node": "*",
-    "@innocencecode/task-core": "*",
+    "@innocenceharness/secure-storage-node": "*",
+    "@innocenceharness/task-core": "*",
     "chokidar": "^5.0.0",
     "diff": "^9.0.0"
   },

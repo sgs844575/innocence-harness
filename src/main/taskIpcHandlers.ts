@@ -11,7 +11,7 @@
 // Completion gate is computed fresh from the reduced state on every call —
 // never cached.
 
-import { reduceTask, type TaskState, type Hunk } from "@innocencecode/task-core";
+import { reduceTask, type TaskState, type Hunk } from "@innocenceharness/task-core";
 import type { TaskRuntimeBridge } from "./taskRuntimeBridge";
 import type {
   CompletionGate,
@@ -76,7 +76,7 @@ export interface TaskCommandPort {
   /** Re-runs runtime recovery (worktree/replay retry entry point). */
   recoverTask(taskId: string): Promise<TaskGetResponse>;
   /** Append a synthetic event to the task log (used for validationOverride). */
-  appendEvent(taskId: string, event: import("@innocencecode/task-core").TaskEvent): Promise<void>;
+  appendEvent(taskId: string, event: import("@innocenceharness/task-core").TaskEvent): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 /**
  * Host-agnostic command runtime factory (Task 13): wires the REAL
- * implementations — @innocencecode/task-workspace (repository, CAS, file
- * locks, scanner, checkpoint diff), @innocencecode/task-git (worktrees,
- * baseline, apply) and @innocencecode/plugin-task (attribution fold) — into
+ * implementations — @innocenceharness/task-workspace (repository, CAS, file
+ * locks, scanner, checkpoint diff), @innocenceharness/task-git (worktrees,
+ * baseline, apply) and @innocenceharness/plugin-task (attribution fold) — into
  * task-core's TaskCommandService ports. The Electron host keeps its bridge
  * (taskRuntimeBridge.ts) with its own equivalent wiring plus watchers and
  * live ports; the deliberately small duplication (fork/recover/delete
@@ -12,15 +12,15 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { foldAttributionDecisions } from "@innocencecode/plugin-task";
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { foldAttributionDecisions } from "@innocenceharness/plugin-task";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 import {
   createGitAdapter,
   GitWorkspaceError,
   type GitAdapter,
   type GitBaseline,
   type WorktreeLease,
-} from "@innocencecode/task-git";
+} from "@innocenceharness/task-git";
 import {
   createTaskCommandService,
   reduceTask,
@@ -33,7 +33,7 @@ import {
   type TaskEvent,
   type TaskStartedInfo,
   type TaskValidationResult,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import {
   canonicalWorkspaceKey,
   createTaskMutationLock,
@@ -46,7 +46,7 @@ import {
   taskRootPath,
   type TaskRepository,
   type WorkspaceSnapshot,
-} from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-workspace";
 
 const LOCK_DIRS = ["locks", "locks/workspace", "locks/task"] as const;
 

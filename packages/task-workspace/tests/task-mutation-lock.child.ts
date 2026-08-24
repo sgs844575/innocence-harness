@@ -9,7 +9,7 @@
  *   {"cmd":"release"} -> {"event":"released"}
  *   {"cmd":"exit"}    -> process exits 0
  */
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 import { createTaskMutationLock } from "../src/task-mutation-lock.ts";
 
 const emit = (payload: Record<string, unknown>): void => {

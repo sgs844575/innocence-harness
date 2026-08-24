@@ -9,8 +9,8 @@
 //    降级发生在拓扑解析之前（坏 config 与显式禁用同等参与依赖闭包）；
 // 3. 输出 active/skipped/warnings 与 resolvePluginSet 同形（config-invalid
 //    的 via 为提供该 config 的层）。输入层不被修改。
-import type { EntryOptions } from "@innocencecode/kernel-loader";
-import { validateValue, type SchemaSpec } from "@innocencecode/kernel-schema";
+import type { EntryOptions } from "@innocenceharness/kernel-loader";
+import { validateValue, type SchemaSpec } from "@innocenceharness/kernel-schema";
 import type {
   PluginDescriptor,
   PluginToggleSource,

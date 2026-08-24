@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createCheckpoint, addFile } from "@innocencecode/task-core";
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { createCheckpoint, addFile } from "@innocenceharness/task-core";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 import { createCheckpointStore } from "../src/checkpoint-store.ts";
 
 let base: string;

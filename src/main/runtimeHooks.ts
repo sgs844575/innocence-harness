@@ -4,7 +4,7 @@
 // completion, errors) plus the permission-ask bridge that surfaces an ask as
 // a renderer dialog with a deny-on-timeout guarantee.
 import type { BrowserWindow } from "electron";
-import type { RuntimeHooks } from "@innocencecode/harness-electron";
+import type { RuntimeHooks } from "@innocenceharness/harness-electron";
 import {
   IPC,
   appendText,

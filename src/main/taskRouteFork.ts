@@ -9,9 +9,9 @@ import {
   toTaskHead,
   type Route,
   type RouteAttachedEvent,
-} from "@innocencecode/task-core";
-import type { GitAdapter, GitBaseline, WorktreeLease } from "@innocencecode/task-git";
-import type { TaskMutationLock, TaskRepository } from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-core";
+import type { GitAdapter, GitBaseline, WorktreeLease } from "@innocenceharness/task-git";
+import type { TaskMutationLock, TaskRepository } from "@innocenceharness/task-workspace";
 
 export interface ForkRouteInput {
   sessionId: string;

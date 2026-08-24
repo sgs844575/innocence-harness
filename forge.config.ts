@@ -36,7 +36,7 @@ export const config: ForgeConfig = {
     extraResource: ["build/dist/resources/plugins", "build/dist/resources/node_modules", "assets"],
     // The pruner walks the ROOT production graph, which does not include
     // workspace packages' dependencies — node-pty (a dependency of the
-    // @innocencecode/terminal-pty workspace) would be pruned away. The ignore
+    // workspace) would be pruned away. The ignore
     // filter below is the single source of truth for what ships; pruning is
     // therefore off.
     prune: false,

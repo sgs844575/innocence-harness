@@ -1,7 +1,7 @@
-import { Context, FiberState, createScope } from "@innocencecode/kernel";
+import { Context, FiberState, createScope } from "@innocenceharness/kernel";
 import { describe, expect, it } from "vitest";
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     /** Probe service published by the scope tests below. */
     probe?: number | string;

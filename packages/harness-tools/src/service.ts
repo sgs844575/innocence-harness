@@ -1,4 +1,4 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import type { ToolSpec } from "./provider";
 import type { Tool } from "./tool";
 import type { ToolExecutionMiddleware } from "./tool-execution";
@@ -7,7 +7,7 @@ import type { ToolExecutionMiddleware } from "./tool-execution";
 // publisher (kernel ServiceTable contract). The member is live only while
 // the ToolsPlugin fiber publishing it is active; before load and after its
 // unwind the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     tools: ToolsService;
   }

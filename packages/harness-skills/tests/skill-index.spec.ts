@@ -2,7 +2,7 @@ import {
   appendSkillIndex,
   buildSkillIndex,
   type Skill,
-} from "@innocencecode/harness-skills";
+} from "@innocenceharness/harness-skills";
 import { describe, expect, it } from "vitest";
 
 const review: Skill = {

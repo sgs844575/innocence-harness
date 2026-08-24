@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/plugin-task",
+  "name": "@innocenceharness/plugin-task",
   "version": "0.1.0",
   "description": "Task workspace-change capture middleware: declared-path snapshots, attribution gating and delegated change accounting",
   "type": "module",
@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-permissions": "^0.1.0",
-    "@innocencecode/harness-tools": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0",
-    "@innocencecode/kernel-logger": "^0.1.0",
-    "@innocencecode/task-core": "^0.1.0"
+    "@innocenceharness/harness-permissions": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0",
+    "@innocenceharness/kernel-logger": "^0.1.0",
+    "@innocenceharness/task-core": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",
@@ -26,7 +26,7 @@
     "directory": "packages/plugin-task"
   },
   "devDependencies": {
-    "@innocencecode/harness-electron": "^0.1.0",
-    "@innocencecode/harness-providers": "^0.1.0"
+    "@innocenceharness/harness-electron": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0"
   }
 }

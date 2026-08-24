@@ -1,6 +1,6 @@
 # task-git — 任务工作流的 Git 适配器
 
-`@innocencecode/task-git` 承担任务审查工作流里的 Git 侧：worktree 生命周期、未提交基线的捕获/重放、
+`@innocenceharness/task-git` 承担任务审查工作流里的 Git 侧：worktree 生命周期、未提交基线的捕获/重放、
 三方预检与审查通过内容的应用。只通过白名单 Git CLI 子命令操作（spawn 无 shell），绝不改 index、
 不 stash、不创建 commit 或隐藏引用；任务状态持久化不在本包（归任务目录仓库）。
 
@@ -27,7 +27,7 @@
 ## 使用
 
 ```ts
-import { createGitAdapter } from "@innocencecode/task-git";
+import { createGitAdapter } from "@innocenceharness/task-git";
 
 const git = createGitAdapter();            // 可注入 gitPath / AbortSignal
 const info = await git.detect(workspaceRoot);

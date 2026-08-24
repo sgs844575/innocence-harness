@@ -1,4 +1,4 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import { PermissionEngine } from "./permission";
 import type { PermissionEngineOptions } from "./permission";
 import type { PolicyRule } from "./policy";
@@ -7,7 +7,7 @@ import type { PolicyRule } from "./policy";
 // publisher (kernel ServiceTable contract). The member is live only while
 // the permissions plugin fiber publishing it is active; before load and
 // after its unwind the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     permissions: PermissionsService;
   }

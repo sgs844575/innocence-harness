@@ -3,12 +3,12 @@ import {
   createRunLoop,
   type LoopDeps,
   type RunLoopFunction,
-} from "@innocencecode/harness-agent-loop";
-import { Context } from "@innocencecode/kernel";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import { textMessage } from "@innocencecode/harness-session";
-import { ToolsPlugin, type Tool } from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-agent-loop";
+import { Context } from "@innocenceharness/kernel";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import { textMessage } from "@innocenceharness/harness-session";
+import { ToolsPlugin, type Tool } from "@innocenceharness/harness-tools";
 import { describe, expect, it } from "vitest";
 
 function fakeTool(

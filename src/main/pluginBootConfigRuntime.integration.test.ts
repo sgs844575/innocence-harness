@@ -4,8 +4,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentSession } from "@innocencecode/harness-electron";
-import { createMockProvider } from "@innocencecode/provider-mock";
+import { AgentSession } from "@innocenceharness/harness-electron";
+import { createMockProvider } from "@innocenceharness/provider-mock";
 import { createSessionComposition } from "./pluginBoot";
 import { stagingBootPaths } from "./staging-paths";
 

@@ -1,7 +1,7 @@
 // Subagent spawning primitive. The kernel owns session construction, so it
 // provides the spawner; plugin-subagent's Task tool is a thin consumer.
 
-import type { ExecutionScope } from "@innocencecode/harness-tools";
+import type { ExecutionScope } from "@innocenceharness/harness-tools";
 
 export interface SubagentOptions {
   systemPrompt: string;

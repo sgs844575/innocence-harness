@@ -1,4 +1,4 @@
-import type { Context, EffectHandle, ObjectPlugin } from "@innocencecode/kernel";
+import type { Context, EffectHandle, ObjectPlugin } from "@innocenceharness/kernel";
 
 export interface TimerService {
   setTimeout(callback: () => void, delayMs: number): number;
@@ -53,6 +53,6 @@ export const TimerPlugin: ObjectPlugin = {
   },
 };
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context { timer: TimerService }
 }

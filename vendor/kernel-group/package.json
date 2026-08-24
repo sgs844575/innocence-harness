@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/kernel-group",
+  "name": "@innocenceharness/kernel-group",
   "version": "0.1.0",
   "description": "Transactional groups for the plugin kernel loader",
   "type": "module",
@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/kernel": "^0.1.0",
-    "@innocencecode/kernel-loader": "^0.1.0"
+    "@innocenceharness/kernel": "^0.1.0",
+    "@innocenceharness/kernel-loader": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

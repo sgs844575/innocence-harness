@@ -2,10 +2,10 @@
 // AgentSession.spawner face, and builds the child sessions it spawns — the
 // recursive AgentSession.create adapter (shared provider/engine, inherited
 // processors/middlewares in order, parent workspaceRoot closure).
-import type { SpawnerChildMaterials, SpawnerChildSession, SubagentSpawner } from "@innocencecode/harness-agent";
-import type { SpawnerService } from "@innocencecode/harness-agent";
-import type { MessageProcessor } from "@innocencecode/harness-session";
-import type { ToolExecutionMiddleware } from "@innocencecode/harness-tools";
+import type { SpawnerChildMaterials, SpawnerChildSession, SubagentSpawner } from "@innocenceharness/harness-agent";
+import type { SpawnerService } from "@innocenceharness/harness-agent";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 import { AgentSession } from "./session";
 import type { AgentSessionOptions } from "./session";
 import type { SessionRegistryView } from "./session-registry-view";

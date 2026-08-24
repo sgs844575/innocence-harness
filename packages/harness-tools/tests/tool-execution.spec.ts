@@ -13,7 +13,7 @@ import {
   type ToolExecutionMiddleware,
   type ToolInvocation,
   type ToolResult,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 
 function fakeInvocation(overrides: Partial<ToolInvocation> = {}): ToolInvocation {
   return {

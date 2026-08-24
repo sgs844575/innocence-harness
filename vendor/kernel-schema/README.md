@@ -1,6 +1,6 @@
 # kernel-schema — 精简 standard-schema 校验器
 
-`@innocencecode/kernel-schema` 提供零依赖的 ~standard 协议形状校验器，
+`@innocenceharness/kernel-schema` 提供零依赖的 ~standard 协议形状校验器，
 供 per-plugin config 块校验（消费方接线见后续任务）。协议只是形状约定，
 此处自实现，不引入外部 schema 依赖。
 

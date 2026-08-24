@@ -3,10 +3,10 @@
 // spine packages that own each face).
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { PluginRegistry, type HarnessPlugin } from "../src";
-import type { PolicyRule } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
-import type { Skill } from "@innocencecode/harness-skills";
-import type { Tool, ToolExecutionMiddleware } from "@innocencecode/harness-tools";
+import type { PolicyRule } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
+import type { Skill } from "@innocenceharness/harness-skills";
+import type { Tool, ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 
 function completeTool(name: string): Tool {
   return {

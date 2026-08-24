@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/kernel-include",
+  "name": "@innocenceharness/kernel-include",
   "version": "0.1.0",
   "description": "YAML manifest include for the plugin kernel",
   "type": "module",
@@ -13,8 +13,8 @@
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "@innocencecode/kernel": "^0.1.0",
-    "@innocencecode/kernel-loader": "^0.1.0"
+    "@innocenceharness/kernel": "^0.1.0",
+    "@innocenceharness/kernel-loader": "^0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

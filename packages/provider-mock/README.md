@@ -1,6 +1,6 @@
 # provider-mock — 剧本化 Mock Provider
 
-`@innocencecode/provider-mock` 提供可编剧本的假 Provider：按顺序回放预设的模型回合（文本 / 工具调用），
+`@innocenceharness/provider-mock` 提供可编剧本的假 Provider：按顺序回放预设的模型回合（文本 / 工具调用），
 用于离线开发 harness 与测试（不依赖任何网络与真实 API Key）。
 
 ## 作用
@@ -23,7 +23,7 @@
 ## 使用
 
 ```ts
-import { createMockProvider } from "@innocencecode/provider-mock";
+import { createMockProvider } from "@innocenceharness/provider-mock";
 
 const provider = createMockProvider({
   turns: [

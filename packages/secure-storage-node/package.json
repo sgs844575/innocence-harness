@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/secure-storage-node",
+  "name": "@innocenceharness/secure-storage-node",
   "version": "0.1.0",
   "description": "Private on-disk storage paths with POSIX 0700/0600 and Windows current-user-only ACL hardening",
   "type": "module",

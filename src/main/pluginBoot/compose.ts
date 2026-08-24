@@ -9,9 +9,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type * as KernelModule from "@innocencecode/kernel";
-import type { SessionSpineSuite } from "@innocencecode/harness-electron";
-import type { EntryOptions } from "@innocencecode/kernel-loader";
+import type * as KernelModule from "@innocenceharness/kernel";
+import type { SessionSpineSuite } from "@innocenceharness/harness-electron";
+import type { EntryOptions } from "@innocenceharness/kernel-loader";
 import { loadKernelSuite } from "./spineLoader";
 import type { Kernel } from "./kernelLoader";
 import {
@@ -19,7 +19,7 @@ import {
   type PluginToggleSource,
 } from "../plugin-toggles-local";
 import { resolveEntries, type ConfigSpecs, type ResolvedEntries } from "./pluginEntries";
-import { type SchemaSpec } from "@innocencecode/kernel-schema";
+import { type SchemaSpec } from "@innocenceharness/kernel-schema";
 import { loadConfigLayerPair, type ConfigLogger } from "./configSources";
 import { projectPluginInventory, type PluginInventoryEntry } from "../plugin-inventory";
 import { createHostHmrWatcher, type HostHmrWatcher } from "./hmrWatcher";

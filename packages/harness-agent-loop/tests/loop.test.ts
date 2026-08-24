@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createRunLoop } from "../src";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import { Context } from "@innocencecode/kernel";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
-import { textMessage, type Message } from "@innocencecode/harness-session";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import type { Tool, ToolResult } from "@innocencecode/harness-tools";
-import type { HarnessEvent } from "@innocencecode/harness-session";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import { Context } from "@innocenceharness/kernel";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { textMessage, type Message } from "@innocenceharness/harness-session";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import type { Tool, ToolResult } from "@innocenceharness/harness-tools";
+import type { HarnessEvent } from "@innocenceharness/harness-session";
 
 interface Turn {
   text?: string;

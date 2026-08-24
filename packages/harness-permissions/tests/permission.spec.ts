@@ -6,7 +6,7 @@ import {
   type PermissionAuditEntry,
   type PermissionRequest,
   type PolicyRule,
-} from "@innocencecode/harness-permissions";
+} from "@innocenceharness/harness-permissions";
 
 function request(
   toolName: string,

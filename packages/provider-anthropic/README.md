@@ -1,6 +1,6 @@
 # provider-anthropic — Anthropic messages 协议 Provider
 
-`@innocencecode/provider-anthropic` 是 Anthropic `v1/messages` 协议的原生 Provider 实现：
+`@innocenceharness/provider-anthropic` 是 Anthropic `v1/messages` 协议的原生 Provider 实现：
 fetch + SSE 流式解析、`tool_use` 内容块增量聚合，把 wire 格式转换为 `harness-providers` 的规范 `Delta` 流。
 
 ## 作用
@@ -26,12 +26,12 @@ fetch + SSE 流式解析、`tool_use` 内容块增量聚合，把 wire 格式转
 ## 使用
 
 ```ts
-import { createAnthropicProvider } from "@innocencecode/provider-anthropic";
+import { createAnthropicProvider } from "@innocenceharness/provider-anthropic";
 
 const provider = createAnthropicProvider({ apiKey: "sk-ant-…", model: "claude-sonnet-4" });
 
 // 直接作为 Provider 用，或经内核插件注册（providers 服务面）：
-import { createAnthropicPlugin } from "@innocencecode/provider-anthropic";
+import { createAnthropicPlugin } from "@innocenceharness/provider-anthropic";
 plugins.push(createAnthropicPlugin({ apiKey: "sk-ant-…", model: "claude-sonnet-4" }));
 ```
 

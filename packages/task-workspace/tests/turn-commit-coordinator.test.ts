@@ -8,7 +8,7 @@ import {
   taskCreatedEvent,
   toTaskHead,
   type TaskIdClock,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import { openTaskRepository, type TaskRepository } from "../src/task-repository.ts";
 import { sha256Bytes } from "../src/content-store.ts";
 import {

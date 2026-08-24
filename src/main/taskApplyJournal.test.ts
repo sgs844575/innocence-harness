@@ -15,14 +15,14 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { createGitAdapter, sha256, type ApplyJournalDto } from "@innocencecode/task-git";
-import { openTaskRepository, type ApplyJournal } from "@innocencecode/task-workspace";
-import { storeBackedApplyJournal, type TaskApplyJournalHook, type TaskApplyJournalRecord } from "@innocencecode/task-core";
+import { createGitAdapter, sha256, type ApplyJournalDto } from "@innocenceharness/task-git";
+import { openTaskRepository, type ApplyJournal } from "@innocenceharness/task-workspace";
+import { storeBackedApplyJournal, type TaskApplyJournalHook, type TaskApplyJournalRecord } from "@innocenceharness/task-core";
 import {
   collectStructuredOutput,
   createTaskCliAdapter,
   createTaskCliRuntime,
-} from "@innocencecode/task-cli";
+} from "@innocenceharness/task-cli";
 
 const execFileAsync = promisify(execFile);
 

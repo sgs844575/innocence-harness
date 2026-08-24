@@ -3,8 +3,8 @@
 // rebuilds a route's session when settings change, and translates harness
 // events into the host's streaming UI hooks. Types live in runtime-types.ts,
 // transcript persistence in turn-persistence.ts.
-import type { ExecutionScopeIdentity } from "@innocencecode/harness-tools";
-import type { Route } from "@innocencecode/task-core";
+import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
+import type { Route } from "@innocenceharness/task-core";
 import { AgentSession } from "./session";
 import { persistTurn } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";

@@ -1,7 +1,7 @@
 // Route-session loader bridge: keeps resolved plugin rows inside the loader
 // tree while preserving the session registry chokepoints for native plugins.
-import type { Context, ObjectPlugin } from "@innocencecode/kernel";
-import type { EntryOptions, LoaderEntry, ModuleResolver } from "@innocencecode/kernel-loader";
+import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
+import type { EntryOptions, LoaderEntry, ModuleResolver } from "@innocenceharness/kernel-loader";
 import type { Logger } from "./registry";
 import type { SessionSpineSuite } from "./session-spine";
 

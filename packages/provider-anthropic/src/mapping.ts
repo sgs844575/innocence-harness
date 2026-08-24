@@ -1,5 +1,5 @@
-import type { ChatRequest } from "@innocencecode/harness-providers";
-import type { Message, MessagePart } from "@innocencecode/harness-session";
+import type { ChatRequest } from "@innocenceharness/harness-providers";
+import type { Message, MessagePart } from "@innocenceharness/harness-session";
 
 /**
  * Maps the canonical message model to the Anthropic messages wire body.

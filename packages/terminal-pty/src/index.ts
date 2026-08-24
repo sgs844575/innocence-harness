@@ -1,4 +1,4 @@
-// @innocencecode/terminal-pty — route-bound pseudo-terminal sessions.
+// @innocenceharness/terminal-pty — route-bound pseudo-terminal sessions.
 // Host-agnostic: node-pty only, no Electron/DOM surface. The manager keys
 // sessions by taskId+routeId; every event carries the identity triple.
 export type {

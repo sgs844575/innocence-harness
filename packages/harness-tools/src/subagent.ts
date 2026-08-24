@@ -5,4 +5,4 @@ export type {
   SubagentOptions,
   SubagentResult,
   SubagentSpawner,
-} from "@innocencecode/harness-agent";
+} from "@innocenceharness/harness-agent";

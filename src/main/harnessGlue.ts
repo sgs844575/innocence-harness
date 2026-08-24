@@ -17,7 +17,7 @@ import {
   listModels,
   mergeSettings,
   type HarnessSettings as PkgSettings,
-} from "@innocencecode/harness-electron";
+} from "@innocenceharness/harness-electron";
 import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";

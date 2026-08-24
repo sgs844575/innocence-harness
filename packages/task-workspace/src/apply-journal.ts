@@ -10,7 +10,7 @@
  * its pre-transaction bytes from the backup refs.
  */
 import fs from "node:fs/promises";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
 import type { ContentStore } from "./content-store.ts";
 import { diskHash, resolveWorkspaceFile } from "./scanner.ts";
 

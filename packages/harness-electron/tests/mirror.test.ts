@@ -14,7 +14,7 @@ import {
 } from "../../../src/shared/ipc";
 import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
-import type { PermissionResource } from "@innocencecode/harness-permissions";
+import type { PermissionResource } from "@innocenceharness/harness-permissions";
 import {
   MOCK_MODEL as PKG_MOCK_MODEL,
   MOCK_PROFILE_ID as PKG_MOCK_PROFILE_ID,

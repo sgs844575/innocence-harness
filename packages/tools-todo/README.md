@@ -1,6 +1,6 @@
 # tools-todo — 会话任务清单工具插件（TodoWrite）
 
-`@innocencecode/tools-todo` 注册 `TodoWrite` 工具：维护当前会话的任务清单（计划与执行跟踪）。
+`@innocenceharness/tools-todo` 注册 `TodoWrite` 工具：维护当前会话的任务清单（计划与执行跟踪）。
 清单是纯会话状态——只通过持久化的工具调用参数存在于 transcript 中，每次调用整体替换上一份清单，
 从不写工作区、无外部副作用。
 
@@ -22,7 +22,7 @@
 ## 使用
 
 ```ts
-import { todoPlugin } from "@innocencecode/tools-todo";
+import { todoPlugin } from "@innocenceharness/tools-todo";
 
 plugins.push(todoPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件开关 id: todo）
 ```

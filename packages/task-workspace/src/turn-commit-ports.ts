@@ -3,12 +3,12 @@
  * for the orchestration). Split by responsibility so the contract block stays
  * independently readable; task-workspace remains host- and plugin-agnostic.
  */
-import type { Checkpoint, TaskHead } from "@innocencecode/task-core";
+import type { Checkpoint, TaskHead } from "@innocenceharness/task-core";
 
 /**
  * Structural minimal form of plugin-task's TaskMutationContext
  * ({ taskId, routeId, workspaceKey, leaseToken }). task-workspace must not
- * depend on @innocencecode/plugin-task (a horizontal dependency — plugin-task
+ * depend on @innocenceharness/plugin-task (a horizontal dependency — plugin-task
  * sits on the harness spine), so only the fields this coordinator enforces are
  * declared; a real TaskMutationContext satisfies this interface structurally.
  */

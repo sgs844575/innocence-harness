@@ -1,6 +1,6 @@
 # task-core — 任务状态机领域内核
 
-`@innocencecode/task-core` 是"任务工作流"的大脑：纯事件溯源的任务状态机——事件词汇、reducer、崩溃恢复、
+`@innocenceharness/task-core` 是"任务工作流"的大脑：纯事件溯源的任务状态机——事件词汇、reducer、崩溃恢复、
 路由 DAG、hunk 审查指纹与宿主无关的 `TaskCommandService` 命令编排。不含任何存储/进程实现
 （存储、Git、锁、diff 全部经端口注入），不依赖其他 workspace 包，被任务栈其余三包依赖。
 
@@ -36,7 +36,7 @@
 ## 使用
 
 ```ts
-import { createTaskCommandService, reduceTask } from "@innocencecode/task-core";
+import { createTaskCommandService, reduceTask } from "@innocenceharness/task-core";
 
 const service = createTaskCommandService({
   store,      // TaskCommandStore：事件日志/头部/对象/checkpoint —— 实现方：task-workspace

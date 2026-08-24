@@ -1,10 +1,10 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   ToolsPlugin,
   type Tool,
   type ToolExecutionMiddleware,
   type ToolsService,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors kernel-logger's test setup: load the plugin into a fresh kernel

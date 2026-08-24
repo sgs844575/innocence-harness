@@ -14,7 +14,7 @@ import type {
   TaskRouteSummaryDto,
   TaskStartedInfo,
   TaskValidationResult,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import type { TaskCliRuntime } from "./runtime";
 import {
   renderChanges,

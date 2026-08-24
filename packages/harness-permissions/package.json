@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-permissions",
+  "name": "@innocenceharness/harness-permissions",
   "version": "0.1.0",
   "description": "InnocenceHarness permissions spine service: permission engine pipeline, policy rules and project rule config",
   "type": "module",
@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "devDependencies": {
-    "@innocencecode/harness-tools": "^0.1.0"
+    "@innocenceharness/harness-tools": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

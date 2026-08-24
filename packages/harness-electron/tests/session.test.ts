@@ -4,10 +4,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentSession, staticSpineSuite, type HarnessPlugin, type SessionSpineSuite } from "../src";
 import { createTestSession, echoProvider } from "./helpers/testSession";
-import * as loopModule from "@innocencecode/harness-agent-loop";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import type { ExecutionScope, Tool } from "@innocencecode/harness-tools";
-import type { MessagePart } from "@innocencecode/harness-session";
+import * as loopModule from "@innocenceharness/harness-agent-loop";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
+import type { MessagePart } from "@innocenceharness/harness-session";
 
 function baseOptions() {
   return {
@@ -704,7 +704,7 @@ describe("AgentSession", () => {
 
 describe("AgentSession injected scope", () => {
   it("mounts into a host-owned scope and unwinds it on dispose", async () => {
-    const { Context, createScope } = await import("@innocencecode/kernel");
+    const { Context, createScope } = await import("@innocenceharness/kernel");
     const root = new Context();
     const scope = createScope(root);
     const cleaned: string[] = [];

@@ -1,10 +1,10 @@
 # kernel — 自研插件内核（context / fiber / effects / events）
 
-`@innocencecode/kernel` 是一套独立的通用插件运行时内核：以 `Context`（根容器）+ `Fiber`（插件生命周期状态机）+
+`@innocenceharness/kernel` 是一套独立的通用插件运行时内核：以 `Context`（根容器）+ `Fiber`（插件生命周期状态机）+
 `Registry`（运行时表）+ `EventBus`（同步类型化事件总线）+ `ServiceTable`（具名服务表）构成一棵"上下文树"。
 每个插件运行在自己的 fiber 中，用 effect 收集清理函数，卸载时逆序回卷。
 
-配置树加载器在 `@innocencecode/kernel-loader`，YAML 条目内建在 `@innocencecode/kernel-include`。
+配置树加载器在 `@innocenceharness/kernel-loader`，YAML 条目内建在 `@innocenceharness/kernel-include`。
 
 > 与 harness 脊柱的关系：Agent 会话（harness-electron 的 session 家）与注册脊柱（harness-tools 等
 > `harness-*` 脊柱包）以本内核为底座装载；本包保持独立通用演进，宿主经动态 import 从分发树装载（单实例）。
@@ -41,7 +41,7 @@
 ## 使用
 
 ```ts
-import { Context, toAwaitable } from "@innocencecode/kernel";
+import { Context, toAwaitable } from "@innocenceharness/kernel";
 
 const root = Context.createRoot({ name: "host" });
 
