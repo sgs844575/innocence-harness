@@ -102,8 +102,28 @@ npx vitest run vendor/kernel-hmr/tests/hmr.spec.ts src/main/pluginBoot/hmrWatche
 ### 修复提交
 
 ```text
-d98a603 fix(HMR): 修复 watcher 生命周期竞态
+2fa8eb9 fix(HMR): 修复 watcher 生命周期竞态
 ```
+
+### 本轮修复记录（第 2 轮）
+
+- `src/main/pluginBoot/hmrWatcher.ts`
+  - 增加 `pendingDisposals` tracked promise 集合。
+  - FSWatcher 异步 error handler 将 `disposeRegistration()` promise 加入集合，并在 finally 移除。
+  - global `dispose()` 在等待 replacement queue 和当前 registration 后，继续等待所有 error-triggered disposal/restart promise，避免 registration 已删除但 in-flight restart 未完成时提前返回。
+- `src/main/pluginBoot/hmrWatcher.test.ts`
+  - 增加并发 watcher error + global dispose 测试，确认 global dispose 会等待 error-triggered restart 完成后才返回。
+
+本轮 TDD 红灯：新增测试在修复前失败，`dispose()` 在 restart release 前已 settled；失败原因正是 error handler 启动的 disposal 不在 global dispose 可等待集合内。
+
+本轮验证：
+
+```cmd
+npx vitest run vendor/kernel-hmr/tests/hmr.spec.ts src/main/pluginBoot/hmrWatcher.test.ts src/main/pluginBoot.integration.test.ts
+npm run typecheck
+```
+
+结果：定向测试 28 项通过，`npm run typecheck` 通过。
 
 ### 修复疑虑
 

@@ -178,6 +178,30 @@ describe("host HMR watcher", () => {
     expect(events.closeCount()).toBe(1);
   });
 
+  it("waits for error-triggered disposal and restart before global dispose returns", async () => {
+    const events = createFakeWatchEvents();
+    let release!: () => void;
+    const running = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    const watcher = createHostHmrWatcher({ fsWatch: events.watch, debounceMs: 0 });
+    await watcher.watchPath("example", "fixture/client.js", async () => {
+      started();
+      return running;
+    });
+    events.emit("change", "fixture/client.js");
+    await startedPromise;
+    events.emitError(new Error("watcher failed"));
+    const disposing = watcher.dispose();
+    let settled = false;
+    void disposing.then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    release();
+    await disposing;
+    expect(events.closeCount()).toBe(1);
+  });
+
   it("uses the real Node watcher for file changes", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "ic-hmr-watcher-"));
     roots.push(root);

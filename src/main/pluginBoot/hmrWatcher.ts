@@ -28,6 +28,7 @@ export function createHostHmrWatcher(options: HostHmrWatcherOptions = {}): HostH
   const log = options.log ?? (() => {});
   const registrations = new Map<string, Registration>();
   const replacementQueues = new Map<string, Promise<void>>();
+  const pendingDisposals = new Set<Promise<void>>();
   let disposed = false;
 
   const logWatcherError = (registration: Pick<Registration, "id" | "fileOrDirectory">, error: unknown): void => {
@@ -120,8 +121,12 @@ export function createHostHmrWatcher(options: HostHmrWatcherOptions = {}): HostH
       const onError = (error: Error): void => {
         if (registration) {
           logWatcherError(registration, error);
-          void disposeRegistration(registration).catch((disposeError: unknown) => {
+          const disposal = disposeRegistration(registration);
+          pendingDisposals.add(disposal);
+          void disposal.catch((disposeError: unknown) => {
             logWatcherError(registration!, disposeError);
+          }).finally(() => {
+            pendingDisposals.delete(disposal);
           });
         } else {
           logWatcherError({ id, fileOrDirectory }, error);
@@ -158,6 +163,9 @@ export function createHostHmrWatcher(options: HostHmrWatcherOptions = {}): HostH
       await Promise.all([...replacementQueues.values()]);
       const current = [...registrations.values()];
       await Promise.all(current.map(disposeRegistration));
+      while (pendingDisposals.size > 0) {
+        await Promise.all([...pendingDisposals]);
+      }
     },
   };
 }
