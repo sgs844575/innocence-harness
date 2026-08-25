@@ -47,7 +47,6 @@ export function createStructuredOutputPort(): StructuredOutputPort {
             modelId: input.model.modelId,
             usage: toUsageMetadata(result.usage),
             finishReason: result.finishReason,
-            ...(result.rawFinishReason ? { rawFinishReason: result.rawFinishReason } : {}),
           },
         };
       } catch {

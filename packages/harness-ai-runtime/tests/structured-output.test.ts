@@ -21,13 +21,14 @@ describe("createStructuredOutputPort", () => {
     const model = new MockLanguageModelV3({
       doGenerate: {
         content: [{ type: "text", text: '{"answer":"ok"}' }],
-        finishReason: { unified: "stop", raw: "stop" },
+        finishReason: { unified: "stop", raw: "structured-wire-finish-secret" },
         usage,
         warnings: [],
       },
     });
 
-    await expect(createStructuredOutputPort().generate(requestFor(model))).resolves.toEqual({
+    const result = await createStructuredOutputPort().generate(requestFor(model));
+    expect(result).toEqual({
       object: { answer: "ok" },
       metadata: {
         providerId: "test",
@@ -40,9 +41,10 @@ describe("createStructuredOutputPort", () => {
           cachedInputTokens: 0,
         },
         finishReason: "stop",
-        rawFinishReason: "stop",
       },
     });
+    expect(JSON.stringify(result)).not.toContain("rawFinishReason");
+    expect(JSON.stringify(result)).not.toContain("structured-wire-finish-secret");
   });
 
   it("normalizes schema validation failures without raw model output", async () => {

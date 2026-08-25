@@ -40,7 +40,6 @@ export interface TurnMetadata {
   modelId: string;
   usage?: UsageMetadata;
   finishReason?: FinishReason;
-  rawFinishReason?: string;
 }
 
 export interface TextPart {

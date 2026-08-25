@@ -9,6 +9,7 @@ import type {
 import { stepCountIs, streamText, type LanguageModel, type TextStreamPart } from "ai";
 import { hasUsage, toUsageMetadata } from "./metadata";
 import { toSdkMessages } from "./message-mapping";
+import { toSdkRequestOptions } from "./request-options";
 import { toSdkTools, type SchemaOnlyTools } from "./tool-mapping";
 
 export interface StreamOneHarnessStepRequest {
@@ -44,6 +45,7 @@ export async function* streamOneHarnessStep(
   try {
     const result = streamText({
       model: request.model.value as LanguageModel,
+      ...toSdkRequestOptions(request.model),
       system: request.system,
       messages: toSdkMessages(request.messages),
       tools: toSdkTools(request.tools),
@@ -112,7 +114,6 @@ function mapStreamEvent(
           modelId: model.modelId,
           ...(hasUsage(usage) ? { usage } : {}),
           finishReason: event.finishReason as FinishReason,
-          ...(event.rawFinishReason ? { rawFinishReason: event.rawFinishReason } : {}),
         },
       };
     }

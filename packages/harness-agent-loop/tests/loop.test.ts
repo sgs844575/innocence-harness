@@ -253,7 +253,7 @@ describe("runLoop", () => {
                   inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
                   outputTokens: { total: 1, text: 1, reasoning: 0 },
                 },
-                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                finishReason: { unified: "tool-calls", raw: "sdk-wire-finish-secret" },
               },
             ]
           : [
@@ -354,6 +354,8 @@ describe("runLoop", () => {
       "done",
     ]);
     expect(JSON.stringify([history, events])).not.toContain("SDK-SECRET");
+    expect(JSON.stringify(result)).not.toContain("sdk-wire-finish-secret");
+    expect(JSON.stringify(result)).not.toContain("rawFinishReason");
     expect(result).toMatchObject({
       finalText: "finished",
       finishReason: "stop",

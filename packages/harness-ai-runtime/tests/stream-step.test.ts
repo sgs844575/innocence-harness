@@ -1,6 +1,6 @@
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { streamOneHarnessStep } from "../src/index";
+import { createModelFactory, streamOneHarnessStep } from "../src/index";
 
 const usage = {
   inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
@@ -33,7 +33,7 @@ describe("streamOneHarnessStep", () => {
           {
             type: "finish",
             usage,
-            finishReason: { unified: "tool-calls", raw: "tool_calls" },
+            finishReason: { unified: "tool-calls", raw: "native-wire-finish-secret" },
           },
         ]),
       },
@@ -76,10 +76,66 @@ describe("streamOneHarnessStep", () => {
             cachedInputTokens: 0,
           },
           finishReason: "tool-calls",
-          rawFinishReason: "tool_calls",
         },
       },
     ]);
+    expect(JSON.stringify(events)).not.toContain("native-wire-finish-secret");
+    expect(JSON.stringify(events)).not.toContain("rawFinishReason");
+  });
+
+  it("forwards neutral request options without exposing them in step metadata", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          {
+            type: "finish",
+            usage,
+            finishReason: { unified: "stop", raw: "native-wire-finish-options" },
+          },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createOpenAI: () => ({ chat: () => model }),
+    }).create({
+      providerId: "configured-profile",
+      protocol: "openai",
+      modelId: "model",
+      credential: "secret",
+      requestOptions: {
+        temperature: 0.2,
+        maxTokens: 4096,
+        reasoningEffort: "high",
+        reasoningTokenBudget: 32768,
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [{ name: "shell", description: "run", parameters: { type: "object" } }],
+      }),
+    );
+
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(model.doStreamCalls[0]).toMatchObject({
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+      providerOptions: {
+        openai: { reasoningEffort: "high" },
+      },
+    });
+    expect(model.doStreamCalls[0]?.tools?.every((tool) => tool.type === "function")).toBe(true);
+    expect(model.doStreamCalls[0]?.tools?.every(
+      (tool) => (tool as { execute?: unknown }).execute === undefined,
+    )).toBe(true);
+    expect(JSON.stringify(events)).not.toContain("temperature");
+    expect(JSON.stringify(events)).not.toContain("maxTokens");
+    expect(JSON.stringify(events)).not.toContain("reasoningEffort");
+    expect(JSON.stringify(events)).not.toContain("native-wire-finish-options");
   });
 
   it("normalizes provider stream errors without provider payloads", async () => {

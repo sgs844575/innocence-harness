@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { ModelRequestOptions, ProviderModel } from "@innocenceharness/harness-providers";
+import { registerModelProtocol } from "./request-options";
 
 export type ProviderProtocol = "openai" | "openai-compatible" | "anthropic" | "google";
 
@@ -42,6 +43,21 @@ export interface ModelFactory {
   create(profile: ProviderProfile): ProviderModel;
 }
 
+function toSupportedProtocol(protocol: ProviderProfile["protocol"]): ProviderProtocol {
+  switch (protocol) {
+    case "openai":
+      return "openai";
+    case "openai-compatible":
+      return "openai-compatible";
+    case "anthropic":
+      return "anthropic";
+    case "google":
+      return "google";
+    default:
+      throw new Error(`Unsupported provider protocol: ${protocol}`);
+  }
+}
+
 /**
  * Creates opaque model carriers for the supported provider protocols. The
  * concrete model stays within this runtime package and is never exposed by the
@@ -63,8 +79,9 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
         ...(profile.fetchImpl ? { fetch: profile.fetchImpl } : {}),
         name: profile.providerId,
       };
+      const protocol = toSupportedProtocol(profile.protocol);
       let value: unknown;
-      switch (profile.protocol) {
+      switch (protocol) {
         case "openai":
         case "openai-compatible":
           value = openAI(options).chat(profile.modelId);
@@ -75,10 +92,9 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
         case "google":
           value = google(options).chat(profile.modelId);
           break;
-        default:
-          throw new Error(`Unsupported provider protocol: ${profile.protocol}`);
       }
 
+      registerModelProtocol(value, protocol);
       return {
         value,
         providerId: profile.providerId,
