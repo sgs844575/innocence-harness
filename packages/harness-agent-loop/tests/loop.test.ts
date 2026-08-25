@@ -1,12 +1,67 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { createRunLoop } from "../src";
 import { PermissionEngine } from "@innocenceharness/harness-permissions";
 import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
-import { textMessage, type Message } from "@innocenceharness/harness-session";
-import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import { ContextManager, textMessage, type Message } from "@innocenceharness/harness-session";
+import type { Delta, Provider, ProviderModel } from "@innocenceharness/harness-providers";
 import type { Tool, ToolResult } from "@innocenceharness/harness-tools";
 import type { HarnessEvent } from "@innocenceharness/harness-session";
+
+type MockStreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part>
+  ? Part
+  : never;
+
+type SdkTurn = MockStreamPart[];
+
+function sdkProviderForTurns(turns: readonly SdkTurn[]): {
+  provider: Provider & { model: ProviderModel };
+  model: MockLanguageModelV3;
+} {
+  let cursor = 0;
+  const model = new MockLanguageModelV3({
+    provider: "sdk-test",
+    modelId: "sdk-model",
+    async doStream() {
+      const turn = turns[Math.min(cursor, turns.length - 1)] ?? [];
+      cursor += 1;
+      return { stream: convertArrayToReadableStream(turn) };
+    },
+  });
+  return {
+    provider: sdkModelProvider(
+      { value: model, providerId: "sdk-test", modelId: "sdk-model" },
+      () => {
+        throw new Error("legacy chat must not run");
+      },
+    ),
+    model,
+  };
+}
+
+function sdkToolCall(id: string, toolName: string, args: Record<string, unknown>): MockStreamPart {
+  return { type: "tool-call", toolCallId: id, toolName, input: JSON.stringify(args) };
+}
+
+function sdkText(text: string): MockStreamPart[] {
+  return [
+    { type: "stream-start", warnings: [] },
+    { type: "text-start", id: "text-1" },
+    { type: "text-delta", id: "text-1", delta: text },
+  ];
+}
+
+function sdkFinish(reason: "stop" | "tool-calls" = "stop"): MockStreamPart {
+  return {
+    type: "finish",
+    usage: {
+      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 1, text: 1, reasoning: 0 },
+    },
+    finishReason: { unified: reason, raw: reason },
+  };
+}
 
 interface Turn {
   text?: string;
@@ -30,6 +85,17 @@ function scriptedProvider(turns: Turn[], log?: (i: number) => void): Provider {
           args: call.args ?? {},
         };
       }
+    },
+  };
+}
+
+function sdkModelProvider(model: ProviderModel, onLegacyChat: () => void): Provider & { model: ProviderModel } {
+  return {
+    id: model.providerId,
+    model,
+    async *chat(): AsyncIterable<Delta> {
+      onLegacyChat();
+      throw new Error("legacy provider path must not run when a model is available");
     },
   };
 }
@@ -63,7 +129,12 @@ function fakeTool(
 const allowAll = () =>
   new PermissionEngine({ mode: "auto", decider: { ask: async () => "deny" } });
 
-async function setup(tools: Tool[], provider: Provider, permission = allowAll()) {
+async function setup(
+  tools: Tool[],
+  provider: Provider,
+  permission = allowAll(),
+  observeEvent?: (event: HarnessEvent) => void,
+) {
   const kernel = new Context();
   await kernel.plugin(ToolsPlugin);
   for (const tool of tools) kernel.tools.register(tool);
@@ -76,7 +147,10 @@ async function setup(tools: Tool[], provider: Provider, permission = allowAll())
     history,
     systemPrompt: "test",
     workspaceRoot: "/tmp/ws",
-    onEvent: (e) => events.push(e),
+    onEvent: (event) => {
+      events.push(event);
+      observeEvent?.(event);
+    },
   });
   return {
     toolsService: kernel.tools,
@@ -148,6 +222,339 @@ describe("runLoop", () => {
     expect(types[types.length - 1]).toBe("done");
   });
 
+  it("keeps the Harness permission order when an SDK model emits a tool call", async () => {
+    const order: string[] = [];
+    let directSdkExecuteCount = 0;
+    let harnessExecuteCount = 0;
+    let step = 0;
+    const model = new MockLanguageModelV3({
+      provider: "sdk-test",
+      modelId: "sdk-model",
+      async doStream(options) {
+        directSdkExecuteCount += (options.tools ?? []).filter(
+          (tool) => "execute" in tool && typeof (tool as { execute?: unknown }).execute === "function",
+        ).length;
+        step += 1;
+        const streamEvents: MockStreamPart[] = step === 1
+          ? [
+              { type: "stream-start", warnings: [] },
+              { type: "tool-input-start", id: "sdk-call", toolName: "Controlled" },
+              { type: "tool-input-delta", id: "sdk-call", delta: '{"secret":"SDK-SECRET"}' },
+              { type: "tool-input-end", id: "sdk-call" },
+              {
+                type: "tool-call",
+                toolCallId: "sdk-call",
+                toolName: "Controlled",
+                input: '{"secret":"SDK-SECRET"}',
+              },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              },
+            ]
+          : [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "finished" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 4, noCache: 4, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 2, text: 2, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: "stop" },
+              },
+            ];
+        return {
+          stream: convertArrayToReadableStream(streamEvents),
+        };
+      },
+    });
+    const provider = sdkModelProvider(
+      { value: model, providerId: "sdk-test", modelId: "sdk-model" },
+      () => {
+        throw new Error("legacy chat must not run");
+      },
+    );
+    const controlled: Tool = {
+      name: "Controlled",
+      description: "Controlled",
+      readOnly: false,
+      sideEffect: "unknown",
+      parameters: { type: "object" },
+      async validateArgs(args) {
+        order.push("validateArgs");
+        expect(args).toEqual({ secret: "SDK-SECRET" });
+      },
+      permissionResource(args) {
+        order.push("permissionResource");
+        expect(args).toEqual({ secret: "SDK-SECRET" });
+        return { action: "write", kind: "test", scope: "controlled" };
+      },
+      persistArgs(args) {
+        order.push("persistArgs");
+        expect(args).toEqual({ secret: "SDK-SECRET" });
+        return { secretPresent: typeof args.secret === "string" };
+      },
+      async execute(args) {
+        order.push("execute");
+        harnessExecuteCount += 1;
+        expect(args).toEqual({ secret: "SDK-SECRET" });
+        return { content: "controlled" };
+      },
+    };
+    const permission = new PermissionEngine({
+      mode: "ask",
+      decider: {
+        ask: async () => {
+          order.push("permission");
+          return "allow";
+        },
+      },
+    });
+    const { events, history, run } = await setup(
+      [controlled],
+      provider,
+      permission,
+      (event) => {
+        if (event.type === "assistantMessage") order.push("redactedAssistant");
+        if (event.type === "toolCall") order.push("audit");
+        if (event.type === "toolResult") order.push("toolResult");
+      },
+    );
+
+    const result = await run("run the controlled tool");
+
+    expect(order.slice(0, 8)).toEqual([
+      "validateArgs",
+      "permissionResource",
+      "persistArgs",
+      "redactedAssistant",
+      "audit",
+      "permission",
+      "execute",
+      "toolResult",
+    ]);
+    expect(directSdkExecuteCount).toBe(0);
+    expect(harnessExecuteCount).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(events.map((event) => event.type)).toEqual([
+      "turnStart",
+      "assistantMessage",
+      "toolCall",
+      "permission",
+      "toolResult",
+      "turnStart",
+      "token",
+      "assistantMessage",
+      "done",
+    ]);
+    expect(JSON.stringify([history, events])).not.toContain("SDK-SECRET");
+    expect(result).toMatchObject({
+      finalText: "finished",
+      finishReason: "stop",
+      usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+      stepMetadata: [
+        { providerId: "sdk-test", modelId: "sdk-model", finishReason: "tool-calls" },
+        { providerId: "sdk-test", modelId: "sdk-model", finishReason: "stop" },
+      ],
+    });
+  });
+
+  it("uses a controlled SDK step for compaction instead of legacy chat", async () => {
+    const { provider, model } = sdkProviderForTurns([
+      [...sdkText("summary"), sdkFinish()],
+      [...sdkText("final"), sdkFinish()],
+    ]);
+    const history: Message[] = [
+      textMessage("user", "first"),
+      { role: "assistant", parts: [{ type: "text", text: "first answer" }] },
+      textMessage("user", "second"),
+      { role: "assistant", parts: [{ type: "text", text: "second answer" }] },
+      textMessage("user", "third"),
+      { role: "assistant", parts: [{ type: "text", text: "third answer" }] },
+    ];
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    const loop = createRunLoop({
+      tools: kernel.tools,
+      provider,
+      permission: allowAll(),
+      history,
+      systemPrompt: "test",
+      workspaceRoot: "/tmp/ws",
+      compactor: new ContextManager({ maxContextTokens: 1, keepRecent: 2 }),
+      onEvent: () => {},
+    });
+
+    const result = await loop(textMessage("user", "latest"));
+
+    expect(result.finalText).toBe("final");
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
+  it("normalizes SDK model errors before they reach Harness events", async () => {
+    const sensitive = "credential=SDK-ERROR-SECRET prompt=private toolArgs=private";
+    const { provider } = sdkProviderForTurns([[
+      { type: "stream-start", warnings: [] },
+      { type: "error", error: new Error(sensitive) },
+      {
+        type: "finish",
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 0, text: 0, reasoning: 0 },
+        },
+        finishReason: { unified: "error", raw: "upstream-secret" },
+      },
+    ]]);
+    const { events, history, run } = await setup([], provider);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const result = await run("sensitive request");
+
+      expect(events).toContainEqual({ type: "error", message: "Model request failed", fatal: true });
+      expect(JSON.stringify([events, history])).not.toContain(sensitive);
+      expect(result).toMatchObject({
+        finalText: "",
+        finishReason: "error",
+        stepMetadata: [{ finishReason: "error" }],
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("rejects denied SDK MCP calls without leaking raw arguments", async () => {
+    const secret = "SDK-MCP-SECRET";
+    const { provider } = sdkProviderForTurns([
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("mcp-call", "mcp__ci__deploy", { apiKey: secret }),
+        sdkFinish("tool-calls"),
+      ],
+      [...sdkText("denied"), sdkFinish()],
+    ]);
+    let executions = 0;
+    const mcp: Tool = {
+      name: "mcp__ci__deploy",
+      description: "deploy",
+      readOnly: false,
+      sideEffect: "unknown",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "call", kind: "mcp", scope: "ci/deploy" }),
+      persistArgs: (args) => ({ params: Object.keys(args) }),
+      async execute() {
+        executions += 1;
+        return { content: "unexpected" };
+      },
+    };
+    const permission = new PermissionEngine({
+      mode: "plan",
+      decider: { ask: async () => "allow" },
+    });
+    const { events, history, run } = await setup([mcp], provider, permission);
+
+    const result = await run("deploy");
+
+    expect(result.finalText).toBe("denied");
+    expect(executions).toBe(0);
+    expect(history[2]?.parts[0]).toMatchObject({ isError: true, content: expect.stringContaining("权限被拒绝") });
+    expect(JSON.stringify([history, events])).not.toContain(secret);
+  });
+
+  it("keeps SDK tool timeouts within the Harness executor", async () => {
+    const hang = abortAwareTool("Hang");
+    const { provider, model } = sdkProviderForTurns([
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("hang-call", "Hang", {}),
+        sdkFinish("tool-calls"),
+      ],
+      [...sdkText("recovered"), sdkFinish()],
+    ]);
+    const { events, history, run } = await setup([hang], provider);
+
+    const result = await run("run", { toolTimeoutMs: 20, abortGraceMs: 20 });
+
+    expect(result.finalText).toBe("recovered");
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(history[2]?.parts[0]).toMatchObject({ isError: true, content: expect.stringContaining("超时") });
+    const toolResult = events.find((event) => event.type === "toolResult");
+    expect(toolResult && toolResult.type === "toolResult" && toolResult.outcome).toBe("timeout");
+  });
+
+  it("enforces outer max turns for SDK steps", async () => {
+    const loop = fakeTool("Loop", async () => ({ content: "again" }));
+    const { provider, model } = sdkProviderForTurns([
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("loop-1", "Loop", {}),
+        sdkFinish("tool-calls"),
+      ],
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("loop-2", "Loop", {}),
+        sdkFinish("tool-calls"),
+      ],
+      [...sdkText("unreachable"), sdkFinish()],
+    ]);
+    const { run } = await setup([loop], provider);
+
+    const result = await run("loop", { maxTurns: 2 });
+
+    expect(result.turns).toBe(2);
+    expect(loop.calls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
+  it("does not ask permission for remaining SDK calls after a stop", async () => {
+    const stop = new AbortController();
+    let asks = 0;
+    const permission = new PermissionEngine({
+      mode: "ask",
+      decider: {
+        ask: async () => {
+          asks += 1;
+          return "allow";
+        },
+      },
+    });
+    const first: Tool = {
+      name: "Stop",
+      description: "Stop",
+      readOnly: false,
+      sideEffect: "unknown",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "write", kind: "test", scope: "stop" }),
+      persistArgs: (args) => ({ ...args }),
+      execute: (_args, ctx) =>
+        new Promise<ToolResult>((_resolve, reject) => {
+          ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
+          queueMicrotask(() => stop.abort());
+        }),
+    };
+    const followUp = fakeTool("FollowUp", async () => ({ content: "unexpected" }));
+    const { provider } = sdkProviderForTurns([[
+      { type: "stream-start", warnings: [] },
+      sdkToolCall("stop-call", "Stop", {}),
+      sdkToolCall("follow-call", "FollowUp", {}),
+      sdkFinish("tool-calls"),
+    ]]);
+    const { history, run } = await setup([first, followUp], provider, permission);
+
+    const result = await run("stop", { signal: stop.signal });
+
+    expect(result.aborted).toBe(true);
+    expect(asks).toBe(1);
+    expect(followUp.calls).toHaveLength(0);
+    expect(history[2]?.parts[1]).toMatchObject({ isError: true, content: expect.stringContaining("运行已中止") });
+  });
+
   it("unknown tools produce an error result, not a crash", async () => {
     const provider = scriptedProvider([
       { toolCalls: [{ toolName: "Ghost" }] },
@@ -174,7 +581,7 @@ describe("runLoop", () => {
     expect(result.finalText).toBe("handled");
     const tr = history[2].parts[0] as { isError?: boolean; content: string };
     expect(tr.isError).toBe(true);
-    expect(tr.content).toContain("boom");
+    expect(tr.content).toContain("工具执行出错");
     expect(events.filter((e) => e.type === "error")).toHaveLength(0);
   });
 
@@ -435,7 +842,7 @@ describe("runLoop", () => {
     expect(resultEvent && resultEvent.type === "toolResult" && resultEvent.outcome).toBe("aborted");
     const tr = history[2].parts[0] as { isError?: boolean; content: string };
     expect(tr.content).toContain("工具执行已中止");
-    expect(tr.content).toContain("worker cancelled");
+    expect(tr.content).not.toContain("worker cancelled");
   });
 
   it("fail-closes remaining calls after a stop instead of consulting the permission chain", async () => {

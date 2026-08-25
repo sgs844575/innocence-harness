@@ -3,7 +3,14 @@ import { createExecutionScope, type ExecutionScopeIdentity } from "@innocencehar
 import type { HarnessEventListener } from "@innocenceharness/harness-session";
 import { PermissionEngine } from "@innocenceharness/harness-permissions";
 import type { PermissionRequest, PermissionResource } from "@innocenceharness/harness-permissions";
-import type { Provider } from "@innocenceharness/harness-providers";
+import type {
+  FinishReason,
+  Provider,
+  ProviderModel,
+  ToolSpec,
+  TurnMetadata,
+  UsageMetadata,
+} from "@innocenceharness/harness-providers";
 import {
   executeToolInvocation,
   isAbortError,
@@ -13,6 +20,7 @@ import {
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { Tool, ToolContext, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
+import { streamOneHarnessStep } from "@innocenceharness/harness-ai-runtime";
 
 export interface LoopOptions {
   provider: Provider;
@@ -41,13 +49,195 @@ export interface LoopResult {
   /** Text of the final assistant message (empty when aborted early). */
   finalText: string;
   aborted: boolean;
+  /** Metadata from each completed native model step; legacy providers have none. */
+  stepMetadata: TurnMetadata[];
+  /** Finish reason emitted by the final native model step. */
+  finishReason?: FinishReason;
+  /** Cumulative normalized usage across native model steps. */
+  usage?: UsageMetadata;
 }
 
 export const DEFAULT_MAX_TURNS = 40;
 export const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
 
+interface ModelStep {
+  parts: MessagePart[];
+  metadata?: TurnMetadata;
+  aborted: boolean;
+  error?: string;
+}
+
+interface ModelStepRequest {
+  provider: Provider;
+  system: string;
+  messages: Message[];
+  tools: ToolSpec[];
+  signal?: AbortSignal;
+  onEvent?: HarnessEventListener;
+}
+
 /**
- * The synchronous, readable agent loop: stream a model turn, gate every tool
+ * Streams exactly one model step. An opaque model carrier is preferred for
+ * production execution; deterministic and legacy providers retain their
+ * canonical chat path. Both paths return the same canonical parts so all
+ * persistence, permission, and execution policy stays below this boundary.
+ */
+async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
+  const model = providerModel(request.provider);
+  const parts: MessagePart[] = [];
+
+  if (!model) {
+    try {
+      for await (const delta of request.provider.chat({
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+        signal: request.signal,
+      })) {
+        if (delta.type === "text") {
+          if (delta.text) {
+            parts.push({ type: "text", text: delta.text });
+            request.onEvent?.({ type: "token", text: delta.text });
+          }
+        } else if (delta.type === "thinking") {
+          if (delta.text) {
+            parts.push({ type: "thinking", text: delta.text });
+            request.onEvent?.({ type: "thinking", text: delta.text });
+          }
+        } else if (delta.type === "toolCall") {
+          parts.push({
+            type: "toolCall",
+            id: delta.id,
+            toolName: delta.toolName,
+            args: delta.args,
+          });
+        }
+      }
+    } catch (_error) {
+      return request.signal?.aborted
+        ? { parts, aborted: true }
+        : { parts, aborted: false, error: "Model request failed" };
+    }
+    return { parts, aborted: request.signal?.aborted === true };
+  }
+
+  let metadata: TurnMetadata | undefined;
+  let error: string | undefined;
+  for await (const event of streamOneHarnessStep({
+    model,
+    system: request.system,
+    messages: request.messages,
+    tools: request.tools,
+    signal: request.signal,
+  })) {
+    switch (event.type) {
+      case "text":
+        if (event.text) {
+          parts.push({ type: "text", text: event.text });
+          request.onEvent?.({ type: "token", text: event.text });
+        }
+        break;
+      case "reasoning":
+        if (event.text) {
+          parts.push({ type: "thinking", text: event.text });
+          request.onEvent?.({ type: "thinking", text: event.text });
+        }
+        break;
+      case "toolCall":
+        parts.push({
+          type: "toolCall",
+          id: event.id,
+          toolName: event.toolName,
+          args: event.args,
+        });
+        break;
+      case "finish":
+        metadata = event.metadata;
+        break;
+      case "abort":
+        return { parts, metadata, aborted: true };
+      case "error":
+        // The runtime deliberately normalizes this message, so no provider
+        // payload, prompt, credentials, or raw tool arguments escape here.
+        error = event.error.message;
+        break;
+      case "usage":
+      case "toolResult":
+        // Tool definitions are schema-only. Result events have no execution
+        // meaning at this boundary and cannot bypass the Harness executor.
+        break;
+    }
+  }
+  return { parts, metadata, aborted: request.signal?.aborted === true, ...(error ? { error } : {}) };
+}
+
+/** Narrows the optional opaque-model extension without changing legacy providers. */
+function providerModel(provider: Provider): ProviderModel | undefined {
+  const candidate = provider as Provider & { model?: unknown };
+  const model = candidate.model;
+  if (!model || typeof model !== "object") return undefined;
+  const value = model as Partial<ProviderModel>;
+  return typeof value.providerId === "string" && typeof value.modelId === "string"
+    ? value as ProviderModel
+    : undefined;
+}
+
+/**
+ * Context compaction still accepts the legacy provider contract. When a model
+ * carrier is present, adapt one controlled model step to that contract rather
+ * than falling through to a handwritten transport.
+ */
+function providerForCompaction(provider: Provider): Provider {
+  if (!providerModel(provider)) return provider;
+  return {
+    id: provider.id,
+    async *chat(request) {
+      const step = await runModelStep({
+        provider,
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+        signal: request.signal,
+      });
+      if (step.aborted) return;
+      for (const part of step.parts) {
+        if (part.type === "text") yield { type: "text", text: part.text };
+        else if (part.type === "thinking") yield { type: "thinking", text: part.text };
+        else if (part.type === "toolCall") {
+          yield {
+            type: "toolCall",
+            id: part.id,
+            toolName: part.toolName,
+            args: part.args,
+          };
+        }
+      }
+    },
+  };
+}
+
+/** Adds normalized token counts without retaining any provider wire metadata. */
+function addUsage(total: UsageMetadata | undefined, next: UsageMetadata | undefined): UsageMetadata | undefined {
+  if (!next) return total;
+  const result: UsageMetadata = { ...total };
+  let hasUsage = false;
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "reasoningTokens",
+    "cachedInputTokens",
+  ] as const) {
+    const value = next[key];
+    if (value === undefined) continue;
+    result[key] = (result[key] ?? 0) + value;
+    hasUsage = true;
+  }
+  return hasUsage || total ? result : undefined;
+}
+
+/**
+ * The synchronous, readable agent loop: stream one model step, gate every tool
  * call through the permission engine, feed results back, repeat until the
  * model answers without tool calls. The input is the canonical user message
  * (already skill-expanded and processor-run by the session); tool-result user
@@ -83,6 +273,10 @@ export async function runLoop(
 
   let aborted = false;
   let turns = 0;
+  const stepMetadata: TurnMetadata[] = [];
+  let usage: UsageMetadata | undefined;
+  let finishReason: FinishReason | undefined;
+  const compactionProvider = providerForCompaction(provider);
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
@@ -91,42 +285,37 @@ export async function runLoop(
       onEvent({ type: "turnStart", turn });
 
       if (compactor) {
-        const compacted = await compactor.maybeCompact(history, provider, signal);
+        const compacted = await compactor.maybeCompact(history, compactionProvider, signal);
         if (compacted) onEvent({ type: "compaction", removedMessages: history.length });
       }
 
-      const parts: MessagePart[] = [];
-      for await (const delta of provider.chat({
+      const step = await runModelStep({
+        provider,
         system: systemPrompt,
         messages: history,
         tools: tools.specs(),
         signal,
-      })) {
-        if (delta.type === "text") {
-          if (delta.text) {
-            parts.push({ type: "text", text: delta.text });
-            onEvent({ type: "token", text: delta.text });
-          }
-        } else if (delta.type === "thinking") {
-          if (delta.text) {
-            parts.push({ type: "thinking", text: delta.text });
-            onEvent({ type: "thinking", text: delta.text });
-          }
-        } else if (delta.type === "toolCall") {
-          parts.push({
-            type: "toolCall",
-            id: delta.id,
-            toolName: delta.toolName,
-            args: delta.args,
-          });
-        }
-        // usage deltas are informational; providers accumulate their own accounting.
+        onEvent,
+      });
+      if (step.metadata) {
+        stepMetadata.push(step.metadata);
+        usage = addUsage(usage, step.metadata.usage);
+        finishReason = step.metadata.finishReason;
+      }
+      if (step.aborted) {
+        aborted = true;
+        break;
+      }
+      if (step.error) {
+        onEvent({ type: "error", message: step.error, fatal: true });
+        break;
       }
 
+      const parts = step.parts;
       if (parts.length === 0) break;
 
       const calls = parts.filter(
-        (p): p is ToolCallPart => p.type === "toolCall",
+        (part): part is ToolCallPart => part.type === "toolCall",
       );
 
       /**
@@ -165,22 +354,24 @@ export async function runLoop(
           const resource = await tool.permissionResource(part.args, invocationCtx);
           const persistedArgs = tool.persistArgs(part.args);
           prepared.set(part.id, { part, tool, ctx: invocationCtx, resource, persistedArgs });
-        } catch (err) {
+        } catch (_error) {
+          // Preparation functions receive raw args, so their diagnostics are
+          // not safe to persist into history, events, audit, or transcripts.
           prepared.set(part.id, {
             part,
             tool,
             ctx: invocationCtx,
             persistedArgs: {},
-            failure: err instanceof Error ? err.message : String(err),
+            failure: "工具调用准备失败",
           });
         }
       }
 
       // Persisted assistant message: secrets from raw args never enter history.
-      const toPersisted = (p: MessagePart): MessagePart =>
-        p.type === "toolCall"
-          ? { ...p, args: prepared.get(p.id)?.persistedArgs ?? {} }
-          : p;
+      const toPersisted = (part: MessagePart): MessagePart =>
+        part.type === "toolCall"
+          ? { ...part, args: prepared.get(part.id)?.persistedArgs ?? {} }
+          : part;
       history.push({ role: "assistant", parts: mergeTextParts(parts).map(toPersisted) });
       onEvent({ type: "assistantMessage", parts: parts.map(toPersisted) });
 
@@ -232,7 +423,7 @@ export async function runLoop(
           continue;
         }
         if (item.failure !== undefined) {
-          failClosed(`工具调用准备失败：${item.failure}`);
+          failClosed(item.failure);
           continue;
         }
 
@@ -247,11 +438,10 @@ export async function runLoop(
             readOnly: item.tool.readOnly,
             sideEffect: item.tool.sideEffect,
           });
-        } catch (err) {
-          // validateResource rejected the resource (audited inside resolve): fail closed.
-          failClosed(
-            `资源校验未通过：${err instanceof Error ? err.message : String(err)}`,
-          );
+        } catch (_error) {
+          // Resource validation uses persisted values, but its diagnostic may
+          // still be provider/tool-controlled; keep transcript output neutral.
+          failClosed("资源校验未通过");
           continue;
         }
         onEvent({
@@ -292,14 +482,10 @@ export async function runLoop(
           );
         } catch (err) {
           // Tool failures feed back to the model instead of killing the loop.
-          // With the run stopped, any failure shape counts as aborted.
+          // With the run stopped, any failure shape counts as aborted. Do not
+          // persist executor diagnostics: real tools received raw args.
           const outcome = toolErrorOutcome(err, { parentAborted: signal?.aborted === true });
-          const detail = err instanceof Error ? err.message : String(err);
-          finish(
-            outcome === "aborted" ? `工具执行已中止：${detail}` : `工具执行出错：${detail}`,
-            true,
-            outcome,
-          );
+          finish(safeToolFailureMessage(outcome), true, outcome);
         }
       }
       history.push({ role: "user", parts: resultParts });
@@ -320,11 +506,31 @@ export async function runLoop(
   // loop flag must reflect the signal at exit, not just thrown abort errors.
   if (signal?.aborted) aborted = true;
 
-  const last = [...history].reverse().find((m) => m.role === "assistant");
+  const last = [...history].reverse().find((message) => message.role === "assistant");
   const finalText =
-    last?.parts.filter((p) => p.type === "text").map((p) => p.text).join("") ?? "";
+    last?.parts.filter((part) => part.type === "text").map((part) => part.text).join("") ?? "";
   onEvent({ type: "done", turns });
-  return { turns, finalText, aborted };
+  return {
+    turns,
+    finalText,
+    aborted,
+    stepMetadata,
+    ...(finishReason ? { finishReason } : {}),
+    ...(usage ? { usage } : {}),
+  };
+}
+
+function safeToolFailureMessage(outcome: ToolOutcome): string {
+  switch (outcome) {
+    case "aborted":
+      return "工具执行已中止";
+    case "timeout":
+      return "工具执行超时";
+    case "unstable":
+      return "工具执行不稳定：TOOL_UNSTABLE";
+    default:
+      return "工具执行出错";
+  }
 }
 
 /** Collapses consecutive text deltas into one part (readable history, clean transcripts). */

@@ -5,6 +5,7 @@
 // persistArgs runs exactly once per invocation, and that preparation
 // failures never leak raw args.
 import { describe, expect, it } from "vitest";
+import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { Context } from "@innocenceharness/kernel";
 import {
   ToolsPlugin,
@@ -19,9 +20,63 @@ import {
   type PermissionAuditEntry,
   type PermissionRequest,
 } from "@innocenceharness/harness-permissions";
-import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import type { Delta, Provider, ProviderModel } from "@innocenceharness/harness-providers";
 import { textMessage, toTranscript, type HarnessEvent, type Message } from "@innocenceharness/harness-session";
 import { runLoop } from "../src";
+
+type MockStreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part>
+  ? Part
+  : never;
+
+function sdkProviderForCalls(calls: Array<{ toolName: string; args: Record<string, unknown> }>): Provider & { model: ProviderModel } {
+  let turn = 0;
+  const model = new MockLanguageModelV3({
+    provider: "sdk-test",
+    modelId: "sdk-model",
+    async doStream() {
+      turn += 1;
+      const events: MockStreamPart[] = turn === 1
+        ? [
+            { type: "stream-start", warnings: [] },
+            ...calls.map((call, index) => ({
+              type: "tool-call" as const,
+              toolCallId: `sdk-call-${index}`,
+              toolName: call.toolName,
+              input: JSON.stringify(call.args),
+            })),
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+            },
+          ]
+        : [
+            { type: "stream-start", warnings: [] },
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "all done" },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+              finishReason: { unified: "stop", raw: "stop" },
+            },
+          ];
+      return { stream: convertArrayToReadableStream(events) };
+    },
+  });
+  return {
+    id: "sdk-test",
+    model: { value: model, providerId: "sdk-test", modelId: "sdk-model" },
+    async *chat(): AsyncIterable<Delta> {
+      throw new Error("legacy provider path must not run");
+    },
+  };
+}
 
 /**
  * One unique secret per tool family. Each fake tool receives its secret in
@@ -217,7 +272,7 @@ interface RunCapture {
 }
 
 /** Runs one scripted turn that invokes every fake tool once. */
-async function runWithAllTools(): Promise<RunCapture> {
+async function runWithAllTools(providerOverride?: Provider): Promise<RunCapture> {
   const tools = {
     Write: writeStyleTool(),
     Edit: editStyleTool(),
@@ -251,7 +306,7 @@ async function runWithAllTools(): Promise<RunCapture> {
   ];
 
   let turn = 0;
-  const provider: Provider = {
+  const provider: Provider = providerOverride ?? {
     id: "scripted",
     async *chat(): AsyncIterable<Delta> {
       turn += 1;
@@ -307,6 +362,44 @@ async function runWithAllTools(): Promise<RunCapture> {
 }
 
 describe("tool args redaction (persisted vs raw)", () => {
+  it("execute receives raw SDK args; secrets appear nowhere persisted", async () => {
+    const calls: Array<{ toolName: string; args: Record<string, unknown> }> = [
+      { toolName: "Write", args: { path: "notes.txt", content: `token=${SECRETS.write}` } },
+      {
+        toolName: "Edit",
+        args: { path: "notes.txt", old_string: `old ${SECRETS.edit}`, new_string: `new ${SECRETS.edit}` },
+      },
+      { toolName: "Bash", args: { command: `deploy --token=${SECRETS.bash}` } },
+      { toolName: "mcp__ci__deploy", args: { apiKey: SECRETS.mcp } },
+      { toolName: "Task", args: { agentType: "general", prompt: `use ${SECRETS.task}` } },
+      {
+        toolName: "BrowserNavigate",
+        args: { url: `https://user:${SECRETS.browser}@example.com/path?q=1#frag` },
+      },
+    ];
+    const run = await runWithAllTools(sdkProviderForCalls(calls));
+
+    expect(run.raws.Write[0].content).toBe(`token=${SECRETS.write}`);
+    expect(run.raws.Edit[0].new_string).toBe(`new ${SECRETS.edit}`);
+    expect(run.raws.Bash[0].command).toBe(`deploy --token=${SECRETS.bash}`);
+    expect(run.raws["mcp__ci__deploy"][0].apiKey).toBe(SECRETS.mcp);
+    expect(run.raws.Task[0].prompt).toBe(`use ${SECRETS.task}`);
+    expect(run.raws.BrowserNavigate[0].url).toContain(SECRETS.browser);
+
+    const surfaces: Array<[string, unknown]> = [
+      ["history", run.history],
+      ["events", run.events],
+      ["permission requests", run.requests],
+      ["audit", run.audit],
+      ["transcript", toTranscript(run.history)],
+    ];
+    for (const secret of ALL_SECRETS) {
+      for (const [name, surface] of surfaces) {
+        expect(JSON.stringify(surface), `${name} must not contain ${secret}`).not.toContain(secret);
+      }
+    }
+  });
+
   it("execute receives raw args; secrets appear nowhere persisted", async () => {
     const run = await runWithAllTools();
 
@@ -454,7 +547,53 @@ describe("tool args redaction (persisted vs raw)", () => {
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolResult") as { isError?: boolean; content: string };
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("Strict 需要 path");
+    expect(result.content).toContain("工具调用准备失败");
+  });
+
+  it("raw args are not leaked when controlled execution throws", async () => {
+    const secret = "EXEC-SECRET-7c20d8";
+    const tool: Tool = {
+      name: "Failing",
+      description: "failing",
+      readOnly: false,
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "write", kind: "test", scope: "failing" }),
+      persistArgs: () => ({}),
+      async execute(args) {
+        throw new Error(`remote rejected ${String(args.password)}`);
+      },
+    };
+    let turn = 0;
+    const provider: Provider = {
+      id: "scripted",
+      async *chat(): AsyncIterable<Delta> {
+        turn += 1;
+        if (turn === 1) {
+          yield { type: "toolCall", id: "c1", toolName: "Failing", args: { password: secret } };
+        } else {
+          yield { type: "text", text: "handled" };
+        }
+      },
+    };
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    kernel.tools.register(tool);
+    const events: HarnessEvent[] = [];
+    const history: Message[] = [];
+    await runLoop(history, textMessage("user", "go"), {
+      provider,
+      tools: kernel.tools,
+      permission: new PermissionEngine({ mode: "auto", decider: { ask: async () => "deny" } }),
+      systemPrompt: "s",
+      workspaceRoot: "/tmp/ws",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(JSON.stringify([history, events])).not.toContain(secret);
+    const result = history
+      .flatMap((message) => message.parts)
+      .find((part) => part.type === "toolResult") as { isError?: boolean; content: string };
+    expect(result).toMatchObject({ isError: true, content: "工具执行出错" });
   });
 
   it("raw args are not leaked into history even when a tool throws during preparation", async () => {
@@ -463,8 +602,8 @@ describe("tool args redaction (persisted vs raw)", () => {
       description: "broken",
       readOnly: false,
       parameters: { type: "object" },
-      permissionResource: () => {
-        throw new Error("resource boom");
+      permissionResource: (args) => {
+        throw new Error(`resource boom ${String(args.password)}`);
       },
       persistArgs: () => ({}),
       async execute() {
@@ -501,7 +640,7 @@ describe("tool args redaction (persisted vs raw)", () => {
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolResult") as { isError?: boolean; content: string };
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("resource boom");
+    expect(result.content).toContain("工具调用准备失败");
   });
 });
 

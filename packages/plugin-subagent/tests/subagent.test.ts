@@ -290,7 +290,8 @@ describe("Task tool via session spawner", () => {
         .flatMap((m) => m.parts)
         .find((p) => p.type === "toolResult");
       expect(taskResult).toMatchObject({ isError: true });
-      expect(JSON.stringify(taskResult)).toContain("poison input rejected");
+      expect(JSON.stringify(taskResult)).toContain("工具执行出错");
+      expect(JSON.stringify(taskResult)).not.toContain("poison input rejected");
       expect(disposeSpy).toHaveBeenCalledTimes(1); // disposed on the failure path
     } finally {
       disposeSpy.mockRestore();

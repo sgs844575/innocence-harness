@@ -10,10 +10,12 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:packages": "npm run typecheck"
   },
   "dependencies": {
     "@innocenceharness/harness-agent": "^0.1.0",
+    "@innocenceharness/harness-ai-runtime": "^0.1.0",
     "@innocenceharness/harness-permissions": "^0.1.0",
     "@innocenceharness/harness-providers": "^0.1.0",
     "@innocenceharness/harness-session": "^0.1.0",
