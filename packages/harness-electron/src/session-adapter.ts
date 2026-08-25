@@ -4,8 +4,8 @@
 // registry view, the single registration chokepoint), keeps the
 // `[pluginName]` log prefix, and parks plugin.dispose() as a fiber effect so
 // the kernel unwind runs it exactly once, in reverse activation order.
-import type {} from "@innocencecode/kernel-logger";
-import type { Context } from "@innocencecode/kernel";
+import type {} from "@innocenceharness/kernel-logger";
+import type { Context } from "@innocenceharness/kernel";
 import type { HarnessPlugin, PluginContext } from "./registry";
 import type { SessionRegistryView } from "./session-registry-view";
 

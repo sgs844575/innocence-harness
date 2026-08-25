@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fingerprintHunk } from "@innocencecode/task-core";
+import { fingerprintHunk } from "@innocenceharness/task-core";
 import { createPatchEngine } from "../src/diff.ts";
 import { scanWorkspace } from "../src/scanner.ts";
 

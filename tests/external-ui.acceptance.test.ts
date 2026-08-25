@@ -8,13 +8,9 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { selectExternalUiRuntime } from "./externalUiRuntime";
 
 type DesktopChild = ReturnType<typeof spawn>;
-
-type DesktopRuntime = {
-  entry: string;
-  packaged: boolean;
-};
 
 type LaunchState = {
   child?: DesktopChild;
@@ -29,15 +25,15 @@ const fixtureDir = path.join(repoRoot, "tests", "fixtures", "external-ui-plugin"
 const mainEntry = path.join(repoRoot, ".vite", "build", "main.js");
 const stagingRoot = path.join(repoRoot, "build", "dist", "resources");
 const stagedPluginRoot = path.join(stagingRoot, "plugins");
-const packagedRuntimeDir = process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR
-  ? path.resolve(process.env.INNOCENCE_TEST_EXTERNAL_UI_PACKAGE_DIR)
-  : path.join(repoRoot, "out", "InnocenceCode-win32-x64");
-const packagedRuntimeEntry = path.join(packagedRuntimeDir, process.platform === "win32" ? "InnocenceCode.exe" : "InnocenceCode");
+const requestedPackagedRuntimeDir = process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_PACKAGE_DIR;
+const packagedRuntimeDir = requestedPackagedRuntimeDir
+  ? path.resolve(requestedPackagedRuntimeDir)
+  : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
 const children: DesktopChild[] = [];
 const tempRoots: string[] = [];
 
 function desktopRuntimeExecutable(): string | undefined {
-  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
+  if (process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
   try {
     const packageDir = path.dirname(require.resolve("electron/package.json"));
     const executable = path.join(packageDir, "dist", process.platform === "win32" ? "electron.exe" : "electron");
@@ -47,25 +43,23 @@ function desktopRuntimeExecutable(): string | undefined {
   }
 }
 
-function desktopRuntime(): DesktopRuntime | undefined {
-  if (process.env.INNOCENCE_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1") return undefined;
-  const devEntry = desktopRuntimeExecutable();
-  if (devEntry !== undefined) return { entry: devEntry, packaged: false };
-  try {
-    if (existsSync(packagedRuntimeEntry) && statSync(packagedRuntimeEntry).isFile()) {
-      return { entry: packagedRuntimeEntry, packaged: true };
+const runtimeSelection = selectExternalUiRuntime({
+  defaultPackageDirectory: packagedRuntimeDir,
+  developmentEntry: desktopRuntimeExecutable(),
+  executableName: process.platform === "win32" ? "InnocenceHarness.exe" : "InnocenceHarness",
+  isExecutable: (entry) => {
+    try {
+      const details = statSync(entry);
+      return details.isFile() && (process.platform === "win32" || (details.mode & 0o111) !== 0);
+    } catch {
+      return false;
     }
-  } catch {
-    // A disappearing or unreadable packaged executable is a diagnostic skip,
-    // not a module-collection failure.
-  }
-  return undefined;
-}
-
-const runtime = desktopRuntime();
-const runtimeReason = runtime === undefined
-  ? `desktop runtime unavailable: Electron development binary or packaged executable not found (${packagedRuntimeEntry})`
-  : undefined;
+  },
+  requestedPackageDirectory: requestedPackagedRuntimeDir ? packagedRuntimeDir : undefined,
+  runtimeDisabled: process.env.INNOCENCEHARNESS_TEST_EXTERNAL_UI_DISABLE_RUNTIME === "1",
+});
+const runtime = runtimeSelection.status === "available" ? runtimeSelection.runtime : undefined;
+const runtimeReason = runtimeSelection.status === "unavailable" ? runtimeSelection.reason : undefined;
 
 function hasGraphics(): boolean {
   if (process.platform === "win32" || process.platform === "darwin") return true;
@@ -344,14 +338,17 @@ async function launchApp(
     `--remote-debugging-port=${port}`,
     ...(runtime.packaged ? ["--innocence-controlled-test"] : [mainEntry]),
   ];
+  console.info(
+    `[external-ui] runtime source=${runtime.source} packaged=${runtime.packaged} controlledTest=${args.includes("--innocence-controlled-test")} entry=${runtime.entry}`,
+  );
   const child = spawn(runtime.entry, args, {
     cwd: repoRoot,
     env: {
       ...process.env,
-      INNOCENCE_TEST_USER_PLUGIN_ROOT: userRoot,
-      INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: builtinRoot,
-      INNOCENCE_TEST_USER_DATA: userData,
-      INNOCENCE_TEST_MODE: "1",
+      INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT: userRoot,
+      INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT: builtinRoot,
+      INNOCENCEHARNESS_TEST_USER_DATA: userData,
+      INNOCENCEHARNESS_TEST_MODE: "1",
       ELECTRON_ENABLE_LOGGING: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -487,7 +484,7 @@ describe("external UI harness lifecycle", () => {
 });
 
 describe("external UI plugin real Electron acceptance", () => {
-  acceptanceIt("loads panel/settings through innocence-plugin and revokes both after disabling the fixture", async () => {
+  acceptanceIt("loads panel/settings through innocenceharness-plugin and revokes both after disabling the fixture", async () => {
     const launchState: LaunchState = { output: "" };
     const roots: string[] = [];
     try {
@@ -499,7 +496,7 @@ describe("external UI plugin real Electron acceptance", () => {
       await prepareRoots(userRoot, builtinRoot);
       const port = await freePort();
       const devtools = await launchApp(userRoot, builtinRoot, userData, port, launchState);
-      await waitForText(devtools, "InnocenceCode");
+      await waitForText(devtools, "InnocenceHarness");
       await clickButton(devtools, "auxiliary panel|辅助面板");
       await waitForText(devtools, "fixture.panel");
       await clickButton(devtools, "^fixture\\.panel$");

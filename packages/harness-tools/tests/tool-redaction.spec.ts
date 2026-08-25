@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactCommand, redactCommandSummary, redactUrl, sha256Hex } from "@innocencecode/harness-tools";
+import { redactCommand, redactCommandSummary, redactUrl, sha256Hex } from "@innocenceharness/harness-tools";
 
 /** Same per-family secret value as the original core redaction suite (bash family). */
 const SECRETS = {

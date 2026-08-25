@@ -4,7 +4,7 @@
 // type to task-core's TaskEvent union (or removing one) fails `npm run
 // typecheck` here instead of silently desyncing the renderer push channel.
 import { describe, expect, it } from "vitest";
-import type { TaskEvent } from "@innocencecode/task-core";
+import type { TaskEvent } from "@innocenceharness/task-core";
 import type { TaskEventKind } from "./taskIpc";
 
 /** Mutual-extends equality: true only when A and B are the same union. */

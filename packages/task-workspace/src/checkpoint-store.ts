@@ -5,8 +5,8 @@
  * checkpoint id can never traverse outside the checkpoints directory.
  */
 import path from "node:path";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
-import type { Checkpoint } from "@innocencecode/task-core";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
+import type { Checkpoint } from "@innocenceharness/task-core";
 
 const CHECKPOINT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 

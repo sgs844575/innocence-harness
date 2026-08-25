@@ -7,18 +7,18 @@
 // plugins come from the injected spine suite when the host loaded them from
 // the distributed tree (module identity stays single-sourced); without an
 // injection the bundled static spine is used.
-import { Context, type Fiber } from "@innocencecode/kernel";
+import { Context, type Fiber } from "@innocenceharness/kernel";
 import type {
   AgentsService,
   SpawnerService,
   SpawnerSessionFactory,
-} from "@innocencecode/harness-agent";
-import type { PermissionsService } from "@innocencecode/harness-permissions";
-import type { Provider, ProvidersService } from "@innocencecode/harness-providers";
-import type { SessionService } from "@innocencecode/harness-session";
-import type { SkillsService } from "@innocencecode/harness-skills";
-import type { SystemPromptService } from "@innocencecode/harness-system-prompt";
-import type { ToolsService } from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-agent";
+import type { PermissionsService } from "@innocenceharness/harness-permissions";
+import type { Provider, ProvidersService } from "@innocenceharness/harness-providers";
+import type { SessionService } from "@innocenceharness/harness-session";
+import type { SkillsService } from "@innocenceharness/harness-skills";
+import type { SystemPromptService } from "@innocenceharness/harness-system-prompt";
+import type { ToolsService } from "@innocenceharness/harness-tools";
 import type { AgentSessionOptions } from "./session";
 import type { Logger, SessionPlugin } from "./registry";
 import { adaptHarnessPlugin } from "./session-adapter";
@@ -36,9 +36,9 @@ import { isSessionLoaderPlugin, mountSessionLoader, type SessionLoaderPlugin } f
 // kernel-logger publishes its service without a Context augmentation; the
 // session composition declares the typed member (kernel ServiceTable
 // contract, same pattern the spine packages use for their services).
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
-    logger: import("@innocencecode/kernel-logger").LoggerService;
+    logger: import("@innocenceharness/kernel-logger").LoggerService;
   }
 }
 
@@ -63,7 +63,7 @@ export interface SessionKernel {
   /** Session plugin fibers (native, adapted, and loader owner) in activation order. */
   readonly pluginFibers: readonly Fiber[];
   /** Loader tree entries created in this route scope. */
-  readonly loaderEntries: readonly import("@innocencecode/kernel-loader").LoaderEntry[];
+  readonly loaderEntries: readonly import("@innocenceharness/kernel-loader").LoaderEntry[];
 }
 
 /** Inputs of {@link mountSessionKernel} (everything AgentSession.create owns). */
@@ -123,7 +123,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
   const log = init.logger;
   // Declared outside the try so the rollback can read what had loaded so far.
   const pluginFibers: Fiber[] = [];
-  let loaderEntries: import("@innocencecode/kernel-loader").LoaderEntry[] = [];
+  let loaderEntries: import("@innocenceharness/kernel-loader").LoaderEntry[] = [];
   try {
     await ctx.plugin(spine.logger.LoggerPlugin);
     await ctx.plugin(spine.timer.TimerPlugin);

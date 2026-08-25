@@ -1,7 +1,7 @@
 import type { MessagePart } from "./types";
-import type { PermissionResolution } from "@innocencecode/harness-permissions";
-import type { PermissionResource, ToolCallInfo } from "@innocencecode/harness-permissions";
-import type { ToolOutcome } from "@innocencecode/harness-tools";
+import type { PermissionResolution } from "@innocenceharness/harness-permissions";
+import type { PermissionResource, ToolCallInfo } from "@innocenceharness/harness-permissions";
+import type { ToolOutcome } from "@innocenceharness/harness-tools";
 
 export type HarnessEvent =
   | { type: "turnStart"; turn: number }

@@ -9,7 +9,7 @@ export type {
   ToolResultPart,
 } from "./types";
 export { textMessage, isPlainText, messageText, toTranscript } from "./types";
-export type { ChatRequest, Delta, Provider, ToolSpec } from "@innocencecode/harness-providers";
+export type { ChatRequest, Delta, Provider, ToolSpec } from "@innocenceharness/harness-providers";
 export {
   processMessage,
   type MessageProcessor,

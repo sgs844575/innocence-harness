@@ -1,5 +1,5 @@
-import type { Context } from "@innocencecode/kernel";
-import type { Provider } from "@innocencecode/harness-providers";
+import type { Context } from "@innocenceharness/kernel";
+import type { Provider } from "@innocenceharness/harness-providers";
 import { ContextManager, type CompactionOptions } from "./context-manager";
 import type { HarnessEvent } from "./events";
 import { processMessage, type MessageProcessor } from "./processor";
@@ -12,7 +12,7 @@ import type { Message } from "./types";
 //
 // HarnessEvent traffic is broadcast on the kernel event bus under
 // "harness/event" (call-signature style, kernel Events contract).
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     session: SessionService;
   }

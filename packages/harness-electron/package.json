@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-electron",
+  "name": "@innocenceharness/harness-electron",
   "version": "0.1.0",
   "description": "Runtime glue between host sessions and the InnocenceHarness host (AgentSession + UI-bridges injected, no direct Electron imports)",
   "type": "module",
@@ -12,26 +12,26 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-agent": "^0.1.0",
-    "@innocencecode/harness-agent-loop": "^0.1.0",
-    "@innocencecode/harness-permissions": "^0.1.0",
-    "@innocencecode/harness-providers": "^0.1.0",
-    "@innocencecode/harness-session": "^0.1.0",
-    "@innocencecode/harness-skills": "^0.1.0",
-    "@innocencecode/harness-system-prompt": "^0.1.0",
-    "@innocencecode/harness-tools": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0",
-    "@innocencecode/kernel-loader": "^0.1.0",
-    "@innocencecode/kernel-group": "^0.1.0",
-    "@innocencecode/kernel-logger": "^0.1.0",
-    "@innocencecode/kernel-timer": "^0.1.0",
-    "@innocencecode/kernel-hmr": "^0.1.0",
-    "@innocencecode/task-core": "^0.1.0"
+    "@innocenceharness/harness-agent": "^0.1.0",
+    "@innocenceharness/harness-agent-loop": "^0.1.0",
+    "@innocenceharness/harness-permissions": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0",
+    "@innocenceharness/harness-session": "^0.1.0",
+    "@innocenceharness/harness-skills": "^0.1.0",
+    "@innocenceharness/harness-system-prompt": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0",
+    "@innocenceharness/kernel-loader": "^0.1.0",
+    "@innocenceharness/kernel-group": "^0.1.0",
+    "@innocenceharness/kernel-logger": "^0.1.0",
+    "@innocenceharness/kernel-timer": "^0.1.0",
+    "@innocenceharness/kernel-hmr": "^0.1.0",
+    "@innocenceharness/task-core": "^0.1.0"
   },
   "devDependencies": {
-    "@innocencecode/provider-mock": "*",
-    "@innocencecode/tools-fs": "*",
-    "@innocencecode/tools-shell": "*"
+    "@innocenceharness/provider-mock": "*",
+    "@innocenceharness/tools-fs": "*",
+    "@innocenceharness/tools-shell": "*"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

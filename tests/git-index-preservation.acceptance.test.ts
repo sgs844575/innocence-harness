@@ -12,10 +12,10 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { openTaskRepository, sha256Bytes } from "@innocencecode/task-workspace";
-import type { Checkpoint, TaskEvent } from "@innocencecode/task-core";
-import { turnCheckpointedEvent, turnCommittedEvent, turnPreparedEvent } from "@innocencecode/task-core";
-import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocencecode/task-cli";
+import { openTaskRepository, sha256Bytes } from "@innocenceharness/task-workspace";
+import type { Checkpoint, TaskEvent } from "@innocenceharness/task-core";
+import { turnCheckpointedEvent, turnCommittedEvent, turnPreparedEvent } from "@innocenceharness/task-core";
+import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocenceharness/task-cli";
 
 const execFileAsync = promisify(execFile);
 

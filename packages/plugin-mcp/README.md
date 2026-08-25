@@ -1,6 +1,6 @@
 # plugin-mcp — MCP stdio 客户端插件
 
-`@innocencecode/plugin-mcp` 按配置拉起外部 MCP（Model Context Protocol）服务器的 stdio 子进程，
+`@innocenceharness/plugin-mcp` 按配置拉起外部 MCP（Model Context Protocol）服务器的 stdio 子进程，
 完成 JSON-RPC 握手后把每个服务器工具注册进 harness，工具名为 `mcp__<server>__<tool>`。
 自包含一个最小 JSON-RPC 2.0 over 换行分隔 stdio 客户端（`StdioJsonRpcClient`），不依赖任何 MCP SDK。
 
@@ -35,7 +35,7 @@
 宿主接线（`src/main/harnessGlue.ts`）：
 
 ```ts
-import { createMcpPlugin } from "@innocencecode/plugin-mcp";
+import { createMcpPlugin } from "@innocenceharness/plugin-mcp";
 
 // config 来自 loadInnocenceConfig(workspaceRoot)
 plugins.push(createMcpPlugin({ servers: config.mcpServers ?? {} }));

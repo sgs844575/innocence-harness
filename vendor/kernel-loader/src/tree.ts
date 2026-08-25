@@ -1,5 +1,5 @@
-import type { Context } from "@innocencecode/kernel";
-import type { Fiber } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
+import type { Fiber } from "@innocenceharness/kernel";
 
 /**
  * Serialized options of one configured plugin entry.

@@ -39,6 +39,29 @@ const messages: ChatMessage[] = [
 afterEach(cleanup);
 
 describe("ChatView review wiring (C3)", () => {
+  it("renders the InnocenceHarness product name on the landing surface", () => {
+    render(
+      <ChatView
+        t={t}
+        appName="InnocenceHarness"
+        messages={[]}
+        streaming={false}
+        settings={null}
+        permission={null}
+        onSettingsChange={() => {}}
+        onPermissionRespond={() => {}}
+        onSend={() => {}}
+        onStop={() => {}}
+        landing
+        pendingProject=""
+        onPickProject={() => {}}
+        recentProjects={[]}
+        onOpenProjectDir={() => {}}
+      />,
+    );
+    expect(screen.getByText(/InnocenceHarness/)).toBeTruthy();
+  });
+
   it("renders TaskChangeCard for the keyed message and fires the review action", () => {
     const onOpenTaskReview = vi.fn();
     render(

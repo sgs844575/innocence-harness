@@ -1,7 +1,7 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import { describe, expect, it } from "vitest";
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Events {
     "internal/unwind-error"(payload: { fiberId: number | null; label: string | undefined; errors: unknown[] }): void;
   }

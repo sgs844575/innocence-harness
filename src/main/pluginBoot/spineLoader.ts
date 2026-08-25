@@ -9,8 +9,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   SessionSpineSuite,
-} from "@innocencecode/harness-electron";
-import type * as KernelLoaderModule from "@innocencecode/kernel-loader";
+} from "@innocenceharness/harness-electron";
+import type * as KernelLoaderModule from "@innocenceharness/kernel-loader";
 import { loadKernel, type Kernel } from "./kernelLoader";
 
 /** The loader face the boot composition mounts (kernel-loader module). */
@@ -26,9 +26,9 @@ export interface KernelSuite {
 /** Cache of the in-flight/finished suite import: one suite per process. */
 let suitePromise: Promise<KernelSuite> | undefined;
 
-/** Staged library entry under the staging node_modules/@innocencecode tree. */
+/** Staged library entry under the staging node_modules/@innocenceharness tree. */
 function libEntry(kernelPath: string, name: string): string {
-  // kernelPath = <root>/node_modules/@innocencecode/kernel/dist/index.js
+  // kernelPath = <root>/node_modules/@innocenceharness/kernel/dist/index.js
   const scopeDir = path.resolve(path.dirname(kernelPath), "..", "..");
   return path.join(scopeDir, name, "dist", "index.js");
 }

@@ -32,6 +32,14 @@ rl.on("line", (line) => {
   if (typeof msg.id !== "number") return;
   switch (msg.method) {
     case "initialize":
+      if (msg.params?.clientInfo?.name !== "InnocenceHarness") {
+        send({
+          jsonrpc: "2.0",
+          id: msg.id,
+          error: { code: -32602, message: "clientInfo.name must be InnocenceHarness" },
+        });
+        break;
+      }
       send({
         jsonrpc: "2.0",
         id: msg.id,

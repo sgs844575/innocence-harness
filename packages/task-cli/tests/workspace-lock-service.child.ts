@@ -9,7 +9,7 @@
 //   -> {"cmd":"release"}  dispose both leases, reply {"event":"released"}
 //   -> {"cmd":"exit"}     release everything and exit 0
 // Parent args: <storageDir> <taskId> <routeId> <canonicalWorkspaceKey>
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 // relative deep imports: Node type stripping needs fully-specified
 // specifiers and the package barrels re-export extension-less (bundler
 // resolution), while "exports" blocks package subpaths

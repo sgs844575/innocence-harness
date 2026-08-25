@@ -6,6 +6,12 @@ import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { pruneNodePtyPrebuilds } from "./scripts/packaging/nodePtyPrebuilds";
 
+export const packagingArtifactNames = {
+  executableName: "InnocenceHarness",
+  makerName: "InnocenceHarness",
+  setupExe: "InnocenceHarnessSetup.exe",
+} as const;
+
 const pruneWindowsX64NodePtyPrebuilds: HookFunction = (buildPath, _electronVersion, platform, arch, callback) => {
   if (platform !== "win32" || arch !== "x64") {
     callback();
@@ -26,7 +32,7 @@ export const config: ForgeConfig = {
       // require("node-pty") works from the bundled main process.
       unpack: "**/node_modules/node-pty/**",
     },
-    executableName: "InnocenceHarness",
+    executableName: packagingArtifactNames.executableName,
     // Prebuilt kernel libraries and plugins live outside the ASAR archive:
     // plugins are loaded at runtime via dynamic import from resources/, so
     // they must stay as real files on disk (spec D10). @electron/packager
@@ -36,7 +42,7 @@ export const config: ForgeConfig = {
     extraResource: ["build/dist/resources/plugins", "build/dist/resources/node_modules", "assets"],
     // The pruner walks the ROOT production graph, which does not include
     // workspace packages' dependencies — node-pty (a dependency of the
-    // @innocencecode/terminal-pty workspace) would be pruned away. The ignore
+    // workspace) would be pruned away. The ignore
     // filter below is the single source of truth for what ships; pruning is
     // therefore off.
     prune: false,
@@ -60,8 +66,8 @@ export const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      name: "InnocenceHarness",
-      setupExe: "InnocenceHarnessSetup.exe",
+      name: packagingArtifactNames.makerName,
+      setupExe: packagingArtifactNames.setupExe,
       // The setup exe and the uninstaller icon (iconUrl) use our own icon —
       // Squirrel otherwise falls back to the platform default.
       setupIcon: path.resolve(__dirname, "assets", "icon.ico"),

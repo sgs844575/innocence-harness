@@ -1,4 +1,4 @@
-// TaskRuntimePort implementation over @innocencecode/task-workspace: the
+// TaskRuntimePort implementation over @innocenceharness/task-workspace: the
 // fixed task-lease → workspace-lease mutation contexts, CAS-guarded
 // before/after captures (watcher-backed unknown-source detection) and the
 // single event log appends. Pure Node — no Electron surface; the bridge
@@ -11,7 +11,7 @@ import {
   type TaskRepository,
   type WorkspaceFileEvent,
   type WorkspaceWriteLock,
-} from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-workspace";
 import {
   foldAttributionDecisions,
   type AfterCapture,
@@ -24,7 +24,7 @@ import {
   type TaskRuntimePort,
   type TaskScope,
   type WorkspaceVersion,
-} from "@innocencecode/plugin-task";
+} from "@innocenceharness/plugin-task";
 
 export interface TaskPortDeps {
   readonly taskId: string;

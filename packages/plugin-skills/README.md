@@ -1,6 +1,6 @@
 # plugin-skills — SKILL.md 加载器插件
 
-`@innocencecode/plugin-skills` 在激活时扫描技能目录，解析每个 `SKILL.md` 的 frontmatter（`name` / `description`），
+`@innocenceharness/plugin-skills` 在激活时扫描技能目录，解析每个 `SKILL.md` 的 frontmatter（`name` / `description`），
 把技能注册进 harness。设计是"描述常驻索引、正文按需注入"：frontmatter 描述进入技能索引表（自动附到系统提示词），
 正文只在用户以 `/技能名` 调用时通过 `loadBody()` 注入上下文，不占用常驻 token。
 
@@ -33,7 +33,7 @@ description: 代码审查指南
 宿主接线（`src/main/harnessGlue.ts`）：
 
 ```ts
-import { createSkillsPlugin } from "@innocencecode/plugin-skills";
+import { createSkillsPlugin } from "@innocenceharness/plugin-skills";
 
 plugins.push(createSkillsPlugin({ dirs: [path.join(workspaceRoot, ".innocence", "skills")] }));
 ```

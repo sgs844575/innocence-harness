@@ -4,7 +4,7 @@ import {
   validateValue,
   type SchemaSpec,
   type StandardResult,
-} from "@innocencecode/kernel-schema";
+} from "@innocenceharness/kernel-schema";
 
 // 取出 issues 分支（断言本身保证处于该分支）。
 function issuesOf(r: StandardResult<unknown>) {

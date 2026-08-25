@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Context } from "@innocencecode/kernel";
-import { ProvidersPlugin } from "@innocencecode/harness-providers";
+import { Context } from "@innocenceharness/kernel";
+import { ProvidersPlugin } from "@innocenceharness/harness-providers";
 import { createOpenAIPlugin, createOpenAIProvider } from "../src/index";
 
 const SSE = [

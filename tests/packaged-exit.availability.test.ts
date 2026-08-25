@@ -14,7 +14,7 @@ afterEach(async () => {
 async function createPackageFixture(): Promise<{ executable: string; archive: string }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ic-packaged-availability-"));
   temporaryRoots.push(root);
-  const executable = path.join(root, "InnocenceCode.exe");
+  const executable = path.join(root, "InnocenceHarness.exe");
   const archive = path.join(root, "app.asar");
   await fs.writeFile(executable, "fixture");
   await fs.writeFile(archive, "fixture");
@@ -26,7 +26,7 @@ describe("inspectPackagedSmoke", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "ic-packaged-missing-exe-"));
     temporaryRoots.push(root);
 
-    expect(inspectPackagedSmoke(selectionReason, path.join(root, "InnocenceCode.exe"), path.join(root, "app.asar"), () => [])).toEqual(
+    expect(inspectPackagedSmoke(selectionReason, path.join(root, "InnocenceHarness.exe"), path.join(root, "app.asar"), () => [])).toEqual(
       expect.objectContaining({ status: "missing-exe" }),
     );
   });
@@ -34,7 +34,7 @@ describe("inspectPackagedSmoke", () => {
   it("skips when the executable exists but the archive is missing", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "ic-packaged-missing-archive-"));
     temporaryRoots.push(root);
-    const executable = path.join(root, "InnocenceCode.exe");
+    const executable = path.join(root, "InnocenceHarness.exe");
     await fs.writeFile(executable, "fixture");
 
     expect(inspectPackagedSmoke(selectionReason, executable, path.join(root, "app.asar"), () => [])).toEqual(

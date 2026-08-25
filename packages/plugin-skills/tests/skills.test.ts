@@ -2,14 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Context } from "@innocencecode/kernel";
-import { LoggerPlugin } from "@innocencecode/kernel-logger";
-import { SkillsPlugin } from "@innocencecode/harness-skills";
+import { Context } from "@innocenceharness/kernel";
+import { LoggerPlugin } from "@innocenceharness/kernel-logger";
+import { SkillsPlugin } from "@innocenceharness/harness-skills";
 import {
   createSessionPlugin,
   textMessage,
-} from "@innocencecode/harness-session";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
+} from "@innocenceharness/harness-session";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import { createSkillsPlugin, parseSkillMarkdown } from "../src";
 

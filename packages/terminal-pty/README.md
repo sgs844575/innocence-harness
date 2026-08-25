@@ -1,6 +1,6 @@
 # terminal-pty — 路由绑定 PTY 会话
 
-`@innocencecode/terminal-pty` 是主进程侧的 PTY（伪终端）注册表与单会话封装：一个 `(taskId, routeId)` 对
+`@innocenceharness/terminal-pty` 是主进程侧的 PTY（伪终端）注册表与单会话封装：一个 `(taskId, routeId)` 对
 一个活 shell，每个输出/退出事件都自带 `taskId / routeId / ptyId` 身份三元组，供终端 IPC 直通渲染进程。
 只依赖 node-pty，无 Electron / DOM 面。
 
@@ -23,7 +23,7 @@
 ## 使用
 
 ```ts
-import { createPtyManager } from "@innocencecode/terminal-pty";
+import { createPtyManager } from "@innocenceharness/terminal-pty";
 
 const pty = createPtyManager({
   onEvent: (event) => win.webContents.send("terminal:event", event), // 输出与退出直通渲染进程

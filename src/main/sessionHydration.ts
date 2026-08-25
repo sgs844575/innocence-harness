@@ -6,7 +6,7 @@
 // Pure record transformation: file placement and index persistence are
 // injected so the module stays free of store wiring.
 import fs from "node:fs";
-import { decodeTranscript } from "@innocencecode/harness-electron";
+import { decodeTranscript } from "@innocenceharness/harness-electron";
 import type { SessionRecord } from "./sessionIndexStore";
 import type { ChatMessage, MessagePart } from "../shared/ipc";
 

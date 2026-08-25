@@ -1,6 +1,6 @@
 # plugin-subagent — Task 工具：隔离子代理插件
 
-`@innocencecode/plugin-subagent` 注册 `Task` 工具：把一项独立任务委派给一个隔离的进程内子代理会话去完成。
+`@innocenceharness/plugin-subagent` 注册 `Task` 工具：把一项独立任务委派给一个隔离的进程内子代理会话去完成。
 子代理有自己的上下文与循环，中间过程不占用父会话上下文，只把最终报告返回——适合并行研究与探索。
 子代理由脊柱 `harness-agent` 的 `createSpawnerPlugin` 派生（宿主侧经 AgentSession.spawner 暴露）：共享父会话的 Provider 与权限引擎（走同一套审批流），
 并发上限 3，默认 `maxTurns` 20，Task 工具自身排除（防无限递归派生）。
@@ -25,7 +25,7 @@ Task 工具参数：`agentType`（必填）、`prompt`（必填）、`descriptio
 ## 使用
 
 ```ts
-import { SubagentPlugin } from "@innocencecode/plugin-subagent";
+import { SubagentPlugin } from "@innocenceharness/plugin-subagent";
 
 plugins.push(SubagentPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件开关 id: subagent，依赖 fs + shell）
 ```

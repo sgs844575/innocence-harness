@@ -1,16 +1,27 @@
 // Main window creation:
 // - show on 'ready-to-show' to avoid a white flash
 // - sandbox + contextIsolation preloads
-// - renderer served from the custom innocencecode:// scheme in production,
+// - renderer served from the custom innocenceharness:// scheme in production,
 //   vite dev server during development
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { appIndexUrl } from "./protocol";
+import { APP_SCHEME, appIndexUrl } from "./protocol";
 import { logger } from "./logger";
 import { getTheme, titleBarOverlayFor } from "./theme";
 
 let mainWindow: BrowserWindow | undefined;
+
+export function isAllowedNavigationUrl(url: string, devServerUrl: string | undefined): boolean {
+  try {
+    const candidate = new URL(url);
+    if (candidate.protocol === `${APP_SCHEME}:` && candidate.hostname === "app") return true;
+    if (devServerUrl === undefined) return false;
+    return candidate.origin === new URL(devServerUrl).origin;
+  } catch {
+    return false;
+  }
+}
 
 export function getMainWindow(): BrowserWindow | undefined {
   return mainWindow;
@@ -66,11 +77,11 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   // @electron-forge/plugin-vite (see vite-env.d.ts) — NOT process.env. It is
   // the dev server URL under `electron-forge start`, and statically replaced
   // with `undefined` in production builds, so packaged builds always take
-  // the innocencecode:// branch below.
+  // the innocenceharness:// branch below.
   const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
-  // Optional load verification hook: set InnocenceCode_SMOKE_OUT=<path> and the app
+  // Optional load verification hook: set InnocenceHarness_SMOKE_OUT=<path> and the app
   // writes the load outcome there and exits (used by tools/smoke-test.cjs).
-  const smokeOut = process.env.InnocenceCode_SMOKE_OUT;
+  const smokeOut = process.env.InnocenceHarness_SMOKE_OUT;
   try {
     if (devServerUrl) {
       await win.loadURL(devServerUrl);
@@ -100,9 +111,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   }
 
   // Block any navigation away from our own origins.
-  const allowed = new Set([devServerUrl, "innocencecode://app"].filter(Boolean) as string[]);
   win.webContents.on("will-navigate", (event, url) => {
-    if (![...allowed].some((origin) => url.startsWith(origin))) event.preventDefault();
+    if (!isAllowedNavigationUrl(url, devServerUrl)) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 

@@ -15,14 +15,14 @@
  * complete-but-unterminated final record); appends onto a log with NON-final
  * corruption are refused (fail closed).
  */
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
 import {
   recoverTask,
   TaskRecoveryError,
   type TaskEvent,
   type TaskEventLog,
   type TaskRecoveryResult,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 
 export interface FileEventLog extends TaskEventLog {
   /**

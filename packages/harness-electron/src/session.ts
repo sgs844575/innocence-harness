@@ -6,16 +6,16 @@
 // Home: the harness-electron host-adapter package (the Electron shell's
 // runtime glue) — the session family moved here when the retired core package
 // was deleted; the module itself stays host-agnostic (no Electron imports).
-import type { RunLoopFunction } from "@innocencecode/harness-agent-loop";
-import { nextRouteId, nextSessionId, type ExecutionScopeIdentity } from "@innocencecode/harness-tools";
-import type { HarnessEventListener, Message } from "@innocencecode/harness-session";
-import type { PermissionEngine, PermissionMode } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
+import type { RunLoopFunction } from "@innocenceharness/harness-agent-loop";
+import { nextRouteId, nextSessionId, type ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
+import type { HarnessEventListener, Message } from "@innocenceharness/harness-session";
+import type { PermissionEngine, PermissionMode } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
 import type { Logger } from "./registry";
 import { mountSessionKernel, type SessionKernel } from "./session-kernel";
 import type { SessionRegistryView } from "./session-registry-view";
 import { createSpawnerChildSession, makeSessionSpawner } from "./session-spawner";
-import type { SubagentSpawner } from "@innocencecode/harness-agent";
+import type { SubagentSpawner } from "@innocenceharness/harness-agent";
 import { staticSpineSuite, type SessionSpineSuite } from "./session-spine";
 import { canonicalUserMessage, executeSessionRun, settleSessionKernel } from "./session-lifecycle";
 import type { AgentSessionOptions, RunSummary } from "./session-options";
@@ -38,7 +38,7 @@ export class AgentSession {
   readonly sessionId: string;
   readonly history: Message[];
   readonly options: AgentSessionOptions;
-  readonly loaderEntries: readonly import("@innocencecode/kernel-loader").LoaderEntry[];
+  readonly loaderEntries: readonly import("@innocenceharness/kernel-loader").LoaderEntry[];
 
   private readonly kernel: SessionKernel;
   private readonly loop: RunLoopFunction;

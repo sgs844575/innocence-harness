@@ -1,7 +1,7 @@
 {
-  "name": "@innocencecode/plugin-subagent",
+  "name": "@innocenceharness/plugin-subagent",
   "version": "0.1.0",
-  "description": "Task tool: spawn isolated in-process subagents (explore / general)",
+  "description": "InnocenceHarness Task tool: spawn isolated in-process subagents (explore / general)",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-tools": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",
@@ -23,8 +23,8 @@
     "directory": "packages/plugin-subagent"
   },
   "devDependencies": {
-    "@innocencecode/harness-electron": "^0.1.0",
-    "@innocencecode/harness-providers": "^0.1.0",
-    "@innocencecode/harness-session": "^0.1.0"
+    "@innocenceharness/harness-electron": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0",
+    "@innocenceharness/harness-session": "^0.1.0"
   }
 }

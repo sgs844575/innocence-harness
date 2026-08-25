@@ -1,6 +1,6 @@
 # task-workspace — 任务工作区持久化引擎
 
-`@innocencecode/task-workspace` 是任务系统的落地层：内容寻址对象库（CAS）、工作区快照扫描、checkpoint 存储、
+`@innocenceharness/task-workspace` 是任务系统的落地层：内容寻址对象库（CAS）、工作区快照扫描、checkpoint 存储、
 补丁引擎（diff / 反向应用 / 三方预检）、持久应用日志、跨进程双锁、私有任务目录布局、文件事件日志与
 turn 提交协调器。承载工作流中"捕获变更"与"应用/丢弃"的磁盘语义。
 
@@ -38,7 +38,7 @@ turn 提交协调器。承载工作流中"捕获变更"与"应用/丢弃"的磁�
 ## 使用
 
 ```ts
-import { openTaskRepository, createTaskMutationLock, createWorkspaceWriteLock, scanWorkspace } from "@innocencecode/task-workspace";
+import { openTaskRepository, createTaskMutationLock, createWorkspaceWriteLock, scanWorkspace } from "@innocenceharness/task-workspace";
 
 const repo = await openTaskRepository(storageRoot, taskId);        // 加固目录 + 事件日志
 const taskLock = createTaskMutationLock(storageRoot);

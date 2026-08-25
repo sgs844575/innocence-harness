@@ -1,11 +1,11 @@
-import { Context, FiberState } from "@innocencecode/kernel";
+import { Context, FiberState } from "@innocenceharness/kernel";
 import { describe, expect, it } from "vitest";
 
 // Correction vs task brief: Events entries in this kernel are call-signature
 // declarations (see the Events interface in the kernel core), and
 // `ctx.on(name, listener: Events[K])` requires a callable event type, so
 // the brief's `"reopen/ping": void` property style is not valid here.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Events {
     "reopen/ping"(): void;
   }

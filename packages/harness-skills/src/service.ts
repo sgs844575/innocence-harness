@@ -1,4 +1,4 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import { buildSkillIndex, type SkillIndex } from "./skill-index";
 import type { Skill } from "./skill";
 
@@ -6,7 +6,7 @@ import type { Skill } from "./skill";
 // publisher (kernel ServiceTable contract). The member is live only while
 // the SkillsPlugin fiber publishing it is active; before load and after
 // its unwind the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     skills: SkillsService;
   }

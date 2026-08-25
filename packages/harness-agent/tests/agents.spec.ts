@@ -1,5 +1,5 @@
-import { Context } from "@innocencecode/kernel";
-import { AgentsPlugin, type AgentDef, type AgentsService } from "@innocencecode/harness-agent";
+import { Context } from "@innocenceharness/kernel";
+import { AgentsPlugin, type AgentDef, type AgentsService } from "@innocenceharness/harness-agent";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

@@ -3,16 +3,16 @@
 // this suite exercises — invocation ids minted through real loop turns — so
 // each face imports from its owning spine package.
 import { describe, expect, it } from "vitest";
-import { Context } from "@innocencecode/kernel";
-import { PermissionEngine } from "@innocencecode/harness-permissions";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import { textMessage, type Message } from "@innocencecode/harness-session";
+import { Context } from "@innocenceharness/kernel";
+import { PermissionEngine } from "@innocenceharness/harness-permissions";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import { textMessage, type Message } from "@innocenceharness/harness-session";
 import {
   ToolsPlugin,
   createExecutionScope,
   type ExecutionScope,
   type Tool,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 import { runLoop } from "../src";
 
 describe("createExecutionScope", () => {

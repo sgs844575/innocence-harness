@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { resolveEntries } from "./pluginEntries";
 import type { ConfigLayer } from "./configSources";
 import type { PluginDescriptor } from "../plugin-toggles-local";
-import type { SchemaSpec } from "@innocencecode/kernel-schema";
+import type { SchemaSpec } from "@innocenceharness/kernel-schema";
 
 const DESCRIPTORS: readonly PluginDescriptor[] = [
   { id: "fs", dependencies: [], core: true },

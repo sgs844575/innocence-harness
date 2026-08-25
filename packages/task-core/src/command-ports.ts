@@ -3,12 +3,12 @@
  *
  * task-core defines ONLY the contracts here; the real implementations live in
  * the existing packages and are wired by hosts (Electron's bridge-backed
- * adapter and @innocencecode/task-cli's runtime factory):
+ * adapter and @innocenceharness/task-cli's runtime factory):
  *   - TaskCommandStore / TaskCommandLocks / TaskCommandWorkspace →
- *     @innocencecode/task-workspace (repository, CAS, file locks, scanner)
- *   - TaskCommandGit → @innocencecode/task-git (worktrees, baseline, apply)
+ *     @innocenceharness/task-workspace (repository, CAS, file locks, scanner)
+ *   - TaskCommandGit → @innocenceharness/task-git (worktrees, baseline, apply)
  *   - TaskDiffPort → task-workspace's patch engine (CAS-aware checkpoint diff)
- *   - attribution decisions → @innocencecode/plugin-task's state machine
+ *   - attribution decisions → @innocenceharness/plugin-task's state machine
  *
  * The structural shapes deliberately mirror the implementing packages' types
  * (same precedent as the mirrored apply DTOs in task-git) so implementations

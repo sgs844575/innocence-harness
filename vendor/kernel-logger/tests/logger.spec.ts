@@ -1,12 +1,12 @@
-import { Context } from "@innocencecode/kernel";
-import { LoggerPlugin, type LogEntry, type LoggerService } from "@innocencecode/kernel-logger";
+import { Context } from "@innocenceharness/kernel";
+import { LoggerPlugin, type LogEntry, type LoggerService } from "@innocenceharness/kernel-logger";
 import { describe, expect, it } from "vitest";
 
 // The kernel installs services as runtime properties (`defineProperty`) and
 // leaves typing to the publisher through declaration merging on `Context`.
 // The logger service is required while the plugin fiber is active in these
 // tests; the disposal test casts to an optional member explicitly.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     logger: LoggerService;
   }

@@ -12,7 +12,7 @@
  *   task lease  ->  workspace lease
  * and never the reverse, or two writers can deadlock.
  */
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
 import { acquireFileLock, sha256Hex, type LockOwner } from "./workspace-lock.ts";
 
 export interface TaskMutationLock {

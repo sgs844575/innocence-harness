@@ -1,7 +1,7 @@
-import type { Context, ObjectPlugin } from "@innocencecode/kernel";
-import type { SessionService } from "@innocencecode/harness-session";
-import type { ToolsService } from "@innocencecode/harness-tools";
-import type { Provider } from "@innocencecode/harness-providers";
+import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
+import type { SessionService } from "@innocenceharness/harness-session";
+import type { ToolsService } from "@innocenceharness/harness-tools";
+import type { Provider } from "@innocenceharness/harness-providers";
 import type { SessionPlugin } from "./registry";
 import type { SessionRegistryView } from "./session-registry-view";
 

@@ -22,6 +22,8 @@ export interface FileModuleResolver extends ModuleResolver {
   version: "v2";
 }
 
+/** Only the current workspace scope may address a package-style plugin specifier. */
+const workspaceScope = "@innocenceharness/";
 /** Entry-point layout of a plugin directory below a root. */
 const entryPoint = ["dist", "index.js"] as const;
 
@@ -67,18 +69,18 @@ function normalizeRoots(roots: ReadonlyArray<string | URL>): string[] {
 /** Whether the specifier is a plain directory name that cannot escape a root when joined. */
 function isPlainSpecifier(specifier: string): boolean {
   return (
-    specifier !== "" &&
-    !specifier.startsWith(".") &&
-    !specifier.includes("/") &&
-    !specifier.includes("\\") &&
-    !/^[a-zA-Z]:/.test(specifier)
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(specifier) ||
+    new RegExp(`^${workspaceScope}[a-zA-Z0-9][a-zA-Z0-9._-]*$`).test(specifier)
   );
 }
 
 /** Probe the roots in order for the specifier's entry-point file. */
 async function locate(roots: ReadonlyArray<string>, specifier: string): Promise<string> {
+  const parts = specifier.startsWith(workspaceScope)
+    ? [workspaceScope.slice(0, -1), specifier.slice(workspaceScope.length)]
+    : [specifier];
   for (const root of roots) {
-    const file = join(root, specifier, ...entryPoint);
+    const file = join(root, ...parts, ...entryPoint);
     if (await isRegularFile(file)) return file;
   }
   throw new Error(`plugin not found: ${specifier} (searched ${roots.length} roots)`);

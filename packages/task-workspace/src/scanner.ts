@@ -9,11 +9,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { FileSnapshotRef } from "@innocencecode/task-core";
-import { isSafeRelativePath } from "@innocencecode/secure-storage-node";
+import type { FileSnapshotRef } from "@innocenceharness/task-core";
+import { isSafeRelativePath } from "@innocenceharness/secure-storage-node";
 import { sha256Bytes } from "./content-store.ts";
 
-export { isSafeRelativePath } from "@innocencecode/secure-storage-node";
+export { isSafeRelativePath } from "@innocenceharness/secure-storage-node";
 
 export interface WorkspaceSnapshot {
   /** Canonical (realpath) workspace root. */

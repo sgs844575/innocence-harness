@@ -1,10 +1,10 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   ProvidersPlugin,
   createProviderPlugin,
   type Provider,
   type ProvidersService,
-} from "@innocencecode/harness-providers";
+} from "@innocenceharness/harness-providers";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

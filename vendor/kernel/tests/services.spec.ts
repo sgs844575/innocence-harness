@@ -1,8 +1,8 @@
-import { Context, KernelError } from "@innocencecode/kernel";
-import { Loader } from "@innocencecode/kernel-loader";
+import { Context, KernelError } from "@innocenceharness/kernel";
+import { Loader } from "@innocenceharness/kernel-loader";
 import { describe, expect, it } from "vitest";
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     /** Probe service published by the scoped-table tests below. */
     probe?: number | string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sha256Hex } from "@innocencecode/harness-tools";
+import { sha256Hex } from "@innocenceharness/harness-tools";
 import {
   classifyUnknownChanges,
   excludedPaths,

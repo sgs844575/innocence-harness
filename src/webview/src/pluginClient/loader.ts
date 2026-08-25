@@ -1,5 +1,5 @@
 // 插件渲染层模块装载器：清单投影（IPC plugins:list）中 client && active 的
-// 条目经 innocence-plugin:// 协议动态 import，调用其 default 注册函数把
+// 条目经 innocenceharness-plugin:// 协议动态 import，调用其 default 注册函数把
 // 描述符式工具卡注册进槽位。失败隔离——单插件失败（导入拒绝/无 default/
 // 注册抛出）只 console.warn 含插件 id，不阻断其余条目。同一注册表的重复
 // 装载先撤销上一轮注册：清单随设置变化重放，停用条目的卡随之回落兜底。
@@ -42,7 +42,7 @@ const pendingRounds = new WeakMap<SlotRegistry, ReturnType<typeof createPluginCl
 
 /** 协议布局与 staging 产物一致：plugins/<id>/dist/client.js。 */
 export function clientModuleUrl(id: string, revision?: number): string {
-  const base = `innocence-plugin://${id}/dist/client.js`;
+  const base = `innocenceharness-plugin://${id}/dist/client.js`;
   return revision === undefined ? base : `${base}?hmr=${encodeURIComponent(String(revision))}`;
 }
 

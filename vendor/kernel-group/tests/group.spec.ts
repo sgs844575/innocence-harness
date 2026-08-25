@@ -1,5 +1,5 @@
-import { Context } from "@innocencecode/kernel";
-import { Loader } from "@innocencecode/kernel-loader";
+import { Context } from "@innocenceharness/kernel";
+import { Loader } from "@innocenceharness/kernel-loader";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGroupPlugin } from "../src";
 

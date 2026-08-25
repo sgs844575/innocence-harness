@@ -10,7 +10,7 @@
 // Binary files return file-level metadata only — never content.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isSafeRelativePath } from "@innocencecode/secure-storage-node";
+import { isSafeRelativePath } from "@innocenceharness/secure-storage-node";
 import { CodeIpcChannels, type CodeFileContent, type CodeListFilesResponse } from "../shared/codeIpc";
 
 /** Brief-verbatim reader surface; results carry the metadata superset. */

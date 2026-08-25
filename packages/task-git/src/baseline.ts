@@ -17,7 +17,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 // Reused (not redefined) so the whole workspace agrees on one containment policy.
-import { isSafeRelativePath } from "@innocencecode/secure-storage-node";
+import { isSafeRelativePath } from "@innocenceharness/secure-storage-node";
 import type { GitRunner } from "./git-process.ts";
 import { detectGit, readGitStatus, type PorcelainChangeEntry } from "./status.ts";
 

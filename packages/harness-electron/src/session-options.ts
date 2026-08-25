@@ -1,6 +1,6 @@
-import type { Context } from "@innocencecode/kernel";
-import type { PermissionAuditor, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocencecode/harness-permissions";
-import type { Provider } from "@innocencecode/harness-providers";
+import type { Context } from "@innocenceharness/kernel";
+import type { PermissionAuditor, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocenceharness/harness-permissions";
+import type { Provider } from "@innocenceharness/harness-providers";
 import type { Logger, SessionPlugin } from "./registry";
 import type { SessionLoaderPlugin } from "./session-loader";
 import type { SessionSpineSuite } from "./session-spine";

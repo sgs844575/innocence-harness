@@ -1,5 +1,5 @@
 // 预构建参与分发的包并组装 staging 树：
-//   build/dist/resources/node_modules/@innocencecode/<name>/{dist/,package.json}
+//   build/dist/resources/node_modules/@innocenceharness/<name>/{dist/,package.json}
 //   build/dist/resources/plugins/<id>/{dist/,package.json}
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -53,6 +53,7 @@ const PLUGINS = [
   { dir: "packages/provider-mock", id: "provider-mock" },
 ];
 const STAGING = "build/dist/resources";
+const WORKSPACE_SCOPE = "@innocenceharness";
 
 // 运行时 manifest：源 manifest 的 main/exports 指向 src（开发态源码直引），
 // staging 副本改指 dist 产物。
@@ -66,6 +67,30 @@ function runtimeManifest(pkgDir) {
     main: "./dist/index.js",
     exports: { ".": "./dist/index.js", "./package.json": "./package.json" },
   };
+}
+
+function assertWorkspacePackageMetadata(file, expectedName) {
+  const raw = readFileSync(file, "utf8");
+  const pkg = JSON.parse(raw);
+  const retiredScope = `${WORKSPACE_SCOPE.slice(0, -7)}code`;
+  if (pkg.name !== expectedName || !pkg.name.startsWith(`${WORKSPACE_SCOPE}/`)) {
+    console.error(`staging self-check failed: package metadata scope mismatch in ${file}`);
+    process.exit(1);
+  }
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+    const dependencies = pkg[section];
+    if (!dependencies || typeof dependencies !== "object") continue;
+    const invalidDependency = Object.keys(dependencies).find((name) =>
+      name.startsWith("@innocence") && !name.startsWith(`${WORKSPACE_SCOPE}/`));
+    if (invalidDependency) {
+      console.error(`staging self-check failed: dependency scope mismatch in ${file}: ${invalidDependency}`);
+      process.exit(1);
+    }
+  }
+  if (raw.includes(`${retiredScope}/`)) {
+    console.error(`staging self-check failed: retired package scope in ${file}`);
+    process.exit(1);
+  }
 }
 
 // tsc 不会重写导入说明符：源码按 bundler 解析写无后缀相对导入（"./context"），
@@ -104,8 +129,9 @@ rmSync("build/dist", { recursive: true, force: true });
 for (const dir of LIBS) {
   build(dir);
   const pkg = runtimeManifest(dir);
-  const name = pkg.name.replace(/^@innocencecode\//, "");
-  const target = join(STAGING, "node_modules", "@innocencecode", name);
+  assertWorkspacePackageMetadata(join(dir, "package.json"), pkg.name);
+  const name = pkg.name.replace(new RegExp(`^${WORKSPACE_SCOPE.replace("@", "\\@")}\\/`), "");
+  const target = join(STAGING, "node_modules", WORKSPACE_SCOPE, name);
   mkdirSync(target, { recursive: true });
   cpSync(join(dir, "dist"), join(target, "dist"), { recursive: true });
   writeFileSync(join(target, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
@@ -113,6 +139,7 @@ for (const dir of LIBS) {
 for (const { dir, id } of PLUGINS) {
   build(dir);
   const pkg = runtimeManifest(dir);
+  assertWorkspacePackageMetadata(join(dir, "package.json"), pkg.name);
   const target = join(STAGING, "plugins", id);
   mkdirSync(target, { recursive: true });
   cpSync(join(dir, "dist"), join(target, "dist"), { recursive: true });
@@ -146,10 +173,10 @@ writeFileSync(
 );
 
 // 自检：staging 内 kernel 库与各清单插件的入口产物必须真实存在。
-const selfCheck = [join(STAGING, "node_modules", "@innocencecode", "kernel", "dist", "index.js")];
+const selfCheck = [join(STAGING, "node_modules", WORKSPACE_SCOPE, "kernel", "dist", "index.js")];
 for (const dir of LIBS) {
   if (dir.startsWith("packages/")) {
-    selfCheck.push(join(STAGING, "node_modules", "@innocencecode", dir.slice("packages/".length), "dist", "index.js"));
+    selfCheck.push(join(STAGING, "node_modules", WORKSPACE_SCOPE, dir.slice("packages/".length), "dist", "index.js"));
   }
 }
 selfCheck.push(join(STAGING, "plugins", "manifest.json"));

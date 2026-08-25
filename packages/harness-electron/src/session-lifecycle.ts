@@ -1,6 +1,6 @@
-import { textMessage, type Message } from "@innocencecode/harness-session";
-import type { RunLoopFunction } from "@innocencecode/harness-agent-loop";
-import type { ExecutionScopeIdentity } from "@innocencecode/harness-tools";
+import { textMessage, type Message } from "@innocenceharness/harness-session";
+import type { RunLoopFunction } from "@innocenceharness/harness-agent-loop";
+import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
 import type { SessionKernel } from "./session-kernel";
 
 /** Converts run input into a canonical user message or throws. */

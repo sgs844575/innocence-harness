@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { PermissionDecider } from "@innocencecode/harness-permissions";
-import { createProviderPlugin } from "@innocencecode/harness-providers";
-import { createExecutionScope } from "@innocencecode/harness-tools";
+import type { PermissionDecider } from "@innocenceharness/harness-permissions";
+import { createProviderPlugin } from "@innocenceharness/harness-providers";
+import { createExecutionScope } from "@innocenceharness/harness-tools";
 import { AgentSession } from "./session";
 import { decodeTranscript } from "./transcript";
 import { systemPromptFor } from "./agents";

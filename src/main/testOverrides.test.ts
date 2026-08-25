@@ -6,10 +6,10 @@ describe("test-only environment overrides", () => {
     expect(resolveTestOverrides({
       isPackaged: true,
       env: {
-        INNOCENCE_TEST_USER_DATA: "C:/untrusted/user-data",
-        INNOCENCE_TEST_USER_PLUGIN_ROOT: "C:/untrusted/user-plugins",
-        INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: "C:/untrusted/builtin-plugins",
-        INNOCENCE_TEST_MODE: "1",
+        INNOCENCEHARNESS_TEST_USER_DATA: "C:/untrusted/user-data",
+        INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT: "C:/untrusted/user-plugins",
+        INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT: "C:/untrusted/builtin-plugins",
+        INNOCENCEHARNESS_TEST_MODE: "1",
       },
       argv: [],
     })).toEqual({ enabled: false });
@@ -19,10 +19,10 @@ describe("test-only environment overrides", () => {
     expect(resolveTestOverrides({
       isPackaged: true,
       env: {
-        INNOCENCE_TEST_USER_DATA: "C:/test/user-data",
-        INNOCENCE_TEST_USER_PLUGIN_ROOT: "C:/test/user-plugins",
-        INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: "C:/test/builtin-plugins",
-        INNOCENCE_TEST_MODE: "1",
+        INNOCENCEHARNESS_TEST_USER_DATA: "C:/test/user-data",
+        INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT: "C:/test/user-plugins",
+        INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT: "C:/test/builtin-plugins",
+        INNOCENCEHARNESS_TEST_MODE: "1",
       },
       argv: ["app.exe", "--innocence-controlled-test"],
     })).toEqual({
@@ -37,9 +37,22 @@ describe("test-only environment overrides", () => {
     expect(resolveTestOverrides({
       isPackaged: false,
       env: {
-        INNOCENCE_TEST_USER_DATA: "C:/untrusted/user-data",
-        INNOCENCE_TEST_USER_PLUGIN_ROOT: "C:/untrusted/user-plugins",
-        INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: "C:/untrusted/builtin-plugins",
+        INNOCENCEHARNESS_TEST_USER_DATA: "C:/untrusted/user-data",
+        INNOCENCEHARNESS_TEST_USER_PLUGIN_ROOT: "C:/untrusted/user-plugins",
+        INNOCENCEHARNESS_TEST_BUILTIN_PLUGIN_ROOT: "C:/untrusted/builtin-plugins",
+      },
+      argv: [],
+    })).toEqual({ enabled: false });
+  });
+
+  it("ignores legacy environment variables even when the legacy marker is present", () => {
+    expect(resolveTestOverrides({
+      isPackaged: false,
+      env: {
+        INNOCENCE_TEST_USER_DATA: "C:/old/user-data",
+        INNOCENCE_TEST_USER_PLUGIN_ROOT: "C:/old/user-plugins",
+        INNOCENCE_TEST_BUILTIN_PLUGIN_ROOT: "C:/old/builtin-plugins",
+        INNOCENCE_TEST_MODE: "1",
       },
       argv: [],
     })).toEqual({ enabled: false });
@@ -49,8 +62,8 @@ describe("test-only environment overrides", () => {
     expect(resolveTestOverrides({
       isPackaged: false,
       env: {
-        INNOCENCE_TEST_USER_DATA: "C:/test/user-data",
-        INNOCENCE_TEST_MODE: "1",
+        INNOCENCEHARNESS_TEST_USER_DATA: "C:/test/user-data",
+        INNOCENCEHARNESS_TEST_MODE: "1",
       },
       argv: [],
     })).toEqual({ enabled: true, userData: "C:/test/user-data" });

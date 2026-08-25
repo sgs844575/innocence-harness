@@ -27,7 +27,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import url from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertKnownPackageDirectory } from "../scripts/packaging/outPreflight";
+import {
+  assertKnownPackageDirectory,
+  defaultExecutableName,
+  defaultPackageDirectory,
+} from "../scripts/packaging/outPreflight";
 import { inspectPackagedSmoke } from "../scripts/packaging/packagedAvailability";
 
 const execFileAsync = promisify(execFile);
@@ -73,9 +77,9 @@ function summarizeOutput(output: string): string {
 }
 
 function resolvePackageSelection(): PackageSelection {
-  const requestedPackageDir = process.env.IC_PACKAGE_DIR
-    ? path.resolve(process.env.IC_PACKAGE_DIR)
-    : path.join(packageOutputRoot, "InnocenceCode-win32-x64");
+  const requestedPackageDir = process.env.INNOCENCEHARNESS_PACKAGE_DIR
+    ? path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR)
+    : defaultPackageDirectory(repoRoot);
 
   try {
     const validatedPackageDir = assertKnownPackageDirectory(requestedPackageDir, repoRoot);
@@ -93,7 +97,7 @@ function resolvePackageSelection(): PackageSelection {
     return {
       packageDir: requestedPackageDir,
       canonicalPackageDir: canonicalPath(requestedPackageDir),
-      reason: `IC_PACKAGE_DIR must resolve to a known package directory inside repository out: ${String(error)}`,
+      reason: `INNOCENCEHARNESS_PACKAGE_DIR must resolve to a known package directory inside repository out: ${String(error)}`,
     };
   }
 }
@@ -101,7 +105,7 @@ function resolvePackageSelection(): PackageSelection {
 const packageSelection = resolvePackageSelection();
 const packageDir = packageSelection.packageDir;
 const canonicalPackageDir = packageSelection.canonicalPackageDir;
-const packagedExe = path.join(packageDir, "InnocenceCode.exe");
+const packagedExe = path.join(packageDir, defaultExecutableName());
 const asarPath = path.join(packageDir, "resources", "app.asar");
 const unpackedNodeModules = path.join(packageDir, "resources", "app.asar.unpacked", "node_modules");
 

@@ -8,8 +8,8 @@
  * content) and throw when they were not provided.
  */
 import fs from "node:fs/promises";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
-import type { FileSnapshotRef, Hunk } from "@innocencecode/task-core";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
+import type { FileSnapshotRef, Hunk } from "@innocenceharness/task-core";
 import type { ContentStore } from "./content-store.ts";
 import { buildTextHunks } from "./hunks.ts";
 import { readWorkspaceBytes } from "./scanner.ts";

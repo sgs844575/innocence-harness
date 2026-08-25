@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-session",
+  "name": "@innocenceharness/harness-session",
   "version": "0.1.0",
   "description": "InnocenceHarness session spine service: message ledger, processor pipeline, event broadcast and compaction",
   "type": "module",
@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-permissions": "^0.1.0",
-    "@innocencecode/harness-providers": "^0.1.0",
-    "@innocencecode/harness-tools": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/harness-permissions": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

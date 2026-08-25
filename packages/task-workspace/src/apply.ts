@@ -10,8 +10,8 @@
  */
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
-import type { FileSnapshotRef } from "@innocencecode/task-core";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
+import type { FileSnapshotRef } from "@innocenceharness/task-core";
 import type { ContentStore } from "./content-store.ts";
 import { diskHash, resolveWorkspaceFile } from "./scanner.ts";
 import type { FilePatch } from "./diff.ts";

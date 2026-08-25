@@ -44,7 +44,7 @@ import {
   type TaskHead,
   type TaskIdClock,
   type TaskRecoveryResult,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import type { TaskRepository } from "./task-repository.ts";
 import type {
   CommittedTurnView,

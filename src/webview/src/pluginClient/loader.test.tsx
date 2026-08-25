@@ -11,7 +11,7 @@ import { SlotProvider } from "../slots/react";
 import { createSlotRegistry, type SlotRegistry } from "../slots/registry";
 import { useToolCard, TOOLCARD_SLOT, type ToolCardProps } from "../components/chat/toolcards/registry";
 import registerExampleClient from "../../../../packages/plugin-example/src/client";
-import { loadPluginClients, type PluginClientModule } from "./loader";
+import { clientModuleUrl, loadPluginClients, type PluginClientModule } from "./loader";
 import type { PluginClientApi } from "./api";
 import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
 import { PANEL_SLOT } from "../components/workbench/WorkbenchTabs";
@@ -46,6 +46,14 @@ const call = (toolName: string, args: Record<string, unknown>): ToolCallPart =>
   ({ type: "toolCall", id: "c1", toolName, args });
 const res = (content: string, over: Partial<ToolResultPart> = {}): ToolResultPart =>
   ({ type: "toolResult", toolCallId: "c1", content, isError: false, durationMs: 500, ...over });
+
+describe("clientModuleUrl", () => {
+  it("builds the new scheme URL with an HMR revision query", () => {
+    expect(clientModuleUrl("fixture", 7)).toBe(
+      "innocenceharness-plugin://fixture/dist/client.js?hmr=7",
+    );
+  });
+});
 
 describe("loadPluginClients", () => {
   it("并行结算：慢条目未完成时，成功条目已注册", async () => {
@@ -86,7 +94,7 @@ describe("loadPluginClients", () => {
       },
     });
     // 协议布局与 staging 一致：<id>/dist/client.js（构建产物目录段不可省）。
-    expect(urls).toEqual(["innocence-plugin://example/dist/client.js"]);
+    expect(urls).toEqual(["innocenceharness-plugin://example/dist/client.js"]);
     expect(resolveCard(registry, "example")).toBeDefined();
   });
 
@@ -113,8 +121,8 @@ describe("loadPluginClients", () => {
     await loadPluginClients({ inventory: [entry("example")], registry, revision: 1, importModule });
 
     expect(urls).toEqual([
-      "innocence-plugin://example/dist/client.js",
-      "innocence-plugin://example/dist/client.js?hmr=1",
+      "innocenceharness-plugin://example/dist/client.js",
+      "innocenceharness-plugin://example/dist/client.js?hmr=1",
     ]);
     expect(resolveCard(registry, "example")).toBe(NewCard);
   });

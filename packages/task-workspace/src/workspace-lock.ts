@@ -21,7 +21,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { SecureStorage } from "@innocencecode/secure-storage-node";
+import type { SecureStorage } from "@innocenceharness/secure-storage-node";
 
 const execFileAsync = promisify(execFileCallback);
 

@@ -1,4 +1,4 @@
-import type { ChatRequest } from "@innocencecode/harness-providers";
+import type { ChatRequest } from "@innocenceharness/harness-providers";
 
 /**
  * Maps the canonical message model to the OpenAI chat-completions wire body.

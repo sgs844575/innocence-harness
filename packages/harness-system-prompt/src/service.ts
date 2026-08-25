@@ -1,12 +1,12 @@
-import { appendSkillIndex } from "@innocencecode/harness-skills";
-import type { Skill } from "@innocencecode/harness-skills";
-import type { Context } from "@innocencecode/kernel";
+import { appendSkillIndex } from "@innocenceharness/harness-skills";
+import type { Skill } from "@innocenceharness/harness-skills";
+import type { Context } from "@innocenceharness/kernel";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while
 // the system-prompt plugin fiber publishing it is active; before load and
 // after its unwind the property is absent at runtime.
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     systemPrompt: SystemPromptService;
   }

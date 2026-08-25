@@ -7,7 +7,7 @@ import {
   turnPreparedEvent,
   type TaskEvent,
   type Hunk,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import type { TaskHandle, TaskRuntimeBridge } from "./taskRuntimeBridge";
 import { TaskIpcHandlers, type TaskCommandPort } from "./taskIpcHandlers";
 

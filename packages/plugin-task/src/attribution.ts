@@ -20,7 +20,7 @@
  * (single-sourced with the persisted event types — see
  * task-core/src/events.ts).
  */
-import type { TaskAttribution, TaskChangeSource, TaskEvent } from "@innocencecode/task-core";
+import type { TaskAttribution, TaskChangeSource, TaskEvent } from "@innocenceharness/task-core";
 
 /** Where a captured change came from (task-core's canonical union). */
 export type ChangeSource = TaskChangeSource;

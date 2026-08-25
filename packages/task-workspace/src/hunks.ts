@@ -6,7 +6,7 @@
  * artifacts; apply/restore works at file level from content objects.
  */
 import { diffLines } from "diff";
-import { fingerprintHunk, type Hunk } from "@innocencecode/task-core";
+import { fingerprintHunk, type Hunk } from "@innocenceharness/task-core";
 
 /** Unchanged anchor lines recorded before/after each change. */
 export const HUNK_CONTEXT_LINES = 3;

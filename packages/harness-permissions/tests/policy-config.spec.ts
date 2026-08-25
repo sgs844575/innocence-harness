@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { rulesFromConfig } from "@innocencecode/harness-permissions";
-import { redactCommandSummary } from "@innocencecode/harness-tools";
+import { rulesFromConfig } from "@innocenceharness/harness-permissions";
+import { redactCommandSummary } from "@innocenceharness/harness-tools";
 
 function vote(spec: string, kind: "allow" | "deny", call: { toolName: string; args: Record<string, unknown> }) {
   const rule = rulesFromConfig({ [kind]: [spec] })[0];

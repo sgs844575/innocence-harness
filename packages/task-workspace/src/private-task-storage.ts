@@ -15,7 +15,7 @@
  * a single directory segment under tasks/.
  */
 import path from "node:path";
-import { openSecureStorage, type SecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage, type SecureStorage } from "@innocenceharness/secure-storage-node";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 

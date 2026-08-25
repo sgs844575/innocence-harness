@@ -1,12 +1,12 @@
-import type { Context } from "@innocencecode/kernel";
-import type { ToolSideEffect } from "@innocencecode/harness-permissions";
+import type { Context } from "@innocenceharness/kernel";
+import type { ToolSideEffect } from "@innocenceharness/harness-permissions";
 import type {
   Tool,
   ToolContext,
   ToolExecutionInvocation,
   ToolExecutionMiddleware,
   ToolResult,
-} from "@innocencecode/harness-tools";
+} from "@innocenceharness/harness-tools";
 import {
   classifyUnknownChanges,
   hasUnresolvedAttribution,
@@ -22,9 +22,9 @@ import { asTaskScope, type BeforeCapture, type AfterCapture, type PathCapture, t
 // ctx.logger 的类型可见性：kernel-logger 不自带 Context 增强，这里按
 // session 组合侧（harness-electron/session-kernel）的同一声明就地合并（成员
 // 类型逐字一致，同程序内合并合法），包自身不依赖宿主适配层。
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
-    logger: import("@innocencecode/kernel-logger").LoggerService;
+    logger: import("@innocenceharness/kernel-logger").LoggerService;
   }
 }
 

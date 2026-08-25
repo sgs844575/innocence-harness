@@ -1,7 +1,7 @@
 // Task runtime bridge: the host composition piece that opens tasks (baseline
-// / isolated worktree modes over @innocencecode/task-git), captures the
+// / isolated worktree modes over @innocenceharness/task-git), captures the
 // baseline BEFORE any agent run, builds each task's REAL TaskRuntimePort
-// (taskPort.ts) over @innocencecode/task-workspace, injects plugin-task's
+// (taskPort.ts) over @innocenceharness/task-workspace, injects plugin-task's
 // capture middleware into route-scoped agent sessions and forwards task
 // events to an injected emitter (Task 7 wires that to IPC — this module has
 // no Electron/webContents surface by construction).
@@ -19,9 +19,9 @@
 // here — the HarnessRuntime's disposeAll owns them on the same quit path.
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SessionPlugin } from "@innocencecode/harness-electron";
-import type { SessionToolIndex } from "@innocencecode/harness-electron";
-import { createTaskPlugin, type TaskRuntimePort } from "@innocencecode/plugin-task";
+import type { SessionPlugin } from "@innocenceharness/harness-electron";
+import type { SessionToolIndex } from "@innocenceharness/harness-electron";
+import { createTaskPlugin, type TaskRuntimePort } from "@innocenceharness/plugin-task";
 import {
   reduceTask,
   taskCreatedEvent,
@@ -32,7 +32,7 @@ import {
   type Route,
   type TaskState,
   type WorkspaceKind,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import {
   createTaskMutationLock,
   createWorkspaceWatcher,
@@ -43,14 +43,14 @@ import {
   type TaskRepository,
   type WorkspaceWatcher,
   type WorkspaceWriteLock,
-} from "@innocencecode/task-workspace";
+} from "@innocenceharness/task-workspace";
 import {
   createGitAdapter,
   GitWorkspaceError,
   type GitAdapter,
   type GitBaseline,
   type WorktreeLease,
-} from "@innocencecode/task-git";
+} from "@innocenceharness/task-git";
 import { LiveTaskPort } from "./taskPort";
 import { createForkedTaskRoute, type ForkRouteInput } from "./taskRouteFork";
 

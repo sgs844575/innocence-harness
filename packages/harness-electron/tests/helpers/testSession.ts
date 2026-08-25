@@ -1,5 +1,5 @@
 import { AgentSession, type AgentSessionOptions } from "../../src";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
 
 export function echoProvider(log: string[] = []): Provider {
   return {

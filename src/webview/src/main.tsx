@@ -24,7 +24,7 @@ boot().catch((err) => {
   // Replace the startup loader with the error so failures are visible.
   const container = document.getElementById("root");
   if (container) {
-    container.textContent = `InnocenceHarness failed to start: ${String(err)}`;
+    container.textContent = `${document.title} failed to start: ${String(err)}`;
   }
   console.error(err);
 });

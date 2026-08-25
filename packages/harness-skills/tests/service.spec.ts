@@ -1,9 +1,9 @@
-import { Context } from "@innocencecode/kernel";
+import { Context } from "@innocenceharness/kernel";
 import {
   SkillsPlugin,
   type Skill,
   type SkillsService,
-} from "@innocencecode/harness-skills";
+} from "@innocenceharness/harness-skills";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 // Mirrors harness-tools' test setup: load the plugin into a fresh kernel

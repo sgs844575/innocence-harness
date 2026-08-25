@@ -9,7 +9,7 @@ import type {
   TaskFilePatch,
   TaskGetResult,
   TaskRouteSummaryDto,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 
 export interface TaskCliOutputLine {
   kind:

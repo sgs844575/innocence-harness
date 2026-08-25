@@ -4,7 +4,7 @@
 // import cache below keeps it a singleton even across loadKernel calls).
 // type-only imports from the kernel package stay allowed everywhere.
 import { pathToFileURL } from "node:url";
-import type * as KernelModule from "@innocencecode/kernel";
+import type * as KernelModule from "@innocenceharness/kernel";
 
 /** The kernel surface boot needs (the staged dist's module namespace). */
 export type Kernel = typeof KernelModule;
@@ -20,7 +20,7 @@ export function resetKernelCache(): void {
 /**
  * Dynamically import the staging kernel entry and memoize it.
  *
- * `kernelPath` is the absolute path of `@innocencecode/kernel/dist/index.js`
+ * `kernelPath` is the absolute path of `@innocenceharness/kernel/dist/index.js`
  * under the staging node_modules tree (dev: the repo's build/dist; packaged:
  * resources/node_modules) — the caller (harnessGlue) resolves dev vs prod.
  * Successful imports (including with a different path, e.g. after a

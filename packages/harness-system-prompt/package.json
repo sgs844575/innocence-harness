@@ -1,5 +1,5 @@
 {
-  "name": "@innocencecode/harness-system-prompt",
+  "name": "@innocenceharness/harness-system-prompt",
   "version": "0.1.0",
   "description": "InnocenceHarness system-prompt spine service: base + ordered sections + skills index assembly",
   "type": "module",
@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-skills": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/harness-skills": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

@@ -9,7 +9,7 @@ const settings = {
     { id: "p1", name: "智谱", kind: "openai", apiKey: "", baseURL: "", enabled: true,
       models: [{ id: "glm-4.6", source: "preset", tools: true }] },
   ],
-  activeProfileId: "p1", activeModel: "glm-4.6", workspaceRoot: "D:/x/InnocenceCode", permissionMode: "ask",
+  activeProfileId: "p1", activeModel: "glm-4.6", workspaceRoot: "D:/x/InnocenceHarness", permissionMode: "ask",
 } as unknown as HarnessSettings;
 const t = (k: string) => k;
 

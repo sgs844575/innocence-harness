@@ -1,6 +1,6 @@
 # task-cli — 无 Electron 的任务命令入口
 
-`@innocencecode/task-cli` 是任务工作流的 CLI 适配层：用真实实现（task-workspace + task-git +
+`@innocenceharness/task-cli` 是任务工作流的 CLI 适配层：用真实实现（task-workspace + task-git +
 plugin-task 的归属折叠）填充 task-core `TaskCommandService` 的全部端口，并提供注入式输出的审查渲染。
 适配器永不直接碰任务存储，也不直写 stdout——所有输出经注入的 `TaskCliOutput`。
 
@@ -29,7 +29,7 @@ plugin-task 的归属折叠）填充 task-core `TaskCommandService` 的全部端
 ## 使用
 
 ```ts
-import { createTaskCliRuntime, createTaskCliAdapter, collectStructuredOutput } from "@innocencecode/task-cli";
+import { createTaskCliRuntime, createTaskCliAdapter, collectStructuredOutput } from "@innocenceharness/task-cli";
 
 const runtime = await createTaskCliRuntime({ storageDir, git: { workspaceRoot } });
 const output = collectStructuredOutput();                       // 也可接任何 (line) => void

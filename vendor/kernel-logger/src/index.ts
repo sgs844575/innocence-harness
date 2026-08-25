@@ -1,4 +1,4 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 
 /** Severity levels, ordered `debug < info < warn < error`. */
 export type LogLevel = "debug" | "info" | "warn" | "error";

@@ -1,7 +1,7 @@
 // Task CLI integration (Task 13): the full review loop over REAL storage
 // (task-workspace repository + CAS + locks), REAL Git fixtures and REAL
 // child processes — no Electron, no React, no renderer. The CLI adapter only
-// delegates to @innocencecode/task-core's TaskCommandService and renders
+// delegates to @innocenceharness/task-core's TaskCommandService and renders
 // through the injected output port; agent activity is simulated by the
 // runtime's agent-writer seam (the same pattern plugin-task's tests use for
 // its fake runtime).
@@ -12,10 +12,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import url from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { foldAttributionDecisions, hasUnresolvedAttribution } from "@innocencecode/plugin-task";
-import { openTaskRepository, sha256Bytes } from "@innocencecode/task-workspace";
-import type { Checkpoint, TaskEvent } from "@innocencecode/task-core";
-import { turnCommittedEvent, turnPreparedEvent, turnCheckpointedEvent } from "@innocencecode/task-core";
+import { foldAttributionDecisions, hasUnresolvedAttribution } from "@innocenceharness/plugin-task";
+import { openTaskRepository, sha256Bytes } from "@innocenceharness/task-workspace";
+import type { Checkpoint, TaskEvent } from "@innocenceharness/task-core";
+import { turnCommittedEvent, turnPreparedEvent, turnCheckpointedEvent } from "@innocenceharness/task-core";
 import {
   collectStructuredOutput,
   createTaskCliAdapter,
@@ -613,7 +613,7 @@ describe("two real processes compete for the workspace lock", () => {
 
     // A second process holds the lease keyed on the ORIGINAL user workspace —
     // the exact key isolated apply must take before writing into it.
-    const { canonicalWorkspaceKey } = await import("@innocencecode/task-workspace");
+    const { canonicalWorkspaceKey } = await import("@innocenceharness/task-workspace");
     const contender = spawnChild("workspace-lock-service.child.ts", [
       storageDir, task.taskId, task.activeRouteId,
       await canonicalWorkspaceKey(repo),

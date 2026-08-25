@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { Context } from "@innocencecode/kernel";
-import { ToolsPlugin } from "@innocencecode/harness-tools";
-import { AgentSession } from "@innocencecode/harness-electron";
+import { Context } from "@innocenceharness/kernel";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { AgentSession } from "@innocenceharness/harness-electron";
 import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import {
   createExecutionScope,
@@ -9,9 +9,9 @@ import {
   type ExecutionScope,
   type Tool,
   type ToolExecutionMiddleware,
-} from "@innocencecode/harness-tools";
-import type { Delta, Provider } from "@innocencecode/harness-providers";
-import type { HarnessEvent, Message } from "@innocencecode/harness-session";
+} from "@innocenceharness/harness-tools";
+import type { Delta, Provider } from "@innocenceharness/harness-providers";
+import type { HarnessEvent, Message } from "@innocenceharness/harness-session";
 import { SubagentPlugin, taskTool } from "../src";
 
 describe("Task tool via session spawner", () => {

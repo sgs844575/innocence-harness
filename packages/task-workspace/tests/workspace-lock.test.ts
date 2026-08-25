@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import url from "node:url";
-import { openSecureStorage, type SecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage, type SecureStorage } from "@innocenceharness/secure-storage-node";
 import { createWorkspaceWriteLock, sha256Hex, type LockHandle, type WorkspaceWriteLock } from "../src/workspace-lock.ts";
 
 const execFileAsync = promisify(execFile);

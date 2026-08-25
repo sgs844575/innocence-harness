@@ -1,6 +1,6 @@
 # plugin-task — 任务变更捕获插件
 
-`@innocencecode/plugin-task` 是"任务工作流"（fork 隔离工作区 → 捕获变更 → 审查 → 应用/丢弃）中的捕获层：
+`@innocenceharness/plugin-task` 是"任务工作流"（fork 隔离工作区 → 捕获变更 → 审查 → 应用/丢弃）中的捕获层：
 向脊柱 `harness-agent-loop` 的执行循环注入 `ToolExecutionMiddleware`，在任务作用域内每个"写入类"工具调用周围做
 before/after 快照，把工作区变更归属到任务（attribution 状态机）；存在未归属变更时阻塞新的写入工具。
 
@@ -32,7 +32,7 @@ before/after 快照，把工作区变更归属到任务（attribution 状态机�
 ## 使用
 
 ```ts
-import { createTaskPlugin } from "@innocencecode/plugin-task";
+import { createTaskPlugin } from "@innocenceharness/plugin-task";
 
 // 宿主接线（src/main/taskRuntimeBridge.ts）：按路由注入——非任务会话返回空数组
 const plugins = taskPluginsForRoute(bridge, { taskId, routeId });

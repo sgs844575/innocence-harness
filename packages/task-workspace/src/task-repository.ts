@@ -13,7 +13,7 @@
  * the workspace write lease around file apply/restore. The fixed turn commit
  * order lives in turn-commit-coordinator.ts.
  */
-import type { TaskEvent, TaskHead, TaskRecoveryResult, Checkpoint } from "@innocencecode/task-core";
+import type { TaskEvent, TaskHead, TaskRecoveryResult, Checkpoint } from "@innocenceharness/task-core";
 import { createContentStore, type ContentStore } from "./content-store.ts";
 import { createCheckpointStore, type CheckpointStore } from "./checkpoint-store.ts";
 import { createFileEventLog, type FileEventLog } from "./event-log.ts";

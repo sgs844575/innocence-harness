@@ -9,7 +9,7 @@ import {
   turnCheckpointedEvent,
   turnCommittedEvent,
   turnPreparedEvent,
-} from "@innocencecode/task-core";
+} from "@innocenceharness/task-core";
 import { openTaskRepository } from "../src/task-repository.ts";
 
 let base: string;

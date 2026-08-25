@@ -27,7 +27,7 @@ describe("groupSessions", () => {
     expect(groupSessions([], "不在项目中")).toEqual([]);
   });
   it("projectName 取 basename（兼容反斜杠）；projectColor 对同路径稳定", () => {
-    expect(projectName("D:\\Projects\\AiProjects\\InnocenceCode")).toBe("InnocenceCode");
+    expect(projectName("D:\\Projects\\AiProjects\\InnocenceHarness")).toBe("InnocenceHarness");
     expect(projectColor("D:/a") === projectColor("D:\\a")).toBe(true); // 大小写/斜杠归一
     expect(typeof projectColor("D:/a")).toBe("string");
   });

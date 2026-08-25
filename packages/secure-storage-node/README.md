@@ -1,6 +1,6 @@
 # secure-storage-node — 私有磁盘存储基元
 
-`@innocencecode/secure-storage-node` 提供任务数据的私有存储地基：给定根目录，创建即加固——
+`@innocenceharness/secure-storage-node` 提供任务数据的私有存储地基：给定根目录，创建即加固——
 POSIX 上目录 0700 / 文件 0600，Windows 上用 `icacls` 收紧为仅当前用户可访问。
 只做路径管理与安全文件原语，不含任何任务域知识。
 
@@ -29,7 +29,7 @@ POSIX 上目录 0700 / 文件 0600，Windows 上用 `icacls` 收紧为仅当前�
 ## 使用
 
 ```ts
-import { openSecureStorage } from "@innocencecode/secure-storage-node";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 
 const storage = await openSecureStorage(path.join(userData, "tasks")); // 创建即加固
 const file = storage.resolve("events/app.log");                        // 越界路径在这里就会抛错

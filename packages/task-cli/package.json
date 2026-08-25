@@ -1,7 +1,7 @@
 {
-  "name": "@innocencecode/task-cli",
+  "name": "@innocenceharness/task-cli",
   "version": "0.1.0",
-  "description": "Electron-free CLI adapter over task-core's TaskCommandService: same ports, review rendering through an injected output",
+  "description": "InnocenceHarness Electron-free CLI adapter over task-core's TaskCommandService: same ports, review rendering through an injected output",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/plugin-task": "*",
-    "@innocencecode/secure-storage-node": "*",
-    "@innocencecode/task-core": "*",
-    "@innocencecode/task-git": "*",
-    "@innocencecode/task-workspace": "*"
+    "@innocenceharness/plugin-task": "*",
+    "@innocenceharness/secure-storage-node": "*",
+    "@innocenceharness/task-core": "*",
+    "@innocenceharness/task-git": "*",
+    "@innocenceharness/task-workspace": "*"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",

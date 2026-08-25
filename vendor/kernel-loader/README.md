@@ -1,6 +1,6 @@
 # kernel-loader — 配置树加载器（LoaderService / LoaderTree / Loader）
 
-`@innocencecode/kernel-loader` 在内核（`@innocencecode/kernel`）之上提供配置树加载能力：
+`@innocenceharness/kernel-loader` 在内核（`@innocenceharness/kernel`）之上提供配置树加载能力：
 `Loader` 插件把一个 `LoaderService` 发布为全树可见的 `ctx.loader` 服务，按配置行导入并挂载插件。
 
 ## 作用
@@ -15,8 +15,8 @@
 ## 使用
 
 ```ts
-import { Context } from "@innocencecode/kernel";
-import { Loader } from "@innocencecode/kernel-loader";
+import { Context } from "@innocenceharness/kernel";
+import { Loader } from "@innocenceharness/kernel-loader";
 
 const ctx = new Context();
 await ctx.plugin(Loader);
@@ -30,4 +30,4 @@ await ctx.loader.await();
 npx vitest run vendor/kernel-loader
 ```
 
-覆盖：加载器组合（`loader-composition.spec.ts`，与 `@innocencecode/kernel-include` 联合）。
+覆盖：加载器组合（`loader-composition.spec.ts`，与 `@innocenceharness/kernel-include` 联合）。

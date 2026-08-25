@@ -1,5 +1,5 @@
-import type { Context, Plugin } from "@innocencecode/kernel";
-import type { EntryCreateOptions } from "@innocencecode/kernel-loader";
+import type { Context, Plugin } from "@innocenceharness/kernel";
+import type { EntryCreateOptions } from "@innocenceharness/kernel-loader";
 
 export interface GroupEntry extends Omit<EntryCreateOptions, "id" | "name"> {
   id: string;

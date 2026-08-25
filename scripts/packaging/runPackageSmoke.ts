@@ -3,6 +3,12 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectPackagedSmoke, type PackageAvailability } from "./packagedAvailability.ts";
+import {
+  defaultExecutableName as defaultPackagedExecutableName,
+  defaultPackageDirectory as defaultPackagedDirectory,
+  inspectSafePackageDirectory,
+  type OutPreflightOptions,
+} from "./outPreflight.ts";
 
 export interface SmokeAvailability {
   status: PackageAvailability["status"];
@@ -16,48 +22,84 @@ export function requirePackagedSmoke(availability: SmokeAvailability): void {
   }
 }
 
-function packageDirectory(repoRoot: string): string {
-  return process.env.IC_PACKAGE_DIR
-    ? path.resolve(process.env.IC_PACKAGE_DIR)
-    : path.join(repoRoot, "out", "InnocenceHarness-win32-x64");
+export const PACKAGED_EXIT_SUCCESS_MARKER = "[packaged-exit] residue sweep clean (no processes, no lock leases)";
+
+export function requireCompletedPackagedAcceptance(exitCode: number, output: string): void {
+  if (exitCode !== 0) {
+    throw new Error(`packaged acceptance exited with code ${exitCode}`);
+  }
+  if (!output.includes(PACKAGED_EXIT_SUCCESS_MARKER)) {
+    throw new Error(`packaged acceptance did not report the packaged smoke marker: ${PACKAGED_EXIT_SUCCESS_MARKER}`);
+  }
 }
 
-function inspectAvailability(repoRoot: string): SmokeAvailability {
-  const packageDir = packageDirectory(repoRoot);
-  const packagedExe = path.join(packageDir, "InnocenceHarness.exe");
+export async function inspectRequiredPackageAvailability(
+  repoRoot: string,
+  requestedPackageDirectory: string,
+  options: Pick<OutPreflightOptions, "probeReparsePoint"> = {},
+): Promise<SmokeAvailability> {
+  let packageDir: string;
+  try {
+    packageDir = await inspectSafePackageDirectory(requestedPackageDirectory, repoRoot, options);
+  } catch (error) {
+    return {
+      status: "missing-exe",
+      reason: `required package directory rejected: ${String(error)}`,
+    };
+  }
+
+  const packagedExe = path.join(packageDir, defaultPackagedExecutableName());
   const archivePath = path.join(packageDir, "resources", "app.asar");
-  const packageReason = path.dirname(packageDir) !== path.join(repoRoot, "out")
-    ? `IC_PACKAGE_DIR must point to a direct package directory under ${path.join(repoRoot, "out")}: ${packageDir}`
-    : undefined;
   const asar = createRequire(import.meta.url)("@electron/asar") as { listPackage(archive: string): string[] };
   return inspectPackagedSmoke(
-    packageReason,
+    undefined,
     packagedExe,
     archivePath,
     () => asar.listPackage(archivePath),
   );
 }
 
-async function runAcceptance(repoRoot: string): Promise<number> {
+function packageDirectory(repoRoot: string): string {
+  return process.env.INNOCENCEHARNESS_PACKAGE_DIR
+    ? path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR)
+    : defaultPackagedDirectory(repoRoot);
+}
+
+async function inspectAvailability(repoRoot: string): Promise<SmokeAvailability> {
+  return inspectRequiredPackageAvailability(repoRoot, packageDirectory(repoRoot));
+}
+
+interface AcceptanceResult {
+  exitCode: number;
+  output: string;
+}
+
+async function runAcceptance(repoRoot: string): Promise<AcceptanceResult> {
   const vitest = path.join(repoRoot, "node_modules", "vitest", "vitest.mjs");
   const child = spawn(process.execPath, [vitest, "run", "tests/packaged-exit.acceptance.test.ts"], {
     cwd: repoRoot,
     env: process.env,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
-  return await new Promise<number>((resolve) => {
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => { output += chunk; process.stdout.write(chunk); });
+  child.stderr.on("data", (chunk: string) => { output += chunk; process.stderr.write(chunk); });
+  return await new Promise<AcceptanceResult>((resolve) => {
     child.once("error", (error) => {
-      console.error(`PACKAGE_SMOKE runner failed to start Vitest: ${String(error)}`);
-      resolve(1);
+      const message = `PACKAGE_SMOKE runner failed to start Vitest: ${String(error)}`;
+      console.error(message);
+      resolve({ exitCode: 1, output: `${output}\n${message}` });
     });
-    child.once("exit", (code) => resolve(code ?? 1));
+    child.once("exit", (code) => resolve({ exitCode: code ?? 1, output }));
   });
 }
 
 export async function runPackageSmoke(): Promise<number> {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-  const availability = inspectAvailability(repoRoot);
+  const availability = await inspectAvailability(repoRoot);
   try {
     requirePackagedSmoke(availability);
   } catch (error) {
@@ -66,7 +108,14 @@ export async function runPackageSmoke(): Promise<number> {
     return 2;
   }
   console.log(`PACKAGE_SMOKE available: ${availability.reason}`);
-  return runAcceptance(repoRoot);
+  const acceptance = await runAcceptance(repoRoot);
+  try {
+    requireCompletedPackagedAcceptance(acceptance.exitCode, acceptance.output);
+  } catch (error) {
+    console.error(`PACKAGE_SMOKE acceptance incomplete: ${String(error)}`);
+    return 2;
+  }
+  return 0;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { config } from "../../forge.config";
+import { config, packagingArtifactNames } from "../../forge.config";
 import { pruneNodePtyPrebuilds } from "../../scripts/packaging/nodePtyPrebuilds";
 
 const repoRoot = path.resolve(__dirname, "../..");
@@ -85,14 +85,21 @@ describe("pruneNodePtyPrebuilds", () => {
     await expect(fs.readFile(path.join(stagingRoot, "staging-sentinel.txt"), "utf8")).resolves.toBe("keep");
   });
 
-  it("preserves the node-pty unpack and extra resources packaging invariants", () => {
+  it("preserves the InnocenceHarness artifact naming and node-pty packaging invariants", async () => {
     const packagerConfig = config.packagerConfig as {
       asar?: { unpack?: string };
+      executableName?: string;
       extraResource?: string[];
       afterCopy?: unknown[];
     };
-
     expect(packagerConfig.asar?.unpack).toBe("**/node_modules/node-pty/**");
+    const squirrelMaker = config.makers?.[0] as { prepareConfig?: (arch: "x64") => Promise<void>; config?: { name?: string; setupExe?: string } };
+    await squirrelMaker.prepareConfig?.("x64");
+    expect(squirrelMaker.config).toMatchObject({
+      name: packagingArtifactNames.makerName,
+      setupExe: packagingArtifactNames.setupExe,
+    });
+
     expect(packagerConfig.extraResource).toEqual([
       "build/dist/resources/plugins",
       "build/dist/resources/node_modules",

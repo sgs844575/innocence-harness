@@ -1,6 +1,6 @@
 # tools-fs — 文件系统工具插件（Read / Write / Edit / Glob / Grep）
 
-`@innocencecode/tools-fs` 一次性注册五个工作区文件工具，全部路径经 `resolveWithin` 限定在工作区根内
+`@innocenceharness/tools-fs` 一次性注册五个工作区文件工具，全部路径经 `resolveWithin` 限定在工作区根内
 （越根直接抛"路径越出工作区"），并各自声明权限资源与脱敏持久化参数。
 
 ## 作用与工具一览
@@ -26,7 +26,7 @@
 ## 使用
 
 ```ts
-import { fsPlugin } from "@innocencecode/tools-fs";
+import { fsPlugin } from "@innocenceharness/tools-fs";
 
 plugins.push(fsPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件开关 id: fs，core 恒开）
 ```

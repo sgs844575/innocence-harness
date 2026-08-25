@@ -1,6 +1,6 @@
 # kernel-logger — 内核日志服务插件（LoggerPlugin / LoggerService）
 
-`@innocencecode/kernel-logger` 在内核（`@innocencecode/kernel`）之上提供最小日志服务：
+`@innocenceharness/kernel-logger` 在内核（`@innocenceharness/kernel`）之上提供最小日志服务：
 `LoggerPlugin` 是一个内核插件，`apply` 时把 `LoggerService` 以 `"logger"` 之名发布到上下文树
 （`ctx.logger`），卸载时随插件 fiber 一起撤回。与 `kernel-include`（YAML 条目）、`kernel-loader`（配置树加载器）
 同属 vendor 内核族。
@@ -27,11 +27,11 @@
 ## 使用
 
 ```ts
-import { Context } from "@innocencecode/kernel";
-import { LoggerPlugin, type LoggerService } from "@innocencecode/kernel-logger";
+import { Context } from "@innocenceharness/kernel";
+import { LoggerPlugin, type LoggerService } from "@innocenceharness/kernel-logger";
 
 // 内核把服务安装为运行时属性（defineProperty），类型由使用方通过声明合并补上：
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     logger: LoggerService;
   }

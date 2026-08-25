@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentSession } from "../src";
-import { createMockProvider, type MockTurn } from "@innocencecode/provider-mock";
-import { FsPlugin } from "@innocencecode/tools-fs";
-import { ShellPlugin } from "@innocencecode/tools-shell";
+import { createMockProvider, type MockTurn } from "@innocenceharness/provider-mock";
+import { FsPlugin } from "@innocenceharness/tools-fs";
+import { ShellPlugin } from "@innocenceharness/tools-shell";
 import {
   DEFAULT_SETTINGS,
   HarnessRuntime,
@@ -900,7 +900,7 @@ describe("HarnessRuntime route scopes", () => {
   });
 
   it("builds a session inside a fresh scope and unwinds it on dispose", async () => {
-    const { Context, createScope, FiberState } = await import("@innocencecode/kernel");
+    const { Context, createScope, FiberState } = await import("@innocenceharness/kernel");
     const root = new Context();
     const cleaned: string[] = [];
     const scopes: Array<ReturnType<typeof createScope>> = [];
@@ -929,7 +929,7 @@ describe("HarnessRuntime route scopes", () => {
   });
 
   it("rebuilds into a fresh scope on settings change and unwinds the old one", async () => {
-    const { Context, createScope } = await import("@innocencecode/kernel");
+    const { Context, createScope } = await import("@innocenceharness/kernel");
     const root = new Context();
     const cleaned: number[] = [];
     let scopes = 0;
@@ -963,7 +963,7 @@ describe("HarnessRuntime route scopes", () => {
   });
 
   it("reuses the cached session without consuming a new scope", async () => {
-    const { Context, createScope } = await import("@innocencecode/kernel");
+    const { Context, createScope } = await import("@innocenceharness/kernel");
     const root = new Context();
     let scopes = 0;
     const runtime = new HarnessRuntime({

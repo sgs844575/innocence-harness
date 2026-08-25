@@ -14,14 +14,14 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { runCommand, bashTool } from "@innocencecode/tools-shell";
-import { createExecutionScope } from "@innocencecode/harness-tools";
-import { createGitAdapter, type GitAdapter } from "@innocencecode/task-git";
-import { TaskRecoveryError } from "@innocencecode/task-core";
-import { openTaskRepository, sha256Bytes } from "@innocencecode/task-workspace";
-import type { Checkpoint, TaskEvent } from "@innocencecode/task-core";
-import { turnCheckpointedEvent, turnCommittedEvent, turnPreparedEvent } from "@innocencecode/task-core";
-import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocencecode/task-cli";
+import { runCommand, bashTool } from "@innocenceharness/tools-shell";
+import { createExecutionScope } from "@innocenceharness/harness-tools";
+import { createGitAdapter, type GitAdapter } from "@innocenceharness/task-git";
+import { TaskRecoveryError } from "@innocenceharness/task-core";
+import { openTaskRepository, sha256Bytes } from "@innocenceharness/task-workspace";
+import type { Checkpoint, TaskEvent } from "@innocenceharness/task-core";
+import { turnCheckpointedEvent, turnCommittedEvent, turnPreparedEvent } from "@innocenceharness/task-core";
+import { collectStructuredOutput, createTaskCliAdapter, createTaskCliRuntime } from "@innocenceharness/task-cli";
 
 const execFileAsync = promisify(execFile);
 

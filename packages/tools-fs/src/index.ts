@@ -1,4 +1,4 @@
-import type { Context } from "@innocencecode/kernel";
+import type { Context } from "@innocenceharness/kernel";
 import { editTool } from "./edit";
 import { readTool } from "./read";
 import { globTool, grepTool } from "./search";

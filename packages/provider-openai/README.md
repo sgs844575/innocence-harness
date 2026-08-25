@@ -1,6 +1,6 @@
 # provider-openai — OpenAI 兼容协议 Provider
 
-`@innocencecode/provider-openai` 是 OpenAI 兼容 `chat/completions` 协议的原生 Provider 实现：
+`@innocenceharness/provider-openai` 是 OpenAI 兼容 `chat/completions` 协议的原生 Provider 实现：
 fetch + SSE 流式解析、`tool_calls` 增量聚合，把 wire 格式转换为 `harness-providers` 的规范 `Delta` 流。
 支持自定义 Base URL，因此 Ollama、vLLM 及各类网关等 OpenAI 兼容端点都能直接接入。
 
@@ -25,7 +25,7 @@ fetch + SSE 流式解析、`tool_calls` 增量聚合，把 wire 格式转换为 
 ## 使用
 
 ```ts
-import { createOpenAIProvider } from "@innocencecode/provider-openai";
+import { createOpenAIProvider } from "@innocenceharness/provider-openai";
 
 const provider = createOpenAIProvider({
   apiKey: "sk-…",
@@ -34,7 +34,7 @@ const provider = createOpenAIProvider({
 });
 
 // 直接作为 Provider 用，或经内核插件注册（providers 服务面）：
-import { createOpenAIPlugin } from "@innocencecode/provider-openai";
+import { createOpenAIPlugin } from "@innocenceharness/provider-openai";
 plugins.push(createOpenAIPlugin({ apiKey: "sk-…", model: "gpt-4.1" }));
 ```
 

@@ -1,6 +1,6 @@
 // Electron ↔ CLI adapter parity (Task 13): the Electron command service
 // (bridge-backed, src/main/taskCommandService) and the CLI adapter
-// (@innocencecode/task-cli) expose the SAME command semantics because both
+// (@innocenceharness/task-cli) expose the SAME command semantics because both
 // only delegate to task-core's one TaskCommandService. Three layers of proof,
 // all over REAL storage:
 //
@@ -24,10 +24,10 @@ import {
   collectStructuredOutput,
   createTaskCliAdapter,
   createTaskCliRuntime,
-} from "@innocencecode/task-cli";
+} from "@innocenceharness/task-cli";
 import { createTaskRuntimeBridge } from "./taskRuntimeBridge";
 import { createTaskCommandService, type TaskCommandService } from "./taskCommandService";
-import type { TaskCliAdapter } from "@innocencecode/task-cli";
+import type { TaskCliAdapter } from "@innocenceharness/task-cli";
 
 const execFileAsync = promisify(execFile);
 

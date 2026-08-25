@@ -1,7 +1,7 @@
-import { Context, FiberState } from "@innocencecode/kernel";
-import { Loader } from "@innocencecode/kernel-loader";
-import { Include } from "@innocencecode/kernel-include";
-import { createFileModuleResolver } from "@innocencecode/kernel-loader";
+import { Context, FiberState } from "@innocenceharness/kernel";
+import { Loader } from "@innocenceharness/kernel-loader";
+import { Include } from "@innocenceharness/kernel-include";
+import { createFileModuleResolver } from "@innocenceharness/kernel-loader";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,6 +47,15 @@ describe("file module resolver", () => {
     await writePlugin(builtinRoot, "solo", "builtin");
     const resolver = createFileModuleResolver({ roots: [join(tempRoot!, "user"), builtinRoot] });
     await expect(resolver.import("solo")).resolves.toBeTruthy();
+  });
+
+  it("loads the new workspace namespace and rejects the retired namespace", async () => {
+    const nodeModulesRoot = join(tempRoot!, "node_modules");
+    await writePlugin(nodeModulesRoot, "@innocenceharness/kernel", "new-scope");
+    const resolver = createFileModuleResolver({ roots: [nodeModulesRoot] });
+    await expect(resolver.import("@innocenceharness/kernel")).resolves.toBeTruthy();
+    const retiredSpecifier = "@innocence" + "code/kernel";
+    await expect(resolver.import(retiredSpecifier)).rejects.toThrow(/retired namespace|invalid plugin specifier|plugin not found/);
   });
 
   it("caches module instances per specifier", async () => {

@@ -1,8 +1,8 @@
-import { Context, FiberState } from "@innocencecode/kernel";
-import { TimerPlugin, type TimerService } from "@innocencecode/kernel-timer";
+import { Context, FiberState } from "@innocenceharness/kernel";
+import { TimerPlugin, type TimerService } from "@innocenceharness/kernel-timer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-declare module "@innocencecode/kernel" {
+declare module "@innocenceharness/kernel" {
   interface Context {
     timer: TimerService;
   }

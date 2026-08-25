@@ -2,7 +2,7 @@
 // bridge port, and event forwarding to the renderer. Uses a fake PtyManager
 // (the real node-pty manager is covered by packages/terminal-pty/tests).
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { PtyEvent, PtyExitEvent, PtyManager, PtySession } from "@innocencecode/terminal-pty";
+import type { PtyEvent, PtyExitEvent, PtyManager, PtySession } from "@innocenceharness/terminal-pty";
 import { TerminalIpcChannels } from "../shared/terminalIpc";
 import { createTerminalIpcService } from "./terminalIpc";
 

@@ -1,7 +1,7 @@
 {
-  "name": "@innocencecode/provider-mock",
+  "name": "@innocenceharness/provider-mock",
   "version": "0.1.0",
-  "description": "Scripted mock provider for offline harness development and tests",
+  "description": "InnocenceHarness Scripted mock provider for offline harness development and tests",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -12,9 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@innocencecode/harness-providers": "^0.1.0",
-    "@innocencecode/harness-session": "^0.1.0",
-    "@innocencecode/kernel": "^0.1.0"
+    "@innocenceharness/harness-providers": "^0.1.0",
+    "@innocenceharness/harness-session": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
   },
   "license": "AGPL-3.0-only",
   "author": "逆流无邪",
@@ -24,8 +24,8 @@
     "directory": "packages/provider-mock"
   },
   "devDependencies": {
-    "@innocencecode/harness-agent-loop": "^0.1.0",
-    "@innocencecode/harness-permissions": "^0.1.0",
-    "@innocencecode/harness-tools": "^0.1.0"
+    "@innocenceharness/harness-agent-loop": "^0.1.0",
+    "@innocenceharness/harness-permissions": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0"
   }
 }
