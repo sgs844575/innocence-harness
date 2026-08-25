@@ -138,6 +138,42 @@ describe("streamOneHarnessStep", () => {
     expect(JSON.stringify(events)).not.toContain("native-wire-finish-options");
   });
 
+  it("normalizes compatible max reasoning effort to xhigh before the SDK call", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "max-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createOpenAI: () => ({ chat: () => model }),
+    }).create({
+      providerId: "compatible-profile",
+      protocol: "openai-compatible",
+      modelId: "model",
+      credential: "secret",
+      requestOptions: { reasoningEffort: "max" },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [],
+      }),
+    );
+
+    expect(model.doStreamCalls[0]).toMatchObject({
+      providerOptions: { openai: { reasoningEffort: "xhigh" } },
+    });
+    expect(JSON.stringify(model.doStreamCalls[0])).not.toContain('"max"');
+    expect(JSON.stringify(events)).not.toContain("xhigh");
+    expect(JSON.stringify(events)).not.toContain("max-wire-finish");
+  });
+
   it("normalizes provider stream errors without provider payloads", async () => {
     const model = new MockLanguageModelV3({
       doStream: {

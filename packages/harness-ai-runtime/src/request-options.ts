@@ -53,8 +53,9 @@ function toProviderOptions(
 }
 
 function optionsForCompatibleProtocol(options: ModelRequestOptions): SharedV3ProviderOptions | undefined {
-  return options.reasoningEffort && options.reasoningEffort !== "off"
-    ? { openai: { reasoningEffort: options.reasoningEffort } }
+  const reasoningEffort = options.reasoningEffort === "max" ? "xhigh" : options.reasoningEffort;
+  return reasoningEffort && reasoningEffort !== "off"
+    ? { openai: { reasoningEffort } }
     : undefined;
 }
 
