@@ -3,6 +3,7 @@
 // rebuilds a route's session when settings change, and translates harness
 // events into the host's streaming UI hooks. Types live in runtime-types.ts,
 // transcript persistence in turn-persistence.ts.
+import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
 import type { Route } from "@innocenceharness/task-core";
 import { AgentSession } from "./session";
@@ -60,6 +61,7 @@ export class HarnessRuntime {
     const routeId = request.routeId || DEFAULT_ROUTE_ID;
     const key = routeCacheKey(request.sessionId, routeId);
     const controller = new AbortController();
+    let routeTrace: ReturnType<NonNullable<RuntimeOptions["telemetry"]>["startSessionRoute"]> | undefined;
     this.cache.startRun(key, controller);
 
     try {
@@ -70,19 +72,29 @@ export class HarnessRuntime {
         request.messageId,
       );
       const historyStart = agent.history.length;
-      const unsubscribe = agent.on((event) =>
-        forwardHarnessEvent(this.options.hooks, request.sessionId, request.messageId, event),
-      );
+      routeTrace = this.options.telemetry?.startSessionRoute({
+        sessionId: request.sessionId,
+        ...(request.taskId ? { taskId: request.taskId } : {}),
+        routeId,
+        messageId: request.messageId,
+      });
+      let fatalError: string | undefined;
+      let doneCompletion: TurnCompletion | undefined;
+      const unsubscribe = agent.on((event) => {
+        if (event.type === "error" && event.fatal) fatalError = event.message;
+        if (event.type === "done") doneCompletion = event.completion;
+        forwardHarnessEvent(this.options.hooks, request.sessionId, request.messageId, event);
+      });
+      let summary;
       try {
         const identity: ExecutionScopeIdentity = request.taskId
           ? { sessionId: request.sessionId, taskId: request.taskId, routeId }
           : { sessionId: request.sessionId, routeId };
-        await agent.run(request.text, controller.signal, identity);
+        summary = await agent.run(request.text, controller.signal, identity);
       } finally {
         unsubscribe();
         this.cache.endRun(key);
       }
-      this.options.hooks.onCompleted(request.sessionId, request.messageId);
       await persistTurn(
         { persistDir: this.options.persistDir, log: (level, msg, data) => this.options.hooks.log(level, msg, data) },
         {
@@ -91,9 +103,19 @@ export class HarnessRuntime {
           routeId,
           taskId: request.taskId,
           messages: agent.history.slice(historyStart),
+          completion: doneCompletion ?? summary.completion,
         },
       );
+      const completion = doneCompletion ?? summary.completion;
+      if (fatalError) {
+        routeTrace?.complete({ ...completion, finishReason: "error", aborted: false });
+        this.options.hooks.onError(request.sessionId, request.messageId, fatalError);
+      } else {
+        routeTrace?.complete(completion);
+        this.options.hooks.onCompleted(request.sessionId, request.messageId, completion);
+      }
     } catch (err) {
+      routeTrace?.complete({ finishReason: controller.signal.aborted ? "aborted" : "error", aborted: controller.signal.aborted });
       this.options.hooks.onError(
         request.sessionId,
         request.messageId,

@@ -10,6 +10,7 @@ export type {
   ThinkingPart,
   ToolCallPart,
   ToolResultPart,
+  TurnCompletion,
   TurnMetadata,
   UsageMetadata,
 } from "./types";

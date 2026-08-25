@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@innocenceharness/harness-ai-runtime": "^0.1.0",
     "@innocenceharness/harness-agent": "^0.1.0",
     "@innocenceharness/harness-agent-loop": "^0.1.0",
     "@innocenceharness/harness-permissions": "^0.1.0",

@@ -8,6 +8,7 @@ import type {
   Provider,
   ProviderModel,
   ToolSpec,
+  TurnCompletion,
   TurnMetadata,
   UsageMetadata,
 } from "@innocenceharness/harness-providers";
@@ -20,7 +21,7 @@ import {
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { Tool, ToolContext, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
-import { streamOneHarnessStep } from "@innocenceharness/harness-ai-runtime";
+import { streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 
 export interface LoopOptions {
   provider: Provider;
@@ -42,6 +43,8 @@ export interface LoopOptions {
    * with the parent's identity plus the spawning invocation's id.
    */
   scope?: ExecutionScopeIdentity;
+  /** Optional allow-listed observability port injected by the host. */
+  telemetry?: TraceAdapter;
 }
 
 export interface LoopResult {
@@ -55,6 +58,8 @@ export interface LoopResult {
   finishReason?: FinishReason;
   /** Cumulative normalized usage across native model steps. */
   usage?: UsageMetadata;
+  /** The one sanitized terminal summary emitted to downstream layers. */
+  completion: TurnCompletion;
 }
 
 export const DEFAULT_MAX_TURNS = 40;
@@ -74,6 +79,7 @@ interface ModelStepRequest {
   tools: ToolSpec[];
   signal?: AbortSignal;
   onEvent?: HarnessEventListener;
+  telemetry?: TraceAdapter;
 }
 
 /**
@@ -84,6 +90,20 @@ interface ModelStepRequest {
  */
 async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
   const model = providerModel(request.provider);
+  const trace = model
+    ? request.telemetry?.startModelStep({ providerId: model.providerId, modelId: model.modelId })
+    : undefined;
+  const completeTrace = (metadata: TurnMetadata | undefined, aborted: boolean, errored = false) => {
+    if (!trace || !model) return;
+    trace.complete({
+      providerId: model.providerId,
+      modelId: model.modelId,
+      ...(metadata?.usage ? { usage: metadata.usage } : {}),
+      finishReason: aborted ? "aborted" : errored ? "error" : metadata?.finishReason ?? "other",
+      aborted,
+      ...(metadata?.responseId ? { responseId: metadata.responseId } : {}),
+    });
+  };
   const parts: MessagePart[] = [];
 
   if (!model) {
@@ -155,6 +175,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         metadata = event.metadata;
         break;
       case "abort":
+        completeTrace(metadata, true);
         return { parts, metadata, aborted: true };
       case "error":
         // The runtime deliberately normalizes this message, so no provider
@@ -168,6 +189,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         break;
     }
   }
+  completeTrace(metadata, request.signal?.aborted === true, error !== undefined);
   return { parts, metadata, aborted: request.signal?.aborted === true, ...(error ? { error } : {}) };
 }
 
@@ -187,7 +209,7 @@ function providerModel(provider: Provider): ProviderModel | undefined {
  * carrier is present, adapt one controlled model step to that contract rather
  * than falling through to a handwritten transport.
  */
-function providerForCompaction(provider: Provider): Provider {
+function providerForCompaction(provider: Provider, telemetry?: TraceAdapter): Provider {
   if (!providerModel(provider)) return provider;
   return {
     id: provider.id,
@@ -198,6 +220,7 @@ function providerForCompaction(provider: Provider): Provider {
         messages: request.messages,
         tools: request.tools,
         signal: request.signal,
+        telemetry,
       });
       if (step.aborted) return;
       for (const part of step.parts) {
@@ -257,6 +280,7 @@ export async function runLoop(
     onEvent,
     compactor,
     signal,
+    telemetry,
   } = opts;
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const toolTimeoutMs = opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
@@ -276,7 +300,8 @@ export async function runLoop(
   const stepMetadata: TurnMetadata[] = [];
   let usage: UsageMetadata | undefined;
   let finishReason: FinishReason | undefined;
-  const compactionProvider = providerForCompaction(provider);
+  let terminalError = false;
+  const compactionProvider = providerForCompaction(provider, telemetry);
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
@@ -296,6 +321,7 @@ export async function runLoop(
         tools: tools.specs(),
         signal,
         onEvent,
+        telemetry,
       });
       if (step.metadata) {
         stepMetadata.push(step.metadata);
@@ -307,6 +333,7 @@ export async function runLoop(
         break;
       }
       if (step.error) {
+        terminalError = true;
         onEvent({ type: "error", message: step.error, fatal: true });
         break;
       }
@@ -381,6 +408,17 @@ export async function runLoop(
       for (const part of calls) {
         const item = prepared.get(part.id)!;
         const started = Date.now();
+        const toolTrace = part.toolName.startsWith("mcp__")
+          ? telemetry?.startMcpCall({
+              sessionId: opts.scope?.sessionId,
+              invocationId: item.ctx?.scope.invocationId,
+            })
+          : telemetry?.startToolInvocation({
+              sessionId: opts.scope?.sessionId,
+              taskId: opts.scope?.taskId,
+              routeId: opts.scope?.routeId,
+              invocationId: item.ctx?.scope.invocationId,
+            });
         const invocationId = item.ctx?.scope.invocationId;
         const finish = (content: string, isError: boolean, outcome: ToolOutcome) => {
           resultParts.push({
@@ -399,6 +437,7 @@ export async function runLoop(
             resource: item.resource,
             outcome,
           });
+          toolTrace?.complete(outcome === "aborted" ? "aborted" : outcome === "error" ? "error" : "stop");
         };
         const failClosed = (content: string) => finish(content, true, "error");
 
@@ -494,6 +533,7 @@ export async function runLoop(
     if (isAbortError(err)) {
       aborted = true;
     } else {
+      terminalError = true;
       onEvent({
         type: "error",
         message: err instanceof Error ? err.message : String(err),
@@ -509,7 +549,16 @@ export async function runLoop(
   const last = [...history].reverse().find((message) => message.role === "assistant");
   const finalText =
     last?.parts.filter((part) => part.type === "text").map((part) => part.text).join("") ?? "";
-  onEvent({ type: "done", turns });
+  const finalStep = stepMetadata.at(-1);
+  const completion: TurnCompletion = {
+    ...(finalStep?.providerId ? { providerId: finalStep.providerId } : {}),
+    ...(finalStep?.modelId ? { modelId: finalStep.modelId } : {}),
+    ...(usage ? { usage } : {}),
+    finishReason: aborted ? "aborted" : terminalError ? "error" : finishReason ?? "stop",
+    aborted,
+    ...(finalStep?.responseId ? { responseId: finalStep.responseId } : {}),
+  };
+  onEvent({ type: "done", turns, completion });
   return {
     turns,
     finalText,
@@ -517,6 +566,7 @@ export async function runLoop(
     stepMetadata,
     ...(finishReason ? { finishReason } : {}),
     ...(usage ? { usage } : {}),
+    completion,
   };
 }
 

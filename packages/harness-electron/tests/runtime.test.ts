@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -50,19 +51,21 @@ interface Recorded {
   deltas: string[];
   tools: LiveToolPart[];
   completed: number;
+  completions: unknown[];
   errors: string[];
   asks: Array<{ toolName: string; answer: AskResponse }>;
 }
 
-const emptyRecorded = (): Recorded => ({ deltas: [], tools: [], completed: 0, errors: [], asks: [] });
+const emptyRecorded = (): Recorded => ({ deltas: [], tools: [], completed: 0, completions: [], errors: [], asks: [] });
 
 function makeHooks(recorded: Recorded, answer: AskResponse = "allow"): RuntimeHooks {
   return {
     onDelta: (_s, _m, delta) => recorded.deltas.push(delta),
     onTool: (_s, _m, part) => recorded.tools.push(part),
     onThinking: () => {},
-    onCompleted: () => {
+    onCompleted: (_sessionId, _messageId, completion?: unknown) => {
       recorded.completed += 1;
+      recorded.completions.push(completion);
     },
     onError: (_s, _m, error) => recorded.errors.push(error),
     askPermission: async (_s, _m, ask) => {
@@ -130,6 +133,59 @@ describe("HarnessRuntime", () => {
     expect(record.turnId).toBe("msg_t1");
     expect(record.messages.map((m: { role: string }) => m.role)).toEqual(["user", "assistant"]);
     expect(record.messages.at(-1).parts[0].text).toContain("你好，我是回复");
+  });
+
+  it("uses one sanitized completion summary for the host callback and transcript", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const model = new MockLanguageModelV3({
+      provider: "provider-safe",
+      modelId: "model-safe",
+      async doStream() {
+        return {
+          stream: convertArrayToReadableStream([
+            { type: "stream-start", warnings: [] },
+            { type: "response-metadata", id: "resp_opaque", timestamp: new Date(), modelId: "model-safe" },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 5, text: 5, reasoning: 0 },
+              },
+              finishReason: { unified: "stop", raw: "wire-finish-secret" },
+            },
+          ]),
+        };
+      },
+    });
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([], { workspaceRoot: workspace }, recorded),
+      providerFactory: () => ({
+        id: "provider-safe",
+        model: { value: model, providerId: "provider-safe", modelId: "model-safe" },
+        async *chat() {
+          throw new Error("controlled model path required");
+        },
+      }),
+    });
+
+    await chatTurn(runtime, "sess-metadata", "请求", "msg_metadata");
+
+    const file = path.join(persistDir, "sess-metadata.jsonl");
+    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    expect(recorded.completed).toBe(1);
+    expect(recorded.completions).toEqual([record.completion]);
+    expect(record.completion).toEqual({
+      providerId: "provider-safe",
+      modelId: "model-safe",
+      finishReason: "stop",
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8, reasoningTokens: 0, cachedInputTokens: 0 },
+      aborted: false,
+      responseId: "resp_opaque",
+    });
+    expect(JSON.stringify([recorded.completions, record])).not.toContain("wire-finish-secret");
+    expect(JSON.stringify([recorded.completions, record])).not.toContain("rawFinishReason");
+    expect(JSON.stringify([recorded.completions, record])).not.toContain("api-key");
+    expect(JSON.stringify([recorded.completions, record])).not.toContain("toolArgs");
   });
 
   it("关闭应用后继续旧会话：runtime 从 transcript 回灌，新增 turn-v2 不重复旧历史", async () => {

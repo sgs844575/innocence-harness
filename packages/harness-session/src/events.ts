@@ -1,3 +1,4 @@
+import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { MessagePart } from "./types";
 import type { PermissionResolution } from "@innocenceharness/harness-permissions";
 import type { PermissionResource, ToolCallInfo } from "@innocenceharness/harness-permissions";
@@ -36,6 +37,6 @@ export type HarnessEvent =
     }
   | { type: "compaction"; removedMessages: number }
   | { type: "error"; message: string; fatal: boolean }
-  | { type: "done"; turns: number };
+  | { type: "done"; turns: number; completion?: TurnCompletion };
 
 export type HarnessEventListener = (event: HarnessEvent) => void;

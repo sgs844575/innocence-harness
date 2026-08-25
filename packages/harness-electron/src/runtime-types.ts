@@ -4,7 +4,8 @@
 // runtime-events.ts for the remaining collaborators).
 import type { PermissionRequest } from "@innocenceharness/harness-permissions";
 import type { Message, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
-import type { Provider } from "@innocenceharness/harness-providers";
+import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import type { Provider, TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
 import type { AgentSession } from "./session";
 import type { SessionPlugin } from "./registry";
@@ -36,7 +37,8 @@ export interface RuntimeHooks {
   onTool(sessionId: string, messageId: string, part: LiveToolPart): void;
   /** Thinking deltas (the session spine does not emit these yet; the channel is ready). */
   onThinking(sessionId: string, messageId: string, delta: string): void;
-  onCompleted(sessionId: string, messageId: string): void;
+  /** One sanitized summary shared with transcript persistence and the done event. */
+  onCompleted(sessionId: string, messageId: string, completion: TurnCompletion): void;
   onError(sessionId: string, messageId: string, error: string): void;
   /** Ask the user about a tool call; resolves with their choice. */
   askPermission(sessionId: string, messageId: string, ask: PermissionAsk): Promise<AskResponse>;
@@ -156,6 +158,8 @@ export interface RuntimeOptions {
   forkRoute?(input: RuntimeForkRouteInput): Promise<Route & { prompt: string }>;
   /** Directory for JSONL session transcripts; omitted = no persistence. */
   persistDir?: string;
+  /** Optional allow-listed observability port owned by the host composition root. */
+  telemetry?: TraceAdapter;
   /**
    * Kernel scope factory for route sessions: called once per session BUILD
    * (cache hits reuse the existing session and never call it), and each call

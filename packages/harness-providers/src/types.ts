@@ -32,7 +32,7 @@ export interface UsageMetadata {
   cachedInputTokens?: number;
 }
 
-export type FinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
+export type FinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "aborted" | "other";
 
 /** Neutral metadata for one completed model turn. */
 export interface TurnMetadata {
@@ -40,6 +40,19 @@ export interface TurnMetadata {
   modelId: string;
   usage?: UsageMetadata;
   finishReason?: FinishReason;
+  /** Provider-issued response correlation id; treated as an opaque identifier. */
+  responseId?: string;
+}
+
+/** Sanitized completion shared by events, persistence, and host callbacks. */
+export interface TurnCompletion {
+  providerId?: string;
+  modelId?: string;
+  usage?: UsageMetadata;
+  finishReason: FinishReason;
+  aborted: boolean;
+  /** Provider-issued response correlation id; treated as an opaque identifier. */
+  responseId?: string;
 }
 
 export interface TextPart {

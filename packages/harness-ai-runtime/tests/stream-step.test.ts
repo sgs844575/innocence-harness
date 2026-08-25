@@ -76,6 +76,7 @@ describe("streamOneHarnessStep", () => {
             cachedInputTokens: 0,
           },
           finishReason: "tool-calls",
+          responseId: expect.any(String),
         },
       },
     ]);
@@ -199,7 +200,12 @@ describe("streamOneHarnessStep", () => {
         { type: "error", error: { message: "Model request failed" } },
         {
           type: "finish",
-          metadata: { providerId: "test", modelId: "model", finishReason: "error" },
+          metadata: {
+            providerId: "test",
+            modelId: "model",
+            finishReason: "error",
+            responseId: expect.any(String),
+          },
         },
       ]);
     } finally {

@@ -54,8 +54,13 @@ export async function* streamOneHarnessStep(
     });
 
     let latestUsage: UsageMetadata | undefined;
+    let responseId: string | undefined;
     for await (const event of result.fullStream) {
-      const mapped = mapStreamEvent(event, request.model, latestUsage);
+      if (event.type === "finish") {
+        const response = await result.response;
+        responseId = typeof response.id === "string" && response.id.length > 0 ? response.id : undefined;
+      }
+      const mapped = mapStreamEvent(event, request.model, latestUsage, responseId);
       if (!mapped) continue;
       if (mapped.type === "usage") latestUsage = mapped.usage;
       yield mapped;
@@ -73,6 +78,7 @@ function mapStreamEvent(
   event: TextStreamPart<SchemaOnlyTools>,
   model: ProviderModel,
   latestUsage: UsageMetadata | undefined,
+  responseId: string | undefined,
 ): HarnessStepEvent | undefined {
   switch (event.type) {
     case "text-delta":
@@ -114,6 +120,7 @@ function mapStreamEvent(
           modelId: model.modelId,
           ...(hasUsage(usage) ? { usage } : {}),
           finishReason: event.finishReason as FinishReason,
+          ...(responseId ? { responseId } : {}),
         },
       };
     }

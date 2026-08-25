@@ -9,6 +9,7 @@
 // non-task turn), which the decoder keeps OUT of the main history.
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message } from "@innocenceharness/harness-session";
 import { encodeTurnV2, encodeTurnV3 } from "./transcript";
 import { DEFAULT_ROUTE_ID } from "./runtime-types";
@@ -31,15 +32,16 @@ export async function persistTurn(
     routeId: string;
     taskId: string;
     messages: Message[];
+    completion: TurnCompletion;
   },
 ): Promise<void> {
-  const { sessionId, turnId, routeId, taskId, messages } = input;
+  const { sessionId, turnId, routeId, taskId, messages, completion } = input;
   if (!options.persistDir || messages.length === 0 || taskId) return;
   try {
     await fs.mkdir(options.persistDir, { recursive: true });
     const line =
       routeId === DEFAULT_ROUTE_ID
-        ? encodeTurnV2(turnId, new Date().toISOString(), messages)
+        ? encodeTurnV2(turnId, new Date().toISOString(), messages, completion)
         : encodeTurnV3({
             at: new Date().toISOString(),
             eventId: nextEventId(),
@@ -48,6 +50,7 @@ export async function persistTurn(
             parentTurnId: null,
             checkpointId: "",
             messages,
+            completion,
           });
     await fs.appendFile(path.join(options.persistDir, `${sessionId}.jsonl`), line, "utf8");
   } catch (err) {

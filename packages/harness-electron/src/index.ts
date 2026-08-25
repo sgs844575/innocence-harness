@@ -41,6 +41,12 @@ export {
   type RuntimeSendRequest,
   type SessionToolIndex,
 } from "./runtime";
+export {
+  createNodeTraceAdapter,
+  createTraceAdapter,
+  type NodeTraceAdapterOptions,
+  type TraceAdapter,
+} from "@innocenceharness/harness-ai-runtime";
 export { modelFromPreset, resolvePresetMeta, type PresetModelMeta } from "./modelPresets";
 export {
   canonicalizeHistory,

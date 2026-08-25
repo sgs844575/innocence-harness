@@ -8,6 +8,7 @@ import type { RuntimeHooks } from "@innocenceharness/harness-electron";
 import {
   IPC,
   appendText,
+  type ChatCompletionMetadata,
   type ChatPermissionEvent,
   type ChatToolEvent,
   type PermissionChoice,
@@ -66,11 +67,20 @@ export function createRuntimeHooks(
       });
       send(IPC.chatThinking, { sessionId, messageId, delta });
     },
-    onCompleted: (sessionId, messageId) => {
+    onCompleted: (sessionId, messageId, completion) => {
+      const mirrored: ChatCompletionMetadata = {
+        ...(completion.providerId ? { providerId: completion.providerId } : {}),
+        ...(completion.modelId ? { modelId: completion.modelId } : {}),
+        ...(completion.usage ? { usage: completion.usage } : {}),
+        finishReason: completion.finishReason,
+        aborted: completion.aborted,
+        ...(completion.responseId ? { responseId: completion.responseId } : {}),
+      };
       sessions.updateMessage(sessionId, messageId, (m) => {
         m.streaming = false;
+        m.completion = mirrored;
       });
-      send(IPC.chatDone, { sessionId, messageId });
+      send(IPC.chatDone, { sessionId, messageId, completion: mirrored });
     },
     onError: (sessionId, messageId, error) => {
       sessions.updateMessage(sessionId, messageId, (m) => {

@@ -69,12 +69,30 @@ export interface ToolResultPart {
 }
 export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
 
+export interface ChatCompletionMetadata {
+  providerId?: string;
+  modelId?: string;
+  finishReason: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "aborted" | "other";
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+  };
+  aborted: boolean;
+  /** Opaque response correlation id; never request content or credentials. */
+  responseId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   parts: MessagePart[];
   createdAt: number;
   streaming?: boolean;
+  /** Optional to keep previously persisted renderer records readable. */
+  completion?: ChatCompletionMetadata;
 }
 
 /** 所有 text part 的拼接（标题、引用、纯文本场景）。 */
@@ -116,6 +134,8 @@ export interface ChatDeltaEvent {
 export interface ChatDoneEvent {
   sessionId: string;
   messageId: string;
+  /** Optional to preserve compatibility with pre-metadata hosts. */
+  completion?: ChatCompletionMetadata;
 }
 
 export interface ChatErrorEvent {

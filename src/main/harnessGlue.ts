@@ -11,6 +11,7 @@ import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  createNodeTraceAdapter,
   DEFAULT_ROUTE_ID,
   HarnessRuntime,
   DEFAULT_SETTINGS,
@@ -105,6 +106,7 @@ const taskBridge = createTaskRuntimeBridge({
   taskStorageDir,
   log: (level, msg, data) => logger[level]("task bridge", { msg, data: String(data) }),
 });
+const telemetry = createNodeTraceAdapter({ instrumentationName: "harness-runtime" });
 
 /** Bridge + storage dir for the host's task-runtime IPC composition (Task 12). */
 export function getTaskBridge(): TaskRuntimeBridge {
@@ -118,6 +120,7 @@ export function getTaskStorageDir(): string {
 const runtime = new HarnessRuntime({
   settings: () => settings,
   persistDir: transcriptsDir(),
+  telemetry,
   // Route scopes: every session build mounts into a fresh kernel scope below
   // the plugin-boot root (dynamic staging kernel) — session dispose unwinds
   // the whole scope; the root and sibling routes stay untouched.

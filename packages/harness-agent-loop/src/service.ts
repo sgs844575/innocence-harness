@@ -1,3 +1,4 @@
+import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { SubagentSpawner } from "@innocenceharness/harness-agent";
 import type { PermissionEngine } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
@@ -42,6 +43,8 @@ export interface LoopDeps {
   maxTurns?: number;
   toolTimeoutMs?: number;
   abortGraceMs?: number;
+  /** Optional allow-listed observability port injected by the host. */
+  telemetry?: TraceAdapter;
 }
 
 /** Per-run options; each member overrides the {@link LoopDeps} default. */
@@ -83,6 +86,7 @@ export function createRunLoop(deps: LoopDeps): RunLoopFunction {
       toolTimeoutMs: opts.toolTimeoutMs ?? deps.toolTimeoutMs,
       abortGraceMs: opts.abortGraceMs ?? deps.abortGraceMs,
       spawner: deps.spawner,
+      telemetry: deps.telemetry,
       scope: opts.scope,
     });
 }

@@ -5,6 +5,9 @@ import type { Logger, SessionPlugin } from "./registry";
 import type { SessionLoaderPlugin } from "./session-loader";
 import type { SessionSpineSuite } from "./session-spine";
 
+import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import type { TurnCompletion } from "@innocenceharness/harness-providers";
+
 export interface AgentSessionOptions {
   plugins: SessionPlugin[];
   loaderEntries?: SessionLoaderPlugin[];
@@ -32,6 +35,8 @@ export interface AgentSessionOptions {
   compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
   maxTurns?: number;
   toolTimeoutMs?: number;
+  /** Optional allow-listed observability port forwarded to the agent loop. */
+  telemetry?: TraceAdapter;
   logger?: Logger;
 }
 
@@ -39,4 +44,5 @@ export interface RunSummary {
   turns: number;
   finalText: string;
   aborted: boolean;
+  completion: TurnCompletion;
 }

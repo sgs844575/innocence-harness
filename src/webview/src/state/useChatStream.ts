@@ -76,7 +76,11 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       setStreamingId(null);
       setPermission(null);
       setMessages((prev) =>
-        prev.map((m) => (m.id === e.messageId ? { ...m, streaming: false } : m)),
+        prev.map((m) =>
+          m.id === e.messageId
+            ? { ...m, streaming: false, ...(e.completion ? { completion: e.completion } : {}) }
+            : m,
+        ),
       );
     });
     const offError = api.onChatError((e) => {

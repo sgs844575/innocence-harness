@@ -72,6 +72,29 @@ describe("turn-v2 append-only protocol", () => {
   });
 });
 
+describe("completion metadata transcript compatibility", () => {
+  it("keeps legacy rows readable and persists only the sanitized optional completion", () => {
+    const legacy = encodeTurnV2("legacy", "t1", pair("旧问", "旧答"));
+    const completion = {
+      providerId: "provider-safe",
+      modelId: "model-safe",
+      finishReason: "stop" as const,
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8 },
+      aborted: false,
+      responseId: "resp_opaque",
+    };
+    const next = encodeTurnV2("next", "t2", pair("新问", "新答"), completion);
+
+    const decoded = decodeTranscript(legacy + next);
+    expect(decoded.history.map(text)).toEqual(["旧问", "旧答", "新问", "新答"]);
+    const nextRecord = JSON.parse(next);
+    expect(nextRecord.completion).toEqual(completion);
+    expect(JSON.stringify(nextRecord.completion)).not.toContain("rawFinishReason");
+    expect(JSON.stringify(nextRecord.completion)).not.toContain("api-key");
+    expect(JSON.stringify(nextRecord.completion)).not.toContain("toolArgs");
+  });
+});
+
 const v3 = (over: Partial<TurnRecordV3> & { turnId: string; routeId: string }): string =>
   encodeTurnV3({
     at: "t0",
