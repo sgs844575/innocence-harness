@@ -6,6 +6,34 @@ export interface JsonSchema {
   [key: string]: unknown;
 }
 
+/** Opaque carrier for a model owned by a runtime adapter. */
+export interface ProviderModel {
+  readonly value: unknown;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly capabilities?: Readonly<Record<string, boolean | "unknown">>;
+}
+
+/** Token accounting normalized without exposing a provider wire payload. */
+export interface UsageMetadata {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+}
+
+export type FinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
+
+/** Neutral metadata for one completed model turn. */
+export interface TurnMetadata {
+  providerId: string;
+  modelId: string;
+  usage?: UsageMetadata;
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
+}
+
 export interface TextPart {
   type: "text";
   text: string;

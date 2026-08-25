@@ -2,8 +2,12 @@ import { Context } from "@innocenceharness/kernel";
 import {
   ProvidersPlugin,
   createProviderPlugin,
+  type FinishReason,
   type Provider,
+  type ProviderModel,
   type ProvidersService,
+  type TurnMetadata,
+  type UsageMetadata,
 } from "@innocenceharness/harness-providers";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
@@ -16,6 +20,30 @@ async function withProviders(): Promise<Context> {
 }
 
 describe("provider registration", () => {
+  it("exports opaque model and turn metadata without an SDK model type", () => {
+    const model: ProviderModel = {
+      value: { opaque: true },
+      providerId: "runtime",
+      modelId: "model",
+      capabilities: { tools: true },
+    };
+    const usage: UsageMetadata = { inputTokens: 3, outputTokens: 2, totalTokens: 5 };
+    const finishReason: FinishReason = "stop";
+    const metadata: TurnMetadata = {
+      providerId: model.providerId,
+      modelId: model.modelId,
+      usage,
+      finishReason,
+    };
+
+    expect(metadata).toEqual({
+      providerId: "runtime",
+      modelId: "model",
+      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      finishReason: "stop",
+    });
+  });
+
   it("exposes exactly what was registered through the gate", async () => {
     const ctx = await withProviders();
     ctx.providers.register({ id: "prov", async *chat() {} });
