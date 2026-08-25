@@ -42,8 +42,10 @@ export {
   type SessionToolIndex,
 } from "./runtime";
 export {
+  createDefaultNodeTraceProcessors,
   createNodeTraceAdapter,
   createTraceAdapter,
+  type NodeTraceAdapter,
   type NodeTraceAdapterOptions,
   type TraceAdapter,
 } from "@innocenceharness/harness-ai-runtime";

@@ -15,6 +15,7 @@ import {
   getTaskStorageDir,
   initHarness,
   disposeAllRuntime,
+  disposeTelemetry,
   disposePluginBoot,
   disposeTaskRuntime,
   rejectPendingPermissionAsks,
@@ -156,6 +157,7 @@ if (!gotLock) {
         // watchers and worktree lease records. Terminal shell trees go last
         // (taskkill /T /F on Windows) so quit leaves no orphan shells.
         await disposeAllRuntime();
+        await disposeTelemetry();
         await disposePluginBoot();
         await disposeTaskRuntime();
         await terminalService?.disposeAll();

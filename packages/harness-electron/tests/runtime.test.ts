@@ -135,7 +135,7 @@ describe("HarnessRuntime", () => {
     expect(record.messages.at(-1).parts[0].text).toContain("你好，我是回复");
   });
 
-  it("uses one sanitized completion summary for the host callback and transcript", async () => {
+  it("writes one sanitized completion summary for the host callback and transcript", async () => {
     const recorded: Recorded = emptyRecorded();
     const model = new MockLanguageModelV3({
       provider: "provider-safe",
@@ -186,6 +186,93 @@ describe("HarnessRuntime", () => {
     expect(JSON.stringify([recorded.completions, record])).not.toContain("rawFinishReason");
     expect(JSON.stringify([recorded.completions, record])).not.toContain("api-key");
     expect(JSON.stringify([recorded.completions, record])).not.toContain("toolArgs");
+  });
+
+  it("forwards the fatal model completion shared by the transcript and host callback", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const model = new MockLanguageModelV3({
+      provider: "provider-safe",
+      modelId: "model-safe",
+      async doStream() {
+        return {
+          stream: convertArrayToReadableStream([
+            { type: "stream-start", warnings: [] },
+            { type: "response-metadata", id: "resp_opaque", timestamp: new Date(), modelId: "model-safe" },
+            { type: "error", error: new Error("upstream failure") },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 5, text: 5, reasoning: 0 },
+              },
+              finishReason: { unified: "error", raw: "wire-finish-secret" },
+            },
+          ]),
+        };
+      },
+    });
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([], { workspaceRoot: workspace }, recorded),
+      providerFactory: () => ({
+        id: "provider-safe",
+        model: { value: model, providerId: "provider-safe", modelId: "model-safe" },
+        async *chat() {
+          throw new Error("controlled model path required");
+        },
+      }),
+    });
+
+    await chatTurn(runtime, "sess-fatal-metadata", "请求", "msg_fatal_metadata");
+
+    const file = path.join(persistDir, "sess-fatal-metadata.jsonl");
+    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    expect(recorded.errors).toEqual(["Model request failed"]);
+    expect(recorded.completed).toBe(1);
+    expect(recorded.completions).toEqual([record.completion]);
+    expect(record.completion).toEqual({
+      providerId: "provider-safe",
+      modelId: "model-safe",
+      finishReason: "error",
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8, reasoningTokens: 0, cachedInputTokens: 0 },
+      aborted: false,
+      responseId: "resp_opaque",
+    });
+    expect(JSON.stringify([recorded.completions, record])).not.toContain("wire-finish-secret");
+  });
+
+  it("forwards the aborted completion shared by the transcript and host callback", async () => {
+    const recorded: Recorded = emptyRecorded();
+    let firstDelta!: () => void;
+    const firstDeltaReceived = new Promise<void>((resolve) => {
+      firstDelta = resolve;
+    });
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([], { workspaceRoot: workspace }, recorded),
+      hooks: {
+        ...makeHooks(recorded),
+        onDelta: (_sessionId, _messageId, delta) => {
+          recorded.deltas.push(delta);
+          firstDelta();
+        },
+      },
+      providerFactory: () => createMockProvider({
+        turns: [{ text: "a response that can be stopped" }],
+        chunkSize: 1,
+        delayMs: 5,
+      }),
+    });
+
+    const sending = chatTurn(runtime, "sess-aborted-metadata", "请求", "msg_aborted_metadata");
+    await firstDeltaReceived;
+    runtime.stop("sess-aborted-metadata", "main");
+    await sending;
+
+    const file = path.join(persistDir, "sess-aborted-metadata.jsonl");
+    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    expect(recorded.errors).toEqual([]);
+    expect(recorded.completed).toBe(1);
+    expect(recorded.completions).toEqual([record.completion]);
+    expect(record.completion).toEqual({ finishReason: "aborted", aborted: true });
   });
 
   it("关闭应用后继续旧会话：runtime 从 transcript 回灌，新增 turn-v2 不重复旧历史", async () => {

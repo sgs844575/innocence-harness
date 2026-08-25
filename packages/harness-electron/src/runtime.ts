@@ -95,6 +95,10 @@ export class HarnessRuntime {
         unsubscribe();
         this.cache.endRun(key);
       }
+      const completionBase = doneCompletion ?? summary.completion;
+      const completion = fatalError
+        ? { ...completionBase, finishReason: "error" as const, aborted: false }
+        : completionBase;
       await persistTurn(
         { persistDir: this.options.persistDir, log: (level, msg, data) => this.options.hooks.log(level, msg, data) },
         {
@@ -103,16 +107,13 @@ export class HarnessRuntime {
           routeId,
           taskId: request.taskId,
           messages: agent.history.slice(historyStart),
-          completion: doneCompletion ?? summary.completion,
+          completion,
         },
       );
-      const completion = doneCompletion ?? summary.completion;
+      routeTrace?.complete(completion);
+      this.options.hooks.onCompleted(request.sessionId, request.messageId, completion);
       if (fatalError) {
-        routeTrace?.complete({ ...completion, finishReason: "error", aborted: false });
         this.options.hooks.onError(request.sessionId, request.messageId, fatalError);
-      } else {
-        routeTrace?.complete(completion);
-        this.options.hooks.onCompleted(request.sessionId, request.messageId, completion);
       }
     } catch (err) {
       routeTrace?.complete({ finishReason: controller.signal.aborted ? "aborted" : "error", aborted: controller.signal.aborted });

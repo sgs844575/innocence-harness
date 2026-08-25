@@ -11,7 +11,6 @@ import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  createNodeTraceAdapter,
   DEFAULT_ROUTE_ID,
   HarnessRuntime,
   DEFAULT_SETTINGS,
@@ -22,6 +21,7 @@ import {
 import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
+import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks } from "./runtimeHooks";
 import * as sessions from "./sessions";
 import { getMainWindow } from "./appWindow";
@@ -106,7 +106,7 @@ const taskBridge = createTaskRuntimeBridge({
   taskStorageDir,
   log: (level, msg, data) => logger[level]("task bridge", { msg, data: String(data) }),
 });
-const telemetry = createNodeTraceAdapter({ instrumentationName: "harness-runtime" });
+const telemetry = createHostTelemetry();
 
 /** Bridge + storage dir for the host's task-runtime IPC composition (Task 12). */
 export function getTaskBridge(): TaskRuntimeBridge {
@@ -275,6 +275,11 @@ export function rejectPendingPermissionAsks(): void {
  *  runs, disposes all plugins (MCP child trees included). Never rejects. */
 export async function disposeAllRuntime(): Promise<void> {
   await runtime.disposeAll();
+}
+
+/** Flushes and releases the host-owned tracing processors during app shutdown. */
+export async function disposeTelemetry(): Promise<void> {
+  await telemetry.dispose();
 }
 
 /** Releases every live task's runtime resources (app shutdown): watchers and

@@ -25,11 +25,11 @@ afterEach(() => {
 });
 
 describe("useChatStream completion metadata", () => {
-  it("writes the host completion to the matching assistant message without inference", async () => {
+  it("keeps the fatal completion when the host also reports its error text", async () => {
     const completion: ChatCompletionMetadata = {
       providerId: "provider-safe",
       modelId: "model-safe",
-      finishReason: "stop",
+      finishReason: "error",
       usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8 },
       aborted: false,
       responseId: "resp_opaque",
@@ -52,8 +52,20 @@ describe("useChatStream completion metadata", () => {
       messageId: string;
       completion?: ChatCompletionMetadata;
     }) => void]>)[0][0];
-    act(() => done({ sessionId: "session", messageId: "assistant", completion }));
+    const error = (apiMock.onChatError.mock.calls as unknown as Array<[(event: {
+      sessionId: string;
+      messageId: string;
+      error: string;
+    }) => void]>)[0][0];
+    act(() => {
+      done({ sessionId: "session", messageId: "assistant", completion });
+      error({ sessionId: "session", messageId: "assistant", error: "Model request failed" });
+    });
 
     expect(result.current.messages[0]).toMatchObject({ streaming: false, completion });
+    expect(result.current.messages[0].parts).toContainEqual({
+      type: "text",
+      text: "\n\n> ⚠️ Model request failed",
+    });
   });
 });
