@@ -104,12 +104,44 @@ describe("streamOneHarnessStep", () => {
       );
 
       expect(events).toEqual([
-        { type: "error", error: { message: "upstream unavailable" } },
+        { type: "error", error: { message: "Model request failed" } },
         {
           type: "finish",
           metadata: { providerId: "test", modelId: "model", finishReason: "error" },
         },
       ]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("does not expose sensitive provider error content in events or metadata", async () => {
+    const sensitiveMessage = 'apiKey=secret prompt=private-prompt args={"path":"private-tool-args"}';
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "error", error: new Error(sensitiveMessage) },
+        ]),
+      },
+    });
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const events = await collect(
+        streamOneHarnessStep({
+          model: { value: model, providerId: "test", modelId: "model" },
+          system: "system",
+          messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+          tools: [],
+        }),
+      );
+      const exposed = JSON.stringify(events);
+
+      expect(events).toContainEqual({ type: "error", error: { message: "Model request failed" } });
+      expect(exposed).not.toContain("apiKey=secret");
+      expect(exposed).not.toContain("private-prompt");
+      expect(exposed).not.toContain("private-tool-args");
     } finally {
       consoleError.mockRestore();
     }

@@ -136,6 +136,8 @@ function stringifyToolOutput(output: unknown): string {
   return JSON.stringify(output);
 }
 
-function toNeutralError(error: unknown): { message: string } {
-  return { message: error instanceof Error ? error.message : String(error) };
+const SAFE_MODEL_ERROR_MESSAGE = "Model request failed";
+
+function toNeutralError(_error: unknown): { message: string } {
+  return { message: SAFE_MODEL_ERROR_MESSAGE };
 }
