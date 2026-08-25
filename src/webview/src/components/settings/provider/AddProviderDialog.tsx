@@ -9,14 +9,15 @@ interface Props {
   /** 由 SettingsView 从 shared 契约的 PROVIDER_PRESET_MIRROR 传入。 */
   presets: PresetOption[];
   onClose: () => void;
-  onCreate: (profile: ProviderProfile) => void;
+  /** Credential is transient and submitted separately from the profile settings mirror. */
+  onCreate: (profile: ProviderProfile, apiKey: string) => void;
 }
 
 /** 添加厂家：名称 + 密钥 + 双端点（OpenAI/Anthropic）+ 基于预设。 */
 export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): React.JSX.Element {
   const [name, setName] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [kind, setKind] = useState<"openai" | "anthropic">("openai");
+  const [kind, setKind] = useState<"openai" | "anthropic" | "google">("openai");
   const [baseURL, setBaseURL] = useState("");
   const [query, setQuery] = useState("");
   const hit = useMemo(
@@ -34,12 +35,12 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
       id: `custom_${Date.now().toString(36)}`,
       name: finalName,
       kind: finalKind,
-      apiKey,
+      apiKey: "",
       baseURL: finalBase,
       enabled: true,
       models,
       preset: false,
-    });
+    }, apiKey);
     setName("");
     setApiKey("");
     setBaseURL("");
@@ -79,7 +80,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
           <div className="flex flex-col gap-1">
             端点类型
             <div className="flex gap-1.5">
-              {(["openai", "anthropic"] as const).map((k) => (
+              {(["openai", "anthropic", "google"] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
@@ -90,7 +91,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
                       : "border-(--color-app-border) text-(--color-app-muted)"
                   }`}
                 >
-                  {k === "openai" ? "OpenAI 兼容" : "Anthropic"}
+                  {k === "openai" ? "OpenAI 兼容" : k === "anthropic" ? "Anthropic" : "Native generative"}
                 </button>
               ))}
             </div>
@@ -100,7 +101,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
             <input
               value={baseURL}
               onChange={(e) => setBaseURL(e.target.value)}
-              placeholder={kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"}
+              placeholder={kind === "anthropic" ? "https://api.anthropic.com" : kind === "google" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"}
               className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono text-[12px] outline-none"
             />
           </label>

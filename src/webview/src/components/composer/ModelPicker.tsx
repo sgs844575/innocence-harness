@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
-import type { HarnessSettings } from "../../../../shared/ipc";
+import type { HarnessSettings, ProviderKind } from "../../../../shared/ipc";
 import { CapabilityTags } from "../tags/CapabilityTags";
 import { Popover } from "../ui/Popover";
 import { filterProfiles } from "./modelPickerFilter";
@@ -60,6 +60,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
               className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] ${p.id === current?.id ? "bg-(--color-app-accent-soft) text-(--color-app-text) shadow-[inset_2px_0_0_var(--color-app-accent)]" : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"}`}
             >
               <span className="truncate">{p.name}</span>
+              <ProtocolBadge kind={p.kind} />
             </button>
           ))}
         </div>
@@ -84,5 +85,18 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
         </div>
       </div>
     </Popover>
+  );
+}
+
+function ProtocolBadge({ kind }: { kind: ProviderKind }): React.JSX.Element {
+  const protocol = kind === "anthropic"
+    ? "anthropic-messages"
+    : kind === "google"
+      ? "google-generative"
+      : "openai-compatible";
+  return (
+    <span className="ml-auto shrink-0 rounded border border-(--color-app-hairline) px-1 font-mono text-[8px] text-(--color-app-muted)">
+      {protocol}
+    </span>
   );
 }

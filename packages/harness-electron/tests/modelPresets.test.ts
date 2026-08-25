@@ -35,9 +35,9 @@ describe("cherry registry 适配层", () => {
     expect(withCtx).toBeDefined();
     expect(resolvePresetMeta("OpenRouter", "openai/gpt-5")?.contextWindow).toBe(400000);
   });
-  it("批量规模：12 家全部有数据，量大厂不为空", () => {
+  it("批量规模：13 家全部有数据，量大厂不为空", () => {
     const counts = Object.entries(PRESET_MODELS).map(([name, t]) => [name, Object.keys(t).length]);
-    expect(counts.length).toBe(12);
+    expect(counts.length).toBe(13);
     for (const [, n] of counts) expect(n).toBeGreaterThan(0);
     expect(Object.keys(PRESET_MODELS["智谱开放平台"] ?? {}).length).toBeGreaterThanOrEqual(37);
     expect(Object.keys(PRESET_MODELS["Gemini"] ?? {}).length).toBeGreaterThanOrEqual(50); // google 厂牌 70 条

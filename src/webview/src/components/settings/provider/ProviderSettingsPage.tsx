@@ -71,6 +71,13 @@ export function ProviderSettingsPage({
   const patchProfile = (id: string) => (patch: Partial<ProviderProfile>): void =>
     patchProfiles(settings.profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
+  /** Credentials take a one-way host-only path and return a redacted settings mirror. */
+  const updateApiKey = (profileId: string) => (apiKey: string): void => {
+    void api.setProviderApiKey(profileId, apiKey).then(onSettingsChange).catch(
+      (err) => showToast(`保存密钥失败：${(err as Error).message.slice(0, 120)}`),
+    );
+  };
+
   // useCallback 稳定引用：SyncDrawer 的拉取 effect 以其为依赖，避免 toast 等
   // 无关 state 更新触发重复拉取。
   const listModels = useCallback(
@@ -131,7 +138,7 @@ export function ProviderSettingsPage({
   /** 添加厂家：对话框"基于预设创建"给的是裸模型（{id, source:"preset"}），
    *  经 IPC enrichModels 取预设元数据逐字段填空（与 mergeSync kept 的填充
    *  同一路径 profileOps.fillModelGaps）；enrich 失败不阻断创建（退化裸模型）。 */
-  const addProvider = (p: ProviderProfile): void => {
+  const addProvider = (p: ProviderProfile, apiKey: string): void => {
     void (async () => {
       let metas: ModelInfo[] = [];
       if (p.models.length > 0) {
@@ -141,10 +148,15 @@ export function ProviderSettingsPage({
           // enrich 是尽力而为：拿不到元数据就保留裸模型，创建流程不回滚。
         }
       }
-      patchProfiles([
-        ...settings.profiles,
-        { ...p, models: enrichProfileModels(p.models, metas) },
-      ]);
+      try {
+        const saved = await api.setHarnessSettings({
+          ...settings,
+          profiles: [...settings.profiles, { ...p, models: enrichProfileModels(p.models, metas) }],
+        });
+        onSettingsChange(apiKey ? await api.setProviderApiKey(p.id, apiKey) : saved);
+      } catch (err) {
+        showToast(`添加厂家失败：${(err as Error).message.slice(0, 120)}`);
+      }
     })();
   };
 
@@ -196,6 +208,7 @@ export function ProviderSettingsPage({
           profile={selected}
           listModels={listModels}
           onChange={patchProfile(selected.id)}
+          onApiKeyChange={updateApiKey(selected.id)}
           onToast={showToast}
           onEditModel={setEditing}
           onSync={openSync}

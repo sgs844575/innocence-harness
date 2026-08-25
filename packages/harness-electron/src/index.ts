@@ -14,8 +14,10 @@ export {
   type PermissionMode,
   type PluginToggleSource,
   type ProviderKind,
+  type ProviderProtocol,
   type ProviderPreset,
   type ProviderProfile,
+  providerProtocol,
 } from "./settings";
 export {
   AGENT_IDS,

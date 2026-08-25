@@ -10,6 +10,7 @@
 import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { openSecureStorage } from "@innocenceharness/secure-storage-node";
 import {
   DEFAULT_ROUTE_ID,
   HarnessRuntime,
@@ -28,6 +29,10 @@ import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
 import { broadcastSessions } from "./sessionEvents";
+import { createCredentialStore } from "./credentialStore";
+import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
+import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
+import { createSettingsMutationGate } from "./settingsMutationGate";
 import { currentTestOverrides } from "./testOverrides";
 import {
   createTaskRuntimeBridge,
@@ -37,10 +42,19 @@ import {
 } from "./taskRuntimeBridge";
 
 let settings: PkgSettings = DEFAULT_SETTINGS;
+const settingsMutationGate = createSettingsMutationGate();
 const pendingAsks = new Map<string, (choice: PermissionChoice) => void>();
 
 function settingsFile(): string {
   return path.join(app.getPath("userData"), "harness-settings.json");
+}
+
+function credentialsDir(): string {
+  return path.join(app.getPath("userData"), "provider-credentials");
+}
+
+async function credentialStore() {
+  return createCredentialStore(await openSecureStorage(credentialsDir(), { dirs: ["keys"] }));
 }
 
 function transcriptsDir(): string {
@@ -156,42 +170,61 @@ const runtime = new HarnessRuntime({
  *  before the window exists, so applying the theme needs no broadcast —
  *  the renderer pulls the resolved theme on load. */
 export async function initHarness(): Promise<void> {
+  let needsCredentialMigration = false;
   try {
     const raw = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
-    settings = mergeSettings(raw);
+    const hydrated = await hydrateCredentials(mergeSettings(raw), await credentialStore());
+    settings = hydrated.settings;
+    needsCredentialMigration = hydrated.migrated;
   } catch {
     settings = DEFAULT_SETTINGS;
+  }
+  if (needsCredentialMigration) {
+    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
   }
   setTheme(settings.themeMode ?? "system");
   logger.info("harness initialized", { activeProfile: settings.activeProfileId });
 }
 
-export function getHarnessSettings(): PkgSettings {
-  return settings;
+export function getHarnessSettings() {
+  return toSettingsMirror(settings);
 }
 
 /** 插件清单投影（IPC plugins:list）：按当前 settings 现算——工作区取
  *  settings（空 = 无项目层），用户开关取 pluginToggles；每次调用重跑
  *  解析，设置写入后的重拉立即反映新状态。 */
-export function getPluginInventory(): Promise<PluginInventory> {
+export async function getPluginInventory(): Promise<PluginInventory> {
+  await settingsMutationGate.waitForPending();
   return sessionComposition.pluginInventory({
     workspaceRoot: settings.workspaceRoot || undefined,
     userToggles: settings.pluginToggles,
   });
 }
 
-export async function setHarnessSettings(next: PkgSettings): Promise<void> {
-  const prevTheme = settings.themeMode ?? "system";
-  settings = mergeSettings(next);
-  // Theme lives in the settings file now — apply + broadcast when it changes
-  // so the appearance page is the single control surface.
-  const nextTheme = settings.themeMode ?? "system";
-  if (nextTheme !== prevTheme) {
-    setTheme(nextTheme);
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) broadcastTheme(win);
-  }
-  await fs.writeFile(settingsFile(), JSON.stringify(settings, null, 2), "utf8");
+export function setHarnessSettings(next: PkgSettings) {
+  return settingsMutationGate.enqueue(async () => {
+    const prevTheme = settings.themeMode ?? "system";
+    settings = await secureSettingsUpdate(settings, mergeSettings(next), await credentialStore());
+    // Theme lives in the settings file now — apply + broadcast when it changes
+    // so the appearance page is the single control surface.
+    const nextTheme = settings.themeMode ?? "system";
+    if (nextTheme !== prevTheme) {
+      setTheme(nextTheme);
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) broadcastTheme(win);
+    }
+    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
+    return getHarnessSettings();
+  });
+}
+
+/** Stores a key in secure host storage and returns the redacted settings projection. */
+export function updateProviderApiKey(profileId: string, apiKey: string) {
+  return settingsMutationGate.enqueue(async () => {
+    settings = await setProfileCredential(settings, profileId, apiKey, await credentialStore());
+    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
+    return getHarnessSettings();
+  });
 }
 
 /** Fetches a platform's model list (runs in main, where network is available). */
@@ -199,6 +232,14 @@ export async function listProviderModels(
   profile: Pick<PkgSettings["profiles"][number], "kind" | "apiKey" | "baseURL">,
 ): Promise<string[]> {
   return listModels(profile);
+}
+
+/** Fetches a configured profile's models without exposing its credential over IPC. */
+export async function listProviderModelsById(profileId: string): Promise<string[]> {
+  await settingsMutationGate.waitForPending();
+  const profile = settings.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) throw new Error("profile not found");
+  return listProviderModels(profile);
 }
 
 export async function pickWorkspace(): Promise<string> {

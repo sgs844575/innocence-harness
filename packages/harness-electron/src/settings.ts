@@ -17,6 +17,16 @@ export type { ModelInfo } from "./modelPresets";
 export type { PluginToggleSource } from "../../../src/shared/ipc";
 
 export type ProviderKind = "openai" | "anthropic" | "google";
+/** Wire format selected by the provider kind; this is never inferred from a URL. */
+export type ProviderProtocol = "openai-compatible" | "anthropic-messages" | "google-generative";
+
+export function providerProtocol(kind: ProviderKind): ProviderProtocol {
+  switch (kind) {
+    case "openai": return "openai-compatible";
+    case "anthropic": return "anthropic-messages";
+    case "google": return "google-generative";
+  }
+}
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
 export type ThemeMode = "system" | "dark" | "light";
 /** "" = follow the system locale. */
@@ -26,7 +36,10 @@ export interface ProviderProfile {
   id: string;
   name: string;
   kind: ProviderKind;
+  /** Legacy plaintext credential. Old files remain readable; host writes migrate it to apiKeyRef. */
   apiKey: string;
+  /** Relative reference to a host-owned secured credential record. */
+  apiKeyRef?: string;
   /** Empty = the kind's official default endpoint. */
   baseURL: string;
   enabled: boolean;
@@ -98,6 +111,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { name: "Anthropic", kind: "anthropic", baseURL: "", models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"] },
   { name: "DeepSeek", kind: "openai", baseURL: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
   { name: "Gemini", kind: "openai", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
+  { name: "Native generative", kind: "google", baseURL: "", models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
   { name: "阿里云百炼", kind: "openai", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen3-max", "qwen-max", "qwen-plus", "qwen-turbo"] },
   { name: "智谱开放平台", kind: "openai", baseURL: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4.6", "glm-4.5", "glm-4.5-air"] },
   { name: "Moonshot", kind: "openai", baseURL: "https://api.moonshot.cn/v1", models: ["kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
@@ -189,6 +203,7 @@ function normalizeProfile(raw: unknown): ProviderProfile | null {
     name: typeof src.name === "string" && src.name ? src.name : src.id,
     kind: src.kind === "anthropic" || src.kind === "google" ? src.kind : "openai",
     apiKey: typeof src.apiKey === "string" ? src.apiKey : "",
+    apiKeyRef: typeof src.apiKeyRef === "string" && src.apiKeyRef ? src.apiKeyRef : undefined,
     baseURL: typeof src.baseURL === "string" ? src.baseURL : "",
     enabled: src.enabled === true,
     models: Array.isArray(src.models)
@@ -364,31 +379,44 @@ export function resolveActive(settings: HarnessSettings): ActiveResolution {
   };
 }
 
-/** Fetches a platform's model id list from its /models endpoint. */
+/** Fetches a platform's model id list from its protocol-specific endpoint. */
 export async function listModels(
   profile: Pick<ProviderProfile, "kind" | "apiKey" | "baseURL">,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string[]> {
   const { kind, apiKey, baseURL } = profile;
-  const base = (
-    baseURL || (kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1")
-  ).replace(/\/+$/, "");
+  if (kind !== "openai" && kind !== "anthropic" && kind !== "google") {
+    throw new Error("unsupported provider kind");
+  }
+  const defaults: Record<ProviderKind, string> = {
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com",
+    google: "https://generativelanguage.googleapis.com/v1beta",
+  };
+  const base = (baseURL || defaults[kind]).replace(/\/+$/, "");
   const url = kind === "anthropic" ? `${base}/v1/models` : `${base}/models`;
   const headers: Record<string, string> =
     kind === "anthropic"
       ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-      : { authorization: `Bearer ${apiKey}` };
+      : kind === "google"
+        ? { "x-goog-api-key": apiKey }
+        : { authorization: `Bearer ${apiKey}` };
   const res = await fetchImpl(url, { headers });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`获取模型列表失败 HTTP ${res.status}：${text.slice(0, 200)}`);
+    throw new Error(`获取模型列表失败 HTTP ${res.status}`);
   }
   const json = (await res.json()) as {
     data?: Array<{ id?: string; name?: string; display_name?: string }>;
+    models?: Array<{ name?: string; displayName?: string }>;
   };
-  const ids = (json.data ?? [])
-    .map((m) => m.id ?? m.name)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const ids = kind === "google"
+    ? (json.models ?? [])
+        .map((model) => model.name)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+        .map((id) => id.replace(/^models\//, ""))
+    : (json.data ?? [])
+        .map((model) => model.id ?? model.name)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
   return [...new Set(ids)];
 }
 

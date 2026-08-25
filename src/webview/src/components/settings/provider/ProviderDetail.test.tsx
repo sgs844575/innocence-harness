@@ -7,17 +7,16 @@ import type { ProviderProfile } from "../../../../../shared/ipc";
 afterEach(cleanup);
 
 const profile: ProviderProfile = {
-  id: "a", name: "智谱开放平台", kind: "openai", apiKey: "sk-1", baseURL: "",
+  id: "a", name: "智谱开放平台", kind: "openai", apiKey: "", apiKeyConfigured: true, baseURL: "",
   enabled: true, preset: true, models: [],
 };
 const listModels = vi.fn().mockResolvedValue(["glm-4.6"]);
 
 describe("ProviderDetail", () => {
-  it("API Key 显隐切换", () => {
+  it("只显示密钥已配置状态，renderer 不可回显密钥", () => {
     render(<ProviderDetail profile={profile} listModels={listModels} onChange={() => {}} onToast={() => {}} />);
-    expect(screen.getByDisplayValue("••••••••••••")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "显示密钥" }));
-    expect(screen.getByDisplayValue("sk-1")).toBeTruthy();
+    expect(screen.getByPlaceholderText(/已配置/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "显示密钥" })).toBeNull();
   });
   it("连接检查成功提示", async () => {
     render(<ProviderDetail profile={profile} listModels={listModels} onChange={() => {}} onToast={() => {}} />);

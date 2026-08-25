@@ -28,6 +28,7 @@ export const IPC = {
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   settingsModelsList: "settings:models-list",
+  settingsApiKeySet: "settings:api-key-set",
   settingsEnrichModels: "settings:enrich-models",
   // 插件清单投影（1c）：main 按当前 toggles 现算的 manifest 投影。
   pluginsList: "plugins:list",
@@ -160,6 +161,8 @@ export interface ChatThinkingEvent {
 export type PermissionChoice = "allow" | "allowSession" | "deny";
 // Mirror contract: this union matches the settings domain without importing it.
 export type ProviderKind = "openai" | "anthropic" | "google";
+/** Provider wire protocol, explicitly derived from kind rather than endpoint text. */
+export type ProviderProtocol = "openai-compatible" | "anthropic-messages" | "google-generative";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
 
 // 镜像契约：AgentId 复制自 packages/harness-electron/src/agents.ts
@@ -280,7 +283,12 @@ export interface ProviderProfile {
   id: string;
   name: string;
   kind: ProviderKind;
+  /** Renderer never receives a credential. It submits updates only through setProviderApiKey. */
   apiKey: string;
+  /** Opaque host storage reference; safe to persist and mirror. */
+  apiKeyRef?: string;
+  /** Whether the host has a legacy or secured credential for this profile. */
+  apiKeyConfigured?: boolean;
   baseURL: string;
   enabled: boolean;
   models: ModelInfo[];
@@ -333,6 +341,7 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
   { name: "Anthropic", kind: "anthropic", baseURL: "", models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"] },
   { name: "DeepSeek", kind: "openai", baseURL: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
   { name: "Gemini", kind: "openai", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
+  { name: "Native generative", kind: "google", baseURL: "", models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
   { name: "阿里云百炼", kind: "openai", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen3-max", "qwen-max", "qwen-plus", "qwen-turbo"] },
   { name: "智谱开放平台", kind: "openai", baseURL: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4.6", "glm-4.5", "glm-4.5-air"] },
   { name: "Moonshot", kind: "openai", baseURL: "https://api.moonshot.cn/v1", models: ["kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
@@ -365,7 +374,10 @@ export interface InnocenceCodeApi {
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;
   getHarnessSettings(): Promise<HarnessSettings>;
-  setHarnessSettings(settings: HarnessSettings): Promise<void>;
+  /** Persists a redacted settings update and returns the redacted host projection. */
+  setHarnessSettings(settings: HarnessSettings): Promise<HarnessSettings>;
+  /** Stores or clears a key in host-only secured storage; it is never returned to the renderer. */
+  setProviderApiKey(profileId: string, apiKey: string): Promise<HarnessSettings>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;
   /** Fired after a development plugin client reload request. */

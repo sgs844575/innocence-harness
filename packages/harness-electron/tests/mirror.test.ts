@@ -32,6 +32,9 @@ describe("PROVIDER_PRESET_MIRROR 对齐 PROVIDER_PRESETS", () => {
   it("每家 name/kind/baseURL/models 逐一相等", () => {
     expect(PROVIDER_PRESET_MIRROR).toEqual(PROVIDER_PRESETS);
   });
+  it("native generative preset remains a separate protocol option", () => {
+    expect(PROVIDER_PRESET_MIRROR.find((preset) => preset.name === "Native generative")).toMatchObject({ kind: "google" });
+  });
 });
 
 describe("PRESET_MODELS 键对齐 PROVIDER_PRESETS", () => {

@@ -321,4 +321,52 @@ describe("listModels", () => {
       ),
     ).rejects.toThrow("HTTP 401");
   });
+
+  it("lists native generative models with the native credential header", async () => {
+    const models = await listModels(
+      { kind: "google", apiKey: "native-key", baseURL: "" },
+      async (url, init) => {
+        expect(String(url)).toBe("https://generativelanguage.googleapis.com/v1beta/models");
+        expect((init?.headers as Record<string, string>)["x-goog-api-key"]).toBe("native-key");
+        return new Response(JSON.stringify({ models: [{ name: "models/gemini-2.5-pro" }] }));
+      },
+    );
+    expect(models).toEqual(["gemini-2.5-pro"]);
+  });
+
+  it("fails closed for an unknown provider kind before a network request", async () => {
+    const fetchImpl = async () => {
+      throw new Error("network must not be called");
+    };
+    await expect(
+      listModels({ kind: "unknown" as "openai", apiKey: "k", baseURL: "" }, fetchImpl),
+    ).rejects.toThrow("unsupported provider kind");
+  });
+});
+
+describe("provider protocol and credential compatibility", () => {
+  it("keeps the legacy compatible preset and adds a separate native preset", () => {
+    const compatible = PROVIDER_PRESETS.find((preset) => preset.name === "Gemini");
+    const native = PROVIDER_PRESETS.find((preset) => preset.name === "Native generative");
+    expect(compatible).toMatchObject({ kind: "openai", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai" });
+    expect(native).toMatchObject({ kind: "google", baseURL: "" });
+  });
+
+  it("maps provider kinds to their transport protocols", async () => {
+    const { providerProtocol } = await import("../src/settings");
+    expect(providerProtocol("openai")).toBe("openai-compatible");
+    expect(providerProtocol("anthropic")).toBe("anthropic-messages");
+    expect(providerProtocol("google")).toBe("google-generative");
+  });
+
+  it("keeps a legacy plaintext key readable while preserving a secure reference", () => {
+    const settings = mergeSettings({
+      profiles: [{
+        id: "legacy", name: "Legacy", kind: "openai", apiKey: "old-key", apiKeyRef: "keys/key-1",
+        baseURL: "", enabled: true, models: [{ id: "model", source: "manual" }],
+      }],
+      activeProfileId: "legacy", activeModel: "model",
+    });
+    expect(settings.profiles[0]).toMatchObject({ apiKey: "old-key", apiKeyRef: "keys/key-1" });
+  });
 });

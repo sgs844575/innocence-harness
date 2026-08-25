@@ -24,6 +24,20 @@ describe("ModelPicker", () => {
     expect(onSelect).toHaveBeenCalledWith("p1", "glm-4.6");
   });
 
+  it("显示 native generative transport badge", async () => {
+    const nativeSettings = {
+      ...settings,
+      profiles: [...settings.profiles, {
+        id: "native", name: "Native", kind: "google" as const, apiKey: "", baseURL: "", enabled: true,
+        models: [{ id: "gemini-2.5-pro", source: "preset" as const }],
+      }],
+    } as HarnessSettings;
+    render(<ModelPicker settings={nativeSettings} activeProfileId="p1" activeModel="glm-4.6" onSelect={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /GLM-4.6/ }));
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
+    expect(within(dialog).getByText("google-generative")).toBeTruthy();
+  });
+
   it("大量模型/厂家时双列各自滚动且面板限高（防溢出回归）", async () => {
     const manyModels = Array.from({ length: 80 }, (_, i) => ({ id: `m${i}`, source: "preset" as const }));
     const manyProfiles = Array.from({ length: 30 }, (_, i) => ({

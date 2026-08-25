@@ -12,12 +12,13 @@ import * as sessions from "./sessions";
 import {
   getHarnessSettings,
   getPluginInventory,
-  listProviderModels,
+  listProviderModelsById,
   pickWorkspace,
   respondPermission,
   sendChatTurn,
   setHarnessSettings,
   stopChatTurn,
+  updateProviderApiKey,
   disposeSession,
 } from "./harnessGlue";
 import type { HarnessSettings } from "@innocenceharness/harness-electron";
@@ -116,6 +117,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.settingsGet, () => getHarnessSettings());
   ipcMain.handle(IPC.settingsSet, (_e, next: HarnessSettings) => setHarnessSettings(next));
+  ipcMain.handle(IPC.settingsApiKeySet, (_e, profileId: string, apiKey: string) =>
+    updateProviderApiKey(profileId, apiKey),
+  );
   // 插件清单投影：main 按当前 toggles 现算（无 boot 时阻塞到 boot 完成）。
   ipcMain.handle(IPC.pluginsList, () => getPluginInventory());
   // 技能发现/导入：main 直连 discovery 模块（无会话状态，无需 boot）。
@@ -139,11 +143,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.mcpDiscover, async (_e, root: string) =>
     discoverMcpFile(await authorizeWorkspaceRoot(root, getHarnessSettings().workspaceRoot)),
   );
-  ipcMain.handle(IPC.settingsModelsList, (_e, profileId: string) => {
-    const profile = getHarnessSettings().profiles.find((p) => p.id === profileId);
-    if (!profile) throw new Error(`profile not found: ${profileId}`);
-    return listProviderModels(profile);
-  });
+  ipcMain.handle(IPC.settingsModelsList, (_e, profileId: string) =>
+    listProviderModelsById(profileId),
+  );
   ipcMain.handle(IPC.settingsEnrichModels, (_e, providerName: string, ids: string[]) =>
     // 渲染层无法 import harness-electron（node 侧包），预设元数据在 main 补全。
     // 未命中预设（自定义厂家/未知型号）→ 返回最小 fetch 对象，不再误标 preset。

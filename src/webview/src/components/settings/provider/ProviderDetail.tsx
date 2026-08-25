@@ -10,6 +10,8 @@ interface Props {
   profile: ProviderProfile;
   listModels: (profile: ProviderProfile) => Promise<string[]>;
   onChange: (patch: Partial<ProviderProfile>) => void;
+  /** One-way credential save; the profile/settings mirror never contains the key. */
+  onApiKeyChange?: (apiKey: string) => void;
   onToast: (msg: string) => void;
   /** 打开编辑抽屉（SettingsView 持有 editing 状态）。 */
   onEditModel?: (model: ModelInfo) => void;
@@ -18,7 +20,7 @@ interface Props {
 }
 
 /** cherry 式厂家详情：名称 + 启用开关 + 密钥 + 地址 + 模型列表（max-w-3xl 居中）。 */
-export function ProviderDetail({ profile, listModels, onChange, onToast, onEditModel, onSync }: Props): React.JSX.Element {
+export function ProviderDetail({ profile, listModels, onChange, onApiKeyChange, onToast, onEditModel, onSync }: Props): React.JSX.Element {
   const preset = presetFor(profile.name);
   const check = () => {
     void listModels(profile).then(
@@ -38,7 +40,12 @@ export function ProviderDetail({ profile, listModels, onChange, onToast, onEditM
         </div>
         <section className="flex flex-col gap-2">
           <div className="text-[12.5px] font-medium">API 密钥</div>
-          <ApiKeyField value={profile.apiKey} website={preset?.apiKeyWebsite} onChange={(key) => onChange({ apiKey: key })} onCheck={check} />
+          <ApiKeyField
+            configured={profile.apiKeyConfigured}
+            website={preset?.apiKeyWebsite}
+            onChange={(key) => onApiKeyChange?.(key)}
+            onCheck={check}
+          />
         </section>
         <section className="flex flex-col gap-2">
           <div className="text-[12.5px] font-medium">API 地址</div>

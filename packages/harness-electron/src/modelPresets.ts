@@ -253,6 +253,9 @@ export const PRESET_MODELS: Record<string, Record<string, PresetModelMeta>> = ((
     out[name] = table;
   }
   for (const name of Object.keys(MANUAL)) out[name] ??= MANUAL[name]!;
+  // Native generative uses the same catalog as the compatible preset but a
+  // distinct wire protocol and profile id.
+  out["Native generative"] = { ...out.Gemini };
   return out;
 })();
 
