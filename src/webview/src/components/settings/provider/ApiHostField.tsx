@@ -1,10 +1,11 @@
+import type { ProviderKind } from "../../../../../shared/ipc";
 import { RotateCcw } from "lucide-react";
 
 /** API 地址输入 + 最终请求地址预览 + 恢复预设。 */
 export function ApiHostField({
   kind, baseURL, presetBaseURL, onChange,
 }: {
-  kind: "openai" | "anthropic";
+  kind: ProviderKind;
   baseURL: string;
   presetBaseURL: string;
   onChange: (url: string) => void;

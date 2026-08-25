@@ -11,6 +11,7 @@ import {
   type DiscoveredSkillMirror as SharedDiscoveredSkill,
   type McpImportResultMirror,
   type McpServerEntryMirror,
+  type ProviderKind as SharedProviderKind,
 } from "../../../src/shared/ipc";
 import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
@@ -19,6 +20,7 @@ import {
   MOCK_MODEL as PKG_MOCK_MODEL,
   MOCK_PROFILE_ID as PKG_MOCK_PROFILE_ID,
   PROVIDER_PRESETS,
+  type ProviderKind as PackageProviderKind,
 } from "../src/settings";
 import { AGENT_IDS, BUILTIN_AGENTS, type AgentId as PkgAgentId } from "../src/agents";
 import { PRESET_MODELS } from "../src/modelPresets";
@@ -46,6 +48,15 @@ describe("PRESET_MODELS 键对齐 PROVIDER_PRESETS", () => {
         expect(meta[id], `${preset.name} 的 seed 模型 "${id}" 缺元数据`).toBeDefined();
       }
     }
+  });
+});
+
+describe("shared ProviderKind 镜像对齐 settings domain", () => {
+  it("双方均保留 native kind", () => {
+    const shared: SharedProviderKind = "google";
+    const pkg: PackageProviderKind = shared;
+    const back: SharedProviderKind = pkg;
+    expect(back).toBe("google");
   });
 });
 

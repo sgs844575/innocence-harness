@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
-import { DEFAULT_SETTINGS, type HarnessSettings } from "@innocenceharness/harness-electron";
+import { DEFAULT_SETTINGS, mergeSettings, type HarnessSettings } from "@innocenceharness/harness-electron";
 import { buildProviderFromSettings, createSessionComposition, resolveStagedProvider } from "./sessionComposition";
 import { stagingBootPaths } from "../staging-paths";
 
@@ -47,6 +47,37 @@ describe("buildProviderFromSettings", () => {
     if (!("model" in provider)) throw new Error("expected a staged model provider");
     expect(provider.model).toEqual(model("legacy-gemini", "gemini-2.5-pro"));
   });
+  it("resolves a persisted native profile through the staged native factory", async () => {
+    const create = vi.fn(() => model("native", "native-model"));
+    const importPlugin = vi.fn(async () => create);
+    const settings = mergeSettings({
+      profiles: [{
+        id: "native",
+        name: "Native",
+        kind: "google",
+        apiKey: "secret",
+        baseURL: "https://mirror.example.invalid/v1beta",
+        enabled: true,
+        models: [{ id: "native-model", source: "manual" }],
+      }],
+      activeProfileId: "native",
+      activeModel: "native-model",
+    });
+
+    const provider = await buildProviderFromSettings({ importPlugin } as never, settings);
+
+    expect(importPlugin).toHaveBeenCalledWith("provider-google");
+    expect(create).toHaveBeenCalledWith({
+      id: "native",
+      apiKey: "secret",
+      baseURL: "https://mirror.example.invalid/v1beta",
+      model: "native-model",
+      reasoningEffort: undefined,
+    });
+    if (!("model" in provider)) throw new Error("expected a staged model provider");
+    expect(provider.model).toEqual(model("native", "native-model"));
+  });
+
 });
 
 describe("resolveStagedProvider", () => {

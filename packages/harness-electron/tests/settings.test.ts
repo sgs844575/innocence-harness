@@ -91,6 +91,43 @@ describe("mergeSettings", () => {
     expect(mergeSettings(input)).toEqual(input);
   });
 
+  it("preserves a persisted native profile kind and activates its model", () => {
+    const settings = mergeSettings({
+      profiles: [{
+        id: "native",
+        name: "Native",
+        kind: "google",
+        apiKey: "secret",
+        baseURL: "https://mirror.example.invalid/v1beta",
+        enabled: true,
+        models: [{ id: "native-model", source: "manual" }],
+      }],
+      activeProfileId: "native",
+      activeModel: "native-model",
+    });
+
+    expect(settings.profiles[0]).toMatchObject({ id: "native", kind: "google" });
+    expect(resolveActive(settings)).toMatchObject({ kind: "google", model: "native-model" });
+  });
+
+  it("keeps a legacy compatible profile on the compatible kind", () => {
+    const settings = mergeSettings({
+      profiles: [{
+        id: "legacy",
+        name: "Legacy compatible",
+        kind: "openai",
+        apiKey: "secret",
+        baseURL: "https://compat.example.invalid/v1",
+        enabled: true,
+        models: [{ id: "legacy-model", source: "manual" }],
+      }],
+      activeProfileId: "legacy",
+      activeModel: "legacy-model",
+    });
+
+    expect(resolveActive(settings)).toMatchObject({ kind: "openai", model: "legacy-model" });
+  });
+
   it("normalizes ui prefs: invalid themeMode/locale fall back to system defaults", () => {
     const s = mergeSettings({
       profiles: [],

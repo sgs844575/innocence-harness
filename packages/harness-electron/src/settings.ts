@@ -16,7 +16,7 @@ export type { ModelInfo } from "./modelPresets";
  */
 export type { PluginToggleSource } from "../../../src/shared/ipc";
 
-export type ProviderKind = "openai" | "anthropic";
+export type ProviderKind = "openai" | "anthropic" | "google";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
 export type ThemeMode = "system" | "dark" | "light";
 /** "" = follow the system locale. */
@@ -187,7 +187,7 @@ function normalizeProfile(raw: unknown): ProviderProfile | null {
   return {
     id: src.id,
     name: typeof src.name === "string" && src.name ? src.name : src.id,
-    kind: src.kind === "anthropic" ? "anthropic" : "openai",
+    kind: src.kind === "anthropic" || src.kind === "google" ? src.kind : "openai",
     apiKey: typeof src.apiKey === "string" ? src.apiKey : "",
     baseURL: typeof src.baseURL === "string" ? src.baseURL : "",
     enabled: src.enabled === true,

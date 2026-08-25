@@ -138,7 +138,8 @@ export interface ChatThinkingEvent {
 // ---- Harness contract (M3+) -------------------------------------------------
 
 export type PermissionChoice = "allow" | "allowSession" | "deny";
-export type ProviderKind = "openai" | "anthropic";
+// Mirror contract: this union matches the settings domain without importing it.
+export type ProviderKind = "openai" | "anthropic" | "google";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
 
 // 镜像契约：AgentId 复制自 packages/harness-electron/src/agents.ts
