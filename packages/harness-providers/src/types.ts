@@ -6,11 +6,20 @@ export interface JsonSchema {
   [key: string]: unknown;
 }
 
+/** Neutral request defaults retained with an opaque model carrier. */
+export interface ModelRequestOptions {
+  temperature?: number;
+  maxTokens?: number;
+  reasoningEffort?: string;
+  reasoningTokenBudget?: number;
+}
+
 /** Opaque carrier for a model owned by a runtime adapter. */
 export interface ProviderModel {
   readonly value: unknown;
   readonly providerId: string;
   readonly modelId: string;
+  readonly requestOptions?: ModelRequestOptions;
   readonly capabilities?: Readonly<Record<string, boolean | "unknown">>;
 }
 

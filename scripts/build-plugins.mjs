@@ -19,6 +19,7 @@ const LIBS = [
   "packages/harness-tools",
   "packages/harness-permissions",
   "packages/harness-providers",
+  "packages/harness-ai-runtime",
   "packages/harness-skills",
   "packages/harness-session",
   "packages/harness-system-prompt",
@@ -49,11 +50,19 @@ const PLUGINS = [
   { dir: "packages/plugin-subagent", id: "subagent" },
   { dir: "packages/plugin-task", id: "task" },
   { dir: "packages/provider-anthropic", id: "provider-anthropic" },
+  { dir: "packages/provider-google", id: "provider-google" },
   { dir: "packages/provider-openai", id: "provider-openai" },
   { dir: "packages/provider-mock", id: "provider-mock" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";
+const EXTERNAL_RUNTIME_PACKAGES = [
+  "ai",
+  "zod",
+  "@ai-sdk/openai",
+  "@ai-sdk/anthropic",
+  "@ai-sdk/google",
+];
 
 // 运行时 manifest：源 manifest 的 main/exports 指向 src（开发态源码直引），
 // staging 副本改指 dist 产物。
@@ -125,7 +134,29 @@ function build(pkgDir) {
   fixDist(pkgDir);
 }
 
+function copyRuntimeDependency(name, copied = new Set()) {
+  if (copied.has(name) || name.startsWith(`${WORKSPACE_SCOPE}/`)) return;
+  copied.add(name);
+  const source = join("node_modules", ...name.split("/"));
+  if (!existsSync(source)) {
+    console.error(`staging dependency missing from node_modules: ${name}`);
+    process.exit(1);
+  }
+  const target = join(STAGING, "node_modules", ...name.split("/"));
+  cpSync(source, target, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(source, "package.json"), "utf8"));
+  const dependencies = {
+    ...(manifest.dependencies ?? {}),
+    ...(manifest.optionalDependencies ?? {}),
+  };
+  for (const dependency of Object.keys(dependencies)) copyRuntimeDependency(dependency, copied);
+}
+
 rmSync("build/dist", { recursive: true, force: true });
+const copiedRuntimeDependencies = new Set();
+for (const dependency of EXTERNAL_RUNTIME_PACKAGES) {
+  copyRuntimeDependency(dependency, copiedRuntimeDependencies);
+}
 for (const dir of LIBS) {
   build(dir);
   const pkg = runtimeManifest(dir);

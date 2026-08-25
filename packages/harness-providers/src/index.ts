@@ -3,6 +3,7 @@ export type {
   FinishReason,
   JsonSchema,
   Message,
+  ModelRequestOptions,
   MessagePart,
   ProviderModel,
   TextPart,

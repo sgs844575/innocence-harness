@@ -12,8 +12,6 @@ import {
   type ProjectPermissionConfig,
 } from "@innocenceharness/harness-permissions";
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
-import { createOpenAIProvider } from "@innocenceharness/provider-openai";
-import { createAnthropicProvider } from "@innocenceharness/provider-anthropic";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import {
   DEFAULT_SETTINGS,
@@ -87,28 +85,92 @@ function projectRulesPlugin(config: ProjectPermissionConfig | undefined): Harnes
   };
 }
 
-/** Provider instance from the active settings profile. */
-function buildProviderFromSettings(settings: HarnessSettings): Provider {
-  const active = resolveActive(settings);
-  // 空串 = 跟随模型默认（不传参）；off 交给 provider 层解释（openai 省略、anthropic 不开启）。
-  const reasoningEffort = settings.reasoningEffort || undefined;
-  switch (active.kind) {
-    case "openai":
-      return createOpenAIProvider({
-        apiKey: active.apiKey || undefined,
-        baseURL: active.baseURL || undefined,
-        model: active.model,
-        reasoningEffort,
-      });
-    case "anthropic":
-      return createAnthropicProvider({
-        apiKey: active.apiKey || undefined,
-        model: active.model,
-        reasoningEffort,
-      });
-    default:
-      return createMockProvider({ id: "mock", turns: [], exhaustedText: MOCK_GREETING });
+/** Provider instance created from a staged opaque model. */
+type ModelBackedProvider = Provider & { readonly model: import("@innocenceharness/harness-providers").ProviderModel };
+
+type ModelFactoryConfig = {
+  id?: string;
+  apiKey?: string;
+  baseURL?: string;
+  model: string;
+  reasoningEffort?: string;
+};
+
+type StagedModelFactory = (config: ModelFactoryConfig) => import("@innocenceharness/harness-providers").ProviderModel;
+
+export type NativeProviderProfile = {
+  id: string;
+  kind: "openai" | "anthropic" | "google";
+  apiKey: string;
+  baseURL: string;
+  model: string;
+};
+
+function asStagedModelFactory(value: unknown, id: string): StagedModelFactory {
+  if (typeof value !== "function") {
+    throw new Error(`provider factory "${id}" did not export a callable model factory`);
   }
+  return value as StagedModelFactory;
+}
+
+function modelBackedProvider(model: import("@innocenceharness/harness-providers").ProviderModel): ModelBackedProvider {
+  return {
+    id: model.providerId,
+    model,
+    async *chat() {
+      // The later runtime-loop task is the only owner of model execution.
+      throw new Error("Model execution is unavailable");
+    },
+  };
+}
+
+/** Resolves one staged native profile to a fail-closed model carrier provider. */
+export async function resolveStagedProvider(
+  boot: Pick<PluginBoot, "importPlugin">,
+  profile: NativeProviderProfile,
+  reasoningEffort?: string,
+): Promise<ModelBackedProvider> {
+  const factoryId: Record<NativeProviderProfile["kind"], string> = {
+    openai: "provider-openai",
+    anthropic: "provider-anthropic",
+    google: "provider-google",
+  };
+  const id = factoryId[profile.kind];
+  const factory = asStagedModelFactory(await boot.importPlugin(id), id);
+  return modelBackedProvider(factory({
+    id: profile.id,
+    apiKey: profile.apiKey || undefined,
+    baseURL: profile.baseURL || undefined,
+    model: profile.model,
+    reasoningEffort,
+  }));
+}
+
+/**
+ * Resolves current settings through the boot's dual-root staged resolver.
+ * Legacy compatible profiles retain kind "openai" and therefore continue through
+ * the compatible factory. The later runtime-loop task owns execution;
+ * the carrier provider fails closed until then.
+ */
+export async function buildProviderFromSettings(
+  boot: Pick<PluginBoot, "importPlugin">,
+  settings: HarnessSettings,
+): Promise<ModelBackedProvider | Provider> {
+  const active = resolveActive(settings);
+  if (active.kind === "mock") {
+    return createMockProvider({ id: "mock", turns: [], exhaustedText: MOCK_GREETING });
+  }
+  const profile = settings.profiles.find((candidate) => candidate.id === settings.activeProfileId);
+  if (!profile) {
+    return createMockProvider({ id: "mock", turns: [], exhaustedText: MOCK_GREETING });
+  }
+  return resolveStagedProvider(boot, {
+    id: profile.id,
+    kind: active.kind,
+    apiKey: active.apiKey,
+    baseURL: active.baseURL,
+    model: active.model,
+  }, settings.reasoningEffort || undefined);
 }
 
 /** Resolve a host-only factory lazily at the loader entry boundary. */
@@ -337,7 +399,7 @@ export function createSessionComposition(
       plugins.push(projectRulesPlugin(config.permissions));
       // Provider assembly per session remains a host concern outside the builtin
       // manifest; it is still mounted through the native/session chokepoint.
-      plugins.push(createProviderPlugin(buildProviderFromSettings(settings ?? DEFAULT_SETTINGS)));
+      plugins.push(createProviderPlugin(await buildProviderFromSettings(boot, settings ?? DEFAULT_SETTINGS)));
       return plugins;
     },
   };

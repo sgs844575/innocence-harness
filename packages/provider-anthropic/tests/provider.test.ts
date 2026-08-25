@@ -1,7 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { Context } from "@innocenceharness/kernel";
-import { ProvidersPlugin } from "@innocenceharness/harness-providers";
-import { createAnthropicPlugin, createAnthropicProvider } from "../src/index";
+import { describe, expect, it, vi } from "vitest";
+import type { ProviderModel } from "@innocenceharness/harness-providers";
+import { createAnthropicFixtureProvider, createAnthropicProvider } from "../src/index";
 
 const SSE = [
   'data: {"type":"message_start","message":{"usage":{"input_tokens":9,"output_tokens":1}}}',
@@ -24,11 +23,11 @@ const SSE = [
   "",
 ].join("\n");
 
-describe("createAnthropicProvider full path (stubbed fetch)", () => {
+describe("Anthropic fixture transport", () => {
   it("streams text and complete tool calls with correct wire shape", async () => {
     let capturedURL = "";
     let capturedInit: RequestInit | undefined;
-    const provider = createAnthropicProvider({
+    const provider = createAnthropicFixtureProvider({
       apiKey: "test-key",
       model: "claude-sonnet-4-5",
       fetchImpl: async (url, init) => {
@@ -80,7 +79,7 @@ describe("createAnthropicProvider full path (stubbed fetch)", () => {
       'data: {"type":"message_stop"}',
       "",
     ].join("\n");
-    const provider = createAnthropicProvider({
+    const provider = createAnthropicFixtureProvider({
       apiKey: "k",
       model: "m",
       fetchImpl: async () => new Response(sse, { status: 200 }),
@@ -96,7 +95,7 @@ describe("createAnthropicProvider full path (stubbed fetch)", () => {
   });
 
   it("surfaces HTTP errors with status and body snippet", async () => {
-    const provider = createAnthropicProvider({
+    const provider = createAnthropicFixtureProvider({
       apiKey: "k",
       model: "m",
       fetchImpl: async () => new Response('{"type":"error"}', { status: 529 }),
@@ -121,13 +120,55 @@ describe("createAnthropicProvider full path (stubbed fetch)", () => {
   });
 });
 
-describe("createAnthropicPlugin (kernel mount)", () => {
-  it("registers the Anthropic provider on the spine providers service", async () => {
-    const ctx = new Context();
-    await ctx.plugin(ProvidersPlugin);
-    const plugin = createAnthropicPlugin({ apiKey: "k", model: "m" });
-    expect(plugin.name).toBe("provider-anthropic");
-    await ctx.plugin(plugin);
-    expect(ctx.providers.get("anthropic")).toBeDefined();
+describe("Anthropic model factory", () => {
+  it("creates a messages-protocol model through the shared runtime factory", () => {
+    const model: ProviderModel = {
+      value: { opaque: true },
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4-5",
+    };
+    const create = vi.fn(() => model);
+    const fetchImpl = vi.fn();
+
+    const result = createAnthropicProvider(
+      {
+        apiKey: "secret",
+        id: "anthropic",
+        baseURL: "https://proxy.example.invalid/v1",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "high",
+        fetchImpl,
+      },
+      { create } as never,
+    );
+
+    expect(create).toHaveBeenCalledWith({
+      providerId: "anthropic",
+      protocol: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      credential: "secret",
+      baseURL: "https://proxy.example.invalid/v1",
+      fetchImpl,
+      requestOptions: {
+        reasoningEffort: "high",
+        reasoningTokenBudget: 32768,
+      },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result).toBe(model);
+  });
+
+  it("fails closed before model creation when no credential is available", () => {
+    const previous = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    const create = vi.fn();
+
+    try {
+      expect(() => createAnthropicProvider({ model: "m" }, { create } as never)).toThrow("API key");
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previous;
+    }
   });
 });

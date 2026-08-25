@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { ProviderModel } from "@innocenceharness/harness-providers";
+import type { ModelRequestOptions, ProviderModel } from "@innocenceharness/harness-providers";
 
 export type ProviderProtocol = "openai" | "openai-compatible" | "anthropic" | "google";
 
@@ -11,6 +11,9 @@ export interface ProviderProfile {
   modelId: string;
   credential?: string;
   baseURL?: string;
+  /** Injectable only for SDK-bound model factory tests. */
+  fetchImpl?: typeof fetch;
+  requestOptions?: ModelRequestOptions;
   capabilities?: Readonly<Record<string, boolean | "unknown">>;
 }
 
@@ -19,16 +22,19 @@ export interface ModelFactoryDependencies {
     apiKey: string;
     baseURL?: string;
     name?: string;
+    fetch?: typeof fetch;
   }) => { chat(modelId: string): unknown };
   createAnthropic?: (settings: {
     apiKey: string;
     baseURL?: string;
     name?: string;
+    fetch?: typeof fetch;
   }) => { chat(modelId: string): unknown };
   createGoogleGenerativeAI?: (settings: {
     apiKey: string;
     baseURL?: string;
     name?: string;
+    fetch?: typeof fetch;
   }) => { chat(modelId: string): unknown };
 }
 
@@ -54,6 +60,7 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
       const options = {
         apiKey: credential,
         ...(profile.baseURL ? { baseURL: profile.baseURL } : {}),
+        ...(profile.fetchImpl ? { fetch: profile.fetchImpl } : {}),
         name: profile.providerId,
       };
       let value: unknown;
@@ -76,6 +83,7 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
         value,
         providerId: profile.providerId,
         modelId: profile.modelId,
+        ...(profile.requestOptions ? { requestOptions: profile.requestOptions } : {}),
         ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
       };
     },

@@ -1,7 +1,7 @@
 {
-  "name": "@innocenceharness/provider-anthropic",
+  "name": "@innocenceharness/provider-google",
   "version": "0.1.0",
-  "description": "InnocenceHarness messages-protocol model factory",
+  "description": "InnocenceHarness native model factory",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -20,6 +20,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sgs844575/innocence-code.git",
-    "directory": "packages/provider-anthropic"
+    "directory": "packages/provider-google"
   }
 }

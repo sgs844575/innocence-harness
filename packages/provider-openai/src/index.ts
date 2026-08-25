@@ -1,6 +1,6 @@
-import type { Context } from "@innocenceharness/kernel";
+import type { Provider, ProviderModel } from "@innocenceharness/harness-providers";
+import { createModelFactory, type ModelFactory } from "@innocenceharness/harness-ai-runtime";
 import { parseSSEData } from "@innocenceharness/harness-providers";
-import type { Provider } from "@innocenceharness/harness-providers";
 import { toOpenAIBody } from "./mapping";
 import { openAIDeltasFromDataLines } from "./stream";
 
@@ -15,23 +15,66 @@ export interface OpenAIProviderConfig {
   reasoningEffort?: string;
   /** Provider id for the registry; default "openai". */
   id?: string;
-  /** Injectable for tests. */
+  /** Injectable only for model-factory tests. */
   fetchImpl?: typeof fetch;
 }
 
-export function createOpenAIProvider(config: OpenAIProviderConfig): Provider {
+export type OpenAIModelFactory = Pick<ModelFactory, "create">;
+
+/**
+ * Creates an opaque compatible model through the shared runtime factory.
+ * A configured base URL keeps the profile on the compatible protocol,
+ * including legacy compatibility profiles.
+ */
+export function createOpenAIProvider(
+  config: OpenAIProviderConfig,
+  factory: OpenAIModelFactory = createModelFactory(),
+): ProviderModel {
   const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("缺少 OpenAI API key（config.apiKey 或环境变量 OPENAI_API_KEY）");
   }
+
+  return factory.create({
+    providerId: config.id ?? "openai",
+    protocol: config.baseURL ? "openai-compatible" : "openai",
+    modelId: config.model,
+    credential: apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
+    ...(hasRequestOptions(config) ? {
+      requestOptions: {
+        ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+        ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+        ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
+      },
+    } : {}),
+  });
+}
+
+function hasRequestOptions(config: OpenAIProviderConfig): boolean {
+  return config.temperature !== undefined || config.maxTokens !== undefined || Boolean(config.reasoningEffort);
+}
+
+/**
+ * Replays legacy OpenAI-compatible wire fixtures. This is intentionally not a
+ * production transport; production code must use {@link createOpenAIProvider}.
+ */
+export function createOpenAIFixtureProvider(config: OpenAIProviderConfig): Provider {
+  const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("缺少 OpenAI API key（config.apiKey 或环境变量 OPENAI_API_KEY）");
+  }
+  const fetchImpl = config.fetchImpl;
+  if (!fetchImpl) {
+    throw new Error("fixture provider requires fetchImpl");
+  }
   const baseURL = (config.baseURL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
-  const doFetch = config.fetchImpl ?? fetch;
 
   return {
     id: config.id ?? "openai",
-
     async *chat(req) {
-      const res = await doFetch(`${baseURL}/chat/completions`, {
+      const res = await fetchImpl(`${baseURL}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -57,21 +100,8 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): Provider {
   };
 }
 
-/** Kernel-native OpenAI-compatible provider plugin (name "provider-openai"). */
-export interface OpenAIPlugin {
-  readonly name: "provider-openai";
-  apply(ctx: Context): void;
-}
-
-/** Registers the OpenAI-compatible provider on the spine providers service. */
-export function createOpenAIPlugin(config: OpenAIProviderConfig): OpenAIPlugin {
-  return {
-    name: "provider-openai",
-    apply(ctx) {
-      ctx.providers.register(createOpenAIProvider(config));
-    },
-  };
-}
+/** Dynamic staging entry: a host resolves this factory from approved plugin roots. */
+export default createOpenAIProvider;
 
 export { toOpenAIBody } from "./mapping";
 export { openAIDeltasFromDataLines } from "./stream";

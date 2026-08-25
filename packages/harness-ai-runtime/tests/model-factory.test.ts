@@ -50,4 +50,35 @@ describe("createModelFactory", () => {
       capabilities: { tools: true },
     });
   });
+
+  it("preserves neutral model request defaults without exposing SDK types", () => {
+    const model = { opaque: true };
+    const createGoogleGenerativeAI = vi.fn(() => ({ chat: vi.fn(() => model) }));
+    const factory = createModelFactory({ createGoogleGenerativeAI });
+
+    const result = factory.create({
+      providerId: "native",
+      protocol: "google",
+      modelId: "model",
+      credential: "secret",
+      requestOptions: {
+        temperature: 0.2,
+        maxTokens: 4096,
+        reasoningEffort: "high",
+        reasoningTokenBudget: 32768,
+      },
+    });
+
+    expect(result).toMatchObject({
+      value: model,
+      providerId: "native",
+      modelId: "model",
+      requestOptions: {
+        temperature: 0.2,
+        maxTokens: 4096,
+        reasoningEffort: "high",
+        reasoningTokenBudget: 32768,
+      },
+    });
+  });
 });

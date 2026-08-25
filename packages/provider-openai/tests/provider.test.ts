@@ -1,7 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { Context } from "@innocenceharness/kernel";
-import { ProvidersPlugin } from "@innocenceharness/harness-providers";
-import { createOpenAIPlugin, createOpenAIProvider } from "../src/index";
+import { describe, expect, it, vi } from "vitest";
+import type { ProviderModel } from "@innocenceharness/harness-providers";
+import { createOpenAIFixtureProvider, createOpenAIProvider } from "../src/index";
 
 const SSE = [
   'data: {"choices":[{"index":0,"delta":{"content":"让我读"}}]}',
@@ -14,11 +13,11 @@ const SSE = [
   "",
 ].join("\n");
 
-describe("createOpenAIProvider full path (stubbed fetch)", () => {
+describe("OpenAI-compatible fixture transport", () => {
   it("streams text and complete tool calls; wire body is mapped correctly", async () => {
     let capturedURL = "";
     let capturedInit: RequestInit | undefined;
-    const provider = createOpenAIProvider({
+    const provider = createOpenAIFixtureProvider({
       apiKey: "test-key",
       model: "gpt-4o",
       fetchImpl: async (url, init) => {
@@ -65,7 +64,7 @@ describe("createOpenAIProvider full path (stubbed fetch)", () => {
       "data: [DONE]",
       "",
     ].join("\n");
-    const provider = createOpenAIProvider({
+    const provider = createOpenAIFixtureProvider({
       apiKey: "k",
       model: "m",
       fetchImpl: async () => new Response(sse, { status: 200 }),
@@ -82,7 +81,7 @@ describe("createOpenAIProvider full path (stubbed fetch)", () => {
   });
 
   it("surfaces HTTP errors with status and body snippet", async () => {
-    const provider = createOpenAIProvider({
+    const provider = createOpenAIFixtureProvider({
       apiKey: "k",
       model: "m",
       fetchImpl: async () => new Response('{"error":{"message":"rate limited"}}', { status: 429 }),
@@ -107,13 +106,50 @@ describe("createOpenAIProvider full path (stubbed fetch)", () => {
   });
 });
 
-describe("createOpenAIPlugin (kernel mount)", () => {
-  it("registers the OpenAI provider on the spine providers service", async () => {
-    const ctx = new Context();
-    await ctx.plugin(ProvidersPlugin);
-    const plugin = createOpenAIPlugin({ apiKey: "k", model: "m" });
-    expect(plugin.name).toBe("provider-openai");
-    await ctx.plugin(plugin);
-    expect(ctx.providers.get("openai")).toBeDefined();
+describe("Compatible model factory", () => {
+  it("passes a custom base URL through the shared runtime factory without invoking test fetch", () => {
+    const model: ProviderModel = {
+      value: { opaque: true },
+      providerId: "gateway",
+      modelId: "gemini-2.5-pro",
+    };
+    const create = vi.fn(() => model);
+    const fetchImpl = vi.fn();
+
+    const result = createOpenAIProvider(
+      {
+        apiKey: "secret",
+        id: "gateway",
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+        model: "gemini-2.5-pro",
+        fetchImpl,
+      },
+      { create } as never,
+    );
+
+    expect(create).toHaveBeenCalledWith({
+      providerId: "gateway",
+      protocol: "openai-compatible",
+      modelId: "gemini-2.5-pro",
+      credential: "secret",
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+      fetchImpl,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result).toBe(model);
+  });
+
+  it("fails closed before model creation when no credential is available", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    const create = vi.fn();
+
+    try {
+      expect(() => createOpenAIProvider({ model: "m" }, { create } as never)).toThrow("API key");
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
   });
 });
