@@ -12,7 +12,10 @@ export function applySettingsPatch(
   current: HarnessSettings,
   patch: HarnessSettingsPatch,
 ): HarnessSettings {
-  const { providerProfiles, ...fields } = patch;
+  const { providerProfiles, pluginToggleChanges, ...fields } = patch;
+  const mergedFields = pluginToggleChanges
+    ? { ...fields, pluginToggles: { ...(current.pluginToggles ?? {}), ...pluginToggleChanges } }
+    : fields;
   let profiles = [...current.profiles];
 
   if (providerProfiles) {
@@ -43,5 +46,5 @@ export function applySettingsPatch(
     }
   }
 
-  return mergeSettings({ ...current, ...fields, profiles });
+  return mergeSettings({ ...current, ...mergedFields, profiles });
 }

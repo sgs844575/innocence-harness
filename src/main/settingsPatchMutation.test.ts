@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessSettings } from "@innocenceharness/harness-electron";
 import { applySettingsPatch } from "./settingsPatchMutation";
+import { createSettingsMutationGate } from "./settingsMutationGate";
+import { diffSettingsSnapshot } from "../shared/settingsPatch";
 
 const settings = (): HarnessSettings => ({
   profiles: [
@@ -35,5 +37,25 @@ describe("settings patch mutation", () => {
     });
 
     expect(rebased.profiles.map((profile) => profile.id)).toEqual(["p2", "p1", "p3"]);
+  });
+
+  it("preserves independent plugin toggles from the same stale renderer snapshot", async () => {
+    const current: HarnessSettings = { ...settings(), pluginToggles: { first: true, second: true } };
+    const firstSnapshot: HarnessSettings = { ...current, pluginToggles: { first: false, second: true } };
+    const secondSnapshot: HarnessSettings = { ...current, pluginToggles: { first: true, second: false } };
+    const gate = createSettingsMutationGate();
+    let committed: HarnessSettings = current;
+
+    const firstPatch = diffSettingsSnapshot(current, firstSnapshot);
+    const secondPatch = diffSettingsSnapshot(current, secondSnapshot);
+    expect(firstPatch).toMatchObject({ pluginToggleChanges: { first: false } });
+    expect(firstPatch).not.toHaveProperty("pluginToggles");
+    expect(secondPatch).toMatchObject({ pluginToggleChanges: { second: false } });
+
+    const firstCommit = gate.enqueue(async () => { committed = applySettingsPatch(committed, firstPatch); });
+    const secondCommit = gate.enqueue(async () => { committed = applySettingsPatch(committed, secondPatch); });
+    await Promise.all([firstCommit, secondCommit]);
+
+    expect(committed.pluginToggles).toEqual({ first: false, second: false });
   });
 });
