@@ -1,7 +1,7 @@
 // useChatStream — delta/tool/thinking/permission 流式状态（Task 12 从
 // App.tsx 拆出）。职责：活动会话的消息列表、流式气泡 id、权限卡片，以及
 // 发送/停止/权限应答命令。事件只作用于 activeId 会话（其余忽略）。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   appendText,
   type ChatMessage,
@@ -43,11 +43,11 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [permission, setPermission] = useState<ChatPermissionEvent | null>(null);
+  const pendingPermissionRef = useRef<ChatPermissionEvent | null>(null);
 
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
-      setPermission(null);
       return;
     }
     void api.listMessages(activeId).then(setMessages);
@@ -59,6 +59,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     const off = api.onChatPermission((e) => {
       if (e.sessionId !== activeId) return;
       setPermission(e);
+      pendingPermissionRef.current = e;
       emitSidebarSessionStatus({ type: "permission", sessionId: e.sessionId });
     });
     return off;
@@ -180,16 +181,20 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
   }, [activeId, streamingId]);
 
   const respondPermission = useCallback((requestId: string, choice: PermissionChoice) => {
-    const sessionId = activeId;
+    const pending = pendingPermissionRef.current;
+    if (!pending || pending.requestId !== requestId) return;
+    pendingPermissionRef.current = null;
     setPermission(null);
-    if (sessionId) emitSidebarSessionStatus({ type: "permission-resolved", sessionId, decision: choice });
+    emitSidebarSessionStatus({ type: "permission-resolved", sessionId: pending.sessionId, decision: choice });
     void api.respondChatPermission(requestId, choice);
-  }, [activeId]);
+  }, []);
+
+  const visiblePermission = permission?.sessionId === activeId ? permission : null;
 
   return {
     messages,
     streaming: streamingId !== null,
-    permission,
+    permission: visiblePermission,
     send,
     stop,
     respondPermission,
