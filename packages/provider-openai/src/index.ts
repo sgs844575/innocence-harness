@@ -57,8 +57,8 @@ function hasRequestOptions(config: OpenAIProviderConfig): boolean {
 }
 
 /**
- * Replays legacy OpenAI-compatible wire fixtures. This is intentionally not a
- * production transport; production code must use {@link createOpenAIProvider}.
+ * Replays captured wire fixtures. This is intentionally not a production
+ * transport; production code must use {@link createOpenAIProvider}.
  */
 export function createOpenAIFixtureProvider(config: OpenAIProviderConfig): Provider {
   const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
