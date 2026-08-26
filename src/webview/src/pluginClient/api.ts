@@ -8,9 +8,11 @@ import {
   type ToolCardDescriptor,
 } from "../components/chat/toolcards/DescriptorToolCard";
 import type { ToolCardProps } from "../components/chat/toolcards/registry";
-import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
+import type { ExternalPanelContribution, ExternalSettingsContribution, CapabilityMetadata } from "../slots/types";
 import { PANEL_SLOT } from "../components/workbench/WorkbenchTabs";
 import { SETTINGS_SECTION_SLOT } from "../components/SettingsNav";
+
+export const CAPABILITY_METADATA_SLOT = "capability.metadata";
 
 /**
  * PluginClientApi：描述符式工具卡与三类组件贡献注册面。
@@ -23,6 +25,7 @@ export interface PluginClientApi {
     name: string;
     component: ComponentType<ToolCardProps>;
   }): () => void;
+  registerCapability(contribution: CapabilityMetadata): () => void;
   registerPanel(contribution: ExternalPanelContribution): () => void;
   registerSettingsSection(section: ExternalSettingsContribution): () => void;
 }
@@ -40,6 +43,7 @@ export function createPluginClientApi(
   slotName: string,
 ): PluginClientApiHandle {
   const toolCardSlot = registry.keyed<ComponentType<ToolCardProps>>(slotName);
+  const capabilitySlot = registry.list<CapabilityMetadata>(CAPABILITY_METADATA_SLOT);
   const panelSlot = registry.list<ExternalPanelContribution>(PANEL_SLOT);
   const settingsSectionSlot = registry.list<ExternalSettingsContribution>(SETTINGS_SECTION_SLOT);
   const unregisters: Array<() => void> = [];
@@ -60,6 +64,10 @@ export function createPluginClientApi(
     if (disposed) return noop;
     return track(toolCardSlot.register({ key: name, priority: 100, value: component }));
   };
+  const registerCapability = (contribution: CapabilityMetadata): () => void => {
+    if (disposed) return noop;
+    return track(capabilitySlot.register(contribution));
+  };
   const registerPanelContribution = (contribution: ExternalPanelContribution): () => void => {
     if (disposed) return noop;
     return track(panelSlot.register(contribution));
@@ -73,6 +81,7 @@ export function createPluginClientApi(
       registerToolCard: (toolName, descriptor) => registerDescriptor(toolName, descriptor),
       registerToolCardPrefix: (prefix, descriptor) => registerDescriptor(`prefix:${prefix}`, descriptor),
       registerToolCardComponent: (contribution) => registerComponent(contribution.component, contribution.name),
+      registerCapability,
       registerPanel: registerPanelContribution,
       registerSettingsSection: registerSettingsContribution,
     },

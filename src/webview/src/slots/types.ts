@@ -15,6 +15,18 @@ export interface ExternalSettingsContribution {
   render: () => ReactNode;
 }
 
+export type FutureCapabilityId =
+  | "editor"
+  | "charts"
+  | "workflow"
+  | "document-preview"
+  | "remote-development";
+
+export interface CapabilityMetadata {
+  id: FutureCapabilityId;
+  slots: readonly string[];
+}
+
 /** 单值槽位的一次注册（含注销句柄）；供宿主侧扩展使用。 */
 export interface SlotContribution<T> {
   contribution: T;

@@ -3,10 +3,10 @@
 // （dispose 撤销该 api 的全部注册；keyed 后注胜语义经 api 透传）。
 import { describe, expect, it } from "vitest";
 import { createSlotRegistry } from "../slots/registry";
-import type { ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
+import type { CapabilityMetadata, ExternalPanelContribution, ExternalSettingsContribution } from "../slots/types";
 import { TOOLCARD_SLOT, type ToolCardProps } from "../components/chat/toolcards/registry";
 import type { ComponentType } from "react";
-import { createPluginClientApi } from "./api";
+import { CAPABILITY_METADATA_SLOT, createPluginClientApi } from "./api";
 
 describe("createPluginClientApi（描述符注册转槽位）", () => {
   it("registerToolCard：描述符注册为精确 key 的槽位值，可 resolve 到包装组件", () => {
@@ -144,4 +144,16 @@ describe("createPluginClientApi（描述符注册转槽位）", () => {
     expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([]);
   });
 
+  it("registerCapability only declares metadata and never creates a runtime contribution", () => {
+    const registry = createSlotRegistry();
+    const { api } = createPluginClientApi(registry, TOOLCARD_SLOT);
+    const metadata: CapabilityMetadata = { id: "editor", slots: ["workbench.panel"] };
+
+    const off = api.registerCapability(metadata);
+
+    expect(registry.list<CapabilityMetadata>(CAPABILITY_METADATA_SLOT).all()).toEqual([metadata]);
+    expect(registry.list<ExternalPanelContribution>("workbench.panel").all()).toEqual([]);
+    off();
+    expect(registry.list<CapabilityMetadata>(CAPABILITY_METADATA_SLOT).all()).toEqual([]);
+  });
 });
