@@ -9,6 +9,7 @@ import {
   type PermissionChoice,
 } from "../../../shared/ipc";
 import { api } from "../lib/ipc";
+import { emitSidebarSessionStatus } from "./sidebarSessionStatus";
 
 export interface ChatStreamDeps {
   /** 活动会话 id（null = 落地态）。 */
@@ -57,6 +58,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     const off = api.onChatPermission((e) => {
       if (e.sessionId !== activeId) return;
       setPermission(e);
+      emitSidebarSessionStatus({ type: "permission", sessionId: e.sessionId });
     });
     return off;
   }, [activeId]);
@@ -65,6 +67,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
   useEffect(() => {
     const offDelta = api.onChatDelta((e) => {
       if (e.sessionId !== activeId) return;
+      emitSidebarSessionStatus({ type: "stream", sessionId: e.sessionId });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === e.messageId ? { ...m, parts: appendText(m.parts, e.delta) } : m,
@@ -73,6 +76,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     });
     const offDone = api.onChatDone((e) => {
       if (e.sessionId !== activeId) return;
+      emitSidebarSessionStatus({ type: "done", sessionId: e.sessionId });
       setStreamingId(null);
       setPermission(null);
       setMessages((prev) =>
@@ -85,6 +89,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     });
     const offError = api.onChatError((e) => {
       if (e.sessionId !== activeId) return;
+      emitSidebarSessionStatus({ type: "error", sessionId: e.sessionId });
       setStreamingId(null);
       setPermission(null);
       setMessages((prev) =>
@@ -136,6 +141,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       }
       const sessionId = activeId ?? (await ensureSession());
       if (!sessionId) return;
+      emitSidebarSessionStatus({ type: "started", sessionId });
       // 任务先于发送落地：本回合即进入任务作用域（P1 循环入口）。
       await ensureTask?.(sessionId);
 
@@ -144,6 +150,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
         ({ messageId } = await api.sendMessage(sessionId, text));
       } catch (err) {
         console.error("send message failed", err);
+        emitSidebarSessionStatus({ type: "error", sessionId });
         showError(t("error.sendMessage"));
         return;
       }

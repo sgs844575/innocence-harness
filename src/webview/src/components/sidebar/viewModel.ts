@@ -11,13 +11,19 @@ export interface SidebarTreeNode {
   kind: "project" | "group" | "ungrouped";
 }
 
+export function archivedSessionIds(state: SidebarState, sessions: readonly Session[]): string[] {
+  const valid = new Set(sessions.map((session) => session.id));
+  return state.order.filter((id) => valid.has(id) && state.archived[id] === true);
+}
+
 export function buildSidebarTree(
   sessions: readonly Session[],
   state: SidebarState,
   view: SidebarView,
   unassignedName: string,
 ): SidebarTreeNode[] {
-  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const archived = new Set(archivedSessionIds(state, sessions));
+  const byId = new Map(sessions.filter((session) => !archived.has(session.id)).map((session) => [session.id, session]));
   const order = new Map(state.order.map((id, index) => [id, index]));
   const sortIds = (ids: readonly string[], preserveInput = false) => {
     const filtered = [...ids].filter((id) => byId.has(id));

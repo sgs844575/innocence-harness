@@ -13,6 +13,7 @@ import type { AppInfo, HarnessSettings } from "../../../shared/ipc";
 import type { SessionController } from "./useSessionController";
 import { useSidebarState } from "./useSidebarState";
 import { api } from "../lib/ipc";
+import { reduceSidebarSessionStatuses, subscribeSidebarSessionStatus, type SidebarSessionStatus } from "./sidebarSessionStatus";
 
 export function useAppNavigation({
   t,
@@ -30,29 +31,23 @@ export function useAppNavigation({
   onPickWorkspace: () => void;
 }) {
   const sidebarState = useSidebarState(sessions.sessions);
-  const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
+  const [sessionStatuses, setSessionStatuses] = useState<Map<string, SidebarSessionStatus>>(() => new Map());
 
   useEffect(() => {
-    const add = (sessionId: string) => setRunningIds((previous) => {
-      const next = new Set(previous);
-      next.add(sessionId);
-      return next;
-    });
-    const remove = (sessionId: string) => setRunningIds((previous) => {
-      if (!previous.has(sessionId)) return previous;
-      const next = new Set(previous);
-      next.delete(sessionId);
-      return next;
-    });
-    const offDelta = api.onChatDelta((event) => add(event.sessionId));
-    const offTool = api.onChatTool((event) => add(event.sessionId));
-    const offThinking = api.onChatThinking((event) => add(event.sessionId));
-    const offDone = api.onChatDone((event) => remove(event.sessionId));
-    const offError = api.onChatError((event) => remove(event.sessionId));
+    const apply = (event: Parameters<typeof reduceSidebarSessionStatuses>[1]) => setSessionStatuses((previous) => reduceSidebarSessionStatuses(previous, event));
+    const offLocal = subscribeSidebarSessionStatus(apply);
+    const offDelta = api.onChatDelta((event) => apply({ type: "stream", sessionId: event.sessionId }));
+    const offTool = api.onChatTool((event) => apply({ type: "stream", sessionId: event.sessionId }));
+    const offThinking = api.onChatThinking((event) => apply({ type: "stream", sessionId: event.sessionId }));
+    const offPermission = api.onChatPermission((event) => apply({ type: "permission", sessionId: event.sessionId }));
+    const offDone = api.onChatDone((event) => apply({ type: "done", sessionId: event.sessionId }));
+    const offError = api.onChatError((event) => apply({ type: "error", sessionId: event.sessionId }));
     return () => {
+      offLocal();
       offDelta();
       offTool();
       offThinking();
+      offPermission();
       offDone();
       offError();
     };
@@ -60,10 +55,7 @@ export function useAppNavigation({
 
   useEffect(() => {
     const ids = new Set(sessions.sessions.map((session) => session.id));
-    setRunningIds((previous) => {
-      const next = new Set([...previous].filter((id) => ids.has(id)));
-      return next.size === previous.size ? previous : next;
-    });
+    setSessionStatuses((previous) => new Map([...previous].filter(([id]) => ids.has(id))));
   }, [sessions.sessions]);
 
   const sidebar = useCallback(
@@ -77,7 +69,7 @@ export function useAppNavigation({
           sessions={sessions.sessions}
           activeId={sessions.activeId}
           sidebar={sidebarState}
-          runningIds={runningIds}
+          sessionStatuses={sessionStatuses}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}
           onNew={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
           onDelete={(id) => void sessions.deleteSession(id)}
@@ -85,7 +77,7 @@ export function useAppNavigation({
           onOpenSettings={nav.openSettings}
         />
       ),
-    [t, sessions, sidebarState, runningIds],
+    [t, sessions, sidebarState, sessionStatuses],
   );
   const rail = useCallback(
     (nav: AppShellNav) =>

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Session } from "../../../shared/ipc";
-import type { SidebarGroupInput, SidebarState } from "../../../shared/sidebarIpc";
+import type { SidebarContainer, SidebarGroupInput, SidebarState } from "../../../shared/sidebarIpc";
 import { api } from "../lib/ipc";
 
-const emptyState: SidebarState = { version: 1, order: [], archived: {}, groups: [], ungrouped: [], projects: [] };
+const emptyState: SidebarState = { version: 1, order: [], archived: {}, groups: [], ungrouped: [], projectOrder: [], manualProjectOrders: {}, manualUngrouped: false, projects: [] };
 
 export interface SidebarStateController {
   state: SidebarState;
   archiveSession: (id: string, archived: boolean) => Promise<void>;
-  reorderSessions: (groupId: string | null, orderedIds: string[]) => Promise<void>;
-  moveSession: (id: string, targetGroupId: string | null, beforeId?: string) => Promise<void>;
+  reorderSessions: (container: SidebarContainer, orderedIds: string[]) => Promise<void>;
+  moveSession: (id: string, target: SidebarContainer, beforeId?: string) => Promise<void>;
+  reorderContainers: (kind: "projects" | "groups", orderedIds: string[]) => Promise<void>;
   upsertSidebarGroup: (group: SidebarGroupInput) => Promise<void>;
   deleteSidebarGroup: (id: string) => Promise<void>;
   setSidebarGroupCollapsed: (id: string, collapsed: boolean) => Promise<void>;
@@ -28,10 +29,11 @@ export function useSidebarState(sessions: readonly Session[]): SidebarStateContr
     void api.getSidebarState().then(setState);
   }, [sessions]);
   const archiveSession = useCallback((id: string, archived: boolean) => api.archiveSession(id, archived), []);
-  const reorderSessions = useCallback((groupId: string | null, orderedIds: string[]) => api.reorderSessions(groupId, orderedIds), []);
-  const moveSession = useCallback((id: string, targetGroupId: string | null, beforeId?: string) => api.moveSession(id, targetGroupId, beforeId), []);
+  const reorderSessions = useCallback((container: SidebarContainer, orderedIds: string[]) => api.reorderSessions(container, orderedIds), []);
+  const moveSession = useCallback((id: string, target: SidebarContainer, beforeId?: string) => api.moveSession(id, target, beforeId), []);
+  const reorderContainers = useCallback((kind: "projects" | "groups", orderedIds: string[]) => api.reorderContainers(kind, orderedIds), []);
   const upsertSidebarGroup = useCallback((group: SidebarGroupInput) => api.upsertSidebarGroup(group), []);
   const deleteSidebarGroup = useCallback((id: string) => api.deleteSidebarGroup(id), []);
   const setSidebarGroupCollapsed = useCallback((id: string, collapsed: boolean) => api.setSidebarGroupCollapsed(id, collapsed), []);
-  return { state, archiveSession, reorderSessions, moveSession, upsertSidebarGroup, deleteSidebarGroup, setSidebarGroupCollapsed };
+  return { state, archiveSession, reorderSessions, moveSession, reorderContainers, upsertSidebarGroup, deleteSidebarGroup, setSidebarGroupCollapsed };
 }

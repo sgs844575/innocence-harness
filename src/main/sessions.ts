@@ -18,6 +18,7 @@ import {
 import { hydrateSessionMessages } from "./sessionHydration";
 import { appendSessionMessage, updateSessionMessage } from "./sessionMessages";
 import { createSidebarIndexStore, type SidebarIndexStore, type SidebarState } from "./sidebarIndexStore";
+import type { SidebarContainer } from "../shared/sidebarIpc";
 import type { ChatMessage, Session } from "../shared/ipc";
 
 export type { SessionRecord } from "./sessionIndexStore";
@@ -136,32 +137,46 @@ export function getSidebarState(): SidebarState {
     archived: {},
     groups: [],
     ungrouped: [],
+    projectOrder: [],
+    manualProjectOrders: {},
+    manualUngrouped: false,
     projects: [],
   };
 }
 
 export function archiveSession(id: string, archived: boolean): void {
-  sidebarStore?.archiveSession(id, archived);
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.archiveSession(id, archived);
 }
 
-export function reorderSessions(groupId: string | null, orderedIds: readonly string[]): void {
-  sidebarStore?.reorderSessions(groupId, orderedIds);
+export function reorderSessions(container: SidebarContainer, orderedIds: readonly string[]): void {
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.reorderSessions(container, orderedIds);
 }
 
-export function moveSession(id: string, targetGroupId: string | null, beforeId?: string): void {
-  sidebarStore?.moveSession(id, targetGroupId, beforeId);
+export function moveSession(id: string, target: SidebarContainer, beforeId?: string): void {
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.moveSession(id, target, beforeId);
+}
+
+export function reorderSidebarContainers(kind: "projects" | "groups", orderedIds: readonly string[]): void {
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.reorderContainers(kind, orderedIds);
 }
 
 export function upsertSidebarGroup(group: { id: string; name: string; collapsed?: boolean; sessionIds?: readonly string[] }): void {
-  sidebarStore?.upsertSidebarGroup(group);
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.upsertSidebarGroup(group);
 }
 
 export function deleteSidebarGroup(id: string): void {
-  sidebarStore?.deleteSidebarGroup(id);
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.deleteSidebarGroup(id);
 }
 
 export function setSidebarGroupCollapsed(id: string, collapsed: boolean): void {
-  sidebarStore?.setSidebarGroupCollapsed(id, collapsed);
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.setSidebarGroupCollapsed(id, collapsed);
 }
 
 export function updateMessage(

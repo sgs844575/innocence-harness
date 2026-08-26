@@ -8,6 +8,7 @@ import {
   migrateLegacySessions,
   persistSidebarIndex,
   sidebarIndexFile,
+  sidebarProjectId,
   type SidebarIndexDocument,
 } from "./sidebarIndexStore";
 
@@ -35,7 +36,7 @@ describe("sidebar index migration", () => {
   it("keeps custom group membership independent from workspace/project affiliation", () => {
     const store = createSidebarIndexStore(dir, sessions);
     store.upsertSidebarGroup({ id: "g-review", name: "Review", collapsed: false });
-    store.moveSession("s-alpha", "g-review");
+    store.moveSession("s-alpha", { kind: "group", groupId: "g-review" });
 
     const state = store.getSidebarState();
     expect(state.groups[0]?.sessionIds).toEqual(["s-alpha"]);
@@ -62,8 +63,8 @@ describe("sidebar index migration", () => {
 
   it("reorders project sessions from session ids without requiring a project path", () => {
     const store = createSidebarIndexStore(dir, sessions);
-    store.reorderSessions(null, ["s-alpha"]);
-    expect(store.getSidebarState().projects.find((project) => project.id === "D:/work/alpha")?.sessionIds).toEqual(["s-alpha"]);
+    store.reorderSessions({ kind: "project", projectId: sidebarProjectId("D:/work/alpha") }, ["s-alpha"]);
+    expect(store.getSidebarState().projects.find((project) => project.id === sidebarProjectId("D:/work/alpha"))?.sessionIds).toEqual(["s-alpha"]);
   });
 
   it("moves sessions out of prior memberships when updating an existing group", () => {
@@ -81,8 +82,8 @@ describe("sidebar index migration", () => {
     const store = createSidebarIndexStore(dir, sessions);
     store.upsertSidebarGroup({ id: "g-review", name: "Review" });
     store.upsertSidebarGroup({ id: "g-empty", name: "Empty", collapsed: true });
-    store.moveSession("s-alpha", "g-review");
-    store.moveSession("s-beta", "g-review", "s-alpha");
+    store.moveSession("s-alpha", { kind: "group", groupId: "g-review" });
+    store.moveSession("s-beta", { kind: "group", groupId: "g-review" }, "s-alpha");
     store.setSidebarGroupCollapsed("g-review", true);
 
     const restarted = createSidebarIndexStore(dir, sessions);
@@ -109,6 +110,9 @@ describe("sidebar index migration", () => {
       archived: { old: false },
       groups: [],
       ungrouped: ["old"],
+      projectOrder: [],
+      manualProjectOrders: {},
+      manualUngrouped: false,
       projects: [],
     };
     writeFileSync(file, JSON.stringify(previous), "utf8");

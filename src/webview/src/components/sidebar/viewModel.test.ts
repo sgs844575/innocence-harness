@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../../../shared/ipc";
 import type { SidebarState } from "../../../../shared/sidebarIpc";
+
 import { buildSidebarTree } from "./viewModel";
 
 const sessions: Session[] = [
@@ -13,9 +14,12 @@ const sessions: Session[] = [
 const state: SidebarState = {
   version: 1,
   order: ["s2", "s1", "s3", "s4"],
-  archived: { s1: false, s2: false, s3: true, s4: false },
+  archived: { s1: false, s2: false, s3: false, s4: false },
   groups: [{ id: "g1", name: "Review", collapsed: false, sessionIds: ["s1"] }, { id: "empty", name: "Empty", collapsed: true, sessionIds: [] }],
   ungrouped: ["s2", "s3", "s4"],
+  projectOrder: [],
+  manualProjectOrders: {},
+  manualUngrouped: false,
   projects: [
     { id: "D:/alpha", name: "alpha", sessionIds: ["s2", "s1"] },
     { id: "D:/beta", name: "beta", sessionIds: ["s3"] },
@@ -31,6 +35,12 @@ describe("buildSidebarTree", () => {
       ["__project-unassigned__", ["s4"]],
     ]);
     expect(tree.find((node) => node.id === "D:/alpha")?.sessionIds).not.toContain("g1");
+  });
+
+  it("excludes archived sessions from active project and group trees", () => {
+    const archivedState = { ...state, archived: { ...state.archived, s3: true } };
+    expect(buildSidebarTree(sessions, archivedState, "projects", "Unassigned").flatMap((node) => node.sessionIds)).not.toContain("s3");
+    expect(buildSidebarTree(sessions, archivedState, "groups", "Unassigned").flatMap((node) => node.sessionIds)).not.toContain("s3");
   });
 
   it("preserves persisted custom-group order independently from project order", () => {

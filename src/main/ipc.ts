@@ -71,12 +71,16 @@ export function registerIpcHandlers(): void {
     sessions.archiveSession(id, archived);
     broadcastSidebar();
   });
-  ipcMain.handle(IPC.sidebarReorder, (_e, groupId: string | null, orderedIds: string[]) => {
-    sessions.reorderSessions(groupId, orderedIds);
+  ipcMain.handle(IPC.sidebarReorder, (_e, container, orderedIds: string[]) => {
+    sessions.reorderSessions(container, orderedIds);
     broadcastSidebar();
   });
-  ipcMain.handle(IPC.sidebarMove, (_e, id: string, targetGroupId: string | null, beforeId?: string) => {
-    sessions.moveSession(id, targetGroupId, beforeId);
+  ipcMain.handle(IPC.sidebarMove, (_e, id: string, target, beforeId?: string) => {
+    sessions.moveSession(id, target, beforeId);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarContainersReorder, (_e, kind: "projects" | "groups", orderedIds: string[]) => {
+    sessions.reorderSidebarContainers(kind, orderedIds);
     broadcastSidebar();
   });
   ipcMain.handle(IPC.sidebarGroupUpsert, (_e, group) => {
