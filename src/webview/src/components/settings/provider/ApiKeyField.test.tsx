@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiKeyField } from "./ApiKeyField";
 
@@ -23,14 +23,26 @@ describe("ApiKeyField", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("submits the typed replacement credential only when editing finishes", () => {
-    const onChange = vi.fn();
+  it("submits the typed replacement credential only when editing finishes", async () => {
+    const onChange = vi.fn().mockResolvedValue(undefined);
     render(<ApiKeyField configured onChange={onChange} onCheck={vi.fn()} />);
     const input = screen.getByPlaceholderText(/已配置/);
     fireEvent.change(input, { target: { value: "replacement-key" } });
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.blur(input);
-    expect(onChange).toHaveBeenCalledWith("replacement-key");
-    expect((input as HTMLInputElement).value).toBe("");
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith("replacement-key"));
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
+  });
+
+  it("retains the draft when the host rejects persistence", async () => {
+    const onChange = vi.fn().mockRejectedValue(new Error("save failed"));
+    render(<ApiKeyField configured={false} onChange={onChange} onCheck={vi.fn()} />);
+    const input = screen.getByPlaceholderText("API 密钥") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "retry-key" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith("retry-key"));
+    expect(input.value).toBe("retry-key");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
   });
 });

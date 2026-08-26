@@ -33,6 +33,8 @@ import { createCredentialStore } from "./credentialStore";
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
 import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
 import { createSettingsMutationGate } from "./settingsMutationGate";
+import { applySettingsPatch } from "./settingsPatchMutation";
+import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { currentTestOverrides } from "./testOverrides";
 import {
   createTaskRuntimeBridge,
@@ -170,17 +172,47 @@ const runtime = new HarnessRuntime({
  *  before the window exists, so applying the theme needs no broadcast —
  *  the renderer pulls the resolved theme on load. */
 export async function initHarness(): Promise<void> {
-  let needsCredentialMigration = false;
+  let raw: unknown;
   try {
-    const raw = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
-    const hydrated = await hydrateCredentials(mergeSettings(raw), await credentialStore());
-    settings = hydrated.settings;
-    needsCredentialMigration = hydrated.migrated;
-  } catch {
-    settings = DEFAULT_SETTINGS;
+    raw = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      settings = DEFAULT_SETTINGS;
+    } else {
+      logger.error("settings load failed");
+      settings = DEFAULT_SETTINGS;
+    }
+    setTheme(settings.themeMode ?? "system");
+    logger.info("harness initialized", { activeProfile: settings.activeProfileId });
+    return;
   }
-  if (needsCredentialMigration) {
-    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
+
+  const merged = mergeSettings(raw);
+  settings = merged;
+  try {
+    const hydrated = await hydrateCredentials(merged, await credentialStore());
+    settings = hydrated.settings;
+    for (const error of hydrated.errors) logger.error(error);
+    if (hydrated.migrated && hydrated.errors.length === 0) {
+      try {
+        await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
+      } catch (error) {
+        const store = await credentialStore();
+        await Promise.all(hydrated.createdRefs.map(async (ref) => {
+          try { await store.delete(ref); } catch { /* best-effort rollback */ }
+        }));
+        settings = merged;
+        throw error;
+      }
+      const store = await credentialStore();
+      await Promise.all(hydrated.obsoleteRefs.map(async (ref) => {
+        try { await store.delete(ref); } catch { /* stale cleanup is best effort */ }
+      }));
+    }
+  } catch {
+    // Keep the normalized settings and all non-credential data when migration
+    // or its persistence fails. The next launch can retry migration safely.
+    logger.error("credential migration failed");
   }
   setTheme(settings.themeMode ?? "system");
   logger.info("harness initialized", { activeProfile: settings.activeProfileId });
@@ -188,6 +220,11 @@ export async function initHarness(): Promise<void> {
 
 export function getHarnessSettings() {
   return toSettingsMirror(settings);
+}
+
+/** Serializes IPC reads behind pending mutations without recursively queuing from a mutation. */
+export function getCommittedHarnessSettings() {
+  return settingsMutationGate.read(() => toSettingsMirror(settings));
 }
 
 /** 插件清单投影（IPC plugins:list）：按当前 settings 现算——工作区取
@@ -201,29 +238,33 @@ export async function getPluginInventory(): Promise<PluginInventory> {
   });
 }
 
-export function setHarnessSettings(next: PkgSettings) {
+export function setHarnessSettings(next: HarnessSettingsPatch) {
   return settingsMutationGate.enqueue(async () => {
-    const prevTheme = settings.themeMode ?? "system";
-    settings = await secureSettingsUpdate(settings, mergeSettings(next), await credentialStore());
-    // Theme lives in the settings file now — apply + broadcast when it changes
-    // so the appearance page is the single control surface.
+    const previous = settings;
+    const candidate = applySettingsPatch(settings, next);
+    const committed = await secureSettingsUpdate(previous, candidate, await credentialStore(), async (durable) => {
+      await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(durable), null, 2), "utf8");
+    });
+    settings = committed;
+    const prevTheme = previous.themeMode ?? "system";
     const nextTheme = settings.themeMode ?? "system";
     if (nextTheme !== prevTheme) {
       setTheme(nextTheme);
       const win = getMainWindow();
       if (win && !win.isDestroyed()) broadcastTheme(win);
     }
-    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
-    return getHarnessSettings();
+    return toSettingsMirror(settings);
   });
 }
 
 /** Stores a key in secure host storage and returns the redacted settings projection. */
 export function updateProviderApiKey(profileId: string, apiKey: string) {
   return settingsMutationGate.enqueue(async () => {
-    settings = await setProfileCredential(settings, profileId, apiKey, await credentialStore());
-    await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(settings), null, 2), "utf8");
-    return getHarnessSettings();
+    const committed = await setProfileCredential(settings, profileId, apiKey, await credentialStore(), async (durable) => {
+      await fs.writeFile(settingsFile(), JSON.stringify(toPersistedSettings(durable), null, 2), "utf8");
+    });
+    settings = committed;
+    return toSettingsMirror(settings);
   });
 }
 

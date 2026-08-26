@@ -285,6 +285,18 @@ describe("resolveActive", () => {
       model: p.models[0].id,
     });
   });
+
+  it("fails closed when the active provider has no usable credential", () => {
+    const settings = mergeSettings({
+      profiles: [{
+        id: "empty-key", name: "Empty", kind: "openai", apiKey: "", apiKeyRef: "keys/stale.key",
+        baseURL: "", enabled: true, models: [{ id: "model", source: "manual" }],
+      }],
+      activeProfileId: "empty-key", activeModel: "model",
+    });
+
+    expect(resolveActive(settings)).toEqual({ kind: "mock" });
+  });
 });
 
 describe("listModels", () => {

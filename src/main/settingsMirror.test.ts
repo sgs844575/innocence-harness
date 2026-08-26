@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
 
 describe("settings mirror", () => {
+  it("does not treat a stale reference without a hydrated key as configured", () => {
+    const mirror = toSettingsMirror({
+      profiles: [{
+        id: "p1", name: "Stale", kind: "google", apiKey: "", apiKeyRef: "keys/stale.key",
+        baseURL: "", enabled: true, models: [{ id: "m1", source: "manual" }],
+      }],
+      activeProfileId: "p1", activeModel: "m1", workspaceRoot: "", permissionMode: "ask",
+    });
+
+    expect(mirror.profiles[0]).toMatchObject({ apiKey: "", apiKeyConfigured: false });
+  });
+
   it("redacts plaintext provider credentials while keeping configuration state", () => {
     const source = {
       profiles: [{

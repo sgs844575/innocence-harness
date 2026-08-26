@@ -8,7 +8,7 @@ export function toSettingsMirror(settings: DomainSettings): SettingsMirror {
     profiles: settings.profiles.map(({ apiKey, ...profile }) => ({
       ...profile,
       apiKey: "",
-      apiKeyConfigured: Boolean(apiKey || profile.apiKeyRef),
+      apiKeyConfigured: Boolean(apiKey),
     })),
   };
 }

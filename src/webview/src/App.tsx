@@ -30,6 +30,8 @@ import { usePluginClients } from "./state/usePluginClients";
 import { useWorkbenchPresentation } from "./state/useWorkbenchPresentation";
 import { useAppNavigation } from "./state/useAppNavigation";
 import { writeToolsBlocked } from "./state/workbenchState";
+import { createSettingsCommitter } from "./state/settingsCommitter";
+import { diffSettingsSnapshot } from "../../shared/settingsPatch";
 
 const APP_NAME = "InnocenceHarness";
 
@@ -59,23 +61,26 @@ export function App(): React.JSX.Element {
     void api.getHarnessSettings().then(setSettings);
   }, []);
 
-  /** 设置补丁（合并持久化 + 本地乐观更新）。 */
-  const applySettingsPatch = useCallback((patch: Partial<HarnessSettings>) => {
-    setSettings((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, ...patch };
-      void api.setHarnessSettings(next);
-      return next;
-    });
-    refreshPluginInventory();
-  }, [refreshPluginInventory]);
+  const commitSettingsPatch = useMemo(
+    () => createSettingsCommitter({
+      save: api.setHarnessSettings,
+      apply: setSettings,
+      refresh: refreshPluginInventory,
+      onError: (err) => showError(`保存设置失败：${(err as Error).message.slice(0, 120)}`),
+    }),
+    [refreshPluginInventory, showError],
+  );
 
-  /** 全量设置替换（设置页整体编辑 profile）。 */
+  /** 设置补丁始终由主进程基于最新已提交 settings 合并。 */
+  const applySettingsPatch = useCallback((patch: Partial<HarnessSettings>) => {
+    void commitSettingsPatch(patch).catch(() => undefined);
+  }, [commitSettingsPatch]);
+
+  /** Existing full-shape settings callers are converted to a rebasable mutation before IPC. */
   const handleSettingsSet = useCallback((next: HarnessSettings) => {
-    setSettings(next);
-    void api.setHarnessSettings(next);
-    refreshPluginInventory();
-  }, [refreshPluginInventory]);
+    if (!settings) return;
+    void commitSettingsPatch(diffSettingsSnapshot(settings, next)).catch(() => undefined);
+  }, [commitSettingsPatch, settings]);
 
   const handlePickWorkspace = useCallback(async () => {
     const dir = await api.pickWorkspace();

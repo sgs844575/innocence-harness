@@ -1,5 +1,6 @@
 export interface SettingsMutationGate {
   enqueue<T>(operation: () => Promise<T>): Promise<T>;
+  read<T>(reader: () => T): Promise<T>;
   waitForPending(): Promise<void>;
 }
 
@@ -15,6 +16,9 @@ export function createSettingsMutationGate(): SettingsMutationGate {
         () => undefined,
       );
       return result;
+    },
+    read<T>(reader: () => T): Promise<T> {
+      return tail.then(reader);
     },
     waitForPending(): Promise<void> {
       return tail;

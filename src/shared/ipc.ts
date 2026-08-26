@@ -1,6 +1,7 @@
 // Shared IPC contract — imported by both main and preload (bundled into each)
 // so both processes rely on the same channel names and types.
 import { TaskIpcChannels } from "./taskIpc";
+import type { HarnessSettingsPatch } from "./settingsPatch";
 
 export const IPC = {
   appInfo: "app:info",
@@ -374,8 +375,8 @@ export interface InnocenceCodeApi {
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;
   getHarnessSettings(): Promise<HarnessSettings>;
-  /** Persists a redacted settings update and returns the redacted host projection. */
-  setHarnessSettings(settings: HarnessSettings): Promise<HarnessSettings>;
+  /** Applies a settings patch to the latest committed host settings and returns its redacted projection. */
+  setHarnessSettings(settings: HarnessSettingsPatch): Promise<HarnessSettings>;
   /** Stores or clears a key in host-only secured storage; it is never returned to the renderer. */
   setProviderApiKey(profileId: string, apiKey: string): Promise<HarnessSettings>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */

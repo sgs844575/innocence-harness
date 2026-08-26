@@ -368,7 +368,7 @@ export function resolveActive(settings: HarnessSettings): ActiveResolution {
   const profile = settings.profiles.find(
     (p) => p.id === settings.activeProfileId && p.enabled,
   );
-  if (!profile || !profile.models.some((m) => m.id === settings.activeModel)) {
+  if (!profile || !profile.apiKey.trim() || !profile.models.some((m) => m.id === settings.activeModel)) {
     return { kind: "mock" };
   }
   return {

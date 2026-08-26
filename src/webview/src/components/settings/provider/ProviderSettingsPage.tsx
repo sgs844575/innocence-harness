@@ -8,6 +8,7 @@ import {
   type ModelInfo,
   type ProviderProfile,
 } from "../../../../../shared/ipc";
+import { diffSettingsSnapshot } from "../../../../../shared/settingsPatch";
 import { api } from "../../../lib/ipc";
 import { AddProviderDialog } from "./AddProviderDialog";
 import { EditModelDrawer } from "./EditModelDrawer";
@@ -72,10 +73,13 @@ export function ProviderSettingsPage({
     patchProfiles(settings.profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
   /** Credentials take a one-way host-only path and return a redacted settings mirror. */
-  const updateApiKey = (profileId: string) => (apiKey: string): void => {
-    void api.setProviderApiKey(profileId, apiKey).then(onSettingsChange).catch(
-      (err) => showToast(`保存密钥失败：${(err as Error).message.slice(0, 120)}`),
-    );
+  const updateApiKey = (profileId: string) => async (apiKey: string): Promise<void> => {
+    try {
+      onSettingsChange(await api.setProviderApiKey(profileId, apiKey));
+    } catch (err) {
+      showToast(`保存密钥失败：${(err as Error).message.slice(0, 120)}`);
+      throw err;
+    }
   };
 
   // useCallback 稳定引用：SyncDrawer 的拉取 effect 以其为依赖，避免 toast 等
@@ -149,10 +153,11 @@ export function ProviderSettingsPage({
         }
       }
       try {
-        const saved = await api.setHarnessSettings({
+        const next = {
           ...settings,
           profiles: [...settings.profiles, { ...p, models: enrichProfileModels(p.models, metas) }],
-        });
+        };
+        const saved = await api.setHarnessSettings(diffSettingsSnapshot(settings, next));
         onSettingsChange(apiKey ? await api.setProviderApiKey(p.id, apiKey) : saved);
       } catch (err) {
         showToast(`添加厂家失败：${(err as Error).message.slice(0, 120)}`);

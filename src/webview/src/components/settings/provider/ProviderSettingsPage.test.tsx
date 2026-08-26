@@ -44,8 +44,10 @@ describe("ProviderSettingsPage credentials", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() => expect(apiMocks.setHarnessSettings).toHaveBeenCalled());
-    const persisted = apiMocks.setHarnessSettings.mock.calls[0]?.[0] as HarnessSettings;
-    const added = persisted.profiles.at(-1)!;
+    const persisted = apiMocks.setHarnessSettings.mock.calls[0]?.[0] as {
+      providerProfiles: { updates: Array<{ create?: HarnessSettings["profiles"][number] }> };
+    };
+    const added = persisted.providerProfiles.updates.find((update) => update.create)?.create!;
     expect(added).toMatchObject({ kind: "google", apiKey: "" });
     await waitFor(() => expect(apiMocks.setProviderApiKey).toHaveBeenCalledWith(added.id, "new-key"));
   });

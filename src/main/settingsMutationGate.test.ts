@@ -31,4 +31,17 @@ describe("settings mutation gate", () => {
     await expect(gate.enqueue(async () => { throw new Error("write failed"); })).rejects.toThrow("write failed");
     await expect(gate.enqueue(async () => "next")).resolves.toBe("next");
   });
+
+  it("rebases queued mutations by reading state inside each gated operation", async () => {
+    const gate = createSettingsMutationGate();
+    let committed = 0;
+    const first = gate.enqueue(async () => { committed = 1; });
+    const second = gate.enqueue(async () => {
+      committed += 1;
+      return committed;
+    });
+
+    await first;
+    await expect(second).resolves.toBe(2);
+  });
 });

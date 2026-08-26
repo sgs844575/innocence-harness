@@ -11,7 +11,7 @@ interface Props {
   listModels: (profile: ProviderProfile) => Promise<string[]>;
   onChange: (patch: Partial<ProviderProfile>) => void;
   /** One-way credential save; the profile/settings mirror never contains the key. */
-  onApiKeyChange?: (apiKey: string) => void;
+  onApiKeyChange?: (apiKey: string) => Promise<void>;
   onToast: (msg: string) => void;
   /** 打开编辑抽屉（SettingsView 持有 editing 状态）。 */
   onEditModel?: (model: ModelInfo) => void;
@@ -43,7 +43,7 @@ export function ProviderDetail({ profile, listModels, onChange, onApiKeyChange, 
           <ApiKeyField
             configured={profile.apiKeyConfigured}
             website={preset?.apiKeyWebsite}
-            onChange={(key) => onApiKeyChange?.(key)}
+            onChange={(key) => onApiKeyChange ? onApiKeyChange(key) : Promise.resolve()}
             onCheck={check}
           />
         </section>

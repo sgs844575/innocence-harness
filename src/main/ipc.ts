@@ -3,6 +3,7 @@ import { app, ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { IPC, type MenuId } from "../shared/ipc";
+import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
 import { authorizeWorkspaceRoot } from "./mcpAuthorization";
@@ -10,6 +11,7 @@ import { TaskIpcChannels } from "../shared/taskIpc";
 import { broadcastTheme, getTheme, setTheme } from "./theme";
 import * as sessions from "./sessions";
 import {
+  getCommittedHarnessSettings,
   getHarnessSettings,
   getPluginInventory,
   listProviderModelsById,
@@ -21,10 +23,9 @@ import {
   updateProviderApiKey,
   disposeSession,
 } from "./harnessGlue";
-import type { HarnessSettings } from "@innocenceharness/harness-electron";
-import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
-import { getMainWindow } from "./appWindow";
+import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { popupMenu } from "./menu";
+import { getMainWindow } from "./appWindow";
 import { logger } from "./logger";
 import { broadcastSessions } from "./sessionEvents";
 import { TaskIpcHandlers } from "./taskIpcHandlers";
@@ -115,8 +116,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.workspacePick, () => pickWorkspace());
 
-  ipcMain.handle(IPC.settingsGet, () => getHarnessSettings());
-  ipcMain.handle(IPC.settingsSet, (_e, next: HarnessSettings) => setHarnessSettings(next));
+  ipcMain.handle(IPC.settingsGet, () => getCommittedHarnessSettings());
+  ipcMain.handle(IPC.settingsSet, (_e, next: HarnessSettingsPatch) => setHarnessSettings(next));
   ipcMain.handle(IPC.settingsApiKeySet, (_e, profileId: string, apiKey: string) =>
     updateProviderApiKey(profileId, apiKey),
   );
