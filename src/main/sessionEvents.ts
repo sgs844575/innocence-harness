@@ -11,3 +11,10 @@ export function broadcastSessions(): void {
     win.webContents.send(IPC.sessionsChanged, sessions.listSessions());
   }
 }
+
+export function broadcastSidebar(): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(IPC.sidebarChanged, sessions.getSidebarState());
+  }
+}

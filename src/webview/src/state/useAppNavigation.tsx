@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   MessageSquarePlus,
   PanelLeftOpen,
@@ -11,6 +11,8 @@ import { SettingsView } from "../components/SettingsView";
 import type { AppShellNav } from "../components/AppShell";
 import type { AppInfo, HarnessSettings } from "../../../shared/ipc";
 import type { SessionController } from "./useSessionController";
+import { useSidebarState } from "./useSidebarState";
+import { api } from "../lib/ipc";
 
 export function useAppNavigation({
   t,
@@ -27,6 +29,43 @@ export function useAppNavigation({
   onSettingsChange: (settings: HarnessSettings) => void;
   onPickWorkspace: () => void;
 }) {
+  const sidebarState = useSidebarState(sessions.sessions);
+  const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    const add = (sessionId: string) => setRunningIds((previous) => {
+      const next = new Set(previous);
+      next.add(sessionId);
+      return next;
+    });
+    const remove = (sessionId: string) => setRunningIds((previous) => {
+      if (!previous.has(sessionId)) return previous;
+      const next = new Set(previous);
+      next.delete(sessionId);
+      return next;
+    });
+    const offDelta = api.onChatDelta((event) => add(event.sessionId));
+    const offTool = api.onChatTool((event) => add(event.sessionId));
+    const offThinking = api.onChatThinking((event) => add(event.sessionId));
+    const offDone = api.onChatDone((event) => remove(event.sessionId));
+    const offError = api.onChatError((event) => remove(event.sessionId));
+    return () => {
+      offDelta();
+      offTool();
+      offThinking();
+      offDone();
+      offError();
+    };
+  }, []);
+
+  useEffect(() => {
+    const ids = new Set(sessions.sessions.map((session) => session.id));
+    setRunningIds((previous) => {
+      const next = new Set([...previous].filter((id) => ids.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [sessions.sessions]);
+
   const sidebar = useCallback(
     (nav: AppShellNav) =>
       nav.view === "settings" ? (
@@ -37,13 +76,16 @@ export function useAppNavigation({
           appName="InnocenceHarness"
           sessions={sessions.sessions}
           activeId={sessions.activeId}
+          sidebar={sidebarState}
+          runningIds={runningIds}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}
           onNew={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
           onDelete={(id) => void sessions.deleteSession(id)}
+          onArchive={(id) => void sidebarState.archiveSession(id, !sidebarState.state.archived[id])}
           onOpenSettings={nav.openSettings}
         />
       ),
-    [t, sessions],
+    [t, sessions, sidebarState, runningIds],
   );
   const rail = useCallback(
     (nav: AppShellNav) =>

@@ -1,5 +1,6 @@
 // Shared IPC contract — imported by both main and preload (bundled into each)
 // so both processes rely on the same channel names and types.
+import { SidebarIpcChannels, type SidebarApi } from "./sidebarIpc";
 import { TaskIpcChannels } from "./taskIpc";
 import type { HarnessSettingsPatch } from "./settingsPatch";
 
@@ -40,8 +41,8 @@ export const IPC = {
   // MCP 标准格式导入（任务 5）：main 解析项目 .mcp.json / 探测发现提示。
   mcpImport: "mcp:import",
   mcpDiscover: "mcp:discover",
-  // Task review/route/complete channels (Task 7).
   ...TaskIpcChannels,
+  ...SidebarIpcChannels,
 } as const;
 
 export type ThemeMode = "system" | "dark" | "light";
@@ -353,7 +354,7 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
   { name: "Ollama 本地", kind: "openai", baseURL: "http://localhost:11434/v1", models: ["qwen3:8b", "llama3.1:8b"] },
 ];
 
-export interface InnocenceCodeApi {
+export interface InnocenceCodeApi extends SidebarApi {
   getAppInfo(): Promise<AppInfo>;
   getTheme(): Promise<{ mode: ThemeMode; resolved: ResolvedTheme }>;
   setTheme(mode: ThemeMode): Promise<void>;

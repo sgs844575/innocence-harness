@@ -27,7 +27,7 @@ import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { popupMenu } from "./menu";
 import { getMainWindow } from "./appWindow";
 import { logger } from "./logger";
-import { broadcastSessions } from "./sessionEvents";
+import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { TaskIpcHandlers } from "./taskIpcHandlers";
 
 /** Task IPC handlers — wired by registerTaskIpcHandlers after bridge composition. */
@@ -66,9 +66,35 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.sessionsList, () => sessions.listSessions());
+  ipcMain.handle(IPC.sidebarGet, () => sessions.getSidebarState());
+  ipcMain.handle(IPC.sidebarArchive, (_e, id: string, archived: boolean) => {
+    sessions.archiveSession(id, archived);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarReorder, (_e, groupId: string | null, orderedIds: string[]) => {
+    sessions.reorderSessions(groupId, orderedIds);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarMove, (_e, id: string, targetGroupId: string | null, beforeId?: string) => {
+    sessions.moveSession(id, targetGroupId, beforeId);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarGroupUpsert, (_e, group) => {
+    sessions.upsertSidebarGroup(group);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarGroupDelete, (_e, id: string) => {
+    sessions.deleteSidebarGroup(id);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarGroupCollapse, (_e, id: string, collapsed: boolean) => {
+    sessions.setSidebarGroupCollapsed(id, collapsed);
+    broadcastSidebar();
+  });
   ipcMain.handle(IPC.sessionCreate, (_e, options?: { title?: string; workspaceRoot?: string }) => {
     const session = sessions.createSession({ title: options?.title, workspaceRoot: options?.workspaceRoot });
     broadcastSessions();
+    broadcastSidebar();
     return session;
   });
   ipcMain.handle(IPC.sessionDelete, async (_e, id: string) => {
@@ -83,6 +109,7 @@ export function registerIpcHandlers(): void {
     await disposeSession(id);
     sessions.deleteSession(id);
     broadcastSessions();
+    broadcastSidebar();
   });
   ipcMain.handle(IPC.messagesList, (_e, sessionId: string) => sessions.listMessages(sessionId));
 
@@ -99,6 +126,7 @@ export function registerIpcHandlers(): void {
     // First user message retitles + reorders the session — push immediately so
     // the sidebar shows it before the stream completes.
     broadcastSessions();
+    broadcastSidebar();
     const messageId = sendChatTurn(sessionId, trimmed);
     logger.info("chat:send", { sessionId, messageId });
     return { messageId };
