@@ -14,7 +14,9 @@ import {
   getTaskBridge,
   getTaskStorageDir,
   initHarness,
+  startAutomationLifecycle,
   disposeAllRuntime,
+  disposeAutomationLifecycle,
   disposeTelemetry,
   disposePluginBoot,
   disposeTaskRuntime,
@@ -119,9 +121,15 @@ if (!gotLock) {
       // Restart recovery runs once the renderer mounted its task-event
       // subscriptions — notices pushed before that would be lost.
       win.webContents.once("did-finish-load", () => {
-        void recoverPersistedTaskRuntimes(taskRuntimeDeps).catch((err) => {
-          logger.error("task restart recovery failed", { error: String(err) });
-        });
+        void (async () => {
+          try {
+            await recoverPersistedTaskRuntimes(taskRuntimeDeps);
+          } catch (err) {
+            logger.error("task restart recovery failed", { error: String(err) });
+          } finally {
+            startAutomationLifecycle();
+          }
+        })();
       });
 
       logger.info("app ready", { version: app.getVersion(), platform: process.platform });
@@ -152,6 +160,7 @@ if (!gotLock) {
     void (async () => {
       try {
         rejectPendingPermissionAsks();
+        await disposeAutomationLifecycle();
         // Agent sessions first (aborts in-flight tool invocations, which
         // releases their task mutation leases), then the task runtime's
         // watchers and worktree lease records. Terminal shell trees go last

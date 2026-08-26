@@ -1,14 +1,25 @@
-export interface AutomationCandidate {
+export type AutomationCandidate = {
+  trigger:
+    | { kind: "schedule"; expression: string; everyMs: number }
+    | { kind: "idle"; expression: string; idleForMs: number }
+    | { kind: "manual"; expression: string };
+  actions: { kind: "run-command" | "notify" | "review"; command: string }[];
+  constraints: string[];
+  reviewSummary: string;
+};
+
+export type StoredAutomationCandidate = AutomationCandidate | {
   trigger: { kind: "schedule" | "idle" | "manual"; expression: string };
   actions: { kind: "run-command" | "notify" | "review"; command: string }[];
   constraints: string[];
   reviewSummary: string;
-}
+};
 
 export interface AutomationDefinition {
   id: string;
   name: string;
-  candidate: AutomationCandidate;
+  candidate: StoredAutomationCandidate;
+  targetSessionId?: string;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -17,6 +28,8 @@ export interface AutomationDefinition {
 export const AutomationIpcChannels = {
   automationCandidate: "automation:candidate",
   automationConfirm: "automation:confirm",
+  automationUpdate: "automation:update",
+  automationDelete: "automation:delete",
   automationList: "automation:list",
   automationTrigger: "automation:trigger",
 } as const;
@@ -28,6 +41,7 @@ export interface AutomationCandidateRequest {
 export interface AutomationConfirmRequest {
   candidate: AutomationCandidate;
   name: string;
+  targetSessionId?: string;
 }
 
 export interface AutomationTriggerRequest {
@@ -38,9 +52,19 @@ export interface AutomationTriggerRequest {
   routeId: string;
 }
 
+export interface AutomationUpdateRequest {
+  id: string;
+  candidate: AutomationCandidate;
+  name: string;
+  targetSessionId?: string;
+  enabled: boolean;
+}
+
 export interface AutomationApi {
   generateAutomationCandidate(prompt: string): Promise<AutomationCandidate>;
   confirmAutomation(request: AutomationConfirmRequest): Promise<AutomationDefinition>;
+  updateAutomation(request: AutomationUpdateRequest): Promise<AutomationDefinition>;
+  deleteAutomation(id: string): Promise<boolean>;
   listAutomations(): Promise<AutomationDefinition[]>;
   triggerAutomation(request: AutomationTriggerRequest): Promise<void>;
 }

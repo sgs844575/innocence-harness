@@ -5,7 +5,7 @@ import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
 const request = (signal = new AbortController().signal): AutomationDispatchRequest => ({
   automationId: "automation-1",
   candidate: {
-    trigger: { kind: "idle", expression: "5m" },
+    trigger: { kind: "idle", expression: "5m", idleForMs: 300_000 },
     actions: [{ kind: "review", command: "Review pending tasks" }],
     constraints: ["ask permission"],
     reviewSummary: "Review pending tasks after idle time.",

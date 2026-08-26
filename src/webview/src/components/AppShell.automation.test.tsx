@@ -73,7 +73,7 @@ describe("AppShell global search", () => {
 describe("AutomationView creation flow", () => {
   it("requests, confirms, lists, and manually dispatches a host-generated automation", async () => {
     const candidate = {
-      trigger: { kind: "schedule" as const, expression: "0 9 * * 1" },
+      trigger: { kind: "schedule" as const, expression: "0 9 * * 1", everyMs: 604_800_000 },
       actions: [{ kind: "review" as const, command: "Review pending tasks" }],
       constraints: ["ask permission"],
       reviewSummary: "Review pending tasks every Monday.",

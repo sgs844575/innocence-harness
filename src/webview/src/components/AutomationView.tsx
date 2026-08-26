@@ -48,7 +48,7 @@ export function AutomationView({ onBack, sessionId = "", taskId, routeId = "main
     setSubmitting(true);
     setError(null);
     try {
-      const definition = await api.confirmAutomation({ candidate, name: name.trim() });
+      const definition = await api.confirmAutomation({ candidate, name: name.trim(), ...(sessionId ? { targetSessionId: sessionId } : {}) });
       setDefinitions((items) => [...items.filter((item) => item.id !== definition.id), definition]);
       setCreating(false);
       setCandidate(null);

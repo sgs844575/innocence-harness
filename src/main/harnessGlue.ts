@@ -8,11 +8,12 @@
 // .innocence/plugins.yml + user settings toggles. The runtime's UI-bridge
 // hooks live in runtimeHooks.ts.
 import { createAutomationService, type AutomationCandidate, type AutomationService } from "@innocenceharness/harness-automation";
+import { createAutomationLifecycle, type AutomationLifecycle } from "./automationLifecycle";
 import { createAutomationStore } from "./automationStore";
 import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
 import { createAutomationCandidateService, createStructuredOutputPort } from "@innocenceharness/harness-ai-runtime";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
-import { app, dialog } from "electron";
+import { app, dialog, powerMonitor } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { openSecureStorage } from "@innocenceharness/secure-storage-node";
@@ -58,6 +59,7 @@ function automationFile(): string {
 }
 
 let automationService: AutomationService | undefined;
+let automationLifecycle: AutomationLifecycle | undefined;
 
 function getAutomationService(): AutomationService {
   if (automationService) return automationService;
@@ -80,12 +82,54 @@ function getAutomationService(): AutomationService {
   return automationService;
 }
 
+function getAutomationLifecycle(): AutomationLifecycle {
+  if (automationLifecycle) return automationLifecycle;
+  automationLifecycle = createAutomationLifecycle({
+    controlledService: getAutomationService(),
+    isIdle: (minimumIdleMs) => powerMonitor.getSystemIdleTime() * 1_000 >= minimumIdleMs,
+    onActivity: (listener) => {
+      powerMonitor.on("user-did-become-active", listener);
+      return () => powerMonitor.removeListener("user-did-become-active", listener);
+    },
+    log: (message, data) => logger.warn(message, data),
+  });
+  return automationLifecycle;
+}
+
+/** Restores valid confirmed automatic definitions after host session initialization. */
+export function startAutomationLifecycle(): void {
+  getAutomationLifecycle().start();
+}
+
+/** Releases automatic timers and awaits aborted controlled dispatch cleanup. */
+export async function disposeAutomationLifecycle(): Promise<void> {
+  const lifecycle = automationLifecycle;
+  automationLifecycle = undefined;
+  await lifecycle?.dispose();
+}
+
 export function generateAutomationCandidate(prompt: string): Promise<AutomationCandidate> {
   return getAutomationService().generateCandidate(prompt);
 }
 
-export function confirmAutomation(candidate: AutomationCandidate, name: string) {
-  return getAutomationService().confirmCandidate(candidate, name);
+export function confirmAutomation(candidate: AutomationCandidate, name: string, targetSessionId?: string) {
+  if (targetSessionId && !sessions.getSession(targetSessionId)) throw new Error("automation session not found");
+  return getAutomationLifecycle().confirm(candidate, name, targetSessionId);
+}
+
+export function updateAutomation(
+  id: string,
+  candidate: AutomationCandidate,
+  name: string,
+  targetSessionId: string | undefined,
+  enabled: boolean,
+) {
+  if (targetSessionId && !sessions.getSession(targetSessionId)) throw new Error("automation session not found");
+  return getAutomationLifecycle().update(id, candidate, name, targetSessionId, enabled);
+}
+
+export function deleteAutomation(id: string): boolean {
+  return getAutomationLifecycle().delete(id);
 }
 
 export function listAutomations() {

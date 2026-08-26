@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   broadcastSidebar: vi.fn(),
   generateAutomationCandidate: vi.fn(),
   confirmAutomation: vi.fn(),
+  updateAutomation: vi.fn(),
+  deleteAutomation: vi.fn(),
   listAutomations: vi.fn(),
   triggerAutomation: vi.fn(),
 }));
@@ -23,7 +25,7 @@ vi.mock("./sessions", () => ({
   upsertSidebarGroup: vi.fn(), deleteSidebarGroup: vi.fn(), setSidebarGroupCollapsed: vi.fn(),
 }));
 vi.mock("./harnessGlue", () => ({
-  getCommittedHarnessSettings: vi.fn(), getHarnessSettings: vi.fn(), getPluginInventory: vi.fn(), generateAutomationCandidate: mocks.generateAutomationCandidate, confirmAutomation: mocks.confirmAutomation, listAutomations: mocks.listAutomations, triggerAutomation: mocks.triggerAutomation, listProviderModelsById: vi.fn(), pickWorkspace: vi.fn(), respondPermission: vi.fn(), sendChatTurn: vi.fn(), setHarnessSettings: vi.fn(), stopChatTurn: vi.fn(), updateProviderApiKey: vi.fn(), disposeSession: vi.fn(),
+  getCommittedHarnessSettings: vi.fn(), getHarnessSettings: vi.fn(), getPluginInventory: vi.fn(), generateAutomationCandidate: mocks.generateAutomationCandidate, confirmAutomation: mocks.confirmAutomation, updateAutomation: mocks.updateAutomation, deleteAutomation: mocks.deleteAutomation, listAutomations: mocks.listAutomations, triggerAutomation: mocks.triggerAutomation, listProviderModelsById: vi.fn(), pickWorkspace: vi.fn(), respondPermission: vi.fn(), sendChatTurn: vi.fn(), setHarnessSettings: vi.fn(), stopChatTurn: vi.fn(), updateProviderApiKey: vi.fn(), disposeSession: vi.fn(),
 }));
 vi.mock("./sessionEvents", () => ({ broadcastSessions: vi.fn(), broadcastSidebar: mocks.broadcastSidebar }));
 vi.mock("./theme", () => ({ broadcastTheme: vi.fn(), getTheme: vi.fn(), setTheme: vi.fn() }));
@@ -55,16 +57,22 @@ describe("sidebar mutation IPC durability", () => {
   it("routes automation candidate, confirmation, list, and trigger through typed handlers", async () => {
     mocks.generateAutomationCandidate.mockResolvedValue({ candidate: true });
     mocks.confirmAutomation.mockResolvedValue({ id: "automation-1" });
+    mocks.updateAutomation.mockResolvedValue({ id: "automation-1" });
+    mocks.deleteAutomation.mockReturnValue(true);
     mocks.listAutomations.mockResolvedValue([]);
     mocks.triggerAutomation.mockResolvedValue(undefined);
 
     await mocks.handles.get(IPC.automationCandidate)?.({}, "review tasks");
-    await mocks.handles.get(IPC.automationConfirm)?.({}, { candidate: { ok: true }, name: "Review" });
+    await mocks.handles.get(IPC.automationConfirm)?.({}, { candidate: { ok: true }, name: "Review", targetSessionId: "s1" });
+    await mocks.handles.get(IPC.automationUpdate)?.({}, { id: "automation-1", candidate: { ok: true }, name: "Updated", targetSessionId: "s1", enabled: false });
+    await mocks.handles.get(IPC.automationDelete)?.({}, "automation-1");
     await mocks.handles.get(IPC.automationList)?.({});
     await mocks.handles.get(IPC.automationTrigger)?.({}, { id: "automation-1", trigger: "manual", sessionId: "s1", routeId: "main" });
 
     expect(mocks.generateAutomationCandidate).toHaveBeenCalledWith("review tasks");
-    expect(mocks.confirmAutomation).toHaveBeenCalledWith({ ok: true }, "Review");
+    expect(mocks.confirmAutomation).toHaveBeenCalledWith({ ok: true }, "Review", "s1");
+    expect(mocks.updateAutomation).toHaveBeenCalledWith("automation-1", { ok: true }, "Updated", "s1", false);
+    expect(mocks.deleteAutomation).toHaveBeenCalledWith("automation-1");
     expect(mocks.listAutomations).toHaveBeenCalledOnce();
     expect(mocks.triggerAutomation).toHaveBeenCalledWith({ id: "automation-1", trigger: "manual", sessionId: "s1", routeId: "main" });
   });

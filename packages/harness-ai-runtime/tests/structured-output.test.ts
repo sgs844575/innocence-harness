@@ -120,7 +120,7 @@ describe("createStructuredOutputPort", () => {
         content: [{
           type: "text",
           text: JSON.stringify({
-            trigger: { kind: "schedule", expression: "0 9 * * 1" },
+            trigger: { kind: "schedule", expression: "0 9 * * 1", everyMs: 604_800_000 },
             actions: [{ kind: "run-command", command: "test" }],
             constraints: ["read-only"],
             reviewSummary: "Review before enabling.",
@@ -139,7 +139,7 @@ describe("createStructuredOutputPort", () => {
 
     expect(AutomationCandidateSchema.parse(result.candidate)).toEqual(result.candidate);
     expect(result.candidate).toEqual({
-      trigger: { kind: "schedule", expression: "0 9 * * 1" },
+      trigger: { kind: "schedule", expression: "0 9 * * 1", everyMs: 604_800_000 },
       actions: [{ kind: "run-command", command: "test" }],
       constraints: ["read-only"],
       reviewSummary: "Review before enabling.",

@@ -47,5 +47,12 @@ export function createAutomationStore(file: string): AutomationStore {
       else document.definitions.push(clone(definition));
       persist();
     },
+    remove: (id) => {
+      const index = document.definitions.findIndex((definition) => definition.id === id);
+      if (index < 0) return false;
+      document.definitions.splice(index, 1);
+      persist();
+      return true;
+    },
   };
 }

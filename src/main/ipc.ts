@@ -16,6 +16,8 @@ import {
   getPluginInventory,
   generateAutomationCandidate,
   confirmAutomation,
+  updateAutomation,
+  deleteAutomation,
   listAutomations,
   triggerAutomation,
   listProviderModelsById,
@@ -160,7 +162,15 @@ export function registerIpcHandlers(): void {
   // 插件清单投影：main 按当前 toggles 现算（无 boot 时阻塞到 boot 完成）。
   ipcMain.handle(IPC.pluginsList, () => getPluginInventory());
   ipcMain.handle(IPC.automationCandidate, (_e, prompt: string) => generateAutomationCandidate(prompt));
-  ipcMain.handle(IPC.automationConfirm, (_e, request) => confirmAutomation(request.candidate, request.name));
+  ipcMain.handle(IPC.automationConfirm, (_e, request) => confirmAutomation(request.candidate, request.name, request.targetSessionId));
+  ipcMain.handle(IPC.automationUpdate, (_e, request) => updateAutomation(
+    request.id,
+    request.candidate,
+    request.name,
+    request.targetSessionId,
+    request.enabled,
+  ));
+  ipcMain.handle(IPC.automationDelete, (_e, id: string) => deleteAutomation(id));
   ipcMain.handle(IPC.automationList, () => listAutomations());
   ipcMain.handle(IPC.automationTrigger, (_e, request) => triggerAutomation(request));
   // 技能发现/导入：main 直连 discovery 模块（无会话状态，无需 boot）。

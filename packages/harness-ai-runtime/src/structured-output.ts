@@ -120,10 +120,22 @@ function hasCause(error: unknown, matches: (value: unknown) => boolean): boolean
 }
 
 export const AutomationCandidateSchema = z.object({
-  trigger: z.object({
-    kind: z.enum(["schedule", "idle", "manual"]),
-    expression: z.string().min(1),
-  }),
+  trigger: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("schedule"),
+      expression: z.string().min(1),
+      everyMs: z.number().int().positive(),
+    }),
+    z.object({
+      kind: z.literal("idle"),
+      expression: z.string().min(1),
+      idleForMs: z.number().int().positive(),
+    }),
+    z.object({
+      kind: z.literal("manual"),
+      expression: z.string().min(1),
+    }),
+  ]),
   actions: z.array(z.object({
     kind: z.enum(["run-command", "notify", "review"]),
     command: z.string().min(1),
