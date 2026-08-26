@@ -111,12 +111,22 @@ export function App(): React.JSX.Element {
     taskId: task?.taskId ?? "",
     routeId: workbench.state.activeRouteId,
   });
+  const { sidebar, rail, settingsView, activeSessionStatus, selectedFilePath, selectFile } = useAppNavigation({
+    t,
+    sessions,
+    settings,
+    appInfo,
+    onSettingsChange: handleSettingsSet,
+    onPickWorkspace: () => void handlePickWorkspace(),
+  });
   const [terminalActivity, setTerminalActivity] = useState({ durationMs: 0, backgroundTasks: 0 });
   const { workbenchPanels, banner } = useWorkbenchPresentation({
     t,
     workbench,
     reviewData,
     onTerminalActivityChange: setTerminalActivity,
+    selectedFilePath,
+    onSelectFile: selectFile,
   });
 
   const openReviewPanel = useCallback(() => {
@@ -158,15 +168,6 @@ export function App(): React.JSX.Element {
     t,
     sendGate,
   });
-  const { sidebar, rail, settingsView, activeArchived } = useAppNavigation({
-    t,
-    sessions,
-    settings,
-    appInfo,
-    onSettingsChange: handleSettingsSet,
-    onPickWorkspace: () => void handlePickWorkspace(),
-  });
-
   const workspacePresentation = useChatWorkspacePresentation({
     messages: chat.messages,
     streaming: chat.streaming,
@@ -176,8 +177,7 @@ export function App(): React.JSX.Element {
     changedFiles: reviewData.changedFiles,
     terminal: terminalActivity,
     agentName: settings?.activeAgent ?? "default",
-    sessionStatus: activeArchived ? "archived" : chat.sessionStatus,
-    permissionPending: chat.permission !== null,
+    sessionStatus: activeSessionStatus,
     onCompare: openReviewPanel,
     onOpenProcess: openReviewPanel,
     onOpenTerminal: openTerminalPanel,
@@ -265,7 +265,7 @@ export function App(): React.JSX.Element {
               { id: "open-automation", label: "自动化", onSelect: nav.openAutomation },
             ]}
             onSelectSession={(id) => { nav.backToChat(); sessions.selectSession(id); }}
-            onSelectFile={() => { nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
+            onSelectFile={(path) => { selectFile(path); nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
           />
         )}
         automation={<AutomationView onBack={() => shellNav.current?.backToChat()} />}

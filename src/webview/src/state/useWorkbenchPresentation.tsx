@@ -16,11 +16,15 @@ export function useWorkbenchPresentation({
   workbench,
   reviewData,
   onTerminalActivityChange,
+  selectedFilePath,
+  onSelectFile,
 }: {
   t: (key: string) => string;
   workbench: WorkbenchStateController;
   reviewData: TaskReviewDataController;
   onTerminalActivityChange?: (activity: TerminalActivitySummary) => void;
+  selectedFilePath?: string;
+  onSelectFile?: (path: string) => void;
 }): { workbenchPanels: Record<string, ReactNode>; banner: ReactNode } {
   const task = workbench.state.task;
   const reviewFiles = useMemo(() => groupHunksByFile(reviewData.hunks), [reviewData.hunks]);
@@ -65,13 +69,15 @@ export function useWorkbenchPresentation({
           taskId={task?.taskId ?? ""}
           routeId={workbench.state.activeRouteId}
           files={reviewData.files}
+          activePath={selectedFilePath}
+          onSelectFile={onSelectFile}
           t={t}
           api={codeApi}
         />
       ),
       terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} />,
     }),
-    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange],
+    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange, selectedFilePath, onSelectFile],
   );
   const banner = useMemo(() => {
     const recovery = workbench.state.recovery;

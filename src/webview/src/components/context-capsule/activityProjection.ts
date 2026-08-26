@@ -31,11 +31,10 @@ interface TodoView {
 function agentStatus(input: {
   taskStatus?: string;
   sessionStatus?: AgentActivityStatus;
-  permissionPending: boolean;
   streaming: boolean;
 }): AgentActivityStatus {
   if (input.sessionStatus === "archived" || input.taskStatus === "archived") return "archived";
-  if (input.permissionPending || input.sessionStatus === "waiting-permission") return "waiting-permission";
+  if (input.sessionStatus === "waiting-permission") return "waiting-permission";
   if (input.sessionStatus === "failed" || input.taskStatus === "checkpoint-failed" || input.taskStatus === "interrupted") return "failed";
   if (input.streaming || input.sessionStatus === "running" || input.taskStatus === "running") return "running";
   return "idle";
@@ -49,7 +48,6 @@ export function agentActivityFromWorkspace(input: {
   terminal: { durationMs: number; backgroundTasks: number };
   agentName: string;
   streaming: boolean;
-  permissionPending?: boolean;
   sessionStatus?: AgentActivityStatus;
   onCompare: () => void;
   onOpenProcess?: () => void;
@@ -71,7 +69,6 @@ export function agentActivityFromWorkspace(input: {
       status: agentStatus({
         taskStatus: input.task?.status,
         sessionStatus: input.sessionStatus,
-        permissionPending: input.permissionPending === true,
         streaming: input.streaming,
       }),
     },

@@ -18,15 +18,3 @@ export function subscribeSidebarSessionStatus(listener: (event: SidebarSessionSt
   window.addEventListener(eventName, onStatus);
   return () => window.removeEventListener(eventName, onStatus);
 }
-
-export function reduceSidebarSessionStatuses(
-  current: ReadonlyMap<string, SidebarSessionStatus>,
-  event: SidebarSessionStatusEvent,
-): Map<string, SidebarSessionStatus> {
-  const next = new Map(current);
-  if (event.type === "started" || event.type === "stream") next.set(event.sessionId, "running");
-  else if (event.type === "permission") next.set(event.sessionId, "waiting-permission");
-  else if (event.type === "done") next.delete(event.sessionId);
-  else next.set(event.sessionId, "failed");
-  return next;
-}

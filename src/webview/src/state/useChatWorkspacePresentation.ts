@@ -20,7 +20,6 @@ export function useChatWorkspacePresentation(input: {
   terminal: TerminalActivitySummary;
   agentName: string;
   sessionStatus?: AgentActivityProjection["agent"]["status"];
-  permissionPending?: boolean;
   onCompare: () => void;
   onOpenProcess: () => void;
   onOpenTerminal: () => void;
@@ -59,12 +58,11 @@ export function useChatWorkspacePresentation(input: {
       agentName: input.agentName,
       streaming: input.streaming,
       sessionStatus: input.sessionStatus,
-      permissionPending: input.permissionPending,
       onCompare: input.onCompare,
       onOpenProcess: input.task ? input.onOpenProcess : undefined,
       onOpenTerminal: input.task ? input.onOpenTerminal : undefined,
     }),
-    [input.task, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.permissionPending, input.onCompare, input.onOpenProcess, input.onOpenTerminal, changeSummary, process],
+    [input.task, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.onCompare, input.onOpenProcess, input.onOpenTerminal, changeSummary, process],
   );
 
   return { activity, taskChanges };

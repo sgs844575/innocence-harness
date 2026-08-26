@@ -28,7 +28,9 @@ import type { SidebarStateController } from "../state/useSidebarState";
 import { resolveSidebarDrag } from "./sidebar/dnd";
 import { buildSidebarTree, type SidebarTreeNode, type SidebarView } from "./sidebar/viewModel";
 
-export type SidebarSessionStatus = "running" | "waiting-permission" | "failed";
+import type { SessionActivityStatus } from "../state/sessionActivityProjection";
+
+export type SidebarSessionStatus = SessionActivityStatus;
 
 interface Props {
   t: (key: string) => string;

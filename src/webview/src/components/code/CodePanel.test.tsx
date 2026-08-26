@@ -134,6 +134,14 @@ describe("CodePanel", () => {
     await waitFor(() => expect(api.readFile).toHaveBeenCalledWith({ taskId: "t1", routeId: "r1", relativePath: "src/a.ts" }));
   });
 
+  it("loads and selects an externally supplied active path", async () => {
+    const api = makeApi();
+    const { rerender } = render(<CodePanel taskId="t1" routeId="r1" api={api} files={["src/a.ts", "src/b.ts"]} activePath={null} />);
+    rerender(<CodePanel taskId="t1" routeId="r1" api={api} files={["src/a.ts", "src/b.ts"]} activePath="src/b.ts" />);
+    await waitFor(() => expect(api.readFile).toHaveBeenCalledWith({ taskId: "t1", routeId: "r1", relativePath: "src/b.ts" }));
+    expect(screen.getByRole("treeitem", { name: /b\.ts/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("opens the selected file in the external editor", async () => {
     const api = makeApi();
     render(<CodePanel taskId="t1" routeId="r1" api={api} files={["src/a.ts"]} />);

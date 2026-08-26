@@ -23,6 +23,7 @@ export type WorkspacePresentationAction =
   | { type: "sidebar/toggle" }
   | { type: "sidebar/filter"; filter: string }
   | { type: "sidebar/project-toggle"; projectId: string }
+  | { type: "file/select"; path: string | undefined }
   | { type: "capsule/toggle" }
   | { type: "capsule/toggle-section"; section: CapsuleSection }
   | { type: "panel/select"; panel: WorkspacePresentationState["selectedPanel"] }
@@ -106,6 +107,8 @@ export function reduceWorkspacePresentationState(
           : [...state.collapsedProjectIds, action.projectId],
       };
     }
+    case "file/select":
+      return { ...state, selectedFilePath: action.path };
     case "capsule/toggle":
       return { ...state, capsuleOpen: !state.capsuleOpen };
     case "capsule/toggle-section": {

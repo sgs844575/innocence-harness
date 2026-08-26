@@ -102,7 +102,7 @@ describe("processActivityFromMessages", () => {
       onCompare: () => undefined,
     } as unknown as Parameters<typeof agentActivityFromWorkspace>[0];
 
-    expect(agentActivityFromWorkspace({ ...base, permissionPending: true }).agent.status).toBe("waiting-permission");
+    expect(agentActivityFromWorkspace({ ...base, sessionStatus: "waiting-permission" }).agent.status).toBe("waiting-permission");
     expect(agentActivityFromWorkspace(base).agent.status).toBe("failed");
     expect(agentActivityFromWorkspace({ ...base, sessionStatus: "archived" }).agent.status).toBe("archived");
     expect(agentActivityFromWorkspace(base).environment).toMatchObject({ workspaceKind: "snapshot" });

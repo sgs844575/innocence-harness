@@ -1,19 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { reduceSidebarSessionStatuses } from "./sidebarSessionStatus";
+import { reduceSessionActivity } from "./sessionActivityProjection";
 
-describe("sidebar session status reducer", () => {
-  it("marks a session running before a first stream event", () => {
-    expect(reduceSidebarSessionStatuses(new Map(), { type: "started", sessionId: "s1" })).toEqual(new Map([["s1", "running"]]));
-  });
-
-  it("replaces running with static waiting permission", () => {
-    const running = new Map([["s1", "running"]] as const);
-    expect(reduceSidebarSessionStatuses(running, { type: "permission", sessionId: "s1" })).toEqual(new Map([["s1", "waiting-permission"]]));
-  });
-
-  it("clears done and retains a static failed marker for errors", () => {
-    const running = new Map([["s1", "running"], ["s2", "running"]] as const);
-    expect(reduceSidebarSessionStatuses(running, { type: "done", sessionId: "s1" })).toEqual(new Map([["s2", "running"]]));
-    expect(reduceSidebarSessionStatuses(running, { type: "error", sessionId: "s2" })).toEqual(new Map([["s1", "running"], ["s2", "failed"]]));
+describe("session activity event protocol", () => {
+  it("maps running, permission, done, and error through the canonical reducer", () => {
+    const running = reduceSessionActivity(new Map(), { type: "started", sessionId: "s1" });
+    expect(running).toEqual(new Map([["s1", "running"]]));
+    const waiting = reduceSessionActivity(running, { type: "permission", sessionId: "s1" });
+    expect(waiting).toEqual(new Map([["s1", "waiting-permission"]]));
+    expect(reduceSessionActivity(waiting, { type: "stream", sessionId: "s1" })).toEqual(waiting);
+    expect(reduceSessionActivity(waiting, { type: "done", sessionId: "s1" })).toEqual(new Map([["s1", "idle"]]));
+    expect(reduceSessionActivity(running, { type: "error", sessionId: "s1" })).toEqual(new Map([["s1", "failed"]]));
   });
 });

@@ -2,7 +2,7 @@
 // （CodeFileTree）+ 内容视图（CodeViewer）。所有数据经注入的 api 获取
 //（taskId/routeId + 相对路径——渲染层绝不传绝对路径）；外部编辑器入口把
 // 当前文件（和可选行/列）交给 main 侧验证后启动。自身只持有展示状态。
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import type { CodeFileContent, CodeIpcApi, CodeSearchMatch } from "../../../../shared/codeIpc";
 import { zhCN } from "../../lib/i18n";
@@ -57,6 +57,10 @@ export function CodePanel({
     },
     [api, taskId, routeId],
   );
+
+  useEffect(() => {
+    if (activePath !== null && activePath !== undefined) void loadFile(activePath);
+  }, [activePath, loadFile]);
 
   const handleSelect = useCallback(
     (path: string) => {

@@ -48,6 +48,14 @@ describe("workspace presentation state", () => {
     expect(restoreWorkspacePresentationState("not-json")).toEqual(defaultWorkspacePresentationState);
   });
 
+  it("selects a relative file path for the code panel view model", () => {
+    const next = reduceWorkspacePresentationState(defaultWorkspacePresentationState, {
+      type: "file/select",
+      path: "src/renderer/App.tsx",
+    });
+    expect(next.selectedFilePath).toBe("src/renderer/App.tsx");
+  });
+
   it("supports the durable sidebar view without owning session state", () => {
     const action: WorkspacePresentationAction = { type: "sidebar/view", view: "groups" };
     const next = reduceWorkspacePresentationState(defaultWorkspacePresentationState, action);

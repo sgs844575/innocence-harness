@@ -6,6 +6,23 @@ import { GlobalSearchDialog } from "./GlobalSearchDialog";
 afterEach(cleanup);
 
 describe("GlobalSearchDialog", () => {
+  it("forwards the selected relative file path to the workspace selection command", () => {
+    const onSelectFile = vi.fn();
+    render(
+      <GlobalSearchDialog
+        open
+        onOpenChange={() => {}}
+        sessions={[]}
+        files={["src/renderer/App.tsx"]}
+        actions={[]}
+        onSelectSession={() => {}}
+        onSelectFile={onSelectFile}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "src/renderer/App.tsx" }));
+    expect(onSelectFile).toHaveBeenCalledWith("src/renderer/App.tsx");
+  });
+
   it("filters typed task, operation, and file sources without using sidebar-local filtering", () => {
     render(
       <GlobalSearchDialog

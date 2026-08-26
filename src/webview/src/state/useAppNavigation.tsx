@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 import {
   MessageSquarePlus,
   PanelLeftOpen,
@@ -12,8 +12,7 @@ import type { AppShellNav } from "../components/AppShell";
 import type { AppInfo, HarnessSettings } from "../../../shared/ipc";
 import type { SessionController } from "./useSessionController";
 import { useSidebarState } from "./useSidebarState";
-import { api } from "../lib/ipc";
-import { reduceSidebarSessionStatuses, subscribeSidebarSessionStatus, type SidebarSessionStatus } from "./sidebarSessionStatus";
+import { useSessionActivityProjection } from "./sessionActivityProjection";
 import { WORKSPACE_PRESENTATION_STORAGE_KEY, persistWorkspacePresentationState, reduceWorkspacePresentationState, restoreWorkspacePresentationState } from "./workspacePresentationState";
 import logoUrl from "../../../../logo.svg";
 
@@ -33,7 +32,13 @@ export function useAppNavigation({
   onPickWorkspace: () => void;
 }) {
   const sidebarState = useSidebarState(sessions.sessions);
-  const [sessionStatuses, setSessionStatuses] = useState<Map<string, SidebarSessionStatus>>(() => new Map());
+  const sessionIds = useMemo(() => sessions.sessions.map((session) => session.id), [sessions.sessions]);
+  const activeArchived = sessions.activeId !== null && sidebarState.state.archived[sessions.activeId] === true;
+  const { statuses: sessionStatuses, status: activeSessionStatus } = useSessionActivityProjection(
+    sessions.activeId,
+    activeArchived,
+    sessionIds,
+  );
   const [presentation, dispatchPresentation] = useReducer(
     reduceWorkspacePresentationState,
     undefined,
@@ -47,31 +52,6 @@ export function useAppNavigation({
       window.localStorage.setItem(WORKSPACE_PRESENTATION_STORAGE_KEY, persistWorkspacePresentationState(presentation));
     }
   }, [presentation]);
-
-  useEffect(() => {
-    const apply = (event: Parameters<typeof reduceSidebarSessionStatuses>[1]) => setSessionStatuses((previous) => reduceSidebarSessionStatuses(previous, event));
-    const offLocal = subscribeSidebarSessionStatus(apply);
-    const offDelta = api.onChatDelta((event) => apply({ type: "stream", sessionId: event.sessionId }));
-    const offTool = api.onChatTool((event) => apply({ type: "stream", sessionId: event.sessionId }));
-    const offThinking = api.onChatThinking((event) => apply({ type: "stream", sessionId: event.sessionId }));
-    const offPermission = api.onChatPermission((event) => apply({ type: "permission", sessionId: event.sessionId }));
-    const offDone = api.onChatDone((event) => apply({ type: "done", sessionId: event.sessionId }));
-    const offError = api.onChatError((event) => apply({ type: "error", sessionId: event.sessionId }));
-    return () => {
-      offLocal();
-      offDelta();
-      offTool();
-      offThinking();
-      offPermission();
-      offDone();
-      offError();
-    };
-  }, []);
-
-  useEffect(() => {
-    const ids = new Set(sessions.sessions.map((session) => session.id));
-    setSessionStatuses((previous) => new Map([...previous].filter(([id]) => ids.has(id))));
-  }, [sessions.sessions]);
 
   const sidebar = useCallback(
     (nav: AppShellNav) =>
@@ -128,5 +108,13 @@ export function useAppNavigation({
     ) : null,
     [t, settings, appInfo, onSettingsChange, onPickWorkspace],
   );
-  return { sidebar, rail, settingsView, activeArchived: sessions.activeId !== null && sidebarState.state.archived[sessions.activeId] === true };
+  return {
+    sidebar,
+    rail,
+    settingsView,
+    activeArchived,
+    activeSessionStatus,
+    selectedFilePath: presentation.selectedFilePath,
+    selectFile: (path: string | undefined) => dispatchPresentation({ type: "file/select", path }),
+  };
 }
