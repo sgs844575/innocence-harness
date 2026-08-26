@@ -43,9 +43,19 @@ describe("buildSidebarTree", () => {
     expect(buildSidebarTree(sessions, archivedState, "groups", "Unassigned").flatMap((node) => node.sessionIds)).not.toContain("s3");
   });
 
+  it("preserves the store-resolved project order independently from global session order", () => {
+    const projectState = { ...state, order: ["s1", "s2", "s3", "s4"] };
+    expect(buildSidebarTree(sessions, projectState, "projects", "Unassigned")[0]?.sessionIds).toEqual(["s2", "s1"]);
+  });
+
   it("preserves persisted custom-group order independently from project order", () => {
     const customState = { ...state, groups: [{ id: "g1", name: "Review", collapsed: false, sessionIds: ["s1", "s2"] }] };
     expect(buildSidebarTree(sessions, customState, "groups", "Unassigned")[0]?.sessionIds).toEqual(["s1", "s2"]);
+  });
+
+  it("preserves the store-resolved manual ungrouped order independently from global session order", () => {
+    const ungroupedState = { ...state, ungrouped: ["s4", "s3", "s2"], manualUngrouped: true };
+    expect(buildSidebarTree(sessions, ungroupedState, "groups", "Unassigned").at(-1)?.sessionIds).toEqual(["s4", "s3", "s2"]);
   });
 
   it("builds custom groups including empty drop targets and keeps ungrouped sessions separate", () => {

@@ -24,21 +24,17 @@ export function buildSidebarTree(
 ): SidebarTreeNode[] {
   const archived = new Set(archivedSessionIds(state, sessions));
   const byId = new Map(sessions.filter((session) => !archived.has(session.id)).map((session) => [session.id, session]));
-  const order = new Map(state.order.map((id, index) => [id, index]));
-  const sortIds = (ids: readonly string[], preserveInput = false) => {
-    const filtered = [...ids].filter((id) => byId.has(id));
-    return preserveInput ? filtered : filtered.sort((a, b) => (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER));
-  };
+  const validIds = (ids: readonly string[]) => ids.filter((id) => byId.has(id));
   if (view === "projects") {
-    const nodes: SidebarTreeNode[] = state.projects.map((project) => ({ id: project.id, name: project.name, sessionIds: sortIds(project.sessionIds), collapsed: false, kind: "project" }));
+    const nodes: SidebarTreeNode[] = state.projects.map((project) => ({ id: project.id, name: project.name, sessionIds: validIds(project.sessionIds), collapsed: false, kind: "project" }));
     const assigned = new Set(state.projects.flatMap((project) => project.sessionIds));
-    const ungrouped = sortIds(state.order.filter((id) => !assigned.has(id)));
+    const ungrouped = validIds(state.order.filter((id) => !assigned.has(id)));
     if (ungrouped.length) nodes.push({ id: "__project-unassigned__", name: unassignedName, sessionIds: ungrouped, collapsed: false, kind: "ungrouped" });
     return nodes;
   }
-  const nodes: SidebarTreeNode[] = state.groups.map((group) => ({ id: group.id, name: group.name, sessionIds: sortIds(group.sessionIds, true), collapsed: group.collapsed, kind: "group" }));
+  const nodes: SidebarTreeNode[] = state.groups.map((group) => ({ id: group.id, name: group.name, sessionIds: validIds(group.sessionIds), collapsed: group.collapsed, kind: "group" }));
   const assigned = new Set(state.groups.flatMap((group) => group.sessionIds));
-  const ungrouped = sortIds(state.ungrouped.filter((id) => !assigned.has(id)));
+  const ungrouped = validIds(state.ungrouped.filter((id) => !assigned.has(id)));
   if (ungrouped.length) nodes.push({ id: "__sidebar-ungrouped__", name: unassignedName, sessionIds: ungrouped, collapsed: false, kind: "ungrouped" });
   return nodes;
 }

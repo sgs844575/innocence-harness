@@ -112,7 +112,7 @@ describe("sidebar index remediation", () => {
     expect(readFileSync(file, "utf8")).toBe(previousFile);
   });
 
-  it("keeps manual order but inserts newly introduced sessions in authoritative session order", () => {
+  it("keeps manual project order but inserts newly introduced sessions in authoritative session order", () => {
     const store = createSidebarIndexStore(dir, sessions);
     store.reorderSessions({ kind: "project", projectId: sidebarProjectId("D:/work/alpha") }, ["s-b", "s-a"]);
     store.replaceSessions([
@@ -121,6 +121,31 @@ describe("sidebar index remediation", () => {
     ]);
 
     expect(store.getSidebarState().projects.find((project) => project.id === sidebarProjectId("D:/work/alpha"))?.sessionIds).toEqual(["s-new", "s-b", "s-a"]);
+  });
+
+  it("keeps manual ungrouped order but inserts a newly created session in authoritative order", () => {
+    const store = createSidebarIndexStore(dir, sessions);
+    store.reorderSessions({ kind: "ungrouped" }, ["s-b", "s-a", "s-c", "s-u"]);
+    store.replaceSessions([
+      { ...sessions[3], id: "s-new" },
+      ...sessions,
+    ]);
+
+    expect(store.getSidebarState().ungrouped).toEqual(["s-new", "s-b", "s-a", "s-c", "s-u"]);
+  });
+
+  it("retains manual ungrouped relative order across message promotion while placing a new session at its authoritative position", () => {
+    const store = createSidebarIndexStore(dir, sessions);
+    store.reorderSessions({ kind: "ungrouped" }, ["s-b", "s-a", "s-c", "s-u"]);
+    store.replaceSessions([
+      sessions[2],
+      { ...sessions[3], id: "s-new" },
+      sessions[0],
+      sessions[1],
+      sessions[3],
+    ]);
+
+    expect(store.getSidebarState().ungrouped).toEqual(["s-b", "s-new", "s-a", "s-c", "s-u"]);
   });
 
   it("uses authoritative session order until a user explicitly reorders", () => {

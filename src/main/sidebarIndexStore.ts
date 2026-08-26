@@ -290,7 +290,7 @@ export function createSidebarIndexStore(
           const grouped = new Set(staged.groups.flatMap((group) => group.sessionIds));
           const ungroupedBaseline = authoritative.filter((id) => !grouped.has(id));
           staged.ungrouped = staged.manualUngrouped
-            ? mergeKnownOrder(staged.ungrouped.filter((id) => !grouped.has(id)), ungroupedBaseline)
+            ? mergeManualOrder(staged.ungrouped.filter((id) => !grouped.has(id)), ungroupedBaseline)
             : ungroupedBaseline;
           for (const [projectId, ids] of Object.entries(staged.manualProjectOrders)) {
             staged.manualProjectOrders[projectId] = ids.filter((id) => valid.has(id));
