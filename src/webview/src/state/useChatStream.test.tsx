@@ -45,6 +45,19 @@ describe("useChatStream completion metadata", () => {
     off();
   });
 
+  it("emits permission resolution so the canonical activity resumes running after allow", async () => {
+    apiMock.listMessages.mockResolvedValue([{ id: "assistant", role: "assistant", parts: [], createdAt: 1, streaming: true }]);
+    const events: Array<{ type: string; sessionId: string; decision?: string }> = [];
+    const off = subscribeSidebarSessionStatus((event) => events.push(event));
+    const { result } = renderHook(() => useChatStream({ activeId: "session", ensureSession: async () => "session", showError: vi.fn(), t: (key) => key }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    const permission = (apiMock.onChatPermission.mock.calls as unknown as Array<[(event: { sessionId: string; messageId: string; requestId: string; toolName: string; args: Record<string, unknown>; resource: { kind: string; action: string; scope: string } }) => void]>)[0][0];
+    act(() => permission({ sessionId: "session", messageId: "assistant", requestId: "p", toolName: "x", args: {}, resource: { kind: "x", action: "x", scope: "x" } }));
+    act(() => result.current.respondPermission("p", "allow"));
+    expect(events).toContainEqual({ type: "permission-resolved", sessionId: "session", decision: "allow" });
+    off();
+  });
+
   it("keeps the fatal completion when the host also reports its error text", async () => {
     const completion: ChatCompletionMetadata = {
       providerId: "provider-safe",

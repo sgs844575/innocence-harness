@@ -3,6 +3,7 @@ export type SidebarSessionStatus = "running" | "waiting-permission" | "failed";
 export type SidebarSessionStatusEvent =
   | { type: "started" | "stream"; sessionId: string }
   | { type: "permission"; sessionId: string }
+  | { type: "permission-resolved"; sessionId: string; decision: "allow" | "allowSession" | "deny" }
   | { type: "done"; sessionId: string }
   | { type: "error"; sessionId: string };
 

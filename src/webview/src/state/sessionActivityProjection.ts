@@ -15,6 +15,7 @@ export function reduceSessionActivity(
     if (next.get(event.sessionId) !== "waiting-permission") next.set(event.sessionId, "running");
   }
   else if (event.type === "permission") next.set(event.sessionId, "waiting-permission");
+  else if (event.type === "permission-resolved") next.set(event.sessionId, event.decision === "deny" ? "failed" : "running");
   else if (event.type === "done") next.set(event.sessionId, "idle");
   else next.set(event.sessionId, "failed");
   return next;

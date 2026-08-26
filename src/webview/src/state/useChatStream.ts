@@ -180,9 +180,11 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
   }, [activeId, streamingId]);
 
   const respondPermission = useCallback((requestId: string, choice: PermissionChoice) => {
+    const sessionId = activeId;
     setPermission(null);
+    if (sessionId) emitSidebarSessionStatus({ type: "permission-resolved", sessionId, decision: choice });
     void api.respondChatPermission(requestId, choice);
-  }, []);
+  }, [activeId]);
 
   return {
     messages,
