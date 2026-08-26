@@ -188,6 +188,65 @@ describe("session store persistence", () => {
     expect(listSessions()[0].messageCount).toBe(2);
   });
 
+  it("hydrates safe completion metadata onto only the final assistant message of a persisted turn", () => {
+    const s = createSession();
+    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
+    const completion = {
+      providerId: "provider-safe",
+      modelId: "model-safe",
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8, rawUsage: 13 },
+      finishReason: "stop",
+      aborted: false,
+      responseId: "resp_opaque",
+      rawPayload: "must-not-reach-renderer",
+    };
+    writeFileSync(
+      path.join(dir, "transcripts", `${s.id}.jsonl`),
+      [
+        JSON.stringify({
+          at: "2026-08-25T10:00:00.000Z",
+          type: "turn-v2",
+          turnId: "old-turn",
+          messages: [
+            { role: "user", parts: [{ type: "text", text: "旧问题" }] },
+            { role: "assistant", parts: [{ type: "text", text: "旧回复" }] },
+          ],
+        }),
+        JSON.stringify({
+          at: "2026-08-25T10:01:00.000Z",
+          type: "turn-v3",
+          eventId: "event-1",
+          turnId: "new-turn",
+          routeId: "main",
+          parentTurnId: null,
+          checkpointId: "checkpoint-1",
+          messages: [
+            { role: "user", parts: [{ type: "text", text: "新问题" }] },
+            { role: "assistant", parts: [{ type: "text", text: "执行中" }] },
+            { role: "assistant", parts: [{ type: "text", text: "已完成" }] },
+          ],
+          completion,
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    initSessionStore(dir);
+    const messages = listMessages(s.id);
+    const assistants = messages.filter((message) => message.role === "assistant");
+    expect(assistants.map((message) => messageText(message.parts))).toEqual(["旧回复", "执行中已完成"]);
+    expect(assistants[0]?.completion).toBeUndefined();
+    expect(assistants[1]?.completion).toEqual({
+      providerId: "provider-safe",
+      modelId: "model-safe",
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8 },
+      finishReason: "stop",
+      aborted: false,
+      responseId: "resp_opaque",
+    });
+    expect(JSON.stringify(assistants[1]?.completion)).not.toContain("rawPayload");
+  });
+
   it("短快照之后的独立片段也要追加，不能吞掉后续对话", () => {
     const s = createSession();
     mkdirSync(path.join(dir, "transcripts"), { recursive: true });

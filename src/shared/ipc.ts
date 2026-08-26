@@ -2,6 +2,7 @@
 // so both processes rely on the same channel names and types.
 import { SidebarIpcChannels, type SidebarApi } from "./sidebarIpc";
 import { TaskIpcChannels } from "./taskIpc";
+import { AutomationIpcChannels, type AutomationApi } from "./automationIpc";
 import type { HarnessSettingsPatch } from "./settingsPatch";
 
 export const IPC = {
@@ -43,6 +44,7 @@ export const IPC = {
   mcpDiscover: "mcp:discover",
   ...TaskIpcChannels,
   ...SidebarIpcChannels,
+  ...AutomationIpcChannels,
 } as const;
 
 export type ThemeMode = "system" | "dark" | "light";
@@ -354,7 +356,7 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
   { name: "Ollama 本地", kind: "openai", baseURL: "http://localhost:11434/v1", models: ["qwen3:8b", "llama3.1:8b"] },
 ];
 
-export interface InnocenceCodeApi extends SidebarApi {
+export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   getAppInfo(): Promise<AppInfo>;
   getTheme(): Promise<{ mode: ThemeMode; resolved: ResolvedTheme }>;
   setTheme(mode: ThemeMode): Promise<void>;

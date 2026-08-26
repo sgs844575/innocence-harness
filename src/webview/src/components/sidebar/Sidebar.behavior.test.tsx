@@ -62,6 +62,39 @@ describe("Sidebar archive and session statuses", () => {
     expect(onPlugins).toHaveBeenCalledOnce();
   });
 
+  it("creates a named group through the id-only sidebar command", () => {
+    const sidebar = controller();
+    render(<Sidebar t={t} appName="App" sessions={sessions} activeId={null} sidebar={sidebar} onSelect={() => {}} onNew={() => {}} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.groups" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建分组" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "分组名称" }), { target: { value: "Review" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存分组" }));
+
+    expect(sidebar.upsertSidebarGroup).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Review",
+      collapsed: false,
+      sessionIds: [],
+    }));
+    const group = (sidebar.upsertSidebarGroup as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(group.id).toMatch(/^group_/);
+    expect(JSON.stringify(group)).not.toMatch(/[\\/]/);
+  });
+
+  it("renders an accessible empty-group drop target with a new-task action", () => {
+    const sidebar = controller();
+    sidebar.state.groups = [{ id: "empty", name: "Empty", collapsed: false, sessionIds: [] }];
+    const onNew = vi.fn();
+    const onNewInGroup = vi.fn();
+    render(<Sidebar t={t} appName="App" sessions={sessions} activeId={null} sidebar={sidebar} onSelect={() => {}} onNew={onNew} onNewInGroup={onNewInGroup} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} view="groups" />);
+
+    expect(screen.getByRole("button", { name: "在 Empty 中新建任务" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "拖放到 Empty" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "在 Empty 中新建任务" }));
+    expect(onNewInGroup).toHaveBeenCalledWith("empty");
+    expect(onNew).not.toHaveBeenCalled();
+  });
+
   it("loads the same repository logo asset in the icon rail", () => {
     const onLogoClick = vi.fn();
     render(<NavRail logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: onLogoClick }} items={[]} />);

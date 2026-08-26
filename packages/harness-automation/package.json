@@ -1,0 +1,18 @@
+{
+  "name": "@innocenceharness/harness-automation",
+  "version": "0.1.0",
+  "description": "InnocenceHarness controlled automation capability",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:packages": "npm run typecheck",
+    "test": "vitest run --passWithNoTests --maxWorkers=1"
+  },
+  "dependencies": {
+    "@innocenceharness/harness-ai-runtime": "^0.1.0",
+    "@innocenceharness/harness-providers": "^0.1.0"
+  }
+}

@@ -268,7 +268,12 @@ export function App(): React.JSX.Element {
             onSelectFile={(path) => { selectFile(path); nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
           />
         )}
-        automation={<AutomationView onBack={() => shellNav.current?.backToChat()} />}
+        automation={<AutomationView
+          onBack={() => shellNav.current?.backToChat()}
+          sessionId={sessions.activeId ?? ""}
+          taskId={task?.taskId}
+          routeId={workbench.state.activeRouteId}
+        />}
         chat={
           <ChatView
             t={t}

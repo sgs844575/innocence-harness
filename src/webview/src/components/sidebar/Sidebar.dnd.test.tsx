@@ -126,6 +126,23 @@ describe("Sidebar component drag commands", () => {
     expect(buildSidebarTree(sessions, reloaded, "groups", "Unassigned").at(-1)?.sessionIds).toEqual(["u-a", "u-b", "g-a"]);
   });
 
+  it("drops a session into the visible empty-group target and preserves it after reload", () => {
+    const sessions: Session[] = [
+      { id: "move-me", title: "Move me", createdAt: 1, updatedAt: 1, messageCount: 0, workspaceRoot: "" },
+    ];
+    const { dir, store } = createStore(sessions);
+    store.upsertSidebarGroup({ id: "empty", name: "Empty" });
+    const sidebar = controllerFor(store);
+    renderSidebar(sessions, sidebar);
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.groups" }));
+
+    expect(screen.getByRole("button", { name: "拖放到 Empty" })).toBeTruthy();
+    drag("session:move-me", "container:group:empty");
+
+    expect(sidebar.moveSession).toHaveBeenCalledWith("move-me", { kind: "group", groupId: "empty" }, undefined);
+    expect(createSidebarIndexStore(dir, sessions).getSidebarState().groups[0]?.sessionIds).toEqual(["move-me"]);
+  });
+
   it("does not emit drag commands while the filter is active", () => {
     const sessions: Session[] = [
       { id: "a", title: "Alpha", createdAt: 1, updatedAt: 1, messageCount: 0, workspaceRoot: "D:/work/project" },

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import { AutomationView } from "./AutomationView";
 import { SlotProvider } from "../slots/react";
@@ -71,14 +71,34 @@ describe("AppShell global search", () => {
 });
 
 describe("AutomationView creation flow", () => {
-  it("generates a reviewable candidate from natural language and explicitly disables unavailable submission", () => {
-    render(<AutomationView onBack={() => {}} />);
+  it("requests, confirms, lists, and manually dispatches a host-generated automation", async () => {
+    const candidate = {
+      trigger: { kind: "schedule" as const, expression: "0 9 * * 1" },
+      actions: [{ kind: "review" as const, command: "Review pending tasks" }],
+      constraints: ["ask permission"],
+      reviewSummary: "Review pending tasks every Monday.",
+    };
+    const definition = { id: "automation-1", name: "Weekly review", candidate, enabled: true, createdAt: 1, updatedAt: 1 };
+    window.innocencecode = {
+      generateAutomationCandidate: vi.fn(async () => candidate),
+      confirmAutomation: vi.fn(async () => definition),
+      listAutomations: vi.fn(async () => [definition]),
+      triggerAutomation: vi.fn(async () => {}),
+    } as never;
+    render(<AutomationView onBack={() => {}} sessionId="session-1" />);
+
     fireEvent.click(screen.getByRole("button", { name: "新建自动化" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "自动化需求" }), { target: { value: "每天整理未完成任务" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "自动化需求" }), { target: { value: "每周审查待办" } });
     fireEvent.click(screen.getByRole("button", { name: "生成候选" }));
-    expect(screen.getByText(/候选方案/)).toBeTruthy();
-    const submit = screen.getByRole("button", { name: "提交自动化" });
-    expect(submit.hasAttribute("disabled")).toBe(true);
-    expect(submit.getAttribute("aria-description")).toMatch(/尚未提供自动化提交接口/);
+    await screen.findByText("候选方案");
+    expect(window.innocencecode.generateAutomationCandidate).toHaveBeenCalledWith("每周审查待办");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "自动化名称" }), { target: { value: "Weekly review" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交自动化" }));
+    await screen.findByText("Weekly review");
+    fireEvent.click(screen.getByRole("button", { name: "立即执行 Weekly review" }));
+    await waitFor(() => expect(window.innocencecode.triggerAutomation).toHaveBeenCalledWith({
+      id: "automation-1", trigger: "manual", sessionId: "session-1", routeId: "main",
+    }));
   });
 });

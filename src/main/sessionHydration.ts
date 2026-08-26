@@ -125,6 +125,7 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
       role,
       parts: mapped,
       createdAt: at,
+      ...(role === "assistant" && m.completion ? { completion: m.completion } : {}),
     });
   }
   // 一轮 = 一条助手消息（对齐 live 形状）：transcript 里每个工具轮是独立的
@@ -136,6 +137,7 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
     const prev = coalesced[coalesced.length - 1];
     if (m.role === "assistant" && prev?.role === "assistant") {
       prev.parts.push(...m.parts);
+      if (m.completion) prev.completion = m.completion;
     } else {
       coalesced.push(m);
     }

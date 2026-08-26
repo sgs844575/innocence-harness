@@ -22,12 +22,6 @@ export {
   type StructuredOutputResult,
 } from "./structured-output";
 export {
-  createDefaultNodeTraceProcessors,
-  createNodeTraceAdapter,
-  type NodeTraceAdapter,
-  type NodeTraceAdapterOptions,
-} from "./node-trace-adapter";
-export {
   createTraceAdapter,
   type TraceAdapter,
   type TraceCompletionHandle,

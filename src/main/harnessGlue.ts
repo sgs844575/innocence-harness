@@ -7,6 +7,11 @@
 // manifest.json descriptors + resolvePluginSet (local copy) over project
 // .innocence/plugins.yml + user settings toggles. The runtime's UI-bridge
 // hooks live in runtimeHooks.ts.
+import { createAutomationService, type AutomationCandidate, type AutomationService } from "@innocenceharness/harness-automation";
+import { createAutomationStore } from "./automationStore";
+import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
+import { createAutomationCandidateService, createStructuredOutputPort } from "@innocenceharness/harness-ai-runtime";
+import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -22,6 +27,7 @@ import {
 import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
+import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks } from "./runtimeHooks";
 import * as sessions from "./sessions";
@@ -46,6 +52,49 @@ import {
 let settings: PkgSettings = DEFAULT_SETTINGS;
 const settingsMutationGate = createSettingsMutationGate();
 const pendingAsks = new Map<string, (choice: PermissionChoice) => void>();
+
+function automationFile(): string {
+  return path.join(app.getPath("userData"), "automations.json");
+}
+
+let automationService: AutomationService | undefined;
+
+function getAutomationService(): AutomationService {
+  if (automationService) return automationService;
+  const store = createAutomationStore(automationFile());
+  automationService = createAutomationService({
+    candidateService: createAutomationCandidateService(createStructuredOutputPort()),
+    candidateModel: async (): Promise<ProviderModel> => {
+      const provider = await buildProviderFromSettings(await ensureBoot(), settings);
+      if (!("model" in provider)) throw new Error("configured provider does not expose a model");
+      return provider.model;
+    },
+    store,
+    timeoutMs: 60_000,
+    dispatch: createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: (sessionId) => sessions.getSession(sessionId) !== undefined,
+      taskRouteFor: (sessionId) => sessionTaskRoutes.get(sessionId),
+    }),
+  });
+  return automationService;
+}
+
+export function generateAutomationCandidate(prompt: string): Promise<AutomationCandidate> {
+  return getAutomationService().generateCandidate(prompt);
+}
+
+export function confirmAutomation(candidate: AutomationCandidate, name: string) {
+  return getAutomationService().confirmCandidate(candidate, name);
+}
+
+export function listAutomations() {
+  return getAutomationService().list();
+}
+
+export function triggerAutomation(input: Parameters<AutomationService["trigger"]>[1] & { id: string }) {
+  return getAutomationService().trigger(input.id, input);
+}
 
 function settingsFile(): string {
   return path.join(app.getPath("userData"), "harness-settings.json");

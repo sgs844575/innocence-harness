@@ -60,9 +60,10 @@ export async function inspectRequiredPackageAvailability(
 }
 
 function packageDirectory(repoRoot: string): string {
-  return process.env.INNOCENCEHARNESS_PACKAGE_DIR
-    ? path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR)
-    : defaultPackagedDirectory(repoRoot);
+  if (Object.prototype.hasOwnProperty.call(process.env, "INNOCENCEHARNESS_PACKAGE_DIR")) {
+    return path.resolve(process.env.INNOCENCEHARNESS_PACKAGE_DIR || "");
+  }
+  return defaultPackagedDirectory(repoRoot);
 }
 
 async function inspectAvailability(repoRoot: string): Promise<SmokeAvailability> {

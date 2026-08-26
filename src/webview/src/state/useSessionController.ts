@@ -21,8 +21,9 @@ export interface SessionController {
   activeId: string | null;
   pendingProject: string;
   recentProjects: { path: string; count: number }[];
+  pendingGroupId: string | null;
   selectSession: (id: string) => void;
-  newSession: () => void;
+  newSession: (groupId?: string) => void;
   deleteSession: (id: string) => Promise<void>;
   setPendingProject: (dir: string) => void;
   pickProjectDir: () => Promise<void>;
@@ -36,6 +37,7 @@ export function useSessionController(deps: SessionControllerDeps): SessionContro
   const [activeId, setActiveId] = useState<string | null>(null);
   // 落地态选中的项目："" = 不在项目中。进入落地态时默认取当前工作区。
   const [pendingProject, setPendingProject] = useState("");
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     void api.listSessions().then(setSessions);
@@ -56,6 +58,7 @@ export function useSessionController(deps: SessionControllerDeps): SessionContro
   // 会话的绑定项目——侧栏分组与实际执行目录永远一致。
   const selectSession = useCallback(
     (id: string) => {
+      setPendingGroupId(null);
       setActiveId(id);
       const ws = sessions.find((s) => s.id === id)?.workspaceRoot ?? "";
       if (settings && ws !== settings.workspaceRoot) {
@@ -67,7 +70,8 @@ export function useSessionController(deps: SessionControllerDeps): SessionContro
 
   // 新建 ≠ 创建：点「新建会话」只回到落地态（输入居中 + 项目选择），侧栏
   // 不出条目；真正的 createSession 在首条消息发送时发生（ensureSessionForSend）。
-  const newSession = useCallback(() => {
+  const newSession = useCallback((groupId?: string) => {
+    setPendingGroupId(groupId ?? null);
     setActiveId(null);
   }, []);
 
@@ -115,6 +119,8 @@ export function useSessionController(deps: SessionControllerDeps): SessionContro
         onSettingsChange({ workspaceRoot: ws });
       }
       const session = await api.createSession({ workspaceRoot: ws });
+      if (pendingGroupId) await api.moveSession(session.id, { kind: "group", groupId: pendingGroupId });
+      setPendingGroupId(null);
       setActiveId(session.id);
       return session.id;
     } catch (err) {
@@ -122,12 +128,13 @@ export function useSessionController(deps: SessionControllerDeps): SessionContro
       showError(t("error.createSession"));
       return null;
     }
-  }, [pendingProject, settings?.workspaceRoot, onSettingsChange, showError, t]);
+  }, [pendingProject, pendingGroupId, settings?.workspaceRoot, onSettingsChange, showError, t]);
 
   return {
     sessions,
     activeId,
     pendingProject,
+    pendingGroupId,
     recentProjects,
     selectSession,
     newSession,

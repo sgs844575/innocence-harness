@@ -41,6 +41,7 @@ interface Props {
   sidebar: SidebarStateController;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onNewInGroup?: (groupId: string) => void;
   onDelete: (id: string) => void;
   onArchive: (id: string) => void;
   onOpenSettings: () => void;
@@ -60,7 +61,7 @@ const NAV_ITEMS = [
   { icon: Store, key: "sidebar.nav.plugins", action: "plugins" },
 ] as const;
 
-export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
+export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [uncontrolledView, setUncontrolledView] = useState<SidebarView>("projects");
   const view = controlledView ?? uncontrolledView;
@@ -69,6 +70,8 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
     if (controlledView === undefined) setUncontrolledView(next);
   };
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
   const filterActive = query.trim().length > 0;
   const filtered = useMemo(() => filterActive ? sessions.filter((session) => session.title.toLowerCase().includes(query.trim().toLowerCase())) : sessions, [sessions, query, filterActive]);
@@ -104,14 +107,28 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
         {NAV_ITEMS.map(({ icon: Icon, key, action }) => <button key={key} type="button" onClick={actionFor(action)} title={t(key)} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm hover:bg-(--color-app-bubble)"><Icon size={16} className="text-(--color-app-muted)" />{t(key)}</button>)}
       </nav>
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2">
-        <div className="mb-2 flex gap-1 rounded-full bg-(--color-app-bubble) p-0.5 text-xs">
+        <div className="mb-2 flex items-center gap-1 rounded-full bg-(--color-app-bubble) p-0.5 text-xs">
           <button type="button" onClick={() => setView("groups")} className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 ${view === "groups" ? "bg-(--color-app-panel) font-medium" : "text-(--color-app-muted)"}`}><Hash size={12} />{t("sidebar.groups")}</button>
           <button type="button" onClick={() => setView("projects")} className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 ${view === "projects" ? "bg-(--color-app-panel) font-medium" : "text-(--color-app-muted)"}`}><FolderTree size={12} />{t("sidebar.projects")}</button>
         </div>
+        {view === "groups" && <div className="mb-2">
+          <button type="button" onClick={() => setGroupDialogOpen(true)} className="w-full rounded-lg border border-dashed border-(--color-app-border) px-2 py-1.5 text-left text-xs text-(--color-app-muted) hover:bg-(--color-app-bubble)">新建分组</button>
+          {groupDialogOpen && <form className="mt-1 flex gap-1" onSubmit={(event) => {
+            event.preventDefault();
+            const name = newGroupName.trim();
+            if (!name) return;
+            void sidebar.upsertSidebarGroup({ id: `group_${Date.now().toString(36)}`, name, collapsed: false, sessionIds: [] });
+            setNewGroupName("");
+            setGroupDialogOpen(false);
+          }}>
+            <input aria-label="分组名称" autoFocus value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-(--color-app-border) bg-(--color-app-panel) px-2 py-1 text-xs outline-none focus:border-(--color-app-accent)" />
+            <button type="submit" aria-label="保存分组" disabled={!newGroupName.trim()} className="rounded-lg bg-(--color-app-accent) px-2 py-1 text-xs text-(--color-app-accent-fg) disabled:opacity-40">保存</button>
+          </form>}
+        </div>}
         <input ref={filterRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.filter")} className="mb-2 w-full rounded-full border border-transparent bg-(--color-app-bubble) px-3.5 py-1.5 text-xs outline-none focus:border-(--color-app-accent)" />
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={headerIds} strategy={verticalListSortingStrategy}>
-            {tree.map((node) => <TreeNode key={node.id} node={node} sessions={byId} archived={sidebar.state.archived} activeId={activeId} statuses={sessionStatuses} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} onCollapse={(collapsed) => node.kind === "group" ? void sidebar.setSidebarGroupCollapsed(node.id, collapsed) : onToggleProject?.(node.id)} dndDisabled={filterActive} deleteLabel={t("sidebar.delete")} />)}
+            {tree.map((node) => <TreeNode key={node.id} node={node} sessions={byId} archived={sidebar.state.archived} activeId={activeId} statuses={sessionStatuses} onSelect={onSelect} onNew={onNew} onNewInGroup={onNewInGroup} onDelete={onDelete} onArchive={onArchive} onCollapse={(collapsed) => node.kind === "group" ? void sidebar.setSidebarGroupCollapsed(node.id, collapsed) : onToggleProject?.(node.id)} dndDisabled={filterActive} deleteLabel={t("sidebar.delete")} />)}
           </SortableContext>
         </DndContext>
         {tree.length === 0 && <div className="px-2 py-3 text-center text-xs text-(--color-app-muted)">{t("sidebar.empty")}</div>}
@@ -125,10 +142,11 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
   );
 }
 
-function TreeNode({ node, sessions, archived, activeId, statuses, onSelect, onDelete, onArchive, onCollapse, dndDisabled, deleteLabel }: { node: SidebarTreeNode; sessions: ReadonlyMap<string, Session>; archived: Readonly<Record<string, boolean>>; activeId: string | null; statuses: ReadonlyMap<string, SidebarSessionStatus>; onSelect: (id: string) => void; onDelete: (id: string) => void; onArchive: (id: string) => void; onCollapse: (collapsed: boolean) => void; dndDisabled: boolean; deleteLabel: string }): React.JSX.Element {
+function TreeNode({ node, sessions, archived, activeId, statuses, onSelect, onNew, onNewInGroup, onDelete, onArchive, onCollapse, dndDisabled, deleteLabel }: { node: SidebarTreeNode; sessions: ReadonlyMap<string, Session>; archived: Readonly<Record<string, boolean>>; activeId: string | null; statuses: ReadonlyMap<string, SidebarSessionStatus>; onSelect: (id: string) => void; onNew: () => void; onNewInGroup?: (groupId: string) => void; onDelete: (id: string) => void; onArchive: (id: string) => void; onCollapse: (collapsed: boolean) => void; dndDisabled: boolean; deleteLabel: string }): React.JSX.Element {
   const headerId = `header:${node.id}`;
   const sortable = useSortable({ id: headerId, disabled: dndDisabled || node.kind === "ungrouped" });
   const drop = useDroppable({ id: node.kind === "ungrouped" ? "container:ungrouped" : headerId, disabled: dndDisabled });
+  const emptyGroupDrop = useDroppable({ id: `container:group:${node.id}`, disabled: dndDisabled || node.kind !== "group" || node.sessionIds.length > 0 });
   const collapsed = node.kind !== "ungrouped" && node.collapsed;
   const containerLabel = node.kind === "ungrouped" ? "container:ungrouped" : headerId;
   const collapseLabel = collapsed
@@ -140,7 +158,7 @@ function TreeNode({ node, sessions, archived, activeId, statuses, onSelect, onDe
       {node.kind !== "ungrouped" && <button type="button" onClick={() => onCollapse(!collapsed)} aria-label={collapseLabel}><ChevronRight size={14} className={collapsed ? "" : "rotate-90"} /></button>}
       <span className="truncate font-medium" data-container-id={containerLabel}>{node.name}</span><span className="ml-auto text-[10px] text-(--color-app-muted)">{node.sessionIds.length}</span>
     </div>
-    {!collapsed && <ul className="ml-[13px] space-y-0.5 border-l border-(--color-app-border) pl-2"><SortableContext items={node.sessionIds.map((id) => `session:${id}`)} strategy={verticalListSortingStrategy}>{node.sessionIds.map((id) => { const session = sessions.get(id); return session ? <SessionRow key={id} session={session} active={id === activeId} status={statuses.get(id)} archived={archived[id] === true} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} dndDisabled={dndDisabled} deleteLabel={deleteLabel} /> : null; })}</SortableContext></ul>}
+    {!collapsed && <ul className="ml-[13px] space-y-0.5 border-l border-(--color-app-border) pl-2"><SortableContext items={node.sessionIds.map((id) => `session:${id}`)} strategy={verticalListSortingStrategy}>{node.sessionIds.map((id) => { const session = sessions.get(id); return session ? <SessionRow key={id} session={session} active={id === activeId} status={statuses.get(id)} archived={archived[id] === true} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} dndDisabled={dndDisabled} deleteLabel={deleteLabel} /> : null; })}</SortableContext>{node.kind === "group" && node.sessionIds.length === 0 && <li ref={emptyGroupDrop.setNodeRef} className="rounded-lg border border-dashed border-(--color-app-border) px-2 py-2 text-xs text-(--color-app-muted)"><button type="button" aria-label={`在 ${node.name} 中新建任务`} onClick={() => { if (onNewInGroup) onNewInGroup(node.id); else onNew(); }} className="text-left hover:text-(--color-app-text)">新建任务</button><div role="button" aria-label={`拖放到 ${node.name}`} tabIndex={0} className="mt-1">或拖放到这里…</div></li>}</ul>}
   </section>;
 }
 

@@ -50,6 +50,9 @@ export function resolveSidebarDrag(
     target = containerForSession(state, view, beforeId);
   } else if (overId === "container:ungrouped" && view === "groups") {
     target = { kind: "ungrouped" };
+  } else if (overId.startsWith("container:group:") && view === "groups") {
+    const groupId = overId.slice("container:group:".length);
+    if (state.groups.some((group) => group.id === groupId)) target = { kind: "group", groupId };
   } else if (overId.startsWith("header:") && view === "groups") {
     const groupId = overId.slice(7);
     if (state.groups.some((group) => group.id === groupId)) target = { kind: "group", groupId };

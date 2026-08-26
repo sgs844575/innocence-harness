@@ -142,18 +142,18 @@ describe("dependency and host boundary declarations", () => {
     expect(manifest.dependencies?.["@dnd-kit/utilities"]).toBe("^3.2.2");
   });
 
-  it("declares the host tracing test import and retains the runtime adapter ownership", async () => {
+  it("keeps the Node trace adapter in the host and outside staged runtime dependencies", async () => {
     const [rootManifest, runtimeManifest, hostTelemetryTest, nodeAdapter] = await Promise.all([
       readManifest("package.json"),
       readManifest("packages/harness-ai-runtime/package.json"),
       readSource("src/main/telemetry.test.ts"),
-      readSource("packages/harness-ai-runtime/src/node-trace-adapter.ts"),
+      readSource("src/main/nodeTraceAdapter.ts"),
     ]);
 
     expect(hostTelemetryTest).toContain('from "@opentelemetry/sdk-trace-node"');
     expect(rootManifest.devDependencies?.["@opentelemetry/sdk-trace-node"]).toBe("^2.6.0");
     expect(nodeAdapter).toContain('from "@opentelemetry/sdk-trace-node"');
-    expect(runtimeManifest.dependencies?.["@opentelemetry/sdk-trace-node"]).toBe("2.6.0");
+    expect(runtimeManifest.dependencies?.["@opentelemetry/sdk-trace-node"]).toBeUndefined();
   });
 
   it("keeps provider SDK and node trace imports out of renderer, shared, and task sources", async () => {

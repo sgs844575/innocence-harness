@@ -1,6 +1,7 @@
 // Transcript DECODING half of the codec (see transcript.ts for the record
 // types and encoders). Split by responsibility: this module canonicalizes
 // message/part shapes and folds JSONL rows into history + the route map.
+import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message, MessagePart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { LegacyTurnRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
 
@@ -12,9 +13,50 @@ import type { LegacyTurnRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } fr
  */
 export interface DecodedMessage extends Message {
   readonly preservedParts?: readonly Record<string, unknown>[];
+  /** Sanitized completion attached to the final assistant block of its turn. */
+  readonly completion?: TurnCompletion;
 }
 
 const KNOWN_PART_TYPES: ReadonlySet<string> = new Set(["text", "thinking", "toolCall", "toolResult"]);
+const FINISH_REASONS = new Set(["stop", "length", "content-filter", "tool-calls", "error", "aborted", "other"]);
+const USAGE_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "reasoningTokens", "cachedInputTokens"] as const;
+
+/** Reads only the neutral completion DTO; raw provider data is never hydrated. */
+function sanitizeCompletion(raw: unknown): TurnCompletion | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.finishReason !== "string" || !FINISH_REASONS.has(value.finishReason) || typeof value.aborted !== "boolean") {
+    return undefined;
+  }
+  const usageSource = value.usage;
+  const usage = typeof usageSource === "object" && usageSource !== null && !Array.isArray(usageSource)
+    ? Object.fromEntries(USAGE_FIELDS.flatMap((field) => {
+      const count = (usageSource as Record<string, unknown>)[field];
+      return typeof count === "number" ? [[field, count]] : [];
+    }))
+    : undefined;
+  return {
+    ...(typeof value.providerId === "string" ? { providerId: value.providerId } : {}),
+    ...(typeof value.modelId === "string" ? { modelId: value.modelId } : {}),
+    ...(usage && Object.keys(usage).length > 0 ? { usage } : {}),
+    finishReason: value.finishReason as TurnCompletion["finishReason"],
+    aborted: value.aborted,
+    ...(typeof value.responseId === "string" ? { responseId: value.responseId } : {}),
+  };
+}
+
+/** Associates a turn's safe completion with the last assistant block only. */
+function attachCompletion(messages: DecodedMessage[], completion: TurnCompletion | undefined): DecodedMessage[] {
+  if (!completion) return messages;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "assistant") {
+      messages[index] = { ...message, completion };
+      break;
+    }
+  }
+  return messages;
+}
 
 function isKnownPart(raw: unknown): raw is MessagePart {
   if (typeof raw !== "object" || raw === null) return false;
@@ -227,7 +269,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       if (seenTurnIds.has(record.turnId)) continue;
       seenTurnIds.add(record.turnId);
       routeOf(routes, MAIN_ROUTE, null).turnIds.push(record.turnId);
-      history.push(...canonicalizeHistory(record.messages));
+      history.push(...attachCompletion(canonicalizeHistory(record.messages), sanitizeCompletion(record.completion)));
       continue;
     }
 
@@ -240,7 +282,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       seenTurnIds.add(v3Record.turnId);
       routeOf(routes, v3Record.routeId, v3Record.parentTurnId).turnIds.push(v3Record.turnId);
       if (v3Record.routeId === MAIN_ROUTE) {
-        history.push(...canonicalizeHistory(v3Record.messages));
+        history.push(...attachCompletion(canonicalizeHistory(v3Record.messages), sanitizeCompletion(v3Record.completion)));
       }
       continue;
     }

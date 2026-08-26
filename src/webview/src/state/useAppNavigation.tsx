@@ -67,6 +67,7 @@ export function useAppNavigation({
           sessionStatuses={sessionStatuses}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}
           onNew={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
+          onNewInGroup={(groupId) => { nav.closeDrawerOnNavigate(); sessions.newSession(groupId); }}
           onDelete={(id) => void sessions.deleteSession(id)}
           onArchive={(id) => void sidebarState.archiveSession(id, !sidebarState.state.archived[id])}
           onOpenSettings={nav.openSettings}

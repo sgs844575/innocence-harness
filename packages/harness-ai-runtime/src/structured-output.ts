@@ -121,7 +121,7 @@ function hasCause(error: unknown, matches: (value: unknown) => boolean): boolean
 
 export const AutomationCandidateSchema = z.object({
   trigger: z.object({
-    kind: z.enum(["schedule", "event", "manual"]),
+    kind: z.enum(["schedule", "idle", "manual"]),
     expression: z.string().min(1),
   }),
   actions: z.array(z.object({
