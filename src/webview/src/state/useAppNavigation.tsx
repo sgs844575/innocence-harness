@@ -14,6 +14,7 @@ import type { SessionController } from "./useSessionController";
 import { useSidebarState } from "./useSidebarState";
 import { api } from "../lib/ipc";
 import { reduceSidebarSessionStatuses, subscribeSidebarSessionStatus, type SidebarSessionStatus } from "./sidebarSessionStatus";
+import logoUrl from "../../../../logo.svg";
 
 export function useAppNavigation({
   t,
@@ -75,6 +76,8 @@ export function useAppNavigation({
           onDelete={(id) => void sessions.deleteSession(id)}
           onArchive={(id) => void sidebarState.archiveSession(id, !sidebarState.state.archived[id])}
           onOpenSettings={nav.openSettings}
+          onAutomation={nav.openAutomation}
+          onPlugins={() => { nav.openSettings(); nav.selectSection("plugins"); }}
         />
       ),
     [t, sessions, sidebarState, sessionStatuses],
@@ -85,6 +88,7 @@ export function useAppNavigation({
         <SettingsRail t={t} section={nav.section} onSelect={nav.selectSection} onBack={nav.backToChat} />
       ) : (
         <NavRail
+          logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: nav.expandNav }}
           top={{ icon: MessageSquarePlus, label: t("sidebar.nav.newChat"), onClick: () => { nav.closeDrawerOnNavigate(); sessions.newSession(); } }}
           items={[{ icon: PanelLeftOpen, label: t("sidebar.open"), onClick: nav.expandNav }]}
           bottom={{ icon: SettingsIcon, label: t("sidebar.settings"), onClick: nav.openSettings }}

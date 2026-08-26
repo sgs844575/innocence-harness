@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "../../../../shared/ipc";
 import type { SidebarStateController } from "../../state/useSidebarState";
+import logoUrl from "../../../../../logo.svg";
+import { NavRail } from "../NavRail";
 import { Sidebar } from "../Sidebar";
 
 const sessions: Session[] = [
@@ -35,7 +37,41 @@ function controller(): SidebarStateController {
 
 const t = (key: string) => key;
 
+afterEach(cleanup);
+
 describe("Sidebar archive and session statuses", () => {
+  it("loads the repository logo asset in the expanded sidebar", () => {
+    render(<Sidebar t={t} appName="InnocenceHarness" sessions={sessions} activeId={null} sidebar={controller()} onSelect={() => {}} onNew={() => {}} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} />);
+    const logo = screen.getByRole("img", { name: "InnocenceHarness Logo" });
+    expect(decodeURIComponent(logo.getAttribute("src") ?? "")).toContain("polyline points='38,42 62,64 38,86'");
+  });
+
+  it("routes compact navigation actions through injected commands", () => {
+    const onNew = vi.fn();
+    const onSearch = vi.fn();
+    const onAutomation = vi.fn();
+    const onPlugins = vi.fn();
+    render(<Sidebar t={t} appName="App" sessions={sessions} activeId={null} sidebar={controller()} onSelect={() => {}} onNew={onNew} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} onSearch={onSearch} onAutomation={onAutomation} onPlugins={onPlugins} />);
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.nav.newChat" }));
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.nav.search" }));
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.nav.automation" }));
+    fireEvent.click(screen.getByRole("button", { name: "sidebar.nav.plugins" }));
+    expect(onNew).toHaveBeenCalledOnce();
+    expect(onSearch).toHaveBeenCalledOnce();
+    expect(onAutomation).toHaveBeenCalledOnce();
+    expect(onPlugins).toHaveBeenCalledOnce();
+  });
+
+  it("loads the same repository logo asset in the icon rail", () => {
+    const onLogoClick = vi.fn();
+    render(<NavRail logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: onLogoClick }} items={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "InnocenceHarness Logo" }));
+    expect(onLogoClick).toHaveBeenCalledOnce();
+    const logo = screen.getByRole("button", { name: "InnocenceHarness Logo" }).querySelector("img");
+    expect(logo).not.toBeNull();
+    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).toContain("polyline points='38,42 62,64 38,86'");
+  });
+
   it("excludes archived sessions from the active tree, expands recovery, and restores by id", () => {
     const sidebar = controller();
     const onArchive = vi.fn();

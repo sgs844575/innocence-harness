@@ -13,6 +13,7 @@ export interface RailItem {
 }
 
 interface Props {
+  logo?: { src: string; alt: string; onClick?: () => void };
   top?: RailItem;
   items: RailItem[];
   bottom?: RailItem;
@@ -37,9 +38,14 @@ function RailButton({ icon: Icon, label, onClick, active }: RailItem): React.JSX
   );
 }
 
-export function NavRail({ top, items, bottom }: Props): React.JSX.Element {
+export function NavRail({ logo, top, items, bottom }: Props): React.JSX.Element {
   return (
     <div className="flex h-full w-full flex-col items-center gap-1 px-1.5 py-2">
+      {logo && (
+        <button type="button" aria-label={logo.alt} onClick={logo.onClick} className="grid size-9 place-items-center rounded-xl hover:bg-(--color-app-bubble)">
+          <img src={logo.src} alt="" className="size-7 rounded-md" />
+        </button>
+      )}
       {top && <RailButton {...top} />}
       <div className="mx-auto my-1 h-px w-6 bg-(--color-app-hairline)" />
       <div className="flex flex-col items-center gap-1">

@@ -3,6 +3,7 @@ import type { ChatMessage } from "../../../shared/ipc";
 import { messageText } from "../../../shared/ipc";
 import type { ValidationResult } from "../../../shared/taskIpc";
 import { MessageFrame } from "./chat/MessageFrame";
+import { CompletionMetadata } from "./chat/CompletionMetadata";
 import { TaskChangeCard } from "./task/TaskChangeCard";
 import type { TaskChangeSummary } from "./task/taskViewModel";
 
@@ -54,6 +55,7 @@ export function MessageItem({
   return (
     <div className="group">
       <MessageFrame parts={message.parts} streaming={message.streaming === true} isLatest={isLatest} t={t} onQuote={onQuote} />
+      <CompletionMetadata completion={message.completion} />
       {taskChange && (
         <div className="mt-2">
           <TaskChangeCard

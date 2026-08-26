@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ReviewPanel } from "../components/task/ReviewPanel";
 import { RoutePanel } from "../components/task/RoutePanel";
 import { CodePanel } from "../components/code/CodePanel";
-import { TerminalPanel } from "../components/terminal/TerminalPanel";
+import { TerminalPanel, type TerminalActivitySummary } from "../components/terminal/TerminalPanel";
 import { RecoveryBanner } from "../components/RecoveryBanner";
 import { codeApi, terminalApi } from "../lib/ipc";
 import { groupHunksByFile } from "../components/task/taskViewModel";
@@ -15,10 +15,12 @@ export function useWorkbenchPresentation({
   t,
   workbench,
   reviewData,
+  onTerminalActivityChange,
 }: {
   t: (key: string) => string;
   workbench: WorkbenchStateController;
   reviewData: TaskReviewDataController;
+  onTerminalActivityChange?: (activity: TerminalActivitySummary) => void;
 }): { workbenchPanels: Record<string, ReactNode>; banner: ReactNode } {
   const task = workbench.state.task;
   const reviewFiles = useMemo(() => groupHunksByFile(reviewData.hunks), [reviewData.hunks]);
@@ -67,9 +69,9 @@ export function useWorkbenchPresentation({
           api={codeApi}
         />
       ),
-      terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} />,
+      terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} />,
     }),
-    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask],
+    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange],
   );
   const banner = useMemo(() => {
     const recovery = workbench.state.recovery;

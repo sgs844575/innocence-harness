@@ -22,12 +22,17 @@ import {
   type TerminalEntryState,
   type TerminalRouteRef,
 } from "./terminalState";
+import { useTerminalActivityProjection, type TerminalActivitySummary } from "./useTerminalActivityProjection";
+
+export type { TerminalActivitySummary } from "./useTerminalActivityProjection";
 
 export interface TerminalPanelProps {
   /** Typed terminal bridge (preload implements the same shape). */
   api: TerminalIpcApi;
   /** The active task route; switching it flags other terminals as 旧路线. */
   activeTask: TerminalRouteRef | null;
+  /** Presentation-only projection for the activity capsule. */
+  onActivityChange?: (activity: TerminalActivitySummary) => void;
   /** Panel collapse hook (the workbench owns open/close state). */
   onClose?: () => void;
 }
@@ -113,9 +118,10 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
   return <div ref={hostRef} className={visible ? "absolute inset-0" : "hidden"} />;
 }
 
-export function TerminalPanel({ api, activeTask, onClose }: TerminalPanelProps): React.JSX.Element {
+export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: TerminalPanelProps): React.JSX.Element {
   const [collection, setCollection] = useState<TerminalCollectionState>(emptyTerminalState);
   const [createError, setCreateError] = useState<string | null>(null);
+  useTerminalActivityProjection(collection, onActivityChange);
 
   // xterm frontends + output that arrived before a frontend mounted.
   const termsRef = useRef(new Map<string, Terminal>());

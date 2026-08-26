@@ -11,12 +11,13 @@ import type { WorkbenchTabId } from "./workbench/WorkbenchTabs";
 import { useMediaQuery } from "../lib/useMediaQuery";
 
 export interface AppShellNav {
-  view: "chat" | "settings";
+  view: "chat" | "settings" | "automation";
   section: SettingsSection;
   isWide: boolean;
   /** 标题栏折叠按钮当前语义下的侧栏开合（宽屏 = 整列，其余 = 抽屉）。 */
   sidebarOpen: boolean;
   openSettings: () => void;
+  openAutomation: () => void;
   backToChat: () => void;
   selectSection: (section: SettingsSection) => void;
   toggleSidebar: () => void;
@@ -37,6 +38,8 @@ export interface AppShellProps {
   rail: (nav: AppShellNav) => React.ReactNode;
   /** 聊天主列（WorkbenchShell 内部）。 */
   chat: React.ReactNode;
+  /** 自动化 presentation surface；业务状态仍由未来 capability 注入。 */
+  automation?: React.ReactNode;
   /** 设置主列（渲染属性：section 归 AppShell）；null = 未加载设置。 */
   settings: (nav: AppShellNav) => React.ReactNode | null;
   /** 辅助面板各页签内容。 */
@@ -55,13 +58,14 @@ export function AppShell({
   sidebar,
   rail,
   chat,
+  automation,
   settings,
   panels,
   banner,
   toast,
   bindNav,
 }: AppShellProps): React.JSX.Element {
-  const [view, setView] = useState<"chat" | "settings">("chat");
+  const [view, setView] = useState<"chat" | "settings" | "automation">("chat");
   const [section, setSection] = useState<SettingsSection>("models");
 
   const isWide = useMediaQuery("(min-width: 1024px)");
@@ -82,6 +86,11 @@ export function AppShell({
 
   const openSettings = useCallback(() => {
     setView("settings");
+    closeDrawerOnNavigate();
+  }, [closeDrawerOnNavigate]);
+
+  const openAutomation = useCallback(() => {
+    setView("automation");
     closeDrawerOnNavigate();
   }, [closeDrawerOnNavigate]);
 
@@ -111,6 +120,7 @@ export function AppShell({
     isWide,
     sidebarOpen: isWide ? !railMode : drawerOpen,
     openSettings,
+    openAutomation,
     backToChat,
     selectSection,
     toggleSidebar,
@@ -145,6 +155,8 @@ export function AppShell({
         <main className="min-w-0 flex-1 overflow-hidden bg-(--color-app-panel)">
           {inSettings && settingsNode !== null ? (
             settingsNode
+          ) : view === "automation" && automation ? (
+            automation
           ) : (
             <WorkbenchShell
               open={workbench.open}

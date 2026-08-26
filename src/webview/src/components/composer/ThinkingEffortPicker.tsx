@@ -31,6 +31,7 @@ export function ThinkingEffortPicker({
         <button
           type="button"
           aria-label={t("reasoning.effort")}
+          data-thinking-label={label}
           className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] hover:bg-(--color-app-bubble)"
         >
           <BrainCircuit size={13} className="shrink-0 text-(--color-app-accent)" />

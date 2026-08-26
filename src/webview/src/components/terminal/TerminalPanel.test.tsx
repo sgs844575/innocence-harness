@@ -160,6 +160,15 @@ describe("TerminalPanel", () => {
     api = fakeTerminalApi();
   });
 
+  it("projects real terminal activity through the presentation callback", async () => {
+    const onActivityChange = vi.fn();
+    const { unmount } = render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} onActivityChange={onActivityChange} />);
+    await screen.findByRole("tab", { name: /main/ });
+    await waitFor(() => expect(onActivityChange).toHaveBeenLastCalledWith(expect.objectContaining({ backgroundTasks: 1 })));
+    unmount();
+    expect(onActivityChange).toHaveBeenLastCalledWith({ durationMs: 0, backgroundTasks: 0 });
+  });
+
   it("auto-creates a terminal for the active route and renders its tab", async () => {
     render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />);
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ taskId: "t1", routeId: "main" }));

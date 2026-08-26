@@ -12,6 +12,7 @@ import { api, taskApi } from "./lib/ipc";
 import { createT } from "./lib/i18n";
 import { TitleBar } from "./components/TitleBar";
 import { ChatView } from "./components/ChatView";
+import { AutomationView } from "./components/AutomationView";
 
 import { AppShell, type AppShellNav } from "./components/AppShell";
 import { BuiltinToolcards } from "./components/chat/toolcards/builtinToolcards";
@@ -20,14 +21,14 @@ import { BuiltinSettingsSections } from "./components/settings/builtinSettingsSe
 import { SlotProvider } from "./slots/react";
 import { createSlotRegistry } from "./slots/registry";
 import { ForkRouteDialog } from "./components/task/ForkRouteDialog";
-import type { ForkMessageCommand, TaskChangeCardCommand } from "./components/MessageItem";
-import { summarizeChanges } from "./components/task/taskViewModel";
+import type { ForkMessageCommand } from "./components/MessageItem";
 import { useSessionController } from "./state/useSessionController";
 import { useChatStream } from "./state/useChatStream";
 import { useWorkbenchState } from "./state/useWorkbenchState";
 import { useTaskReviewData } from "./state/useTaskReviewData";
 import { usePluginClients } from "./state/usePluginClients";
 import { useWorkbenchPresentation } from "./state/useWorkbenchPresentation";
+import { useChatWorkspacePresentation } from "./state/useChatWorkspacePresentation";
 import { useAppNavigation } from "./state/useAppNavigation";
 import { writeToolsBlocked } from "./state/workbenchState";
 import { createSettingsCommitter } from "./state/settingsCommitter";
@@ -109,11 +110,20 @@ export function App(): React.JSX.Element {
     taskId: task?.taskId ?? "",
     routeId: workbench.state.activeRouteId,
   });
-  const { workbenchPanels, banner } = useWorkbenchPresentation({ t, workbench, reviewData });
+  const [terminalActivity, setTerminalActivity] = useState({ durationMs: 0, backgroundTasks: 0 });
+  const { workbenchPanels, banner } = useWorkbenchPresentation({
+    t,
+    workbench,
+    reviewData,
+    onTerminalActivityChange: setTerminalActivity,
+  });
 
   const openReviewPanel = useCallback(() => {
     shellNav.current?.workbench.setTab("review");
     shellNav.current?.workbench.setOpen(true);
+  }, []);
+  const openTerminalPanel = useCallback(() => {
+    shellNav.current?.workbench.openTerminal();
   }, []);
 
   // 分叉入口（C3）：消息操作 → ForkRouteDialog → task:fork-route；创建成功
@@ -147,22 +157,19 @@ export function App(): React.JSX.Element {
     t,
     sendGate,
   });
-
-  // 消息内变更卡（C3）：任务的变更摘要挂在最后一条助手消息上；点击
-  // 「审查」打开工作台审查页签。
-  const taskChanges = useMemo<Record<string, TaskChangeCardCommand> | undefined>(() => {
-    const lastAssistant = [...chat.messages].reverse().find((m) => m.role === "assistant");
-    if (!task || !lastAssistant || reviewData.hunks.length === 0) return undefined;
-    const checkpointId =
-      task.routes.find((route) => route.routeId === workbench.state.activeRouteId)?.checkpointId ?? "";
-    return {
-      [lastAssistant.id]: {
-        summary: summarizeChanges(reviewData.hunks),
-        checkpointId,
-        validation: null,
-      },
-    };
-  }, [task, chat.messages, reviewData.hunks, workbench.state.activeRouteId]);
+  const workspacePresentation = useChatWorkspacePresentation({
+    messages: chat.messages,
+    streaming: chat.streaming,
+    task,
+    activeRouteId: workbench.state.activeRouteId,
+    hunks: reviewData.hunks,
+    changedFiles: reviewData.changedFiles,
+    terminal: terminalActivity,
+    agentName: settings?.activeAgent ?? "default",
+    onCompare: openReviewPanel,
+    onOpenProcess: openReviewPanel,
+    onOpenTerminal: openTerminalPanel,
+  });
 
   const handleForkSwitched = useCallback(
     async (routeId: string, prompt: string) => {
@@ -187,10 +194,8 @@ export function App(): React.JSX.Element {
 
   // TitleBar 状态簇：项目取当前会话（回落全局工作区）；路线与 Git branch
   // 来自任务上下文的真实 DTO（无任务时隐藏）。
-  const workspaceRoot =
-    sessions.sessions.find((s) => s.id === sessions.activeId)?.workspaceRoot ??
-    settings?.workspaceRoot ??
-    "";
+  const activeSession = sessions.sessions.find((session) => session.id === sessions.activeId);
+  const workspaceRoot = activeSession?.workspaceRoot ?? settings?.workspaceRoot ?? "";
   const projectName =
     workspaceRoot === "" ? "" : (workspaceRoot.split(/[\\/]/).filter(Boolean).pop() ?? "");
 
@@ -245,10 +250,15 @@ export function App(): React.JSX.Element {
         banner={banner}
         toast={error}
         panels={workbenchPanels}
+        automation={<AutomationView onBack={() => shellNav.current?.backToChat()} />}
         chat={
           <ChatView
             t={t}
             appName={APP_NAME}
+            taskTitle={activeSession?.title}
+            projectName={projectName}
+            gitBranch={task?.gitBranch ?? null}
+            activity={workspacePresentation.activity}
             messages={chat.messages}
             streaming={chat.streaming}
             settings={settings}
@@ -262,7 +272,7 @@ export function App(): React.JSX.Element {
             onPickProject={sessions.setPendingProject}
             recentProjects={sessions.recentProjects}
             onOpenProjectDir={() => void sessions.pickProjectDir()}
-            taskChanges={taskChanges}
+            taskChanges={workspacePresentation.taskChanges}
             onOpenTaskReview={openReviewPanel}
             onForkMessage={handleForkMessage}
           />

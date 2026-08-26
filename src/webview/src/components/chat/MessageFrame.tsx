@@ -6,6 +6,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { TurnCollapse } from "./TurnCollapse";
 import { WorkingRow, workingStateOf } from "./WorkingRow";
 import { coalesceToolSegments, segmentParts } from "./segmentParts";
+import logoUrl from "../../../../../logo.svg";
 
 interface Props {
   parts: MessagePart[];
@@ -28,7 +29,7 @@ export function MessageFrame({ parts, streaming, isLatest, t, onQuote }: Props):
   return (
     <div className="group/msg">
       <div className="mb-1 flex items-center gap-2">
-        <span className="grid size-5 place-items-center rounded-full border border-(--color-app-border) font-mono text-[10px] font-bold text-(--color-app-accent)">&gt;_</span>
+        <img src={logoUrl} alt="" className="size-5 rounded-md" />
         <span className="text-xs font-medium text-(--color-app-muted)">InnocenceHarness</span>
         <div className={`ml-auto flex items-center gap-3 text-[11px] text-(--color-app-muted) transition-opacity duration-150 ${isLatest ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"}`}>
           <button type="button" onClick={copy} className="flex items-center gap-1 hover:text-(--color-app-text)">

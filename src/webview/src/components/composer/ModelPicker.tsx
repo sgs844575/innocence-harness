@@ -9,18 +9,20 @@ interface Props {
   settings: HarnessSettings;
   activeProfileId: string;
   activeModel: string;
+  showProvider?: boolean;
   onSelect: (profileId: string, modelId: string) => void;
 }
 
 /** 二级模型选择器：厂家列 → 模型列；chip 只显示模型名。 */
-export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }: Props): React.JSX.Element {
+export function ModelPicker({ settings, activeProfileId, activeModel, showProvider = false, onSelect }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(activeProfileId);
   const profiles = useMemo(() => filterProfiles(settings, query), [settings, query]);
   const current = profiles.find((p) => p.id === focused) ?? profiles[0];
-  const activeModelInfo = settings.profiles
-    .find((p) => p.id === activeProfileId)?.models.find((m) => m.id === activeModel);
-  const label = activeModelInfo?.name ?? activeModel;
+  const activeProfile = settings.profiles.find((profile) => profile.id === activeProfileId);
+  const activeModelInfo = activeProfile?.models.find((model) => model.id === activeModel);
+  const modelLabel = activeModelInfo?.name ?? activeModel;
+  const label = showProvider && activeProfile ? `${activeProfile.name} / ${modelLabel}` : modelLabel;
 
   return (
     <Popover

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Plus, Square, ArrowUp } from "lucide-react";
+import { Plus, Square, ArrowUp, Files } from "lucide-react";
 import {
   MOCK_MODEL,
   MOCK_PROFILE_ID,
@@ -14,6 +14,14 @@ import { useCommandK } from "./composer/useCommandK";
 
 interface Props {
   t: (key: string) => string;
+  /** landing shows project selection and contextual input guidance; existing is compact follow-up mode. */
+  mode?: "landing" | "existing";
+  contextCount?: number;
+  contentMaxWidth?: number;
+  contentGutter?: number;
+  frameMaxWidth?: number;
+  companionWidth?: number;
+  companionGap?: number;
   streaming: boolean;
   settings: HarnessSettings | null;
   onSettingsChange: (patch: Partial<HarnessSettings>) => void;
@@ -28,6 +36,13 @@ interface Props {
 
 export function Composer({
   t,
+  mode,
+  contextCount = 0,
+  contentMaxWidth,
+  contentGutter,
+  frameMaxWidth,
+  companionWidth = 0,
+  companionGap = 0,
   streaming,
   settings,
   onSettingsChange,
@@ -37,6 +52,10 @@ export function Composer({
   onConsumed,
   header,
 }: Props): React.JSX.Element {
+  const composerMode = mode ?? (header ? "landing" : "existing");
+  // Legacy callers without an explicit mode retain the old agent chip. Explicit
+  // task-7 modes follow the approved landing/existing control sets.
+  const legacyControls = mode === undefined;
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -85,10 +104,11 @@ export function Composer({
     : null;
 
   return (
-    <div className="shrink-0 px-[clamp(12px,3vw,24px)] pb-[clamp(10px,1.5vw,16px)]">
-      <div className="chat-column">
+    <div className="shrink-0 pb-[clamp(10px,1.5vw,16px)]" style={{ paddingInline: contentGutter }}>
+      <div className="mx-auto flex w-full items-end" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
+      <div data-testid="chat-composer" className="chat-column" style={{ maxWidth: contentMaxWidth }}>
         <div className="rounded-[18px] border border-(--color-app-border) bg-(--color-app-panel) shadow-(--shadow-card) transition-colors focus-within:border-(--color-app-accent)">
-          {header && <div className="px-2.5 pt-2.5">{header}</div>}
+          {composerMode === "landing" && header && <div className="px-2.5 pt-2.5">{header}</div>}
           <textarea
             ref={ref}
             value={value}
@@ -97,10 +117,16 @@ export function Composer({
               autosize(e.target);
             }}
             onKeyDown={onKeyDown}
-            placeholder={t("chat.placeholder")}
+            placeholder={t(composerMode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
             rows={1}
             className="scrollbar-thin max-h-44 min-h-9 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
           />
+          {composerMode === "landing" && (
+            <div className="flex flex-wrap gap-x-2 px-3.5 pb-1 text-[10px] text-(--color-app-muted)">
+              <span>使用 @ 添加上下文</span>
+              <span>使用 / 选择命令或能力</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2 text-xs text-(--color-app-muted)">
             <button
               type="button"
@@ -114,6 +140,11 @@ export function Composer({
               value={settings?.permissionMode ?? "ask"}
               onChange={(mode) => onSettingsChange({ permissionMode: mode })}
             />
+            {composerMode === "existing" && (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-(--color-app-muted)" aria-label="上下文数量">
+                <Files size={12} />{contextCount}
+              </span>
+            )}
             <div className="flex-1" />
 
             {pickerSettings ? (
@@ -121,6 +152,7 @@ export function Composer({
                 settings={pickerSettings}
                 activeProfileId={pickerSettings.activeProfileId}
                 activeModel={pickerSettings.activeModel}
+                showProvider={composerMode === "existing"}
                 onSelect={(profileId, modelId) =>
                   onSettingsChange({ activeProfileId: profileId, activeModel: modelId })
                 }
@@ -135,17 +167,21 @@ export function Composer({
               </button>
             )}
 
-            <AgentPicker
-              t={t}
-              value={settings?.activeAgent ?? "default"}
-              onChange={(agent) => onSettingsChange({ activeAgent: agent })}
-            />
+            {legacyControls && (
+              <AgentPicker
+                t={t}
+                value={settings?.activeAgent ?? "default"}
+                onChange={(agent) => onSettingsChange({ activeAgent: agent })}
+              />
+            )}
 
-            <ThinkingEffortPicker
-              t={t}
-              value={settings?.reasoningEffort ?? ""}
-              onChange={(effort) => onSettingsChange({ reasoningEffort: effort })}
-            />
+            {(composerMode === "existing" || legacyControls) && (
+              <ThinkingEffortPicker
+                t={t}
+                value={settings?.reasoningEffort ?? ""}
+                onChange={(effort) => onSettingsChange({ reasoningEffort: effort })}
+              />
+            )}
 
             {streaming ? (
               <button
@@ -169,6 +205,8 @@ export function Composer({
             )}
           </div>
         </div>
+      </div>
+      {companionWidth > 0 && <div aria-hidden="true" className="shrink-0" style={{ width: companionWidth }} />}
       </div>
     </div>
   );
