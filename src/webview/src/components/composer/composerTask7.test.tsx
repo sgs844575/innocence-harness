@@ -35,12 +35,19 @@ describe("task 7 Composer states", () => {
     expect(screen.getByRole("button", { name: /Provider \/ model-1/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /reasoning\.effort/ })).toBeTruthy();
   });
-
   it("uses stop instead of send while streaming", () => {
     const onStop = vi.fn();
     render(<Composer t={t} mode="existing" streaming settings={settings} onSettingsChange={() => {}} onSend={() => {}} onStop={onStop} />);
     fireEvent.click(screen.getByRole("button", { name: "chat.stop" }));
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "chat.send" })).toBeNull();
+  });
+
+  it("reports zero real context and disables the unavailable attachment command", () => {
+    render(<Composer t={t} mode="existing" contextCount={0} streaming={false} settings={settings} onSettingsChange={() => {}} onSend={() => {}} onStop={() => {}} />);
+    expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
+    const attachment = screen.getByRole("button", { name: "添加附件" });
+    expect(attachment.hasAttribute("disabled")).toBe(true);
+    expect(attachment.getAttribute("aria-description")).toMatch(/当前会话不支持附件上下文/);
   });
 });

@@ -13,6 +13,7 @@ import { createT } from "./lib/i18n";
 import { TitleBar } from "./components/TitleBar";
 import { ChatView } from "./components/ChatView";
 import { AutomationView } from "./components/AutomationView";
+import { GlobalSearchDialog } from "./components/GlobalSearchDialog";
 
 import { AppShell, type AppShellNav } from "./components/AppShell";
 import { BuiltinToolcards } from "./components/chat/toolcards/builtinToolcards";
@@ -157,6 +158,15 @@ export function App(): React.JSX.Element {
     t,
     sendGate,
   });
+  const { sidebar, rail, settingsView, activeArchived } = useAppNavigation({
+    t,
+    sessions,
+    settings,
+    appInfo,
+    onSettingsChange: handleSettingsSet,
+    onPickWorkspace: () => void handlePickWorkspace(),
+  });
+
   const workspacePresentation = useChatWorkspacePresentation({
     messages: chat.messages,
     streaming: chat.streaming,
@@ -166,6 +176,8 @@ export function App(): React.JSX.Element {
     changedFiles: reviewData.changedFiles,
     terminal: terminalActivity,
     agentName: settings?.activeAgent ?? "default",
+    sessionStatus: activeArchived ? "archived" : chat.sessionStatus,
+    permissionPending: chat.permission !== null,
     onCompare: openReviewPanel,
     onOpenProcess: openReviewPanel,
     onOpenTerminal: openTerminalPanel,
@@ -198,15 +210,6 @@ export function App(): React.JSX.Element {
   const workspaceRoot = activeSession?.workspaceRoot ?? settings?.workspaceRoot ?? "";
   const projectName =
     workspaceRoot === "" ? "" : (workspaceRoot.split(/[\\/]/).filter(Boolean).pop() ?? "");
-
-  const { sidebar, rail, settingsView } = useAppNavigation({
-    t,
-    sessions,
-    settings,
-    appInfo,
-    onSettingsChange: handleSettingsSet,
-    onPickWorkspace: () => void handlePickWorkspace(),
-  });
 
   return (
     <SlotProvider registry={slotRegistry}>
@@ -250,6 +253,21 @@ export function App(): React.JSX.Element {
         banner={banner}
         toast={error}
         panels={workbenchPanels}
+        search={(nav) => (
+          <GlobalSearchDialog
+            open={nav.searchOpen}
+            onOpenChange={(open) => open ? nav.openSearch() : nav.closeSearch()}
+            sessions={sessions.sessions}
+            files={reviewData.files}
+            actions={[
+              { id: "new-task", label: "新建任务", onSelect: () => { nav.backToChat(); sessions.newSession(); } },
+              { id: "open-review", label: "打开审查", onSelect: openReviewPanel },
+              { id: "open-automation", label: "自动化", onSelect: nav.openAutomation },
+            ]}
+            onSelectSession={(id) => { nav.backToChat(); sessions.selectSession(id); }}
+            onSelectFile={() => { nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
+          />
+        )}
         automation={<AutomationView onBack={() => shellNav.current?.backToChat()} />}
         chat={
           <ChatView
@@ -274,6 +292,7 @@ export function App(): React.JSX.Element {
             onOpenProjectDir={() => void sessions.pickProjectDir()}
             taskChanges={workspacePresentation.taskChanges}
             onOpenTaskReview={openReviewPanel}
+            onOpenReview={openReviewPanel}
             onForkMessage={handleForkMessage}
           />
         }

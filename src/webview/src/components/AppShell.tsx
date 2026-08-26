@@ -18,6 +18,9 @@ export interface AppShellNav {
   sidebarOpen: boolean;
   openSettings: () => void;
   openAutomation: () => void;
+  openSearch: () => void;
+  closeSearch: () => void;
+  searchOpen: boolean;
   backToChat: () => void;
   selectSection: (section: SettingsSection) => void;
   toggleSidebar: () => void;
@@ -40,6 +43,8 @@ export interface AppShellProps {
   chat: React.ReactNode;
   /** 自动化 presentation surface；业务状态仍由未来 capability 注入。 */
   automation?: React.ReactNode;
+  /** Shell-level global search surface, fed by typed view models from the host composition. */
+  search?: (nav: AppShellNav) => React.ReactNode;
   /** 设置主列（渲染属性：section 归 AppShell）；null = 未加载设置。 */
   settings: (nav: AppShellNav) => React.ReactNode | null;
   /** 辅助面板各页签内容。 */
@@ -59,6 +64,7 @@ export function AppShell({
   rail,
   chat,
   automation,
+  search,
   settings,
   panels,
   banner,
@@ -66,6 +72,7 @@ export function AppShell({
   bindNav,
 }: AppShellProps): React.JSX.Element {
   const [view, setView] = useState<"chat" | "settings" | "automation">("chat");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [section, setSection] = useState<SettingsSection>("models");
 
   const isWide = useMediaQuery("(min-width: 1024px)");
@@ -95,6 +102,19 @@ export function AppShell({
   }, [closeDrawerOnNavigate]);
 
   const backToChat = useCallback(() => setView("chat"), []);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const selectSection = useCallback(
     (next: SettingsSection) => {
@@ -121,6 +141,9 @@ export function AppShell({
     sidebarOpen: isWide ? !railMode : drawerOpen,
     openSettings,
     openAutomation,
+    openSearch,
+    closeSearch,
+    searchOpen,
     backToChat,
     selectSection,
     toggleSidebar,
@@ -187,6 +210,8 @@ export function AppShell({
           </div>
         </div>
       )}
+
+      {search?.(nav)}
 
       {toast && (
         <div

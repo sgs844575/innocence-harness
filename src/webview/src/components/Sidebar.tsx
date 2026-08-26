@@ -45,6 +45,10 @@ interface Props {
   onSearch?: () => void;
   onAutomation?: () => void;
   onPlugins?: () => void;
+  view?: SidebarView;
+  collapsedProjectIds?: readonly string[];
+  onViewChange?: (view: SidebarView) => void;
+  onToggleProject?: (projectId: string) => void;
 }
 
 const NAV_ITEMS = [
@@ -54,14 +58,19 @@ const NAV_ITEMS = [
   { icon: Store, key: "sidebar.nav.plugins", action: "plugins" },
 ] as const;
 
-export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins }: Props): React.JSX.Element {
+export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<SidebarView>("projects");
+  const [uncontrolledView, setUncontrolledView] = useState<SidebarView>("projects");
+  const view = controlledView ?? uncontrolledView;
+  const setView = (next: SidebarView) => {
+    onViewChange?.(next);
+    if (controlledView === undefined) setUncontrolledView(next);
+  };
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
   const filterActive = query.trim().length > 0;
   const filtered = useMemo(() => filterActive ? sessions.filter((session) => session.title.toLowerCase().includes(query.trim().toLowerCase())) : sessions, [sessions, query, filterActive]);
-  const tree = useMemo(() => buildSidebarTree(filtered, sidebar.state, view, t("sidebar.noProject")), [filtered, sidebar.state, t, view]);
+  const tree = useMemo(() => buildSidebarTree(filtered, sidebar.state, view, t("sidebar.noProject"), collapsedProjectIds), [filtered, sidebar.state, t, view, collapsedProjectIds]);
   const byId = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
   const archivedSessions = useMemo(() => sidebar.state.order.map((id) => byId.get(id)).filter((session): session is Session => session !== undefined && sidebar.state.archived[session.id] === true), [sidebar.state, byId]);
   const headerIds = useMemo(() => tree.filter((node) => node.kind !== "ungrouped").map((node) => `header:${node.id}`), [tree]);
@@ -100,7 +109,7 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
         <input ref={filterRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.filter")} className="mb-2 w-full rounded-full border border-transparent bg-(--color-app-bubble) px-3.5 py-1.5 text-xs outline-none focus:border-(--color-app-accent)" />
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={headerIds} strategy={verticalListSortingStrategy}>
-            {tree.map((node) => <TreeNode key={node.id} node={node} sessions={byId} archived={sidebar.state.archived} activeId={activeId} statuses={sessionStatuses} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} onCollapse={(collapsed) => void sidebar.setSidebarGroupCollapsed(node.id, collapsed)} dndDisabled={filterActive} deleteLabel={t("sidebar.delete")} />)}
+            {tree.map((node) => <TreeNode key={node.id} node={node} sessions={byId} archived={sidebar.state.archived} activeId={activeId} statuses={sessionStatuses} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} onCollapse={(collapsed) => node.kind === "group" ? void sidebar.setSidebarGroupCollapsed(node.id, collapsed) : onToggleProject?.(node.id)} dndDisabled={filterActive} deleteLabel={t("sidebar.delete")} />)}
           </SortableContext>
         </DndContext>
         {tree.length === 0 && <div className="px-2 py-3 text-center text-xs text-(--color-app-muted)">{t("sidebar.empty")}</div>}
@@ -118,12 +127,15 @@ function TreeNode({ node, sessions, archived, activeId, statuses, onSelect, onDe
   const headerId = `header:${node.id}`;
   const sortable = useSortable({ id: headerId, disabled: dndDisabled || node.kind === "ungrouped" });
   const drop = useDroppable({ id: node.kind === "ungrouped" ? "container:ungrouped" : headerId, disabled: dndDisabled });
-  const collapsed = node.kind === "group" && node.collapsed;
+  const collapsed = node.kind !== "ungrouped" && node.collapsed;
   const containerLabel = node.kind === "ungrouped" ? "container:ungrouped" : headerId;
+  const collapseLabel = collapsed
+    ? `展开${node.kind === "project" ? "项目" : "分组"} ${node.name}`
+    : `折叠${node.kind === "project" ? "项目" : "分组"} ${node.name}`;
   return <section ref={drop.setNodeRef} className="mb-1">
     <div ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className="group flex items-center gap-1 rounded-xl px-1 py-1.5 text-sm">
       {node.kind !== "ungrouped" && <button type="button" {...sortable.attributes} {...sortable.listeners} aria-label="拖动" className="cursor-grab text-(--color-app-muted) opacity-0 group-hover:opacity-100 focus:opacity-100"><GripVertical size={13} /></button>}
-      {node.kind === "group" ? <button type="button" onClick={() => onCollapse(!collapsed)} aria-label={collapsed ? "展开分组" : "折叠分组"}><ChevronRight size={14} className={collapsed ? "" : "rotate-90"} /></button> : <span className="size-3" />}
+      {node.kind !== "ungrouped" && <button type="button" onClick={() => onCollapse(!collapsed)} aria-label={collapseLabel}><ChevronRight size={14} className={collapsed ? "" : "rotate-90"} /></button>}
       <span className="truncate font-medium" data-container-id={containerLabel}>{node.name}</span><span className="ml-auto text-[10px] text-(--color-app-muted)">{node.sessionIds.length}</span>
     </div>
     {!collapsed && <ul className="ml-[13px] space-y-0.5 border-l border-(--color-app-border) pl-2"><SortableContext items={node.sessionIds.map((id) => `session:${id}`)} strategy={verticalListSortingStrategy}>{node.sessionIds.map((id) => { const session = sessions.get(id); return session ? <SessionRow key={id} session={session} active={id === activeId} status={statuses.get(id)} archived={archived[id] === true} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} dndDisabled={dndDisabled} deleteLabel={deleteLabel} /> : null; })}</SortableContext></ul>}

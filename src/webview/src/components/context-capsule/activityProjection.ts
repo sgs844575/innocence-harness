@@ -1,5 +1,7 @@
 import type { ChatMessage } from "../../../../shared/ipc";
 
+export type AgentActivityStatus = "idle" | "running" | "waiting-permission" | "failed" | "archived";
+
 export interface ProcessActivity {
   completed: number;
   total: number;
@@ -13,12 +15,12 @@ export interface AgentActivityProjection {
     changedFiles: number;
     additions: number;
     deletions: number;
-    workspaceStatus: string;
+    workspaceKind: string;
     onCompare?: () => void;
   };
   process: ProcessActivity & { onOpen?: () => void };
   terminal: { durationMs: number; backgroundTasks: number; onOpen?: () => void };
-  agent: { name: string; status: string };
+  agent: { name: string; status: AgentActivityStatus };
 }
 
 interface TodoView {
@@ -26,14 +28,29 @@ interface TodoView {
   status: string;
 }
 
+function agentStatus(input: {
+  taskStatus?: string;
+  sessionStatus?: AgentActivityStatus;
+  permissionPending: boolean;
+  streaming: boolean;
+}): AgentActivityStatus {
+  if (input.sessionStatus === "archived" || input.taskStatus === "archived") return "archived";
+  if (input.permissionPending || input.sessionStatus === "waiting-permission") return "waiting-permission";
+  if (input.sessionStatus === "failed" || input.taskStatus === "checkpoint-failed" || input.taskStatus === "interrupted") return "failed";
+  if (input.streaming || input.sessionStatus === "running" || input.taskStatus === "running") return "running";
+  return "idle";
+}
+
 export function agentActivityFromWorkspace(input: {
-  task: { gitBranch: string | null; workspaceKind: string } | null;
+  task: { gitBranch: string | null; workspaceKind: string; status?: string } | null;
   changedFiles: readonly string[];
   changeSummary: { added: number; removed: number };
   process: ProcessActivity;
   terminal: { durationMs: number; backgroundTasks: number };
   agentName: string;
   streaming: boolean;
+  permissionPending?: boolean;
+  sessionStatus?: AgentActivityStatus;
   onCompare: () => void;
   onOpenProcess?: () => void;
   onOpenTerminal?: () => void;
@@ -44,12 +61,20 @@ export function agentActivityFromWorkspace(input: {
       changedFiles: input.changedFiles.length,
       additions: input.changeSummary.added,
       deletions: input.changeSummary.removed,
-      workspaceStatus: input.task?.workspaceKind ?? "local",
+      workspaceKind: input.task?.workspaceKind ?? "unknown",
       ...(input.task ? { onCompare: input.onCompare } : {}),
     },
     process: { ...input.process, ...(input.onOpenProcess ? { onOpen: input.onOpenProcess } : {}) },
     terminal: { ...input.terminal, ...(input.onOpenTerminal ? { onOpen: input.onOpenTerminal } : {}) },
-    agent: { name: input.agentName, status: input.streaming ? "running" : "idle" },
+    agent: {
+      name: input.agentName,
+      status: agentStatus({
+        taskStatus: input.task?.status,
+        sessionStatus: input.sessionStatus,
+        permissionPending: input.permissionPending === true,
+        streaming: input.streaming,
+      }),
+    },
   };
 }
 
@@ -60,7 +85,7 @@ export function processActivityFromMessages(messages: readonly ChatMessage[], fa
       const part = parts[partIndex];
       if (part.type !== "toolCall" || part.toolName !== "TodoWrite") continue;
       const todos = readTodos(part.args.todos);
-      if (todos.length === 0) continue;
+      if (todos === undefined) continue;
       const current = todos.find((todo) => todo.status === "in_progress")?.content ?? fallback;
       return {
         completed: todos.filter((todo) => todo.status === "completed").length,
@@ -73,8 +98,8 @@ export function processActivityFromMessages(messages: readonly ChatMessage[], fa
   return { completed: 0, total: 0, current: fallback, pending: 0 };
 }
 
-function readTodos(value: unknown): TodoView[] {
-  if (!Array.isArray(value)) return [];
+function readTodos(value: unknown): TodoView[] | undefined {
+  if (!Array.isArray(value)) return undefined;
   return value.filter((entry): entry is TodoView =>
     typeof entry === "object" &&
     entry !== null &&

@@ -8,6 +8,7 @@ export interface WorkspacePresentationState {
   sidebarCollapsed: boolean;
   expandedGroupIds: string[];
   expandedProjectIds: string[];
+  collapsedProjectIds: string[];
   expandedCapsuleSections: CapsuleSection[];
   capsuleOpen: boolean;
   sidebarSort: SidebarSort;
@@ -21,6 +22,7 @@ export type WorkspacePresentationAction =
   | { type: "sidebar/view"; view: SidebarView }
   | { type: "sidebar/toggle" }
   | { type: "sidebar/filter"; filter: string }
+  | { type: "sidebar/project-toggle"; projectId: string }
   | { type: "capsule/toggle" }
   | { type: "capsule/toggle-section"; section: CapsuleSection }
   | { type: "panel/select"; panel: WorkspacePresentationState["selectedPanel"] }
@@ -35,11 +37,47 @@ export const CAPSULE_SECTION_ORDER: readonly CapsuleSection[] = [
   "agent",
 ];
 
+export const WORKSPACE_PRESENTATION_STORAGE_KEY = "workspace:presentation:v1";
+
+export function restoreWorkspacePresentationState(raw: string | null): WorkspacePresentationState {
+  if (raw === null) return defaultWorkspacePresentationState;
+  try {
+    const parsed = JSON.parse(raw) as Partial<WorkspacePresentationState>;
+    const sidebarView = parsed.sidebarView === "groups" ? "groups" : "projects";
+    const collapsedProjectIds = stringArray(parsed.collapsedProjectIds);
+    const expandedCapsuleSections = stringArray(parsed.expandedCapsuleSections)
+      .filter((section): section is CapsuleSection => CAPSULE_SECTION_ORDER.includes(section as CapsuleSection));
+    return {
+      ...defaultWorkspacePresentationState,
+      sidebarView,
+      collapsedProjectIds,
+      expandedCapsuleSections: expandedCapsuleSections.length > 0 ? expandedCapsuleSections : defaultWorkspacePresentationState.expandedCapsuleSections,
+      capsuleOpen: typeof parsed.capsuleOpen === "boolean" ? parsed.capsuleOpen : defaultWorkspacePresentationState.capsuleOpen,
+    };
+  } catch (error) {
+    return defaultWorkspacePresentationState;
+  }
+}
+
+export function persistWorkspacePresentationState(state: WorkspacePresentationState): string {
+  return JSON.stringify({
+    sidebarView: state.sidebarView,
+    collapsedProjectIds: state.collapsedProjectIds,
+    expandedCapsuleSections: state.expandedCapsuleSections,
+    capsuleOpen: state.capsuleOpen,
+  });
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
 export const defaultWorkspacePresentationState: WorkspacePresentationState = {
   sidebarView: "projects",
   sidebarCollapsed: false,
   expandedGroupIds: [],
   expandedProjectIds: [],
+  collapsedProjectIds: [],
   expandedCapsuleSections: ["environment", "process"],
   capsuleOpen: true,
   sidebarSort: "recent",
@@ -59,6 +97,15 @@ export function reduceWorkspacePresentationState(
       return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
     case "sidebar/filter":
       return { ...state, sidebarFilter: action.filter };
+    case "sidebar/project-toggle": {
+      const collapsed = state.collapsedProjectIds.includes(action.projectId);
+      return {
+        ...state,
+        collapsedProjectIds: collapsed
+          ? state.collapsedProjectIds.filter((projectId) => projectId !== action.projectId)
+          : [...state.collapsedProjectIds, action.projectId],
+      };
+    }
     case "capsule/toggle":
       return { ...state, capsuleOpen: !state.capsuleOpen };
     case "capsule/toggle-section": {

@@ -9,7 +9,7 @@ import {
   type PermissionChoice,
 } from "../../../shared/ipc";
 import { api } from "../lib/ipc";
-import { emitSidebarSessionStatus } from "./sidebarSessionStatus";
+import { emitSidebarSessionStatus, type SidebarSessionStatus } from "./sidebarSessionStatus";
 
 export interface ChatStreamDeps {
   /** 活动会话 id（null = 落地态）。 */
@@ -33,6 +33,8 @@ export interface ChatStream {
   messages: ChatMessage[];
   streaming: boolean;
   permission: ChatPermissionEvent | null;
+  /** Canonical session activity derived from the same chat lifecycle events as the sidebar. */
+  sessionStatus: SidebarSessionStatus | "idle";
   send: (text: string) => Promise<void>;
   stop: () => void;
   respondPermission: (requestId: string, choice: PermissionChoice) => void;
@@ -43,12 +45,16 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [permission, setPermission] = useState<ChatPermissionEvent | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<SidebarSessionStatus | "idle">("idle");
 
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
+      setPermission(null);
+      setSessionStatus("idle");
       return;
     }
+    setSessionStatus("idle");
     void api.listMessages(activeId).then(setMessages);
   }, [activeId]);
 
@@ -58,6 +64,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     const off = api.onChatPermission((e) => {
       if (e.sessionId !== activeId) return;
       setPermission(e);
+      setSessionStatus("waiting-permission");
       emitSidebarSessionStatus({ type: "permission", sessionId: e.sessionId });
     });
     return off;
@@ -68,6 +75,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     const offDelta = api.onChatDelta((e) => {
       if (e.sessionId !== activeId) return;
       emitSidebarSessionStatus({ type: "stream", sessionId: e.sessionId });
+      setSessionStatus("running");
       setMessages((prev) =>
         prev.map((m) =>
           m.id === e.messageId ? { ...m, parts: appendText(m.parts, e.delta) } : m,
@@ -79,6 +87,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       emitSidebarSessionStatus({ type: "done", sessionId: e.sessionId });
       setStreamingId(null);
       setPermission(null);
+      setSessionStatus("idle");
       setMessages((prev) =>
         prev.map((m) =>
           m.id === e.messageId
@@ -92,6 +101,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       emitSidebarSessionStatus({ type: "error", sessionId: e.sessionId });
       setStreamingId(null);
       setPermission(null);
+      setSessionStatus("failed");
       setMessages((prev) =>
         prev.map((m) =>
           m.id === e.messageId
@@ -142,6 +152,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       const sessionId = activeId ?? (await ensureSession());
       if (!sessionId) return;
       emitSidebarSessionStatus({ type: "started", sessionId });
+      setSessionStatus("running");
       // 任务先于发送落地：本回合即进入任务作用域（P1 循环入口）。
       await ensureTask?.(sessionId);
 
@@ -151,6 +162,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
       } catch (err) {
         console.error("send message failed", err);
         emitSidebarSessionStatus({ type: "error", sessionId });
+        setSessionStatus("failed");
         showError(t("error.sendMessage"));
         return;
       }
@@ -187,6 +199,7 @@ export function useChatStream(deps: ChatStreamDeps): ChatStream {
     messages,
     streaming: streamingId !== null,
     permission,
+    sessionStatus,
     send,
     stop,
     respondPermission,

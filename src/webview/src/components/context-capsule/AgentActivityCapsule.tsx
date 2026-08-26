@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, CircleDot, GitBranch, GitCommitHorizontal, ListChecks, PanelRight, Play, SquareTerminal, Bot } from "lucide-react";
 import type { ButtonHTMLAttributes } from "react";
 import { CAPSULE_SECTION_ORDER, type CapsulePlacement, type CapsuleSection } from "../../state/workspacePresentationState";
+import type { AgentActivityStatus } from "./activityProjection";
 import { Collapsible } from "../ui/Collapsible";
 
 export { CAPSULE_SECTION_ORDER } from "../../state/workspacePresentationState";
@@ -15,7 +16,7 @@ export interface AgentActivityCapsuleProps {
     changedFiles: number;
     additions: number;
     deletions: number;
-    workspaceStatus: string;
+    workspaceKind: string;
     onCommit?: () => void;
     onPush?: () => void;
     onCompare?: () => void;
@@ -28,7 +29,7 @@ export interface AgentActivityCapsuleProps {
     onOpen?: () => void;
   };
   terminal: { durationMs: number; backgroundTasks: number; onOpen?: () => void };
-  agent: { name: string; status: string };
+  agent: { name: string; status: AgentActivityStatus };
   placement: CapsulePlacement;
 }
 
@@ -101,7 +102,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               {section === "environment" && (
                 <div className="space-y-1 px-3 pb-3 text-[10.5px] text-(--color-app-muted)">
                   <div className="flex items-center justify-between rounded-md bg-(--color-app-bubble) px-2 py-1.5"><span><GitCommitHorizontal size={12} className="mr-1 inline" />变更 {environment.changedFiles}</span><span><b className="text-(--color-tool-ok)">+{environment.additions}</b> <b className="text-(--color-tool-err)">−{environment.deletions}</b></span></div>
-                  <div className="flex items-center justify-between px-1 py-1"><span>工作区</span><span>{environment.workspaceStatus}</span></div>
+                  <div className="flex items-center justify-between px-1 py-1"><span>工作区种类</span><span>{environment.workspaceKind}</span></div>
                   <div className="flex items-center justify-between px-1 py-1"><span><GitBranch size={12} className="mr-1 inline" />分支</span><span>{environment.branch ?? "未检测"}</span></div>
                   <div className="flex gap-1 pt-1">
                     <button type="button" disabled={!environment.onCommit} onClick={environment.onCommit} className="capsule-action"><GitCommitHorizontal size={11} />提交</button>

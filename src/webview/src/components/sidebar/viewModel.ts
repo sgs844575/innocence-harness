@@ -21,12 +21,14 @@ export function buildSidebarTree(
   state: SidebarState,
   view: SidebarView,
   unassignedName: string,
+  collapsedProjectIds: readonly string[] = [],
 ): SidebarTreeNode[] {
   const archived = new Set(archivedSessionIds(state, sessions));
   const byId = new Map(sessions.filter((session) => !archived.has(session.id)).map((session) => [session.id, session]));
   const validIds = (ids: readonly string[]) => ids.filter((id) => byId.has(id));
   if (view === "projects") {
-    const nodes: SidebarTreeNode[] = state.projects.map((project) => ({ id: project.id, name: project.name, sessionIds: validIds(project.sessionIds), collapsed: false, kind: "project" }));
+    const collapsedProjects = new Set(collapsedProjectIds);
+    const nodes: SidebarTreeNode[] = state.projects.map((project) => ({ id: project.id, name: project.name, sessionIds: validIds(project.sessionIds), collapsed: collapsedProjects.has(project.id), kind: "project" }));
     const assigned = new Set(state.projects.flatMap((project) => project.sessionIds));
     const ungrouped = validIds(state.order.filter((id) => !assigned.has(id)));
     if (ungrouped.length) nodes.push({ id: "__project-unassigned__", name: unassignedName, sessionIds: ungrouped, collapsed: false, kind: "ungrouped" });

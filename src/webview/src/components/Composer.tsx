@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Plus, Square, ArrowUp, Files } from "lucide-react";
 import {
   MOCK_MODEL,
@@ -10,7 +10,6 @@ import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
 import { AgentPicker } from "./composer/AgentPicker";
 import { ThinkingEffortPicker } from "./composer/ThinkingEffortPicker";
-import { useCommandK } from "./composer/useCommandK";
 
 interface Props {
   t: (key: string) => string;
@@ -66,14 +65,6 @@ export function Composer({
     requestAnimationFrame(() => ref.current?.focus());
     // 依赖只含 initialText：onConsumed 后 draft 已清空，回调引用不触发重复并入。
   }, [initialText]);
-
-  // ⌘K/Ctrl+K 唤起二级模型面板：点击 ModelPicker 的触发按钮（data 属性锚定，
-  // 免去 ref 穿透 Popover 组件树）。
-  useCommandK(
-    useCallback(() => {
-      document.querySelector<HTMLButtonElement>("[data-model-picker-trigger]")?.click();
-    }, []),
-  );
 
   const submit = (): void => {
     const text = value.trim();
@@ -131,7 +122,9 @@ export function Composer({
             <button
               type="button"
               aria-label="添加附件"
-              className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-(--color-app-bubble) hover:text-(--color-app-text)"
+              aria-description="当前会话不支持附件上下文"
+              disabled
+              className="grid size-7 shrink-0 cursor-not-allowed place-items-center rounded-full opacity-45"
             >
               <Plus size={15} />
             </button>

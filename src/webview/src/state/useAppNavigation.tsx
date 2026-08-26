@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import {
   MessageSquarePlus,
   PanelLeftOpen,
@@ -14,6 +14,7 @@ import type { SessionController } from "./useSessionController";
 import { useSidebarState } from "./useSidebarState";
 import { api } from "../lib/ipc";
 import { reduceSidebarSessionStatuses, subscribeSidebarSessionStatus, type SidebarSessionStatus } from "./sidebarSessionStatus";
+import { WORKSPACE_PRESENTATION_STORAGE_KEY, persistWorkspacePresentationState, reduceWorkspacePresentationState, restoreWorkspacePresentationState } from "./workspacePresentationState";
 import logoUrl from "../../../../logo.svg";
 
 export function useAppNavigation({
@@ -33,6 +34,19 @@ export function useAppNavigation({
 }) {
   const sidebarState = useSidebarState(sessions.sessions);
   const [sessionStatuses, setSessionStatuses] = useState<Map<string, SidebarSessionStatus>>(() => new Map());
+  const [presentation, dispatchPresentation] = useReducer(
+    reduceWorkspacePresentationState,
+    undefined,
+    () => typeof window === "undefined"
+      ? restoreWorkspacePresentationState(null)
+      : restoreWorkspacePresentationState(window.localStorage.getItem(WORKSPACE_PRESENTATION_STORAGE_KEY)),
+  );
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(WORKSPACE_PRESENTATION_STORAGE_KEY, persistWorkspacePresentationState(presentation));
+    }
+  }, [presentation]);
 
   useEffect(() => {
     const apply = (event: Parameters<typeof reduceSidebarSessionStatuses>[1]) => setSessionStatuses((previous) => reduceSidebarSessionStatuses(previous, event));
@@ -76,11 +90,16 @@ export function useAppNavigation({
           onDelete={(id) => void sessions.deleteSession(id)}
           onArchive={(id) => void sidebarState.archiveSession(id, !sidebarState.state.archived[id])}
           onOpenSettings={nav.openSettings}
+          onSearch={nav.openSearch}
           onAutomation={nav.openAutomation}
           onPlugins={() => { nav.openSettings(); nav.selectSection("plugins"); }}
+          view={presentation.sidebarView}
+          collapsedProjectIds={presentation.collapsedProjectIds}
+          onViewChange={(view) => dispatchPresentation({ type: "sidebar/view", view })}
+          onToggleProject={(projectId) => dispatchPresentation({ type: "sidebar/project-toggle", projectId })}
         />
       ),
-    [t, sessions, sidebarState, sessionStatuses],
+    [t, sessions, sidebarState, sessionStatuses, presentation],
   );
   const rail = useCallback(
     (nav: AppShellNav) =>
@@ -109,5 +128,5 @@ export function useAppNavigation({
     ) : null,
     [t, settings, appInfo, onSettingsChange, onPickWorkspace],
   );
-  return { sidebar, rail, settingsView };
+  return { sidebar, rail, settingsView, activeArchived: sessions.activeId !== null && sidebarState.state.archived[sessions.activeId] === true };
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultWorkspacePresentationState,
+  persistWorkspacePresentationState,
   reduceWorkspacePresentationState,
+  restoreWorkspacePresentationState,
   workspaceLayoutForWidth,
   type WorkspacePresentationAction,
 } from "./workspacePresentationState";
@@ -34,6 +36,16 @@ describe("workspace presentation state", () => {
       contentGutter: 16,
       capsulePlacement: "sheet",
     });
+  });
+
+  it("restores project disclosures and ignores malformed UI preference data", () => {
+    const collapsed = reduceWorkspacePresentationState(defaultWorkspacePresentationState, {
+      type: "sidebar/project-toggle",
+      projectId: "D:/alpha",
+    });
+    const restored = restoreWorkspacePresentationState(persistWorkspacePresentationState(collapsed));
+    expect(restored.collapsedProjectIds).toEqual(["D:/alpha"]);
+    expect(restoreWorkspacePresentationState("not-json")).toEqual(defaultWorkspacePresentationState);
   });
 
   it("supports the durable sidebar view without owning session state", () => {

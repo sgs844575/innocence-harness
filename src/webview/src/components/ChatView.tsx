@@ -37,6 +37,8 @@ interface Props {
   onOpenTaskReview?: (messageId: string) => void;
   /** 消息级分叉入口（编辑并创建路线 / 重试并创建路线）；缺省不渲染按钮。 */
   onForkMessage?: (command: ForkMessageCommand) => void;
+  /** Opens the existing typed Review panel from the header action. */
+  onOpenReview?: () => void;
   /** Existing domain/runtime state projected for the right activity capsule. */
   activity?: AgentActivityProjection;
 }
@@ -60,6 +62,7 @@ export function ChatView({
   taskChanges,
   onOpenTaskReview,
   onForkMessage,
+  onOpenReview,
   taskTitle,
   projectName,
   gitBranch,
@@ -174,7 +177,7 @@ export function ChatView({
       ref={workspaceRef}
       className={`chat-workspace chat-workspace-${layout.capsulePlacement} flex h-full min-w-0 flex-1 flex-col`}
     >
-      <ConversationHeader task={title} project={projectName ?? ""} branch={gitBranch ?? null} />
+      <ConversationHeader task={title} project={projectName ?? ""} branch={gitBranch ?? null} actions={onOpenReview ? [{ label: "打开审查", onSelect: onOpenReview }] : []} />
       <div className="chat-workspace-body min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
         <div className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
           <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
@@ -218,7 +221,7 @@ export function ChatView({
       <Composer
         t={t}
         mode="existing"
-        contextCount={messages.length}
+        contextCount={0}
         contentMaxWidth={layout.contentMaxWidth}
         contentGutter={layout.contentGutter}
         frameMaxWidth={frameMaxWidth}

@@ -46,11 +46,11 @@ const activity = {
     changedFiles: 2,
     additions: 7,
     deletions: 3,
-    workspaceStatus: "local",
+    workspaceKind: "git",
   },
   process: { completed: 2, total: 7, current: "Implement layout", pending: 4 },
   terminal: { durationMs: 30_000, backgroundTasks: 1 },
-  agent: { name: "default", status: "running" },
+  agent: { name: "default", status: "running" as const },
 };
 
 function renderChat(): void {
@@ -95,6 +95,7 @@ describe("ChatView shared responsive layout", () => {
     renderChat();
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("960px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("960px");
+    expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
     expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("286px");
 
     fireEvent.click(screen.getByRole("button", { name: "折叠活动胶囊" }));

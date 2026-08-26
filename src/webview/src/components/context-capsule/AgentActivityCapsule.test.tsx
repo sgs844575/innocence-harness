@@ -15,7 +15,7 @@ const baseProps = {
     changedFiles: 2,
     additions: 7,
     deletions: 3,
-    workspaceStatus: "local",
+    workspaceKind: "git",
   },
   process: {
     completed: 2,
@@ -25,7 +25,7 @@ const baseProps = {
     onOpen: vi.fn(),
   },
   terminal: { durationMs: 30_000, backgroundTasks: 1, onOpen: vi.fn() },
-  agent: { name: "default", status: "running" },
+  agent: { name: "default", status: "running" as const },
   placement: "docked" as const,
 };
 
