@@ -1,5 +1,5 @@
 // AppShell — 响应式导航/布局外壳（Task 12 从 App.tsx 拆出）。
-// 三段式导航：宽窗（≥1024）停靠整列侧栏（或手动图标轨）；中窗（640-1023）
+// 三段式导航：宽窗（≥1024）停靠整列侧栏（或完全隐藏）；中窗（640-1023）
 // 恒显图标轨 + 覆盖式抽屉；窄窗（<640）仅抽屉。视图切换（chat/settings）、
 // 抽屉/轨模式、工作台面板布局都归这里；内容节点由 App 以渲染属性注入，
 // 布局回调（openSettings/backToChat/closeDrawerOnNavigate 等）随 nav 透出。
@@ -170,7 +170,7 @@ export function AppShell({
             {navFull}
           </div>
         )}
-        {(isWide && railMode) || isMedium ? (
+        {isMedium ? (
           <div className="w-12 shrink-0 border-r border-(--color-app-hairline) bg-(--color-app-sidebar)">
             {navRail}
           </div>

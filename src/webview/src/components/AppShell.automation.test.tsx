@@ -44,6 +44,45 @@ describe("AppShell automation navigation", () => {
   });
 });
 
+describe("AppShell sidebar collapse", () => {
+  it("removes the full sidebar and rail when a wide sidebar is collapsed", () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(min-width: 1024px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+
+    render(
+      <SlotProvider registry={createSlotRegistry()}>
+        <AppShell
+          t={(key) => key}
+          titleBar={(nav) => <button type="button" onClick={nav.toggleSidebar} aria-label={nav.sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}>toggle</button>}
+          sidebar={() => <div data-testid="full-sidebar">Full sidebar</div>}
+          rail={() => <div data-testid="sidebar-rail">Sidebar rail</div>}
+          chat={<div>Chat surface</div>}
+          settings={() => null}
+          panels={{}}
+        />
+      </SlotProvider>,
+    );
+
+    expect(screen.getByTestId("full-sidebar")).toBeTruthy();
+    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
+    expect(screen.queryByTestId("full-sidebar")).toBeNull();
+    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
+    expect(screen.getByTestId("full-sidebar")).toBeTruthy();
+    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
+  });
+});
 describe("AppShell global search", () => {
   it("opens the shell search dialog from both typed navigation and Ctrl/Cmd+K", () => {
     render(
