@@ -76,7 +76,12 @@ export function ChatView({
   // messages and Composer never shift or narrow as the capsule disclosure changes.
   const companionWidth = hasDockedCapsule ? CAPSULE_WIDTH : 0;
   const companionGap = hasDockedCapsule ? layout.capsuleGap : 0;
-  const frameMaxWidth = layout.contentMaxWidth + companionGap + companionWidth;
+  const legacyFrameMaxWidth = layout.contentMaxWidth + companionGap + companionWidth;
+  const frameMaxWidth = landing
+    ? layout.contentMaxWidth
+    : layout.capsulePlacement !== "sheet" && activity !== undefined
+      ? undefined
+      : legacyFrameMaxWidth;
   const workspaceRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -179,7 +184,7 @@ export function ChatView({
     >
       <ConversationHeader task={title} project={projectName ?? ""} branch={gitBranch ?? null} actions={onOpenReview ? [{ label: "打开审查", onSelect: onOpenReview }] : []} />
       <div className="chat-workspace-body min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
-        <div className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
+        <div data-testid="chat-frame" className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
           <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
             <div data-testid="chat-timeline" className="chat-column mx-auto pb-6" style={{ maxWidth: layout.contentMaxWidth }}>
               <div className="space-y-5 pt-6">

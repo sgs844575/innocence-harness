@@ -16,7 +16,7 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
     <div
       role="alertdialog"
       aria-label={t("permission.card.title")}
-      className="mx-auto mb-2 w-full max-w-3xl rounded-[10px] border border-(--color-tool-warn)/40 bg-(--color-app-panel) px-4 py-3 shadow-(--shadow-card)"
+      className="mx-auto mb-2 w-full rounded-[10px] border border-(--color-tool-warn)/40 bg-(--color-app-panel) px-4 py-3 shadow-(--shadow-card)"
     >
       <div className="flex items-center gap-2 text-sm font-medium text-(--color-app-text)">
         <ShieldQuestion size={16} className="shrink-0 text-(--color-tool-warn)" />

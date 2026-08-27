@@ -26,6 +26,13 @@ describe("PermissionCard 资源摘要渲染", () => {
     expect(screen.getByText("src/a.ts")).toBeTruthy();
   });
 
+  it("matches the composer width without a narrower max-width cap", () => {
+    render(<PermissionCard t={t} request={request} onRespond={() => {}} />);
+    const card = screen.getByRole("alertdialog");
+    expect(card.className).not.toContain("max-w-3xl");
+    expect(card.className).toContain("w-full");
+  });
+
   it("args 默认折叠，点开 summary 后可见", () => {
     const { container } = render(<PermissionCard t={t} request={request} onRespond={() => {}} />);
     const details = container.querySelector("details");

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "../../../shared/ipc";
+import type { ChatMessage, ChatPermissionEvent } from "../../../shared/ipc";
 import { ChatView } from "./ChatView";
 
 let resizeContainer: ((width: number) => void) | undefined;
@@ -40,6 +40,15 @@ const message: ChatMessage = {
   parts: [{ type: "text", text: "Ready" }],
 };
 
+const permission: ChatPermissionEvent = {
+  sessionId: "s1",
+  messageId: "m1",
+  requestId: "p1",
+  toolName: "Write",
+  args: { path: "src/a.ts" },
+  resource: { kind: "file", action: "write", scope: "src/a.ts" },
+};
+
 const activity = {
   environment: {
     branch: "main",
@@ -53,7 +62,7 @@ const activity = {
   agent: { name: "default", status: "running" as const },
 };
 
-function renderChat(): void {
+function renderChat(options: { permission?: ChatPermissionEvent } = {}): void {
   render(
     <ChatView
       t={(key) => key}
@@ -64,7 +73,7 @@ function renderChat(): void {
       messages={[message]}
       streaming={false}
       settings={null}
-      permission={null}
+      permission={options.permission ?? null}
       onSettingsChange={() => {}}
       onPermissionRespond={() => {}}
       onSend={() => {}}
@@ -91,12 +100,28 @@ describe("ChatView shared responsive layout", () => {
     expect(screen.getByLabelText("Agent 活动胶囊").className).toContain("agent-capsule-sheet");
   });
 
+  it("keeps the non-docked frame anchor while switching to overlay and sheet layouts", () => {
+    renderChat();
+
+    act(() => resizeContainer?.(900));
+    expect(screen.getByTestId("chat-frame").style.maxWidth).toBe("");
+
+    act(() => resizeContainer?.(520));
+    expect(screen.getByTestId("chat-frame").style.maxWidth).toBe("720px");
+  });
+
+  it("uses the same content track for the permission card and composer", () => {
+    renderChat({ permission });
+    expect(screen.getByRole("alertdialog").parentElement?.style.maxWidth).toBe("960px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("960px");
+  });
   it("keeps timeline, composer, and docked capsule on one width model when collapsed", () => {
     renderChat();
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("960px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("960px");
     expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
     expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("286px");
+    expect(screen.getByTestId("chat-frame").style.maxWidth).toBe("");
 
     fireEvent.click(screen.getByRole("button", { name: "折叠活动胶囊" }));
 
