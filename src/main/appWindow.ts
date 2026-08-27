@@ -27,7 +27,7 @@ export function getMainWindow(): BrowserWindow | undefined {
   return mainWindow;
 }
 
-export async function createMainWindow(): Promise<BrowserWindow> {
+export async function createMainWindow(onRendererReady?: () => void): Promise<BrowserWindow> {
   // Match the window chrome to whatever theme is active right now, so the
   // Windows caption-button overlay never mismatches the custom title bar
   // (it previously stayed hardcoded dark and clashed with the light theme).
@@ -72,6 +72,12 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   });
 
   win.once("ready-to-show", () => win.show());
+  let rendererReady: Promise<void> | undefined;
+  if (onRendererReady) {
+    rendererReady = new Promise((resolve) => {
+      win.webContents.once("did-finish-load", resolve);
+    });
+  }
 
   // MAIN_WINDOW_VITE_DEV_SERVER_URL is a build-time constant injected by
   // @electron-forge/plugin-vite (see vite-env.d.ts) — NOT process.env. It is
@@ -82,12 +88,14 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   // Optional load verification hook: set InnocenceHarness_SMOKE_OUT=<path> and the app
   // writes the load outcome there and exits (used by tools/smoke-test.cjs).
   const smokeOut = process.env.InnocenceHarness_SMOKE_OUT;
+  let loadCompleted = false;
   try {
     if (devServerUrl) {
       await win.loadURL(devServerUrl);
     } else {
       await win.loadURL(appIndexUrl());
     }
+    loadCompleted = true;
     if (smokeOut) {
       // loadURL resolves even for a 404 response body from our own protocol
       // handler, so verify actual rendered content, not just the promise.
@@ -120,5 +128,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
   });
+  if (loadCompleted && rendererReady && onRendererReady) {
+    await rendererReady;
+    onRendererReady();
+  }
   return win;
 }

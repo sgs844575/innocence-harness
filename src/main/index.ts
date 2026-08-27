@@ -25,6 +25,7 @@ import {
 } from "./harnessGlue";
 import { defaultUserPluginRoot } from "./pluginBoot/compose";
 import { createMainWindow, getMainWindow } from "./appWindow";
+import { createRendererReadyStartup } from "./rendererReadyStartup";
 import { registerIpcHandlers } from "./ipc";
 import { initSessionStore, getSession } from "./sessions";
 import { buildAppMenu } from "./menu";
@@ -112,25 +113,16 @@ if (!gotLock) {
       });
       await registerTerminalIpc(terminalService);
 
-      const win = await createMainWindow();
+      const rendererReadyStartup = createRendererReadyStartup({
+        recover: () => recoverPersistedTaskRuntimes(taskRuntimeDeps),
+        startAutomation: startAutomationLifecycle,
+        logRecoveryFailure: (error) => logger.error("task restart recovery failed", { error: String(error) }),
+      });
+      const win = await createMainWindow(rendererReadyStartup);
       // Non-mac: the custom title bar's File/Edit/View/Help buttons pop up
       // menus on demand (see src/main/menu.ts popupMenu), so no menu bar.
       Menu.setApplicationMenu(buildAppMenu(win));
       watchTheme(win);
-
-      // Restart recovery runs once the renderer mounted its task-event
-      // subscriptions — notices pushed before that would be lost.
-      win.webContents.once("did-finish-load", () => {
-        void (async () => {
-          try {
-            await recoverPersistedTaskRuntimes(taskRuntimeDeps);
-          } catch (err) {
-            logger.error("task restart recovery failed", { error: String(err) });
-          } finally {
-            startAutomationLifecycle();
-          }
-        })();
-      });
 
       logger.info("app ready", { version: app.getVersion(), platform: process.platform });
     })
