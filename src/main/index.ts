@@ -25,7 +25,8 @@ import {
 } from "./harnessGlue";
 import { defaultUserPluginRoot } from "./pluginBoot/compose";
 import { createMainWindow, getMainWindow } from "./appWindow";
-import { createRendererReadyStartup } from "./rendererReadyStartup";
+import { createMainAppLifecycle } from "./mainAppLifecycle";
+import { createOwnedShutdown } from "./ownedShutdown";
 import { registerIpcHandlers } from "./ipc";
 import { initSessionStore, getSession } from "./sessions";
 import { buildAppMenu } from "./menu";
@@ -33,7 +34,7 @@ import { watchTheme } from "./theme";
 import { logger } from "./logger";
 import { ShutdownGate } from "./shutdown";
 import { createTerminalIpcService, registerTerminalIpc, type TerminalIpcService } from "./terminalIpc";
-import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc } from "./taskRuntimeIpc";
+import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import { currentTestOverrides } from "./testOverrides";
 
 // Test roots are opt-in through the centralized controlled marker. Packaged
@@ -48,6 +49,19 @@ registerPluginScheme();
 
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
+let taskRuntimeDeps: TaskRuntimeIpcDeps | undefined;
+
+const appLifecycle = createMainAppLifecycle({
+  createMainWindow,
+  getMainWindow,
+  recover: () => {
+    if (!taskRuntimeDeps) throw new Error("task runtime IPC not initialized");
+    return recoverPersistedTaskRuntimes(taskRuntimeDeps);
+  },
+  startAutomation: startAutomationLifecycle,
+  logRecoveryFailure: (error) => logger.error("task restart recovery failed", { error: String(error) }),
+  logAutomationStartFailure: (error) => logger.error("automation lifecycle startup failed", { error: String(error) }),
+});
 
 /** Renderer push port shared by every task-runtime surface. */
 const broadcast = (channel: string, payload: unknown): void => {
@@ -87,7 +101,7 @@ if (!gotLock) {
       // task-event broadcast feeding the renderer's workbench state.
       // task:start resolves the session's workspace root host-side and binds
       // the session's chat sends to the task route (the P1 loop entry).
-      const taskRuntimeDeps = {
+      taskRuntimeDeps = {
         bridge: getTaskBridge(),
         taskStorageDir: getTaskStorageDir(),
         resolveRouteRoot: resolveRouteWorkspaceRoot,
@@ -113,12 +127,7 @@ if (!gotLock) {
       });
       await registerTerminalIpc(terminalService);
 
-      const rendererReadyStartup = createRendererReadyStartup({
-        recover: () => recoverPersistedTaskRuntimes(taskRuntimeDeps),
-        startAutomation: startAutomationLifecycle,
-        logRecoveryFailure: (error) => logger.error("task restart recovery failed", { error: String(error) }),
-      });
-      const win = await createMainWindow(rendererReadyStartup);
+      const win = await appLifecycle.createInitialWindow();
       // Non-mac: the custom title bar's File/Edit/View/Help buttons pop up
       // menus on demand (see src/main/menu.ts popupMenu), so no menu bar.
       Menu.setApplicationMenu(buildAppMenu(win));
@@ -144,35 +153,34 @@ if (!gotLock) {
   // exit the process mid-disposeAllRuntime. Once the gate is released, the
   // final app.quit() goes through untouched.
   const shutdown = new ShutdownGate();
+  const shutdownWork = createOwnedShutdown({
+    blockStartup: appLifecycle.startup.block,
+    waitForStartup: () => appLifecycle.startup.completion,
+    rejectPendingPermissionAsks,
+    disposeAutomationLifecycle,
+    disposeAllRuntime,
+    disposeTelemetry,
+    disposePluginBoot,
+    disposeTaskRuntime,
+    disposeTerminals: async () => {
+      await terminalService?.disposeAll();
+    },
+  });
   app.on("before-quit", (e) => {
     const phase = shutdown.onBeforeQuit();
     if (phase === "release") return;
     e.preventDefault();
     if (phase === "hold") return; // release already running; just hold this quit
-    void (async () => {
-      try {
-        rejectPendingPermissionAsks();
-        await disposeAutomationLifecycle();
-        // Agent sessions first (aborts in-flight tool invocations, which
-        // releases their task mutation leases), then the task runtime's
-        // watchers and worktree lease records. Terminal shell trees go last
-        // (taskkill /T /F on Windows) so quit leaves no orphan shells.
-        await disposeAllRuntime();
-        await disposeTelemetry();
-        await disposePluginBoot();
-        await disposeTaskRuntime();
-        await terminalService?.disposeAll();
-      } catch (err) {
-        logger.error("shutdown dispose failed", { error: String(err) });
-      } finally {
-        shutdown.markReleased();
-        app.quit();
-      }
-    })();
+    void shutdownWork().catch((err) => {
+      logger.error("shutdown dispose failed", { error: String(err) });
+    }).finally(() => {
+      shutdown.markReleased();
+      app.quit();
+    });
   });
 
   app.on("activate", () => {
-    if (getMainWindow() === undefined) void createMainWindow();
+    void appLifecycle.activate();
   });
 }
 
