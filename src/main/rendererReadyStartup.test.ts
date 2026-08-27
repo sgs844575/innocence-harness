@@ -81,6 +81,62 @@ describe("renderer-ready startup", () => {
     expect(logAutomationStartFailure).toHaveBeenCalledWith(error);
   });
 
+  it("keeps the recovery runner owned when recovery logging fails", async () => {
+    const events: string[] = [];
+    const recoveryError = new Error("recovery failed");
+    const loggingError = new Error("recovery logging failed");
+    const startup = createRendererReadyStartup({
+      recover: vi.fn(async () => {
+        events.push("recover");
+        throw recoveryError;
+      }),
+      startAutomation: vi.fn(() => {
+        events.push("start automation");
+      }),
+      logRecoveryFailure: vi.fn((error: unknown) => {
+        events.push("log recovery failure");
+        expect(error).toBe(recoveryError);
+        throw loggingError;
+      }),
+      logAutomationStartFailure: vi.fn(),
+    });
+
+    const runner = startup.onRendererReady();
+
+    expect(runner).toBeInstanceOf(Promise);
+    await expect(Promise.all([startup.completion, runner])).resolves.toEqual([undefined, undefined]);
+    expect(events).toEqual(["recover", "log recovery failure", "start automation"]);
+    expect(startup.onRendererReady()).toBe(runner);
+  });
+
+  it("keeps the automation runner owned when automation startup logging fails", async () => {
+    const events: string[] = [];
+    const automationError = new Error("automation startup failed");
+    const loggingError = new Error("automation startup logging failed");
+    const startup = createRendererReadyStartup({
+      recover: vi.fn(async () => {
+        events.push("recover");
+      }),
+      startAutomation: vi.fn(() => {
+        events.push("start automation");
+        throw automationError;
+      }),
+      logRecoveryFailure: vi.fn(),
+      logAutomationStartFailure: vi.fn((error: unknown) => {
+        events.push("log automation startup failure");
+        expect(error).toBe(automationError);
+        throw loggingError;
+      }),
+    });
+
+    const runner = startup.onRendererReady();
+
+    expect(runner).toBeInstanceOf(Promise);
+    await expect(Promise.all([startup.completion, runner])).resolves.toEqual([undefined, undefined]);
+    expect(events).toEqual(["recover", "start automation", "log automation startup failure"]);
+    expect(startup.onRendererReady()).toBe(runner);
+  });
+
   it("blocks a not-yet-started renderer recovery after shutdown begins", async () => {
     const recover = vi.fn(async () => {});
     const startAutomation = vi.fn();

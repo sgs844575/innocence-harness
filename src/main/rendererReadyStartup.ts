@@ -7,13 +7,14 @@ export interface RendererReadyStartupOptions {
 
 export interface RendererReadyStartup {
   readonly completion: Promise<void>;
-  onRendererReady(): void;
+  onRendererReady(): Promise<void>;
   block(): void;
 }
 
 /** Owns the single renderer-dependent startup task and its shutdown barrier. */
 export function createRendererReadyStartup(options: RendererReadyStartupOptions): RendererReadyStartup {
   let state: "idle" | "running" | "settled" | "blocked" = "idle";
+  let runner: Promise<void> | undefined;
   let resolveCompletion: (() => void) | undefined;
   const completion = new Promise<void>((resolve) => {
     resolveCompletion = resolve;
@@ -25,27 +26,38 @@ export function createRendererReadyStartup(options: RendererReadyStartupOptions)
     resolveCompletion = undefined;
   };
 
+  const safelyLog = (log: () => void): void => {
+    try {
+      log();
+    } catch (loggingError) {
+      void loggingError;
+      // Logging must not interrupt startup cleanup or leave its owner rejected.
+    }
+  };
+
   return {
     completion,
 
-    onRendererReady(): void {
-      if (state !== "idle") return;
+    onRendererReady(): Promise<void> {
+      if (state === "blocked") return completion;
+      if (state === "running" || state === "settled") return runner ?? completion;
       state = "running";
-      void (async () => {
+      runner = (async () => {
         try {
           await options.recover();
         } catch (error) {
-          options.logRecoveryFailure(error);
+          safelyLog(() => options.logRecoveryFailure(error));
         } finally {
           try {
             options.startAutomation();
           } catch (error) {
-            options.logAutomationStartFailure(error);
+            safelyLog(() => options.logAutomationStartFailure(error));
           } finally {
             settle();
           }
         }
       })();
+      return runner;
     },
 
     block(): void {
