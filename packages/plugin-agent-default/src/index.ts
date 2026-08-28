@@ -3,13 +3,20 @@ import type { PromptFragment } from "@innocenceharness/harness-system-prompt";
 import { identityFragments } from "./fragments/identity";
 import { communicationFragments } from "./fragments/communication";
 import { safetyFragments } from "./fragments/safety";
+import { taskDisciplineFragments } from "./fragments/taskDiscipline";
+import { toolPolicyFragments } from "./fragments/toolPolicy";
+import { subagentFragments } from "./fragments/subagents";
 
 /** All prompt fragments contributed by the default mode plugin:
- *  mode-tagged identity anchor plus the shared clusters. */
+ *  mode-tagged identity anchor, the shared clusters, and the default-mode
+ *  clusters (task discipline, tool policy, subagent delegation). */
 export const defaultModeFragments: PromptFragment[] = [
   ...identityFragments,
   ...communicationFragments,
   ...safetyFragments,
+  ...taskDisciplineFragments,
+  ...toolPolicyFragments,
+  ...subagentFragments,
 ];
 
 /** Default agent mode plugin — registers the "default" mode and contributes its
