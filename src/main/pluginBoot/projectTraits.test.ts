@@ -1,6 +1,7 @@
 // 项目特征探测纯函数面测试：零 IO——所有事实由入参 ProjectFacts 提供，
-// 覆盖 package.json 事实推导、平台特征与缺 package.json 的回落、以及
-// topEntries 含 packages 目录判 workspaces 的补充路径。
+// 覆盖 package.json 事实推导、平台特征与缺 package.json 的回落，以及
+// monorepo 判 workspaces 的两条路径（topEntries 含 packages 目录、
+// rootPackageJson 含 workspaces 字段）。
 import { describe, expect, it } from "vitest";
 import { detectProjectTraits } from "./projectTraits";
 
@@ -39,6 +40,16 @@ describe("detectProjectTraits", () => {
       rootPackageJson: { devDependencies: { vitest: "^3" } },
       lockfiles: [],
       topEntries: ["src", "packages", "package.json"],
+    });
+    expect(traits.monorepo).toBe("workspaces");
+  });
+
+  it("marks workspaces monorepo from rootPackageJson workspaces field alone", () => {
+    const traits = detectProjectTraits({
+      platform: { os: "win32", shell: "cmd" },
+      rootPackageJson: { workspaces: ["packages/*"], devDependencies: { vitest: "^3" } },
+      lockfiles: ["pnpm-lock.yaml"],
+      topEntries: ["src", "package.json", "pnpm-lock.yaml"],
     });
     expect(traits.monorepo).toBe("workspaces");
   });
