@@ -42,6 +42,9 @@ const LIBS = [
 // 插件内 AgentsService 注册的模式 id 一致——切换器按清单 id 展示并写入设置，
 // 会话侧按注册 id 解析提示词，两侧不一致会导致选中后静默回落基础提示词
 // （learn 包目录名与模式 id 不同，清单 id 锁死 "learning"）。
+// builtin-skills 为内置技能内容包（B2 技能批次）：直装载默认导出，向
+// skills 脊柱服务注册六个常驻技能；清单序位于 "skills" 之后——磁盘技能
+// 先注册，同名冲突时用户/项目层技能胜出（与 resolver 用户根影子覆盖同义）。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -51,6 +54,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "ssh", dependencies: [] },
   { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
+  { id: "builtin-skills", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
   { id: "creation", kind: "agent-mode", dependencies: [] },
   { id: "plan", kind: "agent-mode", dependencies: [] },
@@ -70,6 +74,7 @@ const PLUGINS = [
   { dir: "packages/tools-archive", id: "archive" },
   { dir: "packages/plugin-subagent", id: "subagent" },
   { dir: "packages/plugin-task", id: "task" },
+  { dir: "packages/plugin-builtin-skills", id: "builtin-skills" },
   { dir: "packages/provider-anthropic", id: "provider-anthropic" },
   { dir: "packages/provider-google", id: "provider-google" },
   { dir: "packages/provider-openai", id: "provider-openai" },

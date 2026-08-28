@@ -49,8 +49,11 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // 投影面，无会话实例化分支）。provider/task 等由组合层另行装配不进清单。
 // 模式插件的 staging id 必须等于其注册的 agent 模式 id（default/creation
 // 与单模式插件 plan/focus/minimal/learning——learn 包注册 id 是 "learning"）。
+// builtin-skills 为内置技能内容包：默认导出即插件对象（name 同 id），
+// 向 skills 脊柱服务注册六个常驻技能。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
+  "builtin-skills",
   "default", "creation", "plan", "focus", "minimal", "learning",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
@@ -90,6 +93,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       ssh: "ssh",
       archive: "archive",
       todo: "todo",
+      "builtin-skills": "builtin-skills",
       default: "default",
       creation: "creation",
       plan: "plan",
@@ -128,7 +132,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
   it("staging manifest 快照：agent 模式插件登记（kind agent-mode、非 core、无依赖）", () => {
     const manifest = JSON.parse(
       readFileSync(path.join(stagingBootPaths().builtinRoot, "manifest.json"), "utf8"),
-    ) as { plugins: Array<{ id: string; kind?: string; core?: boolean; dependencies?: string[] }> };
+    ) as { plugins: Array<{ id: string; kind?: string; core?: boolean; dependencies?: string[]; title?: string }> };
     const byId = new Map(manifest.plugins.map((entry) => [entry.id, entry]));
     // staging id 必须等于注册的 agent 模式 id（default/creation 与
     // plan/focus/minimal/learning）——切换器按清单 id 写设置、会话按注册 id
@@ -139,6 +143,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       expect(entry).toMatchObject({ kind: "agent-mode", dependencies: [] });
       expect(entry?.core ?? false, `"${id}" 必须非 core（可开关）`).toBe(false);
     }
+    // 内置技能内容包：能力插件（非 core、无依赖、无 kind），默认导出即
+    // 插件对象——通用装载链直装载，name 与 staging id 同名。
+    const builtinSkillsEntry = byId.get("builtin-skills");
+    expect(builtinSkillsEntry, 'manifest 缺少 "builtin-skills" 条目').toBeDefined();
+    expect(builtinSkillsEntry).toMatchObject({ dependencies: [] });
+    expect(builtinSkillsEntry?.core ?? false).toBe(false);
+    expect(builtinSkillsEntry?.kind).toBeUndefined();
+    expect(builtinSkillsEntry?.title, '"builtin-skills" 缺 title').toMatch(/\S/);
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
