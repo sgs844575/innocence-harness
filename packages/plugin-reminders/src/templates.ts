@@ -20,6 +20,15 @@ export interface ReminderState {
    * pipeline) — session-scoped reminders must not fire there.
    */
   ownerSession: boolean;
+  /**
+   * True when this turn's session history shows a task list with open
+   * entries whose last refresh through the list tool falls outside the
+   * recent-message window. Absent when the processing context carries no
+   * history accessor (other hosts, test fakes) or the list is fresh,
+   * absent, or fully completed — optional so existing state producers
+   * stay valid without knowing about list tracking.
+   */
+  todoStale?: boolean;
 }
 
 export interface ReminderTemplate {
@@ -76,9 +85,30 @@ const planPermissionActiveTemplate: ReminderTemplate = {
     "before any execution.",
 };
 
+// Todo list freshness (sources: system-reminder-todowrite-reminder.md plus
+// system-reminder-task-tools-reminder.md, merged — both nags fire in the same
+// situation: a trackable list exists but recent turns let it drift). Armed
+// only when the session's own stored history shows open entries and no
+// list-tool call inside the recent-message window (index.ts derivation), so a
+// session that never used the list tool — including inherited child sessions,
+// whose ledgers hold no list-tool calls of their own — stays untouched.
+const todoFreshnessTemplate: ReminderTemplate = {
+  id: "todo-freshness",
+  when: (state) => state.todoStale === true,
+  render: () =>
+    "The session's task list still holds open entries while the recent turns have left it " +
+    "untouched. Re-check the list against where the work actually stands: entries whose " +
+    "work has wrapped up should be marked completed, and newly started work should be " +
+    "entered promptly rather than held in memory alone. When the list stops matching the " +
+    "effort at hand — the work finished or the plan changed — clear it instead of letting " +
+    "it drift. Multi-step work should be tracked with the list tool from start to finish, " +
+    "kept as a live record rather than a one-time snapshot.",
+};
+
 /** Registered reminder templates, in injection order. */
 export const reminderTemplates: readonly ReminderTemplate[] = [
   providerContextTemplate,
   externalTrustBoundaryTemplate,
   planPermissionActiveTemplate,
+  todoFreshnessTemplate,
 ];

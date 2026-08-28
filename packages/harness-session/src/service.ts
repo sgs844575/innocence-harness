@@ -89,6 +89,10 @@ export function createSessionPlugin(options: SessionPluginOptions): SessionPlugi
         signal: signal ?? new AbortController().signal,
         provider: options.provider,
         scope: { sessionId: options.sessionId },
+        // Read-only history access: each call returns a fresh snapshot of
+        // the live ledger, so processors can observe — but never mutate —
+        // the session's stored messages (the ledger stays caller-owned).
+        history: () => [...service.history],
       }),
     emit: (event) => broadcast(event),
     compactor: new ContextManager(options.compaction ?? {}),

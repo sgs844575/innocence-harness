@@ -1,6 +1,6 @@
-import { expect, it } from "vitest";
-import { processMessage } from "../src/processor";
-import { textMessage } from "../src/types";
+import { expect, expectTypeOf, it } from "vitest";
+import { processMessage, type MessageProcessorContext } from "../src/processor";
+import { textMessage, type Message } from "../src/types";
 
 it("runs processors by order and keeps registration order for ties", async () => {
   const calls: string[] = [];
@@ -30,4 +30,13 @@ it("stops before history mutation when a processor fails", async () => {
       scope: { sessionId: "s1" },
     },
   )).rejects.toBe(error);
+});
+
+it("keeps history an optional read-only context member (type-level gate)", () => {
+  // Optional: contexts built without a history accessor stay valid (the two
+  // tests above construct exactly such contexts). Read-only: the accessor
+  // hands back a readonly view, never the mutable ledger itself.
+  expectTypeOf<MessageProcessorContext["history"]>().toEqualTypeOf<
+    (() => readonly Message[]) | undefined
+  >();
 });

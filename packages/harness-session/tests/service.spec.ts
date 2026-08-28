@@ -4,6 +4,7 @@ import {
   DEFAULT_COMPACTION,
   type Delta,
   type HarnessEvent,
+  type Message,
   type MessageProcessor,
   type Provider,
   type SessionService,
@@ -98,6 +99,45 @@ describe("processUserInput", () => {
       signal,
     );
     expect(seen).toEqual([{ providerId: "echo", sessionId: "sess-7", signal }]);
+  });
+
+  it("hands processors a history accessor that mirrors the caller-owned ledger", async () => {
+    const ctx = await withSession();
+    ctx.session.history.push({ role: "user", parts: [{ type: "text", text: "one" }] });
+    const accessors: Array<() => readonly Message[]> = [];
+    ctx.session.registerProcessor({
+      name: "history-spy",
+      order: 0,
+      async process(message, context) {
+        accessors.push(context.history ?? (() => []));
+        return message;
+      },
+    });
+    await ctx.session.processUserInput({ role: "user", parts: [{ type: "text", text: "a" }] });
+    expect(accessors[0]()).toHaveLength(1);
+    // Later ledger pushes by the caller show up on later accessor reads.
+    ctx.session.history.push({ role: "assistant", parts: [{ type: "text", text: "two" }] });
+    await ctx.session.processUserInput({ role: "user", parts: [{ type: "text", text: "b" }] });
+    expect(accessors[1]()).toHaveLength(2);
+  });
+
+  it("keeps the history accessor read-only: mutating a returned array cannot reach the ledger", async () => {
+    const ctx = await withSession();
+    ctx.session.history.push({ role: "user", parts: [{ type: "text", text: "one" }] });
+    let accessor: (() => readonly Message[]) | undefined;
+    ctx.session.registerProcessor({
+      name: "history-spy",
+      order: 0,
+      async process(message, context) {
+        accessor = context.history;
+        return message;
+      },
+    });
+    await ctx.session.processUserInput({ role: "user", parts: [{ type: "text", text: "a" }] });
+    // Intentional unsafe cast: the point under test is that a processor
+    // mutating what it got back leaves the session ledger untouched.
+    (accessor!() as Message[]).push({ role: "user", parts: [{ type: "text", text: "evil" }] });
+    expect(ctx.session.history).toHaveLength(1);
   });
 });
 

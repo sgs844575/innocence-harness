@@ -7,6 +7,14 @@ export interface MessageProcessorContext {
   scope: {
     sessionId: string;
   };
+  /**
+   * Optional read-only view of the session's stored messages. The host that
+   * runs the pipeline derives it from its real history storage (the session
+   * spine returns a fresh snapshot per call). Optional on purpose: hosts and
+   * test fakes that keep no ledger omit it, and processors must read a
+   * missing accessor as "history unavailable", never as "empty history".
+   */
+  history?: () => readonly Message[];
 }
 
 export interface MessageProcessor {

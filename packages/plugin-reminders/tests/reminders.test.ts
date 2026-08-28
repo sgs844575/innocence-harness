@@ -6,11 +6,12 @@ function makeMessage(text: string) {
   return { role: "user" as const, parts: [{ type: "text" as const, text }] };
 }
 const provider = { id: "anthropic" };
-function makeContext(sessionId = "s") {
+function makeContext(sessionId = "s", history?: () => readonly unknown[]) {
   return {
     provider,
     signal: new AbortController().signal,
     scope: { sessionId },
+    ...(history ? { history } : {}),
   } as never;
 }
 const textOf = (m: { parts: Array<{ type: string; text?: string }> }) =>
@@ -98,5 +99,66 @@ describe("reminder processor", () => {
       }
       expect(t.id.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("todo freshness reminder", () => {
+  const openList = [{ content: "wire the port", status: "pending", priority: "high" }];
+  const doneList = [{ content: "wire the port", status: "completed", priority: "high" }];
+
+  function todoCall(todos: unknown, id = "tc-1") {
+    return {
+      role: "assistant" as const,
+      parts: [{ type: "toolCall" as const, id, toolName: "TodoWrite", args: { todos } }],
+    };
+  }
+  const filler = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: `turn ${i}` }],
+    }));
+
+  async function runWith(history?: () => readonly unknown[]) {
+    const plugin = createRemindersPlugin({ getPermissionMode: () => "auto" });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const message = makeMessage("go");
+    await processors[0].process(message, makeContext("s", history));
+    return textOf(message);
+  }
+
+  it("injects when open entries exist and the list was last touched five messages back", async () => {
+    const text = await runWith(() => [todoCall(openList), ...filler(5)]);
+    expect(text).toMatch(/task list/i);
+    expect(text).toMatch(/<system-reminder>/);
+  });
+
+  it("does not inject when the list was refreshed four messages back (inside the window)", async () => {
+    const text = await runWith(() => [todoCall(openList), ...filler(4)]);
+    expect(text).not.toMatch(/task list/i);
+  });
+
+  it("does not inject when the list was just refreshed", async () => {
+    const text = await runWith(() => [...filler(5), todoCall(openList)]);
+    expect(text).not.toMatch(/task list/i);
+  });
+
+  it("does not inject when every entry is completed", async () => {
+    const text = await runWith(() => [todoCall(doneList), ...filler(5)]);
+    expect(text).not.toMatch(/task list/i);
+  });
+
+  it("does not inject when the session history holds no list-tool call (child sessions)", async () => {
+    const text = await runWith(() => [...filler(6)]);
+    expect(text).not.toMatch(/task list/i);
+  });
+
+  it("does not inject on malformed list args (non-array todos)", async () => {
+    const text = await runWith(() => [todoCall("not-a-list"), ...filler(5)]);
+    expect(text).not.toMatch(/task list/i);
+  });
+
+  it("does not inject and does not throw when the context carries no history accessor", async () => {
+    await expect(runWith()).resolves.not.toMatch(/task list/i);
   });
 });
