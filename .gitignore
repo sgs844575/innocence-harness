@@ -32,3 +32,6 @@ documentation/
 !AGENTS.md
 !README.md
 !**/README.md
+
+# derivable icon artifact (npm run icons:icns)
+assets/icon.icns
