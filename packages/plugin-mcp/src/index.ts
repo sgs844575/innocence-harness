@@ -6,6 +6,7 @@ import {
   type ToolResult,
 } from "@innocenceharness/harness-tools";
 import { StdioJsonRpcClient, type StdioServerOptions } from "./jsonrpc";
+import { WsJsonRpcClient, type WsServerOptions } from "./jsonrpc-ws";
 
 // ctx.logger 的类型可见性：kernel-logger 不自带 Context 增强，这里按
 // session 组合侧（harness-electron/session-kernel）的同一声明就地合并（成员
@@ -30,8 +31,28 @@ interface McpCallResult {
 }
 
 export interface McpPluginOptions {
-  /** server name -> launch config; each server's tools become mcp__name__tool. */
-  servers: Record<string, StdioServerOptions>;
+  /** server name -> launch config; each server's tools become mcp__name__tool.
+   *  Transport is chosen per server: `command` spawns a stdio server, `url`
+   *  connects to a WebSocket endpoint. */
+  servers: Record<string, StdioServerOptions | WsServerOptions>;
+}
+
+/** The shared client face both transports expose to the connection glue. */
+type McpJsonRpcClient = {
+  start(): Promise<void>;
+  request<T>(method: string, params?: unknown, options?: { signal?: AbortSignal }): Promise<T>;
+  notify(method: string, params?: unknown): void;
+  readonly isExited: boolean;
+  dispose(): Promise<void>;
+  stop(): void;
+};
+
+function isWsServerOptions(options: StdioServerOptions | WsServerOptions): options is WsServerOptions {
+  return typeof (options as WsServerOptions).url === "string";
+}
+
+function createMcpClient(options: StdioServerOptions | WsServerOptions): McpJsonRpcClient {
+  return isWsServerOptions(options) ? new WsJsonRpcClient(options) : new StdioJsonRpcClient(options);
 }
 
 interface ServerConnection {
@@ -45,14 +66,14 @@ interface ServerConnection {
 
 async function connect(
   serverName: string,
-  options: StdioServerOptions,
+  options: StdioServerOptions | WsServerOptions,
   log: (level: "info" | "warn" | "error", msg: string) => void,
 ): Promise<{
-  client: StdioJsonRpcClient;
+  client: McpJsonRpcClient;
   tools: McpToolDef[];
   connection: ServerConnection;
 }> {
-  const client = new StdioJsonRpcClient(options);
+  const client = createMcpClient(options);
   await client.start();
   try {
     await client.request("initialize", {
@@ -105,7 +126,7 @@ export interface McpPlugin {
  * it started (fiber effect): plugin unload stops the subprocesses.
  */
 export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
-  const clients: StdioJsonRpcClient[] = [];
+  const clients: McpJsonRpcClient[] = [];
   /**
    * Releases every stdio client in parallel; one stuck server must not
    * block the others (each dispose is itself time-bounded).
@@ -183,13 +204,15 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
       }
       // Registered after a successful activation, so a failed apply never
       // triggers cleanup (the legacy dispose-after-activate semantics).
-      ctx.effect(() => release, "mcp stdio clients");
+      ctx.effect(() => release, "mcp clients");
     },
   };
 }
 
 export { StdioJsonRpcClient } from "./jsonrpc";
+export { WsJsonRpcClient } from "./jsonrpc-ws";
 export type { StdioServerOptions } from "./jsonrpc";
+export type { WsServerOptions } from "./jsonrpc-ws";
 // Distribution default (kernel-loader unwrapExports convention): the factory,
 // so a disk-loaded module resolves to the single entry point hosts configure.
 export default createMcpPlugin;

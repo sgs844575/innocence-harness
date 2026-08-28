@@ -65,10 +65,11 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "@ai-sdk/anthropic",
   "@ai-sdk/google",
   // 插件 dist 的运行时裸导入：plugin-skills→yaml、harness-ai-runtime→undici、
-  // tools-ssh→ssh2，与根 package.json 声明保持一致。
+  // tools-ssh→ssh2、plugin-mcp→ws，与根 package.json 声明保持一致。
   "yaml",
   "undici",
   "ssh2",
+  "ws",
 ];
 
 // 运行时 manifest：源 manifest 的 main/exports 指向 src（开发态源码直引），
