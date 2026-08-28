@@ -284,6 +284,72 @@ maybeDescribe("composePlugins user-root scan merge", () => {
       await composition.disposePluginBoot();
     }
   });
+
+  // ---- D2：扫描描述符参与开关解析并入插件清单（修复轮 1）------------------
+
+  it("scanned user plugin is visible in plugins:list and toggleable through settings toggles", async () => {
+    const composition = scanComposition({
+      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode" } } },
+    });
+    try {
+      const ws = await tempWorkspace({});
+      // 默认：清单行可见且 active（title/toggleable 投影自扫描描述符）。
+      const active = await composition.pluginInventory({ workspaceRoot: ws });
+      expect(active.find((e) => e.id === "my-user-mode")).toMatchObject({
+        title: "My User Mode",
+        core: false,
+        toggleable: true,
+        state: "active",
+        via: "default",
+      });
+      // 用户开关关闭：条目不装载 + 清单行呈 disabled-by-config/user。
+      const off = (await composition.composePlugins(ws, { "my-user-mode": false })).map((p) => p.name);
+      expect(off).not.toContain("my-user-mode");
+      const inventory = await composition.pluginInventory({
+        workspaceRoot: ws,
+        userToggles: { "my-user-mode": false },
+      });
+      expect(inventory.find((e) => e.id === "my-user-mode")).toMatchObject({
+        state: "disabled-by-config",
+        via: "user",
+      });
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("user cordis.yml toggle disables a scanned user plugin (user layer)", async () => {
+    const home = mkdtempSync(path.join(tmpdir(), "ic-user-cordis-home-"));
+    roots.push(home);
+    mkdirSync(path.join(home, ".innocence"), { recursive: true });
+    writeFileSync(path.join(home, ".innocence", "cordis.yml"), "plugins:\n  my-user-mode: false\n", "utf8");
+    const composition = scanComposition({
+      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode" } } },
+    });
+    // os.homedir() on Windows follows USERPROFILE; keep the override scoped
+    // （cordis.yml 的用户层读取走临时 home；扫描根仍是 scanComposition 的伪根）。
+    const previousProfile = process.env.USERPROFILE;
+    const previousHome = process.env.HOME;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      const ws = await tempWorkspace({});
+      const names = (await composition.composePlugins(ws)).map((p) => p.name);
+      expect(names).not.toContain("my-user-mode");
+      expect(names).toContain("fs"); // 其余条目不受影响
+      const inventory = await composition.pluginInventory({ workspaceRoot: ws });
+      expect(inventory.find((e) => e.id === "my-user-mode")).toMatchObject({
+        state: "disabled-by-config",
+        via: "user",
+      });
+    } finally {
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      await composition.disposePluginBoot();
+    }
+  });
 });
 
 if (!stagingAvailable) {

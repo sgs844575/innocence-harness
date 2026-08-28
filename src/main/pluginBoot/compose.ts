@@ -46,21 +46,28 @@ export interface PluginBoot {
    * toggle semantics: project overrides user; core stays on; dependency
    * closure). Skipped plugins still produce disabled entries (entries() face).
    * An empty workspaceRoot skips the project layer (no cwd-relative reads).
+   * `extraDescriptors` (user-root scan) are merged manifest-first (same-id
+   * dedup) and resolve together with the manifest rows, so scanned plugins
+   * participate in toggles/configs/dependency closure and the toggle keyspace.
    */
   resolveBuiltinSet(options: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
     knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
+    extraDescriptors?: readonly PluginDescriptor[];
   }): Promise<ResolvedEntries>;
   /**
    * Manifest projection for the settings inventory (IPC plugins:list):
    * boot-time descriptor metadata + a FRESH resolveBuiltinSet run per call —
    * settings/toggle changes are reflected immediately, never a stale snapshot.
+   * `extraDescriptors` are merged manifest-first, so scanned user plugins are
+   * listed with their toggle state projected like manifest rows.
    */
   pluginInventory(options: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
+    extraDescriptors?: readonly PluginDescriptor[];
   }): Promise<PluginInventoryEntry[]>;
   /** The dual-root resolver shared by route-scope loaders. */
   readonly moduleResolver: { version: string; import(specifier: string): Promise<unknown> };
@@ -198,6 +205,22 @@ export function toggleKeyspace(descriptors: readonly PluginDescriptor[]): string
   return descriptors
     .filter((d) => (d.toggleable ?? d.core !== true) === true)
     .map((d) => d.id);
+}
+
+/** 扫描描述符并入（manifest 优先去重）：同 id 时清单描述符胜出——用户根
+ *  目录对模块本体的影子覆盖由 resolver 根序保证，描述符语义（toggles/
+ *  configs/依赖闭包/投影元数据）仍以清单为准。并入后的条目与清单条目
+ *  一同参与解析，故用户插件可经 settings/cordis.yml 开关、进清单投影。 */
+function mergeExtraDescriptors(
+  manifest: readonly PluginDescriptor[],
+  extra: readonly PluginDescriptor[] | undefined,
+): PluginDescriptor[] {
+  if (!extra || extra.length === 0) return [...manifest];
+  const manifestIds = new Set(manifest.map((descriptor) => descriptor.id));
+  return [
+    ...manifest,
+    ...extra.filter((descriptor) => !manifestIds.has(descriptor.id)),
+  ];
 }
 
 export interface ClientPluginWatchTarget {
@@ -352,23 +375,28 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
 
   // Shared declarative resolution: manifest descriptors + project yml layer +
   // user layer (settings toggles over user cordis.yml). An empty workspaceRoot
-  // means "no project layer" — never a cwd-relative read.
+  // means "no project layer" — never a cwd-relative read. extraDescriptors
+  // (user-root scan) merge manifest-first and resolve together with the rows.
   const resolveBuiltinSet = async ({
     workspaceRoot,
     userToggles,
     knownGroupNames,
     logger,
+    extraDescriptors,
   }: {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
     knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
+    extraDescriptors?: readonly PluginDescriptor[];
   }): Promise<ResolvedEntries> => {
     const log: ConfigLogger = (level, msg, data) =>
       (logger ?? (() => {}))(level, msg, data);
-    // 键空间清单派生：项目/用户 yml 的未知键校验用清单 id 集（configSources
+    // 扫描描述符并入（manifest 优先去重）：与清单条目走同一解析与键空间。
+    const merged = mergeExtraDescriptors(descriptors, extraDescriptors);
+    // 键空间清单派生：项目/用户 yml 的未知键校验用并入后 id 集（configSources
     // 不再持有硬编码白名单）。
-    const knownKeys = toggleKeyspace(descriptors);
+    const knownKeys = toggleKeyspace(merged);
     const { user, project } = await loadConfigLayerPair(
       os.homedir(),
       workspaceRoot,
@@ -377,7 +405,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
       knownKeys,
       knownGroupNames ?? options.allowedGroupNames,
     );
-    return resolveEntries(descriptors, user, project, builtinConfigSpecs);
+    return resolveEntries(merged, user, project, builtinConfigSpecs);
   };
 
   return {
@@ -388,10 +416,14 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     userRoot,
     moduleResolver,
     resolveBuiltinSet,
-    async pluginInventory({ workspaceRoot, userToggles }) {
-      // 现算投影：每次调用重跑解析（toggles 变更即时反映）；描述符本身
-      // 是 boot 时的 manifest 快照（随 staging 树固定）。
-      return projectPluginInventory(descriptors, await resolveBuiltinSet({ workspaceRoot, userToggles }));
+    async pluginInventory({ workspaceRoot, userToggles, extraDescriptors }) {
+      // 现算投影：每次调用重跑解析（toggles 变更即时反映）；描述符是 boot
+      // 时的 manifest 快照 + 调用方并入的扫描描述符（manifest 优先去重）。
+      const merged = mergeExtraDescriptors(descriptors, extraDescriptors);
+      return projectPluginInventory(
+        merged,
+        await resolveBuiltinSet({ workspaceRoot, userToggles, extraDescriptors }),
+      );
     },
     async importPlugin(id: string): Promise<unknown> {
       // The loader validates the plugin shape (object with apply, or a

@@ -30,7 +30,7 @@ import {
   readManifest,
   type PluginBoot,
 } from "./compose";
-import { scanUserPlugins } from "./userPluginScan";
+import { scanUserPlugins, type UserPluginScanResult } from "./userPluginScan";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type {
   PluginDescriptor,
@@ -373,6 +373,20 @@ export function createSessionComposition(
   // attempt reads them fresh (settings-rebuild semantics unchanged).
   let bootPromise: Promise<PluginBoot> | undefined;
 
+  // 用户根扫描现算（每次调用重扫，不缓存——新装插件下次会话构建/清单与目录
+  // 拉取即生效）：userRoot 走宿主钩子优先、缺省回落 compose 的
+  // defaultUserPluginRoot()（与 boot 的 resolver 双根一致）；目录非法/不可读
+  // 一律降级为告警，不阻断调用方。
+  const scanCurrentUserRoot = async (): Promise<UserPluginScanResult> => {
+    const scanned = await scanUserPlugins(
+      options.getUserPluginRoot?.() ?? defaultUserPluginRoot(),
+    );
+    for (const warning of scanned.warnings) {
+      options.log("warn", "user plugin scan", { warning });
+    }
+    return scanned;
+  };
+
   function ensureBoot(): Promise<PluginBoot> {
     bootPromise ??= createPluginBoot({
       ...options.resolvePaths(),
@@ -408,7 +422,10 @@ export function createSessionComposition(
     },
     async pluginInventory(input): Promise<PluginInventoryEntry[]> {
       const boot = await ensureBoot();
-      return boot.pluginInventory(input);
+      // 扫描并入：用户插件在 plugins:list 行可见，开关态投影随解析自动接管
+      // （与 composePlugins 同一扫描根、同一 manifest 优先去重语义）。
+      const scanned = await scanCurrentUserRoot();
+      return boot.pluginInventory({ ...input, extraDescriptors: scanned.descriptors });
     },
     async composePlugins(
       workspaceRoot: string,
@@ -421,23 +438,26 @@ export function createSessionComposition(
       // 与 boot 的 resolver 双根一致——用户目录可影子覆盖模块本体）。
       const resolveUserPluginRoot = (): string =>
         options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
-      // 用户根扫描现算（不缓存，与配置解析并行）：新装插件下次会话构建即
-      // 生效；目录非法/不可读一律降级为告警，不阻断会话装配。
-      const [config, resolved, scanned] = await Promise.all([
+      // 用户根扫描现算（不缓存，与项目配置读取并行）；解析依赖扫描结果，
+      // 故 resolveBuiltinSet 在其后串行。
+      const [config, scanned] = await Promise.all([
         loadInnocenceConfig(workspaceRoot),
-        boot.resolveBuiltinSet({
-          workspaceRoot,
-          userToggles,
-          knownGroupNames: options.getAllowedGroupNames?.(),
-          // yml 损坏/未知键告警必须进 userData/logs，而非 console 兜底。
-          logger: (level, msg, data) =>
-            options.log(level === "error" ? "error" : "warn", msg, data),
-        }),
-        scanUserPlugins(resolveUserPluginRoot()),
+        scanCurrentUserRoot(),
       ]);
-      for (const warning of scanned.warnings) {
-        options.log("warn", "user plugin scan", { warning });
-      }
+      // 扫描描述符并入解析（manifest id 优先去重，由 boot 的
+      // resolveBuiltinSet 完成）：用户插件与清单条目一同走 toggles/configs/
+      // 依赖闭包——可经 settings 开关或 ~/.innocence/cordis.yml 关闭，关闭即
+      // 产出 disabled 条目、不装载；同 id 时清单描述符胜出（用户目录对模块
+      // 本体的影子覆盖由 resolver 根序保证）。
+      const resolved = await boot.resolveBuiltinSet({
+        workspaceRoot,
+        userToggles,
+        knownGroupNames: options.getAllowedGroupNames?.(),
+        extraDescriptors: scanned.descriptors,
+        // yml 损坏/未知键告警必须进 userData/logs，而非 console 兜底。
+        logger: (level, msg, data) =>
+          options.log(level === "error" ? "error" : "warn", msg, data),
+      });
       for (const { id, reason, via } of resolved.skipped) {
         options.log("info", "plugin skipped", { id, reason, via });
       }
@@ -447,28 +467,6 @@ export function createSessionComposition(
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
         plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot));
-      }
-      // 扫描描述符并入（manifest id 优先去重）：清单未覆盖的用户插件按同一
-      // loader 条目形状追加——经 boot 的双根 resolver 从磁盘装载（用户根在
-      // 前）。同 id 时 manifest 描述符胜出（用户目录对模块本体的影子覆盖由
-      // resolver 根序保证，不在此重复建条目）；扫描条目暂不参与 toggles/
-      // configs 层解析（键空间仍为清单派生，设置面清单投影亦为清单面）。
-      const manifestIds = new Set(
-        resolved.entries
-          .filter((entry) => entry.name !== "kernel:group")
-          .map((entry) => entry.id),
-      );
-      for (const descriptor of scanned.descriptors) {
-        if (manifestIds.has(descriptor.id)) continue;
-        plugins.push(
-          await builtinLoaderEntryFor(
-            boot,
-            { id: descriptor.id, name: descriptor.id },
-            config,
-            workspaceRoot,
-            resolveUserPluginRoot,
-          ),
-        );
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
@@ -480,14 +478,15 @@ export function createSessionComposition(
     async agentModes(): Promise<AgentModeInfo[]> {
       // 现算：manifest（readManifest 与 boot 同一读取路径，kind 已透传）+
       // 用户根扫描（并行）→ 投影。不缓存：新装模式插件下次目录拉取即生效。
+      // 目录不过滤已停用的模式（协调者裁定）：目录是可用性提示而非保证——
+      // 模式插件停用时其模式片段不参与系统提示词组装（选中该模式即回落
+      // 共享/基础提示词，非法模式 id 另在会话构建处回落 "default"），与既有
+      // 回退语义一致，故此处不加 toggle 过滤。
       const { builtinRoot } = options.resolvePaths();
       const [manifest, scanned] = await Promise.all([
         readManifest(builtinRoot),
-        scanUserPlugins(options.getUserPluginRoot?.() ?? defaultUserPluginRoot()),
+        scanCurrentUserRoot(),
       ]);
-      for (const warning of scanned.warnings) {
-        options.log("warn", "user plugin scan", { warning });
-      }
       return projectAgentModes(manifest, scanned.descriptors);
     },
   };
