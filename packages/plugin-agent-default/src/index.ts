@@ -6,10 +6,12 @@ import { safetyFragments } from "./fragments/safety";
 import { taskDisciplineFragments } from "./fragments/taskDiscipline";
 import { toolPolicyFragments } from "./fragments/toolPolicy";
 import { subagentFragments } from "./fragments/subagents";
+import { conditionalFragments } from "./fragments/conditional";
 
 /** All prompt fragments contributed by the default mode plugin:
- *  mode-tagged identity anchor, the shared clusters, and the default-mode
- *  clusters (task discipline, tool policy, subagent delegation). */
+ *  mode-tagged identity anchor, the shared clusters, the default-mode
+ *  clusters (task discipline, tool policy, subagent delegation), and the
+ *  trait-conditional cluster. */
 export const defaultModeFragments: PromptFragment[] = [
   ...identityFragments,
   ...communicationFragments,
@@ -17,6 +19,7 @@ export const defaultModeFragments: PromptFragment[] = [
   ...taskDisciplineFragments,
   ...toolPolicyFragments,
   ...subagentFragments,
+  ...conditionalFragments,
 ];
 
 /** Default agent mode plugin — registers the "default" mode and contributes its
