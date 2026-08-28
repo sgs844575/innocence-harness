@@ -94,8 +94,8 @@ export const grepTool: Tool = {
     const files = listWorkspaceFiles(ctx, subDir);
 
     const hits: string[] = [];
+    let totalHits = 0;
     for (const rel of files) {
-      if (hits.length >= MATCH_LIMIT) break;
       if (globFilter && !matchGlob(globFilter, path.posix.basename(rel))) continue;
       let content: string;
       try {
@@ -106,16 +106,21 @@ export const grepTool: Tool = {
         continue;
       }
       const lines = content.split("\n");
-      for (let i = 0; i < lines.length && hits.length < MATCH_LIMIT; i++) {
+      // 统计完整命中数以披露截断（展示前 N / 共 M），展示列表仍止于上限。
+      for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
-          hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
+          totalHits++;
+          if (hits.length < MATCH_LIMIT) {
+            hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
+          }
         }
       }
     }
-    if (hits.length === 0) return { content: "没有匹配行。" };
-    return {
-      content:
-        hits.join("\n") + (hits.length >= MATCH_LIMIT ? `\n[已达 ${MATCH_LIMIT} 条上限]` : ""),
-    };
+    if (totalHits === 0) return { content: "没有匹配行。" };
+    const disclosure =
+      totalHits > MATCH_LIMIT
+        ? `\n[命中已截断：展示前 ${MATCH_LIMIT} 条 / 共 ${totalHits} 条命中]`
+        : "";
+    return { content: hits.join("\n") + disclosure };
   },
 };

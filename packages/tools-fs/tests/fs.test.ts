@@ -36,6 +36,21 @@ beforeAll(async () => {
   await fs.writeFile(path.join(root, "src", "nested", "b.ts"), "const x = 42;\n", "utf8");
   await fs.writeFile(path.join(root, "src", "c.md"), "# doc\n", "utf8");
   await fs.writeFile(path.join(root, "node_modules", "junk", "x.ts"), "junk\n", "utf8");
+  // 注记用 fixtures：空文件 / 越界小文件 / 4500 行大文件 / 命中超限搜索目标。
+  await fs.writeFile(path.join(root, "empty.txt"), "", "utf8");
+  await fs.writeFile(path.join(root, "tiny.txt"), "l1\nl2\nl3\n", "utf8");
+  await fs.mkdir(path.join(root, "big"), { recursive: true });
+  await fs.writeFile(
+    path.join(root, "big", "large.txt"),
+    `${Array.from({ length: 4500 }, (_, i) => `row ${i + 1}`).join("\n")}\n`,
+    "utf8",
+  );
+  await fs.mkdir(path.join(root, "search"), { recursive: true });
+  await fs.writeFile(
+    path.join(root, "search", "many.txt"),
+    Array.from({ length: 250 }, (_, i) => `needle ${i + 1}`).join("\n"),
+    "utf8",
+  );
 });
 
 afterAll(async () => {
@@ -69,6 +84,35 @@ describe("Read tool", () => {
     await expect(readTool.execute({ path: "src" }, ctx())).rejects.toThrow("目录");
     await expect(readTool.execute({}, ctx())).rejects.toThrow("path");
     await expect(readTool.execute({ path: "../x" }, ctx())).rejects.toThrow("越出工作区");
+  });
+
+  it("describes genuinely empty files and points to the write tool", async () => {
+    const r = await readTool.execute({ path: "empty.txt" }, ctx());
+    expect(r.content).toContain("[空文件");
+    expect(r.content).toContain("写入");
+  });
+
+  it("distinguishes offset beyond EOF from an empty file", async () => {
+    const r = await readTool.execute({ path: "tiny.txt", offset: 10 }, ctx());
+    expect(r.content).toContain("越界");
+    expect(r.content).toContain("offset=10");
+    expect(r.content).toContain("无需继续读取");
+    expect(r.content).not.toContain("[空文件");
+  });
+
+  it("truncation note discloses effective limit and sequential continuation offset", async () => {
+    const r = await readTool.execute({ path: "big/large.txt", limit: 50 }, ctx());
+    expect(r.content).toContain("limit=50");
+    expect(r.content).toContain("offset=51");
+    expect(r.content).toContain("顺序");
+  });
+
+  it("first-page read of a very large file appends chunked-reading guidance only there", async () => {
+    const first = await readTool.execute({ path: "big/large.txt" }, ctx());
+    expect(first.content).toContain("大文件");
+    expect(first.content).toContain("文件路径:行号");
+    const mid = await readTool.execute({ path: "big/large.txt", offset: 2001 }, ctx());
+    expect(mid.content).not.toContain("大文件");
   });
 });
 
@@ -120,6 +164,18 @@ describe("Glob / Grep tools", () => {
     expect(r.content).toContain("src/nested/b.ts:1:");
     const filtered = await grepTool.execute({ pattern: "line", glob: "*.md" }, ctx());
     expect(filtered.content).toContain("没有匹配行");
+  });
+
+  it("grep discloses shown vs total matches when hits exceed the cap", async () => {
+    const r = await grepTool.execute({ pattern: "needle", path: "search" }, ctx());
+    expect(r.content).toContain("展示前 200 条");
+    expect(r.content).toContain("共 250 条命中");
+  });
+
+  it("grep omits the disclosure when matches stay below the cap", async () => {
+    const r = await grepTool.execute({ pattern: "42", glob: "*.ts" }, ctx());
+    expect(r.content).toContain("src/nested/b.ts:1:");
+    expect(r.content).not.toContain("命中已截断");
   });
 });
 
