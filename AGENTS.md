@@ -39,3 +39,8 @@
 ## Expression
 
 15. **Keep third-party names and trademarks out of development artifacts.** Code identifiers, comments, commit messages, changelogs, user-facing documentation, UI copy, and log output must not mention third-party product, company, or model names or trademarks; use neutral terms (for example "the plugin kernel", "the reference project") instead. Exemptions: dependency declarations and import specifiers required to resolve packages, opaque API key strings defined by external code, legal attribution files (`LICENSE`, `THIRD_PARTY_NOTICES.md`), and vendored third-party sources under `vendor/` (kept verbatim for upstream synchronization). Local, uncommitted working documents may reference upstream names when needed for development.
+
+## Dependency Discipline
+
+16. **Prefer installed components over hand-rolled code.** Before writing parsing, protocol, streaming, version-comparison, archive, transport, or crypto logic, first check the Node standard library and the workspace's already-installed dependencies, and reuse them so the hand-rolled surface shrinks instead of grows. When a dependency is added, land its first real consumer in the same change; a declared dependency with no import site is dead weight — remove it, or land the capability that justifies it. A well-chosen component replaces bespoke code (parsers, mappers, adapters) with a maintained, tested implementation; a dependency kept "for later" without a consumer does the opposite.
+
