@@ -13,7 +13,9 @@
 - **设置**：`HarnessSettings`（v3 多平台 profile）、防御性归一化 `mergeSettings`（v1/v2 旧格式自动迁移）、
   内置 12 个平台预设、`resolveActive` 解析当前 Provider+模型（回落 mock）、`listModels` 拉取模型列表。
 - **Provider 构建**：已迁宿主组合层（`src/main/harnessGlue.ts`）——本包不再实例化 Provider，会话 provider 一律经 providers 注册表解析。
-- **内置代理**：`default / plan / full` 三档系统提示词（`systemPromptFor`），与 IPC 共享类型镜像测试防漂移。
+- **Agent 模式回退**：模式维度由插件注册（AgentsService + PromptFragment），本包仅保留"任何模式都未命中"的
+  宿主侧回退提示词 `BUILTIN_FALLBACK_PROMPT`；设置面 `activeAgentMode`（开放集合，非法/缺失回落 `"default"`）
+  与 shared/ipc 镜像测试防漂移。
 - **转录**：`encodeTurnV2/V3` + `decodeTranscript`（v2 行与 legacy 快照归入 main 路由；v3 行按 routeId 建路由图）、
   `canonicalizeHistory`（UI 形态 → 规范 harness 形态，未知合法 part 原样保留）。
 - **模型预设**：本地打包的模型目录数据 + 厂家无关五级回退解析（`resolvePresetMeta` / `modelFromPreset`）。
@@ -26,7 +28,7 @@
 | `RuntimeOptions` / `RuntimeHooks` | 宿主注入面（settings / pluginsForSession / workspaceRootFor / persistDir）与 UI 钩子（onDelta / onTool / onThinking / onCompleted / onError / askPermission / log） |
 | `DEFAULT_ROUTE_ID` | 缺省路由 id `"main"` |
 | `DEFAULT_SETTINGS` / `mergeSettings` / `resolveActive` / `listModels` / `PROVIDER_PRESETS` | 设置体系 |
-| `AGENT_IDS` / `BUILTIN_AGENTS` / `systemPromptFor` | 内置代理提示词 |
+| `BUILTIN_FALLBACK_PROMPT` | agent 模式维度未命中任何插件时的宿主侧回退系统提示词 |
 | `encodeTurnV2` / `encodeTurnV3` / `decodeTranscript` / `canonicalizeHistory` | 转录编解码 |
 | `routeCacheKey` | `sessionId:routeId` 规范键 |
 
@@ -57,7 +59,7 @@ const result = await runtime.send({ sessionId, routeId, text: "帮我看看构�
 - 会话重建：设置序列化结果变化即重建，重建时先拷贝旧 history 再释放旧会话；重启仅 main 路由从转录回填 history。
 - `persistTurn` 跳过任务轮次（taskId 非空，任务侧自行提交 turn-v3 行）；持久化 best-effort，失败仅告警。
 - 权限审计：每次判定经 `hooks.log` 输出，raw 参数不达宿主面。
-- 默认设置：`activeProfileId = "__mock__"`、`permissionMode = "ask"`、`activeAgent = "default"`。
+- 默认设置：`activeProfileId = "__mock__"`、`permissionMode = "ask"`、`activeAgentMode = "default"`。
 
 ## 测试
 
