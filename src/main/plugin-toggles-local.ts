@@ -24,6 +24,8 @@ export interface PluginDescriptor {
   toggleable?: boolean;
   /** 能力类别标记；agent-mode = agent 模式插件（模式目录投影用）。 */
   kind?: "agent-mode";
+  /** 模式插件的可选中性描述（agentMode 元数据投影；模式切换器悬浮提示）。 */
+  description?: string;
 }
 
 export type PluginSkipReason = "disabled-by-config" | "dependency-disabled";

@@ -267,7 +267,7 @@ maybeDescribe("composePlugins user-root scan merge", () => {
 
   it("agentModes: manifest kind passthrough + scanned user mode + default fallback", async () => {
     const composition = scanComposition({
-      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode" } } },
+      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode", description: "User mode hint" } } },
     });
     try {
       const modes = await composition.agentModes();
@@ -276,8 +276,8 @@ maybeDescribe("composePlugins user-root scan merge", () => {
       // 否则 agent-default/agent-creation 会从目录中消失。
       expect(byId.get("agent-default")).toBeDefined();
       expect(byId.get("agent-creation")).toBeDefined();
-      // 扫描并入：用户模式进目录，title 取 package.json 投影。
-      expect(byId.get("my-user-mode")).toMatchObject({ id: "my-user-mode", title: "My User Mode" });
+      // 扫描并入：用户模式进目录，title/description 取 package.json 投影。
+      expect(byId.get("my-user-mode")).toMatchObject({ id: "my-user-mode", title: "My User Mode", description: "User mode hint" });
       // 兜底恒在。
       expect(byId.get("default")).toEqual({ id: "default", title: "Default" });
     } finally {

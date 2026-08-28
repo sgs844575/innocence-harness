@@ -343,7 +343,11 @@ export function projectAgentModes(
   const byId = new Map<string, AgentModeInfo>();
   for (const descriptor of [...manifest, ...userDescriptors]) {
     if (descriptor.kind !== "agent-mode" || byId.has(descriptor.id)) continue;
-    byId.set(descriptor.id, { id: descriptor.id, title: descriptor.title ?? descriptor.id });
+    byId.set(descriptor.id, {
+      id: descriptor.id,
+      title: descriptor.title ?? descriptor.id,
+      ...(descriptor.description ? { description: descriptor.description } : {}),
+    });
   }
   if (!byId.has("default")) byId.set("default", { id: "default", title: "Default" });
   return [...byId.values()];

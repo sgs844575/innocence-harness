@@ -34,7 +34,7 @@ function plugin(id: string, pkg: Record<string, unknown>) {
 describe("scanUserPlugins", () => {
   it("discovers native-format plugins with title and agent-mode kind metadata", async () => {
     plugin("my-tool", { name: "my-tool", description: "My custom tool" });
-    plugin("my-mode", { name: "my-mode", innocenceharness: { agentMode: { title: "My Mode" } } });
+    plugin("my-mode", { name: "my-mode", innocenceharness: { agentMode: { title: "My Mode", description: "Custom mode hint" } } });
     const { descriptors, warnings } = await scanUserPlugins(root);
     const tool = descriptors.find((d) => d.id === "my-tool");
     expect(tool?.title).toBe("My custom tool");
@@ -42,6 +42,7 @@ describe("scanUserPlugins", () => {
     const mode = descriptors.find((d) => d.id === "my-mode");
     expect(mode?.kind).toBe("agent-mode");
     expect(mode?.title).toBe("My Mode");
+    expect(mode?.description).toBe("Custom mode hint");
     expect(warnings).toEqual([]);
   });
   it("skips and warns on dot-prefixed names and unknown formats with distinct messages", async () => {

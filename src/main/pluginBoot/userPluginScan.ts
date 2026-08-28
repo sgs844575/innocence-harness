@@ -39,12 +39,14 @@ export const nativeProbe: UserPluginFormatProbe = {
     const title = meta && typeof meta.title === "string" && meta.title ? meta.title
       : typeof pkg.description === "string" && pkg.description ? pkg.description
       : id;
+    const metaDescription = meta && typeof meta.description === "string" && meta.description ? meta.description : undefined;
     return {
       id,
       dependencies: [],
       toggleable: true,
       title,
       ...(meta ? { kind: "agent-mode" as const } : {}),
+      ...(metaDescription ? { description: metaDescription } : {}),
     };
   },
 };
