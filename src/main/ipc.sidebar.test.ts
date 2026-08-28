@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   deleteAutomation: vi.fn(),
   listAutomations: vi.fn(),
   triggerAutomation: vi.fn(),
+  respondPermission: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -25,7 +26,7 @@ vi.mock("./sessions", () => ({
   upsertSidebarGroup: vi.fn(), deleteSidebarGroup: vi.fn(), setSidebarGroupCollapsed: vi.fn(),
 }));
 vi.mock("./harnessGlue", () => ({
-  getCommittedHarnessSettings: vi.fn(), getHarnessSettings: vi.fn(), getPluginInventory: vi.fn(), generateAutomationCandidate: mocks.generateAutomationCandidate, confirmAutomation: mocks.confirmAutomation, updateAutomation: mocks.updateAutomation, deleteAutomation: mocks.deleteAutomation, listAutomations: mocks.listAutomations, triggerAutomation: mocks.triggerAutomation, listProviderModelsById: vi.fn(), pickWorkspace: vi.fn(), respondPermission: vi.fn(), sendChatTurn: vi.fn(), setHarnessSettings: vi.fn(), stopChatTurn: vi.fn(), updateProviderApiKey: vi.fn(), disposeSession: vi.fn(),
+  getCommittedHarnessSettings: vi.fn(), getHarnessSettings: vi.fn(), getPluginInventory: vi.fn(), generateAutomationCandidate: mocks.generateAutomationCandidate, confirmAutomation: mocks.confirmAutomation, updateAutomation: mocks.updateAutomation, deleteAutomation: mocks.deleteAutomation, listAutomations: mocks.listAutomations, triggerAutomation: mocks.triggerAutomation, listProviderModelsById: vi.fn(), pickWorkspace: vi.fn(), respondPermission: mocks.respondPermission, sendChatTurn: vi.fn(), setHarnessSettings: vi.fn(), stopChatTurn: vi.fn(), updateProviderApiKey: vi.fn(), disposeSession: vi.fn(),
 }));
 vi.mock("./sessionEvents", () => ({ broadcastSessions: vi.fn(), broadcastSidebar: mocks.broadcastSidebar }));
 vi.mock("./theme", () => ({ broadcastTheme: vi.fn(), getTheme: vi.fn(), setTheme: vi.fn() }));
@@ -54,6 +55,14 @@ describe("sidebar mutation IPC durability", () => {
     expect(mocks.broadcastSidebar).not.toHaveBeenCalled();
   });
 
+  it("rejects invalid permission choices and unknown request ids", async () => {
+    mocks.respondPermission.mockImplementation((requestId: string) => {
+      if (requestId === "missing") throw new Error("permission request not found");
+    });
+    const handler = mocks.handles.get(IPC.chatPermissionRespond)!;
+    await expect(handler({}, "missing", "allow")).rejects.toThrow("permission request not found");
+    await expect(handler({}, "p1", "invalid")).rejects.toThrow("invalid permission choice");
+  });
   it("routes automation candidate, confirmation, list, and trigger through typed handlers", async () => {
     mocks.generateAutomationCandidate.mockResolvedValue({ candidate: true });
     mocks.confirmAutomation.mockResolvedValue({ id: "automation-1" });

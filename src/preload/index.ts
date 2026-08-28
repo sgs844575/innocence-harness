@@ -18,6 +18,7 @@ import {
   type TerminalIpcApi,
   type TerminalExitEvent,
   type TerminalOutputEvent,
+  type ShellTranscriptEvent,
 } from "../shared/terminalIpc";
 
 function subscribe(channel: string, listener: (...args: never[]) => void): () => void {
@@ -56,6 +57,7 @@ const api: InnocenceCodeApi = {
   onChatError: (cb) => subscribe(IPC.chatError, cb as never),
   onChatTool: (cb) => subscribe(IPC.chatTool, cb as never),
   onChatThinking: (cb) => subscribe(IPC.chatThinking, cb as never),
+  onSubagentLifecycle: (cb) => subscribe(IPC.subagentLifecycle, cb as never),
   onChatPermission: (cb) => subscribe(IPC.chatPermission, cb as never),
   respondChatPermission: (requestId, choice) =>
     ipcRenderer.invoke(IPC.chatPermissionRespond, requestId, choice),
@@ -123,6 +125,7 @@ const terminalApi: TerminalIpcApi = {
   dispose: (req) => ipcRenderer.invoke(TerminalIpcChannels.terminalDispose, req),
   onTerminalOutput: (cb) => subscribeTask<TerminalOutputEvent>(TerminalIpcChannels.terminalOutput, cb),
   onTerminalExit: (cb) => subscribeTask<TerminalExitEvent>(TerminalIpcChannels.terminalExit, cb),
+  onShellTranscript: (cb) => subscribeTask<ShellTranscriptEvent>(TerminalIpcChannels.terminalShell, cb),
 };
 
 contextBridge.exposeInMainWorld("innocencecode", api);

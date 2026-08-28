@@ -7,6 +7,7 @@ import type { Message, ToolCallPart, ToolResultPart } from "@innocenceharness/ha
 import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { Provider, TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
+import type { SubagentLifecycleEvent } from "@innocenceharness/harness-agent";
 import type { AgentSession } from "./session";
 import type { SessionPlugin } from "./registry";
 import type { SessionSpineSuite } from "./session-spine";
@@ -40,6 +41,8 @@ export interface RuntimeHooks {
   /** One sanitized summary shared with transcript persistence and the done event. */
   onCompleted(sessionId: string, messageId: string, completion: TurnCompletion): void;
   onError(sessionId: string, messageId: string, error: string): void;
+  /** Optional host-neutral child-agent lifecycle sink. */
+  onSubagentLifecycle?(event: SubagentLifecycleEvent): void;
   /** Ask the user about a tool call; resolves with their choice. */
   askPermission(sessionId: string, messageId: string, ask: PermissionAsk): Promise<AskResponse>;
   log(level: "info" | "warn" | "error", msg: string, data?: unknown): void;

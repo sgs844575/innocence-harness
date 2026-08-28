@@ -8,11 +8,7 @@
 // the distributed tree (module identity stays single-sourced); without an
 // injection the bundled static spine is used.
 import { Context, type Fiber } from "@innocenceharness/kernel";
-import type {
-  AgentsService,
-  SpawnerService,
-  SpawnerSessionFactory,
-} from "@innocenceharness/harness-agent";
+import type { AgentsService, SpawnerService, SpawnerSessionFactory, SubagentLifecyclePort } from "@innocenceharness/harness-agent";
 import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import type { Provider, ProvidersService } from "@innocenceharness/harness-providers";
 import type { SessionService } from "@innocenceharness/harness-session";
@@ -96,6 +92,8 @@ export interface SessionKernelInit {
   spine?: SessionSpineSuite;
   /** Recursion seam: the spawner's child-session factory (back into AgentSession). */
   spawnerSessionFactory: SpawnerSessionFactory;
+  /** Optional host-neutral child-agent lifecycle sink. */
+  lifecycle?: SubagentLifecyclePort;
 }
 
 /**
@@ -203,6 +201,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
         permission: permissions.engine,
         tools: view.toolsInRegistrationOrder,
         logger: init.logger,
+        lifecycle: init.lifecycle,
       }),
     );
     assertSpineServices(ctx, [

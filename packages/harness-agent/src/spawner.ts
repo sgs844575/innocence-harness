@@ -8,7 +8,12 @@ import type {
   ToolExecutionMiddleware,
 } from "@innocenceharness/harness-tools";
 import type { Context } from "@innocenceharness/kernel";
-import type { SubagentResult } from "./subagent";
+import type {
+  SubagentChildEventListener,
+  SubagentLifecycleEvent,
+  SubagentLifecyclePort,
+  SubagentResult,
+} from "./subagent";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while the
@@ -22,6 +27,34 @@ declare module "@innocenceharness/kernel" {
 
 /** Concurrent-child cap of the original AgentSession spawner (session.ts:23). */
 export const SUBAGENT_CONCURRENCY = 3;
+
+let nextChildId = 0;
+
+const TERMINAL_STATUSES = new Set<SubagentLifecycleEvent["status"]>(["completed", "failed", "cancelled"]);
+
+function abortError(): Error {
+  const error = new Error("子代理已取消");
+  error.name = "AbortError";
+  return error;
+}
+
+async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    void promise.catch(() => {});
+    throw abortError();
+  }
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
 
 /** Error logger shape shared with the harness Logger (level, message, data). */
 export type SpawnerLogger = (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
@@ -37,6 +70,10 @@ export interface SpawnerSessionInput {
   inherit: { processors: MessageProcessor[]; middlewares: ToolExecutionMiddleware[] };
   /** Maximum loop turns for the child (default 20). */
   maxTurns?: number;
+  /** Short human-readable task summary shown in lifecycle projections. */
+  description?: string;
+  /** Optional lifecycle observer local to this spawn. */
+  onLifecycle?: (event: SubagentLifecycleEvent) => void;
   signal?: AbortSignal;
   /**
    * Loop-bound identity of the invocation spawning this child
@@ -68,8 +105,8 @@ export interface SpawnerChildMaterials {
   systemPrompt: string;
   /** Child turn cap; `maxTurns ?? 20` already applied. */
   maxTurns: number;
-  /** Error logger shared with the parent session (dispose failures land here). */
   logger: SpawnerLogger;
+  signal?: AbortSignal;
 }
 
 /** Child session handle the spawner drives and disposes. */
@@ -79,6 +116,7 @@ export interface SpawnerChildSession {
     prompt: string,
     signal: AbortSignal | undefined,
     identity: ExecutionScopeIdentity,
+    onEvent?: SubagentChildEventListener,
   ): Promise<SubagentResult>;
   /** Releases the child session; failures are swallowed and logged by the spawner. */
   dispose(): Promise<void>;
@@ -111,6 +149,8 @@ export interface SpawnerDeps {
   tools: readonly Tool[];
   /** Concurrent-child cap; default {@link SUBAGENT_CONCURRENCY}. */
   concurrency?: number;
+  /** Optional host-neutral lifecycle event sink. */
+  lifecycle?: SubagentLifecyclePort;
   /** Error sink for swallowed child dispose failures. */
   logger?: SpawnerLogger;
 }
@@ -132,6 +172,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
   const concurrency = deps.concurrency ?? SUBAGENT_CONCURRENCY;
   const logger: SpawnerLogger = deps.logger ?? (() => {});
   let activeChildren = 0;
+  const emitLifecycle = (event: SubagentLifecycleEvent) => deps.lifecycle?.emit(event);
 
   const service: SpawnerService = {
     run: async (input): Promise<SubagentResult> => {
@@ -140,6 +181,23 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
       }
       activeChildren += 1;
       try {
+        const childId = `child_${Date.now().toString(36)}_${(nextChildId++).toString(36)}`;
+        const parent = input.parentScope;
+        const parentSessionId = parent?.sessionId ?? input.sessionId ?? "";
+        const description = input.description ?? "";
+        let terminal = false;
+        const emit = (event: Omit<SubagentLifecycleEvent, "childId" | "parentSessionId" | "description">) => {
+          if (TERMINAL_STATUSES.has(event.status)) {
+            if (terminal) return;
+            terminal = true;
+          } else if (terminal) {
+            return;
+          }
+          const lifecycleEvent = { childId, parentSessionId, description, ...event };
+          emitLifecycle(lifecycleEvent);
+          input.onLifecycle?.(lifecycleEvent);
+        };
+        emit({ status: "started" });
         const allTools = deps.tools.filter((t) => t.name !== "Task");
         const selected =
           input.tools === "all"
@@ -149,25 +207,74 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
               : allTools.filter((t) => input.tools.includes(t.name));
         // Same registration set as the parent: identical processor and
         // middleware objects, in the parent's registration order.
-        const child = await deps.sessionFactory({
-          tools: selected,
-          processors: input.inherit.processors,
-          middlewares: input.inherit.middlewares,
-          provider: deps.provider,
-          permission: deps.permission, // shared rules, grants and mode
-          systemPrompt: input.systemPrompt,
-          maxTurns: input.maxTurns ?? 20,
-          logger,
-        });
+        let childPromise: Promise<SpawnerChildSession>;
+        try {
+          childPromise = Promise.resolve(deps.sessionFactory({
+            tools: selected,
+            processors: input.inherit.processors,
+            middlewares: input.inherit.middlewares,
+            provider: deps.provider,
+            permission: deps.permission, // shared rules, grants and mode
+            systemPrompt: input.systemPrompt,
+            maxTurns: input.maxTurns ?? 20,
+            logger,
+            signal: input.signal,
+          }));
+        } catch (error) {
+          emit({ status: input.signal?.aborted ? "cancelled" : "failed", error: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+        childPromise.then((lateChild) => {
+          if (input.signal?.aborted) {
+            void lateChild.dispose().catch((disposeError) => {
+              logger("error", "subagent child dispose failed", disposeError);
+            });
+          }
+        }, () => {});
+        let child: SpawnerChildSession;
+        try {
+          child = await raceWithSignal(childPromise, input.signal);
+        } catch (error) {
+          emit({ status: input.signal?.aborted ? "cancelled" : "failed", error: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
         try {
           const parent = input.parentScope;
+          emit({ status: "running" });
+          let childFailed = false;
+          const childEvent: SubagentChildEventListener = (event) => {
+            if (event.type === "text" && event.text) emit({ status: "running", delta: event.text });
+            if (event.type === "error") {
+              childFailed = true;
+              emit({ status: "failed", error: event.error });
+            }
+          };
           const result = await child.run(input.prompt, input.signal, {
             sessionId: parent?.sessionId ?? input.sessionId,
             taskId: parent?.taskId,
             routeId: parent?.routeId,
             parentInvocationId: parent?.invocationId,
-          });
-          return { finalText: result.finalText, turns: result.turns };
+          }, childEvent);
+          if (input.signal?.aborted) {
+            emit({ status: "cancelled" });
+          } else if (childFailed || result.completion?.finishReason === "error") {
+            emit({ status: "failed", ...(result.completion?.finishReason === "error" ? { error: "子代理运行失败" } : {}) });
+          } else {
+            emit({ status: "completed", final: result.finalText });
+          }
+          return {
+            finalText: result.finalText,
+            turns: result.turns,
+            ...(childFailed
+              ? { completion: result.completion ?? { finishReason: "error", aborted: false } }
+              : result.completion
+                ? { completion: result.completion }
+                : {}),
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          emit({ status: input.signal?.aborted ? "cancelled" : "failed", error: message });
+          throw error;
         } finally {
           // A dispose failure must never mask the child run's own outcome —
           // log and swallow it (create's rollback path does the same).

@@ -25,12 +25,25 @@ function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+export interface PendingPermission {
+  sessionId: string;
+  finish: (choice: PermissionChoice) => void;
+}
+
+export type PendingPermissionRegistry = Map<string, PendingPermission>;
+
+export function cancelPendingAsks(pendingAsks: PendingPermissionRegistry, sessionId: string): void {
+  for (const pending of pendingAsks.values()) {
+    if (pending.sessionId === sessionId) pending.finish("deny");
+  }
+}
+
 /**
  * Builds the runtime hook bundle. `pendingAsks` is the shared ask registry
  * the host's respondPermission port resolves through (see harnessGlue).
  */
 export function createRuntimeHooks(
-  pendingAsks: Map<string, (choice: PermissionChoice) => void>,
+  pendingAsks: PendingPermissionRegistry,
 ): RuntimeHooks {
   return {
     onDelta: (sessionId, messageId, delta) => {
@@ -115,7 +128,7 @@ export function createRuntimeHooks(
         };
         // Unanswered asks default to deny — never block the loop forever.
         const timer = setTimeout(() => finish("deny"), PERMISSION_TIMEOUT_MS);
-        pendingAsks.set(ask.requestId, finish);
+        pendingAsks.set(ask.requestId, { sessionId, finish });
         send(IPC.chatPermission, event);
       });
     },

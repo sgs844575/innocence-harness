@@ -102,6 +102,9 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         },
         logger: (level, msg, data) => host.options.hooks.log(level, msg, data),
         telemetry: host.options.telemetry,
+        lifecycle: host.options.hooks.onSubagentLifecycle
+          ? { emit: host.options.hooks.onSubagentLifecycle }
+          : undefined,
       });
     };
     const session = await (host.options.agentFactory?.(factoryContext, create) ?? create());

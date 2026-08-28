@@ -2,7 +2,7 @@
 import { app, ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IPC, type MenuId } from "../shared/ipc";
+import { IPC, isPermissionChoice, type MenuId } from "../shared/ipc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
@@ -146,10 +146,9 @@ export function registerIpcHandlers(): void {
     stopChatTurn(sessionId);
   });
 
-  ipcMain.handle(IPC.chatPermissionRespond, (_e, requestId: string, choice: string) => {
-    if (choice === "allow" || choice === "allowSession" || choice === "deny") {
-      respondPermission(requestId, choice);
-    }
+  ipcMain.handle(IPC.chatPermissionRespond, async (_e, requestId: string, choice: unknown): Promise<void> => {
+    if (!isPermissionChoice(choice)) throw new Error("invalid permission choice");
+    await respondPermission(requestId, choice);
   });
 
   ipcMain.handle(IPC.workspacePick, () => pickWorkspace());

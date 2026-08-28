@@ -1,4 +1,14 @@
-export type { SubagentOptions, SubagentResult, SubagentSpawner } from "./subagent";
+export type {
+  SubagentChildEvent,
+  SubagentChildEventListener,
+  SubagentLifecycleEvent,
+  SubagentLifecycleListener,
+  SubagentLifecyclePort,
+  SubagentOptions,
+  SubagentResult,
+  SubagentSpawner,
+  SubagentStatus,
+} from "./subagent";
 export { bindSubagentSpawner } from "./subagent";
 export { AgentsPlugin, type AgentDef, type AgentsService } from "./agents";
 export {

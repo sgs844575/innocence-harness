@@ -92,6 +92,44 @@ describe("Task tool via session spawner", () => {
     expect(result.finalText).not.toContain("peek-result");
   });
 
+  it("forwards the task description to the spawner without changing the tool result", async () => {
+    const run = vi.fn(async () => ({ finalText: "子会话结论", turns: 1 }));
+
+    const result = await taskTool.execute(
+      { agentType: "explore", description: "检查生命周期", prompt: "执行检查" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: { run },
+      },
+    );
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ description: "检查生命周期" }));
+    expect(result).toEqual({ content: "【检查生命周期】\n子会话结论" });
+  });
+  it("marks a child model failure as an error tool result instead of success", async () => {
+    const run = vi.fn(async () => ({
+      finalText: "子会话部分输出",
+      turns: 1,
+      completion: { finishReason: "error" as const, aborted: false },
+    }));
+
+    const result = await taskTool.execute(
+      { agentType: "explore", prompt: "执行检查" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: { run },
+      },
+    );
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.content).toContain("子会话部分输出");
+  });
   it("reports an error result when the host provides no spawner", async () => {
     const r = await taskTool.execute(
       { agentType: "explore", prompt: "查" },
@@ -106,6 +144,7 @@ describe("Task tool via session spawner", () => {
     expect(r.isError).toBe(true);
     expect(r.content).toContain("不支持子代理");
   });
+
 
   it("child sessions inherit processors, middleware and the parent run scope", async () => {
     let childPeeked = 0;

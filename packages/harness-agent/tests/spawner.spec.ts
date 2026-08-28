@@ -8,6 +8,7 @@ import {
   type SpawnerRunInput,
   type SpawnerService,
   type SpawnerSessionFactory,
+  type SubagentChildEvent,
   type SubagentResult,
 } from "@innocenceharness/harness-agent";
 import { Context } from "@innocenceharness/kernel";
@@ -76,7 +77,7 @@ interface ChildRecord {
  * test releases (`gates[i]()`), so concurrency windows are controllable.
  */
 function makeFactory(
-  script: { runResult?: SubagentResult; runError?: Error; disposeError?: Error } = {},
+  script: { runResult?: SubagentResult; runError?: Error; disposeError?: Error; childEvents?: SubagentChildEvent[] } = {},
 ): { factory: SpawnerSessionFactory; children: ChildRecord[]; gates: Array<() => void> } {
   const children: ChildRecord[] = [];
   const gates: Array<() => void> = [];
@@ -89,9 +90,10 @@ function makeFactory(
     });
     gates.push(release);
     const child: SpawnerChildSession = {
-      run: async (prompt, signal, identity) => {
+      run: async (prompt, signal, identity, onEvent) => {
         record.runs.push({ prompt, signal, identity });
         await gate;
+        for (const event of script.childEvents ?? []) onEvent?.(event);
         if (script.runError) throw script.runError;
         return script.runResult ?? { finalText: "子代理报告", turns: 1 };
       },
@@ -138,6 +140,121 @@ async function runOne(
   gates.shift()!();
   return pending;
 }
+
+describe("spawner lifecycle port", () => {
+  it("publishes child identity, real text deltas, and terminal status", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({ childEvents: [{ type: "text", text: "真实增量" }] });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const pending = ctx.spawner.run({ ...baseInput, description: "研究任务", sessionId: "parent-1" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await expect(pending).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+
+    expect(lifecycle[0]).toMatchObject({
+      childId: expect.any(String),
+      parentSessionId: "parent-1",
+      description: "研究任务",
+      status: "started",
+    });
+    expect(lifecycle[1]).toMatchObject({ status: "running" });
+    expect(lifecycle).toContainEqual(expect.objectContaining({ status: "running", delta: "真实增量" }));
+    expect(lifecycle.at(-1)).toMatchObject({ status: "completed", final: "子代理报告" });
+  });
+
+  it("emits exactly one failed terminal status when the child reports a fatal error", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({
+      childEvents: [
+        { type: "error", error: "模型失败" },
+        { type: "error", error: "模型失败（重复）" },
+      ],
+      runResult: { finalText: "子代理报告", turns: 1, completion: { finishReason: "error", aborted: false } },
+    });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const pending = ctx.spawner.run({ ...baseInput, sessionId: "parent-failed" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await expect(pending).resolves.toEqual({
+      finalText: "子代理报告",
+      turns: 1,
+      completion: { finishReason: "error", aborted: false },
+    });
+
+    expect(lifecycle.filter((event) => event.status === "failed")).toHaveLength(1);
+    expect(lifecycle.filter((event) => ["completed", "failed", "cancelled"].includes(event.status))).toHaveLength(1);
+  });
+
+  it("emits exactly one cancelled terminal status when the parent signal aborts", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory();
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+    const controller = new AbortController();
+    const pending = ctx.spawner.run({ ...baseInput, sessionId: "parent-cancelled", signal: controller.signal });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    controller.abort();
+    gates[0]!();
+    await expect(pending).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+
+    expect(lifecycle.filter((event) => event.status === "cancelled")).toHaveLength(1);
+    expect(lifecycle.filter((event) => ["completed", "failed", "cancelled"].includes(event.status))).toHaveLength(1);
+  });
+
+  it("keeps child ids unique across spawners sharing a parent session", async () => {
+    const firstParts = makeFactory();
+    const secondParts = makeFactory();
+    const lifecycleA: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const lifecycleB: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const first = await withSpawner({ sessionFactory: firstParts.factory, lifecycle: { emit: (event) => lifecycleA.push(event) } });
+    const second = await withSpawner({ sessionFactory: secondParts.factory, lifecycle: { emit: (event) => lifecycleB.push(event) } });
+    const firstRun = first.spawner.run({ ...baseInput, sessionId: "same-parent" });
+    const secondRun = second.spawner.run({ ...baseInput, sessionId: "same-parent" });
+    await vi.waitFor(() => expect(lifecycleA.some((event) => event.status === "started")).toBe(true));
+    await vi.waitFor(() => expect(lifecycleB.some((event) => event.status === "started")).toBe(true));
+    expect(lifecycleA[0]!.childId).not.toBe(lifecycleB[0]!.childId);
+    firstParts.gates[0]!();
+    secondParts.gates[0]!();
+    await Promise.all([firstRun, secondRun]);
+  });
+
+  it("disposes a child that resolves after parent cancellation during construction", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    let release!: () => void;
+    const construction = new Promise<void>((resolve) => { release = resolve; });
+    let disposeCalls = 0;
+    let factoryCalled!: () => void;
+    const called = new Promise<void>((resolve) => { factoryCalled = resolve; });
+    const factory: SpawnerSessionFactory = async () => {
+      factoryCalled();
+      await construction;
+      return {
+        run: async () => ({ finalText: "late", turns: 1 }),
+        dispose: async () => { disposeCalls += 1; },
+      };
+    };
+    const ctx = await withSpawner({ sessionFactory: factory, lifecycle: { emit: (event) => lifecycle.push(event) } });
+    const controller = new AbortController();
+    const pending = ctx.spawner.run({ ...baseInput, signal: controller.signal });
+    await called;
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    release();
+    await vi.waitFor(() => expect(disposeCalls).toBe(1));
+    expect(lifecycle.filter((event) => ["completed", "failed", "cancelled"].includes(event.status))).toHaveLength(1);
+    expect(lifecycle.at(-1)?.status).toBe("cancelled");
+  });
+});
 
 describe("spawner child plugin set construction", () => {
   it("selects child tools from the parent set and always excludes Task", async () => {

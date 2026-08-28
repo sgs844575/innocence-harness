@@ -112,6 +112,7 @@ export class AgentSession {
       compaction: sessionOptions.compaction,
       logger: sessionOptions.logger ?? noopLogger,
       spawnerSessionFactory: (materials) => createSpawnerChildSession(sessionOptions, materials),
+      lifecycle: sessionOptions.lifecycle,
     });
     return new AgentSession(sessionOptions, kernel, sessionId, spine);
   }

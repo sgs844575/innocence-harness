@@ -2,13 +2,45 @@
 // AgentSession.spawner face, and builds the child sessions it spawns — the
 // recursive AgentSession.create adapter (shared provider/engine, inherited
 // processors/middlewares in order, parent workspaceRoot closure).
-import type { SpawnerChildMaterials, SpawnerChildSession, SubagentSpawner } from "@innocenceharness/harness-agent";
+import type { SpawnerChildMaterials, SpawnerChildSession, SubagentChildEventListener, SubagentSpawner } from "@innocenceharness/harness-agent";
 import type { SpawnerService } from "@innocenceharness/harness-agent";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { HarnessEvent } from "@innocenceharness/harness-session";
 import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 import { AgentSession } from "./session";
 import type { AgentSessionOptions } from "./session";
 import type { SessionRegistryView } from "./session-registry-view";
+
+function abortError(): Error {
+  const error = new Error("子代理已取消");
+  error.name = "AbortError";
+  return error;
+}
+
+async function createWithSignal(
+  create: () => Promise<AgentSession>,
+  signal: AbortSignal | undefined,
+): Promise<AgentSession> {
+  const promise = create();
+  if (!signal) return promise;
+  if (signal.aborted) {
+    promise.then((session) => void session.dispose().catch(() => {}), () => {});
+    throw abortError();
+  }
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  promise.then((session) => {
+    if (signal.aborted) void session.dispose();
+  }, () => {});
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
 
 /**
  * The public spawner member: delegates to the spine SpawnerService, always
@@ -46,7 +78,8 @@ export function createSpawnerChildSession(
   parentOptions: AgentSessionOptions,
   materials: SpawnerChildMaterials,
 ): Promise<SpawnerChildSession> {
-  return AgentSession.create({
+  return createWithSignal(
+    () => AgentSession.create({
     plugins: [
       {
         name: "subagent-tools",
@@ -75,8 +108,21 @@ export function createSpawnerChildSession(
     },
     maxTurns: materials.maxTurns,
     logger: materials.logger,
-  }).then((child) => ({
-    run: (prompt, signal, identity) => child.run(prompt, signal, identity),
+    lifecycle: parentOptions.lifecycle,
+  }),
+    materials.signal,
+  ).then((child) => ({
+    run: (prompt, signal, identity, onEvent?: SubagentChildEventListener) => {
+      const unsubscribe = child.on((event: HarnessEvent) => {
+        if (event.type === "token") onEvent?.({ type: "text", text: event.text });
+        else if (event.type === "error" && event.fatal) onEvent?.({ type: "error", error: event.message });
+      });
+      return child.run(prompt, signal, identity).then((result) => ({
+        finalText: result.finalText,
+        turns: result.turns,
+        completion: result.completion,
+      })).finally(unsubscribe);
+    },
     dispose: () => child.dispose(),
   }));
 }

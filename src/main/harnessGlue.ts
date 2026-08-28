@@ -30,7 +30,7 @@ import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { createHostTelemetry } from "./telemetry";
-import { createRuntimeHooks } from "./runtimeHooks";
+import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
 import * as sessions from "./sessions";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
@@ -52,7 +52,7 @@ import {
 
 let settings: PkgSettings = DEFAULT_SETTINGS;
 const settingsMutationGate = createSettingsMutationGate();
-const pendingAsks = new Map<string, (choice: PermissionChoice) => void>();
+const pendingAsks: PendingPermissionRegistry = new Map();
 
 function automationFile(): string {
   return path.join(app.getPath("userData"), "automations.json");
@@ -258,7 +258,13 @@ const runtime = new HarnessRuntime({
     // the live task's port; plain chat contexts contribute nothing.
     ...taskPluginsForRoute(taskBridge, context),
   ],
-  hooks: createRuntimeHooks(pendingAsks),
+  hooks: {
+    ...createRuntimeHooks(pendingAsks),
+    onSubagentLifecycle: (event) => {
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.subagentLifecycle, event);
+    },
+  },
 });
 
 /** Loads persisted settings; call once at app start (idempotent). Runs
@@ -385,8 +391,10 @@ export async function pickWorkspace(): Promise<string> {
   return result.canceled || result.filePaths.length === 0 ? "" : result.filePaths[0];
 }
 
-export function respondPermission(requestId: string, choice: PermissionChoice): void {
-  pendingAsks.get(requestId)?.(choice);
+export async function respondPermission(requestId: string, choice: PermissionChoice): Promise<void> {
+  const pending = pendingAsks.get(requestId);
+  if (!pending) throw new Error("permission request not found");
+  pending.finish(choice);
 }
 
 let nextMsg = 0;
@@ -429,20 +437,23 @@ export function sendChatTurn(sessionId: string, text: string): string {
 }
 
 export function stopChatTurn(sessionId: string): void {
+  cancelPendingAsks(pendingAsks, sessionId);
   runtime.stop(sessionId);
 }
 
 /** Releases one chat session's agent resources (aborts runs, disposes its
- *  plugins). Never rejects — failures surface through the harness log. */
+ * plugins). Never rejects — failures surface through the harness log. */
 export async function disposeSession(sessionId: string): Promise<void> {
+  cancelPendingAsks(pendingAsks, sessionId);
   sessionTaskRoutes.delete(sessionId);
   await runtime.dispose(sessionId);
 }
 
+
 /** Rejects every unanswered permission ask (app shutdown): pending turns
  *  must not block on dialogs that will never be answered. */
 export function rejectPendingPermissionAsks(): void {
-  for (const finish of pendingAsks.values()) finish("deny");
+  for (const pending of pendingAsks.values()) pending.finish("deny");
   pendingAsks.clear();
 }
 

@@ -2,6 +2,7 @@ import type { Context } from "@innocenceharness/kernel";
 import type { PermissionAuditor, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
 import type { Logger, SessionPlugin } from "./registry";
+import type { SubagentLifecyclePort } from "@innocenceharness/harness-agent";
 import type { SessionLoaderPlugin } from "./session-loader";
 import type { SessionSpineSuite } from "./session-spine";
 
@@ -35,6 +36,8 @@ export interface AgentSessionOptions {
   compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
   maxTurns?: number;
   toolTimeoutMs?: number;
+  /** Optional host-neutral child-agent lifecycle port. */
+  lifecycle?: SubagentLifecyclePort;
   /** Optional allow-listed observability port forwarded to the agent loop. */
   telemetry?: TraceAdapter;
   logger?: Logger;

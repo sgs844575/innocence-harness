@@ -20,9 +20,52 @@ vi.mock("./appWindow", () => ({
 }));
 vi.mock("./logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import { createRuntimeHooks } from "./runtimeHooks";
+import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
 
 describe("runtime completion bridge", () => {
+  it("cancels pending permission asks by session and resolves them as deny", async () => {
+    const pending: PendingPermissionRegistry = new Map();
+    const hooks = createRuntimeHooks(pending);
+    const ask = {
+      requestId: "p1",
+      call: { toolName: "Write", args: {}, resource: { kind: "path", action: "write", scope: "x" } },
+    } as never;
+    const result = hooks.askPermission("session-a", "message", ask);
+    expect(pending.get("p1")?.sessionId).toBe("session-a");
+    cancelPendingAsks(pending, "session-a");
+    await expect(result).resolves.toBe("deny");
+    expect(pending).toHaveLength(0);
+  });
+
+  it("cancelling a stopped session denies the ask before a tool can execute", async () => {
+    const pending: PendingPermissionRegistry = new Map();
+    const hooks = createRuntimeHooks(pending);
+    const ask = {
+      requestId: "p-stop",
+      call: { toolName: "Write", args: {}, resource: { kind: "path", action: "write", scope: "x" } },
+    } as never;
+    const decision = hooks.askPermission("stopped-session", "message", ask);
+    cancelPendingAsks(pending, "stopped-session");
+    let toolExecuted = false;
+    if (await decision === "allow") toolExecuted = true;
+    expect(toolExecuted).toBe(false);
+  });
+  it("keeps another session's pending permission unresolved when cancelling one session", async () => {
+    const pending: PendingPermissionRegistry = new Map();
+    const hooks = createRuntimeHooks(pending);
+    const ask = (requestId: string) => ({
+      requestId,
+      call: { toolName: "Write", args: {}, resource: { kind: "path", action: "write", scope: requestId } },
+    }) as never;
+    const first = hooks.askPermission("session-a", "message", ask("a"));
+    const second = hooks.askPermission("session-b", "message", ask("b"));
+    cancelPendingAsks(pending, "session-a");
+    await expect(first).resolves.toBe("deny");
+    expect(pending.has("b")).toBe(true);
+    cancelPendingAsks(pending, "session-b");
+    await expect(second).resolves.toBe("deny");
+  });
+
   it("persists and emits the terminal completion supplied by a fatal model turn", () => {
     const completion: ChatCompletionMetadata = {
       providerId: "provider-safe",

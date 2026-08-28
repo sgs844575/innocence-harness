@@ -75,11 +75,14 @@ export const taskTool: Tool = {
       systemPrompt: AGENT_PROMPTS[agentType],
       tools: agentType === "explore" ? "readOnly" : "all",
       prompt,
+      description: typeof description === "string" ? description : undefined,
       signal: ctx.signal,
     });
+    const isError = result.completion?.finishReason === "error";
     return {
       content:
         (header + result.finalText).trim() || "[子代理没有产出文本]",
+      ...(isError ? { isError: true } : {}),
     };
   },
 };

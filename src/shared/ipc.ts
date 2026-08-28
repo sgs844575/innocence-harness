@@ -27,6 +27,7 @@ export const IPC = {
   chatPermissionRespond: "chat:permission-respond",
   chatTool: "chat:tool",
   chatThinking: "chat:thinking",
+  subagentLifecycle: "subagent:lifecycle",
   workspacePick: "workspace:pick",
   settingsGet: "settings:get",
   settingsSet: "settings:set",
@@ -160,9 +161,24 @@ export interface ChatThinkingEvent {
   delta: string;
 }
 
+export type SubagentStatus = "started" | "running" | "completed" | "failed" | "cancelled";
+
+export interface SubagentLifecycleEvent {
+  childId: string;
+  parentSessionId: string;
+  description: string;
+  status: SubagentStatus;
+  delta?: string;
+  final?: string;
+  error?: string;
+}
+
 // ---- Harness contract (M3+) -------------------------------------------------
 
 export type PermissionChoice = "allow" | "allowSession" | "deny";
+export function isPermissionChoice(value: unknown): value is PermissionChoice {
+  return value === "allow" || value === "allowSession" || value === "deny";
+}
 // Mirror contract: this union matches the settings domain without importing it.
 export type ProviderKind = "openai" | "anthropic" | "google";
 /** Provider wire protocol, explicitly derived from kind rather than endpoint text. */
@@ -374,6 +390,7 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   onChatError(cb: (e: ChatErrorEvent) => void): () => void;
   onChatTool(cb: (e: ChatToolEvent) => void): () => void;
   onChatThinking(cb: (e: ChatThinkingEvent) => void): () => void;
+  onSubagentLifecycle(cb: (e: SubagentLifecycleEvent) => void): () => void;
   onChatPermission(cb: (e: ChatPermissionEvent) => void): () => void;
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;
