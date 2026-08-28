@@ -88,9 +88,9 @@ the work.
   fields is a validation error. Write clear, specific, actionable items.
 - Every call carries the whole list and wholesale replaces whatever was
   there before.
-- Keep exactly one item \`in_progress\` at a time: mark it before starting
-  the work, and mark it \`completed\` the moment it is done — do not batch
-  completions.
+- Carry just one \`in_progress\` entry: set it when the work begins and flip
+  it to \`completed\` the instant it lands — never leave several items
+  mid-flight or batch completions.
 - Add follow-up tasks discovered during implementation, and remove items
   that stopped being relevant from the list entirely.
 - Mark an item \`completed\` only when it is fully accomplished. If tests
