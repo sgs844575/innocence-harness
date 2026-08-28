@@ -28,6 +28,7 @@
     "package": "electron-forge package",
     "package:preflight": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/outPreflight.ts",
     "package:smoke": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/runPackageSmoke.ts",
+    "icons:icns": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/generateIconIcns.ts",
     "premake": "npm run build:plugins",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",
@@ -75,7 +76,19 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "shiki": "^4.4.3",
-    "streamdown": "^2.5.0"
+    "streamdown": "^2.5.0",
+    "@fiahfy/icns": "^0.0.7",
+    "@larksuiteoapi/node-sdk": "1.61.1",
+    "ai": "6.0.159",
+    "module-details-from-path": "^1.0.4",
+    "node-forge": "^1.4.0",
+    "playwright-core": "1.59.1",
+    "semver": "^7.7.4",
+    "ssh2": "^1.16.0",
+    "undici": "^6.23.0",
+    "ws": "^8.20.0",
+    "yaml": "^2.9.0",
+    "yazl": "^3.3.1"
   },
   "allowScripts": {
     "node-pty@1.1.0": true
