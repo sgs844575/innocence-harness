@@ -38,6 +38,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "skills", dependencies: ["fs"] },
   { id: "mcp", dependencies: [] },
   { id: "ssh", dependencies: [] },
+  { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
@@ -49,6 +50,7 @@ const PLUGINS = [
   { dir: "packages/plugin-skills", id: "skills" },
   { dir: "packages/plugin-mcp", id: "mcp" },
   { dir: "packages/tools-ssh", id: "ssh" },
+  { dir: "packages/tools-archive", id: "archive" },
   { dir: "packages/plugin-subagent", id: "subagent" },
   { dir: "packages/plugin-task", id: "task" },
   { dir: "packages/provider-anthropic", id: "provider-anthropic" },
