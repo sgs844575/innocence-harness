@@ -194,7 +194,7 @@ export function App(): React.JSX.Element {
     hunks: reviewData.hunks,
     changedFiles: reviewData.changedFiles,
     terminal: terminalActivity,
-    agentName: settings?.activeAgent ?? "default",
+    agentName: settings?.activeAgentMode ?? "default",
     sessionStatus: activeSessionStatus,
     subagents,
     onOpenSubagent: openSubagentPanel,

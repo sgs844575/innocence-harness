@@ -5,7 +5,7 @@ import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createExecutionScope } from "@innocenceharness/harness-tools";
 import { AgentSession } from "./session";
 import { decodeTranscript } from "./transcript";
-import { systemPromptFor } from "./agents";
+import { BUILTIN_FALLBACK_PROMPT } from "./agents";
 import { RouteSessionCache, sessionDisposedError } from "./route-cache";
 import {
   createSessionToolIndex,
@@ -86,7 +86,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         ...(spine ? { spine } : {}),
         ...(host.options.sessionSpine ? { requireInjectedSpine: true } : {}),
         workspaceRoot,
-        systemPrompt: systemPromptFor(settings.activeAgent ?? "default"),
+        systemPrompt: BUILTIN_FALLBACK_PROMPT,
         permission: {
           mode: settings.permissionMode,
           decider,

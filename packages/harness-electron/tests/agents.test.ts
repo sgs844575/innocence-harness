@@ -1,46 +1,21 @@
-// 内置 Agent 注册表：default 沿用既有提示词（行为不变），plan/full 为
-// 完整中文执行协议提示词；systemPromptFor 对未知值回落 default。
+// 宿主侧回退提示词：agent 模式维度由插件注册（AgentsService +
+// PromptFragment 片段），agents.ts 只保留"任何模式都未命中"时的最小 base
+// （文本迁移自原 DEFAULT_SYSTEM_PROMPT，行为不变）。
 import { describe, expect, it } from "vitest";
-import {
-  AGENT_IDS,
-  BUILTIN_AGENTS,
-  DEFAULT_SYSTEM_PROMPT,
-  systemPromptFor,
-  type AgentId,
-} from "../src";
+import { BUILTIN_FALLBACK_PROMPT } from "../src";
 
-describe("BUILTIN_AGENTS", () => {
-  it("三个内置 agent（default/plan/full），id 集与 AGENT_IDS 一致", () => {
-    expect(BUILTIN_AGENTS.map((a) => a.id).sort()).toEqual(["default", "full", "plan"]);
-    expect(AGENT_IDS).toEqual(BUILTIN_AGENTS.map((a) => a.id));
-    for (const a of BUILTIN_AGENTS) {
-      expect(a.name.trim().length).toBeGreaterThan(0);
-    }
+describe("BUILTIN_FALLBACK_PROMPT", () => {
+  it("导出非空回退提示词并使用 InnocenceHarness 产品名", () => {
+    expect(BUILTIN_FALLBACK_PROMPT.trim().length).toBeGreaterThan(0);
+    expect(BUILTIN_FALLBACK_PROMPT).toContain("InnocenceHarness");
   });
 
-  it("plan/full 提示词为完整文本（>200 字符），三个提示词互异", () => {
-    // default 沿用既有 119 字符短文本（行为不变，见下一用例），长度门槛
-    // 只约束按规格 2.1 新撰写的 plan/full 执行协议提示词。
-    for (const a of BUILTIN_AGENTS) {
-      if (a.id === "default") continue;
-      expect(a.systemPrompt.trim().length).toBeGreaterThan(200);
-    }
-    expect(systemPromptFor("full")).not.toBe(systemPromptFor("default"));
-    expect(systemPromptFor("plan")).not.toBe(systemPromptFor("default"));
-    expect(systemPromptFor("plan")).not.toBe(systemPromptFor("full"));
-  });
-
-  it("default 沿用既有 DEFAULT_SYSTEM_PROMPT 原文（行为不变）", () => {
-    expect(systemPromptFor("default")).toBe(DEFAULT_SYSTEM_PROMPT);
-  });
-
-  it("内置系统提示词使用 InnocenceHarness 产品名", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("InnocenceHarness");
-    expect(systemPromptFor("plan")).toContain("InnocenceHarness");
-    expect(systemPromptFor("full")).toContain("InnocenceHarness");
-  });
-
-  it("systemPromptFor 未知值回落 default", () => {
-    expect(systemPromptFor("nope" as AgentId)).toBe(systemPromptFor("default"));
+  it("文本与原 DEFAULT_SYSTEM_PROMPT 逐字一致（行为不变迁移）", () => {
+    expect(BUILTIN_FALLBACK_PROMPT).toBe(
+      "你是 InnocenceHarness 的编程助手。你可以调用工具读写工作区文件。\n" +
+      "约定：引用代码位置用 `文件路径:行号`；修改文件前先 Read 确认原文；" +
+      "工具失败时读取错误信息自行纠正，不要重复同样的失败调用；" +
+      "回答用用户的语言，简洁直接。",
+    );
   });
 });

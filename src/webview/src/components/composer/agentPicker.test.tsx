@@ -2,7 +2,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentPicker } from "./AgentPicker";
-import type { AgentId } from "../../../../shared/ipc";
+
+// 类型桥（任务 3）：shared/ipc 的 AgentId 已删除，与组件内本地类型保持一致。
+type AgentId = "default" | "plan" | "full";
 
 afterEach(cleanup);
 

@@ -162,8 +162,8 @@ export function Composer({
             {legacyControls && (
               <AgentPicker
                 t={t}
-                value={settings?.activeAgent ?? "default"}
-                onChange={(agent) => onSettingsChange({ activeAgent: agent })}
+                value={settings?.activeAgentMode ?? "default"}
+                onChange={(agent) => onSettingsChange({ activeAgentMode: agent })}
               />
             )}
 

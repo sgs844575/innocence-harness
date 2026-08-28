@@ -8,11 +8,11 @@ import { createMockProvider, type MockTurn } from "@innocenceharness/provider-mo
 import { FsPlugin } from "@innocenceharness/tools-fs";
 import { ShellPlugin } from "@innocenceharness/tools-shell";
 import {
+  BUILTIN_FALLBACK_PROMPT,
   DEFAULT_SETTINGS,
   HarnessRuntime,
   IN_FLIGHT_BUILD_DISPOSE_TIMEOUT_MS,
   decodeTranscript,
-  systemPromptFor,
   staticSpineSuite,
   type AskResponse,
   type HarnessSettings,
@@ -445,11 +445,11 @@ describe("HarnessRuntime", () => {
     expect(onDelta.mock.calls.some((c) => String(c[2]).includes("🔧"))).toBe(false);
   });
 
-  it("activeAgent 决定注入的系统提示词（fake provider 断言 system）", async () => {
+  it("系统提示词注入宿主侧回退 base（BUILTIN_FALLBACK_PROMPT；模式接线由任务 4 接手）", async () => {
     const seenSystems: string[] = [];
     const recorded: Recorded = emptyRecorded();
     const runtime = new HarnessRuntime({
-      ...runtimeOptions([{ text: "答" }], { workspaceRoot: workspace, activeAgent: "plan" }, recorded),
+      ...runtimeOptions([{ text: "答" }], { workspaceRoot: workspace }, recorded),
       providerFactory: () =>
         createMockProvider({
           turns: [{ text: "答" }],
@@ -459,8 +459,7 @@ describe("HarnessRuntime", () => {
 
     await chatTurn(runtime, "agent-1", "规划一下", "m-agent-1");
 
-    expect(seenSystems).toEqual([systemPromptFor("plan")]);
-    expect(seenSystems[0]).not.toBe(systemPromptFor("default"));
+    expect(seenSystems).toEqual([BUILTIN_FALLBACK_PROMPT]);
   });
 });
 

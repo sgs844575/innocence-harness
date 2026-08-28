@@ -84,7 +84,7 @@ describe("mergeSettings", () => {
       themeMode: "dark" as const,
       locale: "zh-CN" as const,
       reasoningEffort: "high" as const,
-      activeAgent: "full" as const,
+      activeAgentMode: "code-review",
       externalSkillDiscovery: true,
       externalEditorCommand: "code --wait",
     };
@@ -153,11 +153,18 @@ describe("mergeSettings", () => {
     expect(mergeSettings({ profiles: [], permissionMode: "yolo" }).permissionMode).toBe("ask");
   });
 
-  it("activeAgent 往返：合法值保留，非法/缺失回落 default", () => {
-    expect(mergeSettings({ profiles: [], activeAgent: "full" }).activeAgent).toBe("full");
-    expect(mergeSettings({ profiles: [], activeAgent: "plan" }).activeAgent).toBe("plan");
-    expect(mergeSettings({ profiles: [], activeAgent: "nope" }).activeAgent).toBe("default");
-    expect(mergeSettings({ profiles: [] }).activeAgent).toBe("default");
+  it("activeAgentMode 往返：非空字符串保留（开放集合），空串/非字符串/缺失回落 default", () => {
+    expect(mergeSettings({ profiles: [], activeAgentMode: "code-review" }).activeAgentMode).toBe("code-review");
+    expect(mergeSettings({ profiles: [], activeAgentMode: "plan" }).activeAgentMode).toBe("plan");
+    expect(mergeSettings({ profiles: [], activeAgentMode: "" }).activeAgentMode).toBe("default");
+    expect(mergeSettings({ profiles: [], activeAgentMode: 42 }).activeAgentMode).toBe("default");
+    expect(mergeSettings({ profiles: [] }).activeAgentMode).toBe("default");
+  });
+
+  it("旧 activeAgent 键自然丢弃，不迁移为 activeAgentMode", () => {
+    const merged = mergeSettings({ profiles: [], activeAgent: "plan" }) as unknown as Record<string, unknown>;
+    expect(merged.activeAgentMode).toBe("default");
+    expect("activeAgent" in merged).toBe(false);
   });
 
   it("externalSkillDiscovery defaults enabled and normalizes boolean values", () => {

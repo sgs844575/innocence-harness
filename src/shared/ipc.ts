@@ -185,11 +185,6 @@ export type ProviderKind = "openai" | "anthropic" | "google";
 export type ProviderProtocol = "openai-compatible" | "anthropic-messages" | "google-generative";
 export type PermissionMode = "auto" | "ask" | "plan" | "full";
 
-// 镜像契约：AgentId 复制自 packages/harness-electron/src/agents.ts
-// （shared 不 import 包），修改任何一侧时必须同步另一侧
-// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-export type AgentId = "default" | "plan" | "full";
-
 // Plugin-toggle source is defined here because both host settings and the
 // main-process resolver consume this IPC-compatible payload. Keys stay open:
 // any plugin id maps to a boolean.
@@ -223,6 +218,13 @@ export interface PluginInventoryEntry {
 }
 
 export type PluginInventory = PluginInventoryEntry[];
+
+/** IPC agents:modes 载荷：一个可选择的 agent 模式（插件贡献）。 */
+export interface AgentModeInfo {
+  id: string;
+  title: string;
+  description?: string;
+}
 
 // 镜像契约：以下发现 DTO 复制自 src/main/skillDiscovery.ts 的
 // DiscoveredSkill（shared 不 import main），修改任何一侧时必须同步另一侧
@@ -327,8 +329,8 @@ export interface HarnessSettings {
   locale?: "zh-CN" | "en-US" | "";
   /** 思考档位（""=跟随模型默认；off/low/medium/high/max）。与 harness-electron 同步。 */
   reasoningEffort?: "" | "off" | "low" | "medium" | "high" | "max";
-  /** 当前内置 agent（default/plan/full），决定系统提示词。与 harness-electron 同步。 */
-  activeAgent?: AgentId;
+  /** 当前 agent 模式 id（插件贡献，开放集合；非法回落 default）。与 harness-electron 同步。 */
+  activeAgentMode?: string;
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置。与 harness-electron 同步。 */
   pluginToggles?: PluginToggleSource;

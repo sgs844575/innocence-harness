@@ -1,6 +1,9 @@
 import { Bot, Check, ChevronDown } from "lucide-react";
 import { Popover } from "../ui/Popover";
-import type { AgentId } from "../../../../shared/ipc";
+
+// 类型桥（任务 3）：shared/ipc 的 AgentId 已随旧维度删除（agent 模式改为
+// 开放集合 activeAgentMode），本控件待任务 5 整体移除，先本地化三元组类型。
+type AgentId = "default" | "plan" | "full";
 
 const OPTIONS: { value: AgentId; key: string }[] = [
   { value: "default", key: "agent.default" },
@@ -16,7 +19,8 @@ export function AgentPicker({
   onChange,
 }: {
   t: (key: string) => string;
-  value: AgentId;
+  /** 任务 3 桥：值来自开放的 activeAgentMode（string），未知 id 显示原始键。 */
+  value: string;
   onChange: (v: AgentId) => void;
 }): React.JSX.Element {
   const label = t(`agent.${value}`);

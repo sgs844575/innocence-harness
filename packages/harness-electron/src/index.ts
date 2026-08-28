@@ -19,16 +19,7 @@ export {
   type ProviderProfile,
   providerProtocol,
 } from "./settings";
-export {
-  AGENT_IDS,
-  BUILTIN_AGENTS,
-  DEFAULT_SYSTEM_PROMPT,
-  FULL_SYSTEM_PROMPT,
-  PLAN_SYSTEM_PROMPT,
-  systemPromptFor,
-  type AgentId,
-  type AgentProfile,
-} from "./agents";
+export { BUILTIN_FALLBACK_PROMPT } from "./agents";
 export {
   HarnessRuntime,
   IN_FLIGHT_BUILD_DISPOSE_TIMEOUT_MS,

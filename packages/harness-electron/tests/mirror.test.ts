@@ -6,9 +6,9 @@ import {
   MOCK_MODEL,
   MOCK_PROFILE_ID,
   PROVIDER_PRESET_MIRROR,
-  type AgentId,
   type ChatPermissionEvent,
   type DiscoveredSkillMirror as SharedDiscoveredSkill,
+  type HarnessSettings as SharedHarnessSettings,
   type McpImportResultMirror,
   type McpServerEntryMirror,
   type ProviderKind as SharedProviderKind,
@@ -17,12 +17,13 @@ import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
 import type { PermissionResource } from "@innocenceharness/harness-permissions";
 import {
+  DEFAULT_SETTINGS,
   MOCK_MODEL as PKG_MOCK_MODEL,
   MOCK_PROFILE_ID as PKG_MOCK_PROFILE_ID,
   PROVIDER_PRESETS,
+  type HarnessSettings as PackageHarnessSettings,
   type ProviderKind as PackageProviderKind,
 } from "../src/settings";
-import { AGENT_IDS, BUILTIN_AGENTS, type AgentId as PkgAgentId } from "../src/agents";
 import { PRESET_MODELS } from "../src/modelPresets";
 
 describe("PROVIDER_PRESET_MIRROR 对齐 PROVIDER_PRESETS", () => {
@@ -70,19 +71,17 @@ describe("shared 与包内 mock 常量对齐", () => {
   });
 });
 
-describe("shared AgentId 镜像对齐 harness-electron agents.ts", () => {
-  // shared 不 import 包，AgentId 手工镜像：包内新增 agent 而忘了同步 shared
-  // 时，这里的类型赋值与集合断言都会把漂移拦下来。
-  it("BUILTIN_AGENTS 的 id 集合与 shared AgentId 一一对应", () => {
-    const sharedIds: AgentId[] = BUILTIN_AGENTS.map((a) => a.id);
-    expect([...sharedIds].sort()).toEqual(["default", "full", "plan"]);
-    expect(AGENT_IDS).toEqual(sharedIds);
+describe("shared HarnessSettings.activeAgentMode 镜像对齐 harness-electron settings domain", () => {
+  // shared 不 import 包，字段手工镜像：任一侧删除/改型（如收窄为封闭联合）
+  // 而忘了同步另一侧时，Pick 约束与双向赋值都会让 typecheck 失败。
+  it("类型漂移守卫：activeAgentMode 双向兼容（开放 string 集合）", () => {
+    const shared: Pick<SharedHarnessSettings, "activeAgentMode"> = { activeAgentMode: "code-review" };
+    const pkg: Pick<PackageHarnessSettings, "activeAgentMode"> = shared;
+    const back: Pick<SharedHarnessSettings, "activeAgentMode"> = pkg;
+    expect(back.activeAgentMode).toBe("code-review");
   });
-  it("类型漂移守卫：shared 镜像与包内 AgentId 双向兼容", () => {
-    const shared: AgentId = "plan";
-    const pkg: PkgAgentId = shared;
-    const back: AgentId = pkg;
-    expect(back).toBe("plan");
+  it("包侧出厂默认值为 default（回落语义见 settings.test.ts）", () => {
+    expect(DEFAULT_SETTINGS.activeAgentMode).toBe("default");
   });
 });
 

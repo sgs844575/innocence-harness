@@ -3,10 +3,8 @@
 // free of Electron imports so the runtime stays unit-testable.
 
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
-import { AGENT_IDS, type AgentId } from "./agents";
 import type { PluginToggleSource } from "../../../src/shared/ipc";
 
-export type { AgentId } from "./agents";
 export type { ModelInfo } from "./modelPresets";
 
 /**
@@ -61,8 +59,8 @@ export interface HarnessSettings {
   locale?: UiLocale;
   /** 思考档位（""=跟随模型默认；off/low/medium/high）。 */
   reasoningEffort?: ReasoningEffort;
-  /** 当前内置 agent（default/plan/full），决定系统提示词；非法值回落 default。 */
-  activeAgent?: AgentId;
+  /** 当前 agent 模式 id（插件贡献，开放集合）；缺失/非字符串回落 "default"。 */
+  activeAgentMode?: string;
   /** 用户级插件开关（四键 subagent/skills/mcp/todo）；缺失键 = 默认开。
    *  项目 .innocence/plugins.yml 优先于此设置（resolvePluginSet 两级覆盖）。 */
   pluginToggles?: PluginToggleSource;
@@ -91,8 +89,8 @@ function normalizeReasoningEffort(raw: unknown): ReasoningEffort {
   return REASONING_EFFORTS.includes(raw as ReasoningEffort) ? (raw as ReasoningEffort) : "";
 }
 
-function normalizeActiveAgent(raw: unknown): AgentId {
-  return AGENT_IDS.includes(raw as AgentId) ? (raw as AgentId) : "default";
+function normalizeActiveAgentMode(raw: unknown): string {
+  return typeof raw === "string" && raw.length > 0 ? raw : "default";
 }
 
 /** Built-in offline profile — always available, models: ["mock"]. */
@@ -144,7 +142,7 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   themeMode: "system",
   locale: "",
   reasoningEffort: "",
-  activeAgent: "default",
+  activeAgentMode: "default",
   externalSkillDiscovery: true,
   externalEditorCommand: "",
 };
@@ -310,7 +308,7 @@ function migrateFromV1(v1: SettingsV1): HarnessSettings {
     themeMode: normalizeThemeMode((v1 as { themeMode?: unknown }).themeMode),
     locale: normalizeLocale((v1 as { locale?: unknown }).locale),
     reasoningEffort: normalizeReasoningEffort((v1 as { reasoningEffort?: unknown }).reasoningEffort),
-    activeAgent: normalizeActiveAgent((v1 as { activeAgent?: unknown }).activeAgent),
+    activeAgentMode: normalizeActiveAgentMode((v1 as { activeAgentMode?: unknown }).activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery((v1 as { externalSkillDiscovery?: unknown }).externalSkillDiscovery),
     // pluginToggles：v1 不可能含该键，有意不透传（缺省 = 默认全开）。
   };
@@ -330,7 +328,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       permissionMode: normalizePermissionMode(src.permissionMode),
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
-      activeAgent: normalizeActiveAgent(src.activeAgent),
+      activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
       externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
       pluginToggles: normalizePluginToggles(src.pluginToggles),
       externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand) };
@@ -352,7 +350,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     themeMode: normalizeThemeMode(src.themeMode),
     locale: normalizeLocale(src.locale),
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
-    activeAgent: normalizeActiveAgent(src.activeAgent),
+    activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
