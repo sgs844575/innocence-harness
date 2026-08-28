@@ -10,6 +10,61 @@ import {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 30_000;
 
+export type ShellTranscriptEvent =
+  | {
+      type: "started";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      command: string;
+      ptyId?: string;
+    }
+  | {
+      type: "output";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      data: string;
+      stream: "stdout" | "stderr";
+      ptyId?: string;
+    }
+  | {
+      type: "completed";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      exitCode: number | null;
+      timedOut: boolean;
+      error?: string;
+      ptyId?: string;
+    };
+
+interface ShellTranscriptRegistry {
+  listeners: Set<(event: ShellTranscriptEvent) => void>;
+}
+
+const shellTranscriptRegistryKey = Symbol.for("innocenceharness.tools-shell.transcript");
+
+function shellTranscriptRegistry(): ShellTranscriptRegistry {
+  const global = globalThis as typeof globalThis & {
+    [shellTranscriptRegistryKey]?: ShellTranscriptRegistry;
+  };
+  return (global[shellTranscriptRegistryKey] ??= { listeners: new Set() });
+}
+
+export function subscribeShellTranscript(listener: (event: ShellTranscriptEvent) => void): () => void {
+  const registry = shellTranscriptRegistry();
+  registry.listeners.add(listener);
+  return () => registry.listeners.delete(listener);
+}
+
+function publishShellTranscript(event: ShellTranscriptEvent): void {
+  for (const listener of [...shellTranscriptRegistry().listeners]) listener(event);
+}
+
 /** Kills the whole process tree — shell:true spawns a wrapper shell whose
  *  children survive a plain kill() on Windows. */
 function killTree(child: ChildProcess): void {
@@ -30,6 +85,7 @@ export interface RunCommandOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   maxOutputChars?: number;
+  onOutput?: (stream: "stdout" | "stderr", data: string) => void;
 }
 
 export interface RunCommandResult {
@@ -61,9 +117,16 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       const total = stdout.length + stderr.length;
       if (total >= max) return;
       const room = max - total;
-      const text = chunk.length > room ? `${chunk.slice(0, room)}…[已截断]` : chunk;
+      const marker = "…[已截断]";
+      const truncated = chunk.length > room;
+      const text = truncated
+        ? room > marker.length
+          ? `${chunk.slice(0, room - marker.length)}${marker}`
+          : chunk.slice(0, room)
+        : chunk;
       if (kind === "stdout") stdout += text;
       else stderr += text;
+      options.onOutput?.(kind, text);
     };
 
     child.stdout?.on("data", (d: Buffer) => capture("stdout", d.toString("utf8")));
@@ -89,7 +152,7 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
     signal?.addEventListener("abort", onAbort, { once: true });
 
     child.on("error", (err) => {
-      stderr += `spawn 失败：${err.message}`;
+      capture("stderr", `spawn 失败：${err.message}`);
       finish(null);
     });
     child.on("close", (code) => finish(code));
@@ -138,17 +201,33 @@ export const bashTool: Tool = {
   },
   async execute(args, ctx: ToolContext) {
     const command = requireCommand(args);
+    const scope = ctx.scope;
+    const identity = {
+      sessionId: scope.sessionId ?? "",
+      taskId: scope.taskId ?? "",
+      routeId: scope.routeId ?? "main",
+      invocationId: scope.invocationId,
+    };
+    publishShellTranscript({ type: "started", ...identity, command });
     const result = await runCommand({
       command,
       cwd: ctx.workspaceRoot,
       timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
       signal: ctx.signal,
+      onOutput: (stream, data) => publishShellTranscript({ type: "output", ...identity, data, stream }),
     });
     const parts: string[] = [];
     if (result.stdout) parts.push(result.stdout);
     if (result.stderr) parts.push(`[stderr]\n${result.stderr}`);
     if (result.timedOut) parts.push(`[命令超时被终止（>${Math.round((typeof args.timeoutMs === "number" ? args.timeoutMs : DEFAULT_TIMEOUT_MS) / 1000)}s）]`);
     const ok = !result.timedOut && result.exitCode === 0;
+    publishShellTranscript({
+      type: "completed",
+      ...identity,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      ...(ok ? {} : { error: result.timedOut ? "command timed out" : "command failed" }),
+    });
     return {
       content: parts.join("\n") || "[无输出，退出码 0]",
       isError: !ok,

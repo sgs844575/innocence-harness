@@ -18,6 +18,8 @@ export const TerminalIpcChannels = {
   terminalOutput: "terminal:output",
   /** Main -> renderer: the shell process tree exited. */
   terminalExit: "terminal:exit",
+  /** Main -> renderer: shell transcript events from tool execution. */
+  terminalShell: "terminal:shell",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,39 @@ export interface TerminalExitEvent {
   exitCode: number | null;
 }
 
+/** A shell-tool transcript has no PTY identity unless one already exists. */
+export type ShellTranscriptEvent =
+  | {
+      type: "started";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      command: string;
+      ptyId?: string;
+    }
+  | {
+      type: "output";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      data: string;
+      stream: "stdout" | "stderr";
+      ptyId?: string;
+    }
+  | {
+      type: "completed";
+      sessionId: string;
+      taskId: string;
+      routeId: string;
+      invocationId: string;
+      exitCode: number | null;
+      timedOut: boolean;
+      error?: string;
+      ptyId?: string;
+    };
+
 // ---------------------------------------------------------------------------
 // Renderer-callable API surface (typed; the preload bridge implements it)
 // ---------------------------------------------------------------------------
@@ -89,4 +124,5 @@ export interface TerminalIpcApi {
   dispose(request: TerminalDisposeRequest): Promise<void>;
   onTerminalOutput(cb: (e: TerminalOutputEvent) => void): () => void;
   onTerminalExit(cb: (e: TerminalExitEvent) => void): () => void;
+  onShellTranscript(cb: (e: ShellTranscriptEvent) => void): () => void;
 }

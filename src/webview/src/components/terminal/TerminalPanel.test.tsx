@@ -5,6 +5,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ShellTranscriptEvent,
   TerminalCreateRequest,
   TerminalExitEvent,
   TerminalOutputEvent,
@@ -13,7 +14,10 @@ import { Terminal } from "@xterm/xterm";
 import { TerminalPanel } from "./TerminalPanel";
 import {
   addTerminal,
+  applyShellTranscriptEvent,
   emptyTerminalState,
+  MAX_SHELL_TRANSCRIPT_ENTRIES,
+  MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS,
   markStaleRoutes,
   markTerminalExited,
   removeTerminal,
@@ -56,6 +60,7 @@ function fakeTerminalApi() {
   let seq = 0;
   const outputSubs = new Set<(e: TerminalOutputEvent) => void>();
   const exitSubs = new Set<(e: TerminalExitEvent) => void>();
+  const shellSubs = new Set<(e: ShellTranscriptEvent) => void>();
   return {
     create: vi.fn(async (req: TerminalCreateRequest) => ({
       ptyId: `pty_${++seq}`,
@@ -73,11 +78,18 @@ function fakeTerminalApi() {
       exitSubs.add(cb);
       return () => exitSubs.delete(cb);
     }),
+    onShellTranscript: vi.fn((cb: (e: ShellTranscriptEvent) => void) => {
+      shellSubs.add(cb);
+      return () => shellSubs.delete(cb);
+    }),
     emitOutput: (e: TerminalOutputEvent) => {
       for (const cb of outputSubs) cb(e);
     },
     emitExit: (e: TerminalExitEvent) => {
       for (const cb of exitSubs) cb(e);
+    },
+    emitShell: (e: ShellTranscriptEvent) => {
+      for (const cb of shellSubs) cb(e);
     },
   };
 }
@@ -117,6 +129,96 @@ describe("terminalState", () => {
     state = markStaleRoutes(state, null);
     expect(state.entries.p1.stale).toBe(true);
     expect(state.entries.p2.stale).toBe(true);
+  });
+
+  it("applies shell transcript events without a PTY as an independent transcript", () => {
+    let state = emptyTerminalState;
+    state = applyShellTranscriptEvent(state, {
+      type: "started",
+      sessionId: "s1",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: "inv-1",
+      command: "npm test",
+    });
+    state = applyShellTranscriptEvent(state, {
+      type: "output",
+      sessionId: "s1",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: "inv-1",
+      data: "ok",
+      stream: "stdout",
+    });
+    state = applyShellTranscriptEvent(state, {
+      type: "completed",
+      sessionId: "s1",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: "inv-1",
+      exitCode: 0,
+      timedOut: false,
+    });
+    expect(state.shellEntries["inv-1"]).toMatchObject({
+      command: "npm test",
+      stdout: "ok",
+      completed: true,
+      exitCode: 0,
+    });
+    expect(state.shellEntries["inv-1"]?.ptyId).toBeUndefined();
+  });
+
+  it("keeps shell transcript identity separate when the invocation has a PTY", () => {
+    const state = applyShellTranscriptEvent(emptyTerminalState, {
+      type: "started",
+      sessionId: "s1",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: "inv-pty",
+      command: "npm test",
+      ptyId: "pty-1",
+    });
+    expect(state.shellEntries["inv-pty"]).toMatchObject({ ptyId: "pty-1" });
+  });
+
+  it("caps transcript output and evicts the oldest completed entries", () => {
+    let state = emptyTerminalState;
+    for (let index = 0; index < MAX_SHELL_TRANSCRIPT_ENTRIES + 1; index += 1) {
+      const id = `inv-${index}`;
+      state = applyShellTranscriptEvent(state, {
+        type: "started",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+        invocationId: id,
+        command: id,
+      });
+      state = applyShellTranscriptEvent(state, {
+        type: "completed",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+        invocationId: id,
+        exitCode: 0,
+        timedOut: false,
+      });
+    }
+    expect(state.shellOrder).toHaveLength(MAX_SHELL_TRANSCRIPT_ENTRIES);
+    expect(state.shellEntries["inv-0"]).toBeUndefined();
+    const output = "A".repeat(MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS + 20);
+    state = applyShellTranscriptEvent(state, {
+      type: "output",
+      sessionId: "s1",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: `inv-${MAX_SHELL_TRANSCRIPT_ENTRIES}`,
+      data: output,
+      stream: "stdout",
+    });
+    expect(state.shellEntries[`inv-${MAX_SHELL_TRANSCRIPT_ENTRIES}`]!.stdout).toHaveLength(
+      MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS,
+    );
+    expect(state.shellEntries[`inv-${MAX_SHELL_TRANSCRIPT_ENTRIES}`]!.stdout.endsWith("A")).toBe(true);
   });
 
   it("markTerminalExited records the exit code but keeps the entry until closed", () => {
@@ -205,6 +307,88 @@ describe("TerminalPanel", () => {
     expect(term.write).toHaveBeenCalledWith("hello shell");
   });
 
+  it("renders a no-PTY shell transcript with command, live output, and completion status", async () => {
+    render(<TerminalPanel api={api} activeTask={null} />);
+    await act(async () => {
+      api.emitShell({
+        type: "started",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+        invocationId: "inv-shell",
+        command: "npm test",
+      });
+      api.emitShell({
+        type: "output",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+        invocationId: "inv-shell",
+        data: "live output",
+        stream: "stdout",
+      });
+      api.emitShell({
+        type: "completed",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+        invocationId: "inv-shell",
+        exitCode: 3,
+        timedOut: false,
+        error: "command failed",
+      });
+    });
+    expect(screen.getAllByText("npm test").length).toBeGreaterThan(0);
+    expect(screen.getByText("live output")).toBeTruthy();
+    expect(screen.getByText(/退出码 3/)).toBeTruthy();
+    expect(screen.getByText(/command failed/)).toBeTruthy();
+  });
+
+  it("keeps a PTY pane selectable beside a no-PTY shell transcript", async () => {
+    render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />);
+    await screen.findByRole("tab", { name: /main/ });
+    await act(async () => {
+      api.emitShell({
+        type: "started",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "main",
+        invocationId: "inv-shell-with-pty",
+        command: "npm test",
+      });
+      api.emitShell({
+        type: "output",
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "main",
+        invocationId: "inv-shell-with-pty",
+        data: "transcript output",
+        stream: "stdout",
+      });
+    });
+    expect(screen.getByText("transcript output")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "main" }));
+    expect(screen.queryByText("transcript output")).toBeNull();
+    expect(xtermInstances()[0]).toBeTruthy();
+  });
+
+  it("ignores output and exit events whose full terminal identity does not match", async () => {
+    render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />);
+    await screen.findByRole("tab", { name: /main/ });
+    await waitFor(() => expect(xtermInstances()).toHaveLength(1));
+    const term = xtermInstances()[0];
+    await act(async () => {
+      api.emitOutput({ taskId: "other-task", routeId: "main", ptyId: "pty_1", data: "wrong task" });
+      api.emitOutput({ taskId: "t1", routeId: "other-route", ptyId: "pty_1", data: "wrong route" });
+      api.emitOutput({ taskId: "t1", routeId: "main", ptyId: "pty_other", data: "wrong pty" });
+      api.emitExit({ taskId: "other-task", routeId: "main", ptyId: "pty_1", exitCode: 7 });
+      api.emitExit({ taskId: "t1", routeId: "other-route", ptyId: "pty_1", exitCode: 8 });
+      api.emitExit({ taskId: "t1", routeId: "main", ptyId: "pty_other", exitCode: 9 });
+    });
+    expect(term.write).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: /main/ }).textContent).not.toContain("已退出");
+  });
+
   it("sends keystrokes as typed write DTOs", async () => {
     render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />);
     await screen.findByRole("tab", { name: /main/ });
@@ -268,7 +452,7 @@ describe("TerminalPanel", () => {
     expect(screen.getByRole("tab", { name: /main/ }).textContent).toContain("已退出");
   });
 
-  it("subscribes exactly once to output/exit regardless of rerenders", async () => {
+  it("subscribes exactly once to terminal and shell events regardless of rerenders", async () => {
     const { rerender } = render(
       <TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />,
     );
@@ -278,6 +462,7 @@ describe("TerminalPanel", () => {
     await screen.findByRole("tab", { name: /other/ });
     expect(api.onTerminalOutput).toHaveBeenCalledTimes(1);
     expect(api.onTerminalExit).toHaveBeenCalledTimes(1);
+    expect(api.onShellTranscript).toHaveBeenCalledTimes(1);
   });
 
   it("panel close button invokes onClose", async () => {
@@ -309,6 +494,18 @@ describe("TerminalPanel", () => {
     expect(api.dispose).toHaveBeenCalledTimes(1); // exited route_x is skipped
   });
 
+  it("disposes a terminal that resolves after the panel unmounts", async () => {
+    let resolveCreate!: (value: { ptyId: string; taskId: string; routeId: string }) => void;
+    const pendingCreate = new Promise<{ ptyId: string; taskId: string; routeId: string }>((resolve) => {
+      resolveCreate = resolve;
+    });
+    api.create.mockReturnValueOnce(pendingCreate);
+    const { unmount } = render(<TerminalPanel api={api} activeTask={{ taskId: "t1", routeId: "main" }} />);
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith({ taskId: "t1", routeId: "main" }));
+    unmount();
+    resolveCreate({ ptyId: "pty-late", taskId: "t1", routeId: "main" });
+    await waitFor(() => expect(api.dispose).toHaveBeenCalledWith({ taskId: "t1", routeId: "main", ptyId: "pty-late" }));
+  });
   it("mounts through the workbench wiring with the real preload proxy path", async () => {
     // The exact prop path App uses: lib/ipc's terminalApi proxy reading
     // window.innocencecodeTerminal (the preload bridge surface).

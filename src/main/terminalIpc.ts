@@ -7,6 +7,7 @@
 // registerTerminalIpc() is the only Electron touchpoint and is imported
 // lazily so this module stays loadable in Node tests.
 import { createPtyManager, type PtyEvent, type PtyManager } from "@innocenceharness/terminal-pty";
+import { subscribeShellTranscript, type ShellTranscriptEvent as ToolsShellTranscriptEvent } from "@innocenceharness/tools-shell";
 import {
   TerminalIpcChannels,
   type TerminalCreateRequest,
@@ -14,6 +15,7 @@ import {
   type TerminalDisposeRequest,
   type TerminalResizeRequest,
   type TerminalWriteRequest,
+  type ShellTranscriptEvent,
 } from "../shared/terminalIpc";
 
 // Same id discipline as the task bridge: single safe storage-directory
@@ -76,6 +78,9 @@ export function createTerminalIpcService(deps: TerminalIpcDeps): TerminalIpcServ
 
   const manager: PtyManager =
     deps.createManager?.(forward) ?? createPtyManager({ onEvent: forward });
+  const offShellTranscript = subscribeShellTranscript((event: ToolsShellTranscriptEvent) => {
+    deps.send(TerminalIpcChannels.terminalShell, event satisfies ShellTranscriptEvent);
+  });
 
   /** Resolves the live session and rejects stale ptyIds in one step. */
   function liveSession(request: { taskId: unknown; routeId: unknown; ptyId: unknown }) {
@@ -131,6 +136,7 @@ export function createTerminalIpcService(deps: TerminalIpcDeps): TerminalIpcServ
     },
 
     async disposeAll() {
+      offShellTranscript();
       await manager.disposeAll();
     },
   };

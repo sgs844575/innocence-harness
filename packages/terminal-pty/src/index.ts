@@ -6,6 +6,7 @@ export type {
   PtyOutputEvent,
   PtySession,
   PtyEvent,
+  PtySessionFactory,
 } from "./pty";
 export { LivePtySession, PTY_OUTPUT_BUFFER_MAX_CHARS } from "./pty";
 export { createPtyManager, type PtyManager, type PtyManagerOptions } from "./manager";

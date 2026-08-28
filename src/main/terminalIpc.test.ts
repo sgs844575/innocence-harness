@@ -3,6 +3,8 @@
 // (the real node-pty manager is covered by packages/terminal-pty/tests).
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { PtyEvent, PtyExitEvent, PtyManager, PtySession } from "@innocenceharness/terminal-pty";
+import { bashTool } from "@innocenceharness/tools-shell";
+import { createExecutionScope, type ToolContext } from "@innocenceharness/harness-tools";
 import { TerminalIpcChannels } from "../shared/terminalIpc";
 import { createTerminalIpcService } from "./terminalIpc";
 
@@ -229,6 +231,32 @@ describe("TerminalIpcService event forwarding", () => {
       ptyId: "pty_fake_1",
       data: "hello",
     });
+  });
+
+  it("forwards shell transcript events from the typed shell port", async () => {
+    const { service } = buildService();
+    await service.create({ taskId: "t1", routeId: "r1" });
+    const shellContext: ToolContext = {
+      workspaceRoot: process.cwd(),
+      signal: new AbortController().signal,
+      log: () => {},
+      scope: createExecutionScope("Bash", "inv-shell", {
+        sessionId: "s1",
+        taskId: "t1",
+        routeId: "r1",
+      }),
+    };
+    await bashTool.execute({ command: process.platform === "win32" ? "echo live" : "printf live" }, shellContext);
+    expect(send).toHaveBeenCalledWith(TerminalIpcChannels.terminalShell, expect.objectContaining({
+      type: "started",
+      taskId: "t1",
+      routeId: "r1",
+      invocationId: "inv-shell",
+    }));
+    expect(send).toHaveBeenCalledWith(TerminalIpcChannels.terminalShell, expect.objectContaining({
+      type: "completed",
+      exitCode: 0,
+    }));
   });
 
   it("forwards exit events on terminal:exit with the identity triple", async () => {

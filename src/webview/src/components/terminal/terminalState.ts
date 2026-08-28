@@ -1,4 +1,6 @@
-// terminalState — pure state module for the terminal panel (Task 9). No
+import type { ShellTranscriptEvent } from "../../../../shared/terminalIpc";
+export type { ShellTranscriptEvent } from "../../../../shared/terminalIpc";
+
 // xterm, no React, no IPC: fully testable in Node. The panel owns xterm
 // instances and event subscriptions; this module only tracks WHICH
 // terminals exist, which route is active, and which entries went stale
@@ -24,17 +26,41 @@ export interface TerminalEntryState {
   readonly exitCode: number | null;
 }
 
+export interface ShellTranscriptState {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly routeId: string;
+  readonly invocationId: string;
+  readonly ptyId?: string;
+  readonly command: string;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly completed: boolean;
+  readonly exitCode: number | null;
+  readonly timedOut: boolean;
+  readonly error?: string;
+}
+
 export interface TerminalCollectionState {
   /** Insertion order of ptyIds (oldest first). */
   readonly order: readonly string[];
   readonly entries: Readonly<Record<string, TerminalEntryState>>;
   readonly activePtyId: string | null;
+  readonly shellOrder: readonly string[];
+  readonly shellEntries: Readonly<Record<string, ShellTranscriptState>>;
+  readonly activeShellId: string | null;
+  readonly activePane: "pty" | "shell" | null;
 }
 
 export const emptyTerminalState: TerminalCollectionState = {
   order: [],
   entries: {},
   activePtyId: null,
+  shellOrder: [],
+  shellEntries: {},
+  activeShellId: null,
+  activePane: null,
 };
 
 /** Stale = entry's route is not the active route (null active = all stale). */
@@ -44,6 +70,92 @@ export function terminalIsStale(
 ): boolean {
   if (!active) return true;
   return entry.taskId !== active.taskId || entry.routeId !== active.routeId;
+}
+
+export const MAX_SHELL_TRANSCRIPT_ENTRIES = 100;
+export const MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS = 100_000;
+
+function trimTranscriptOutput(value: string): string {
+  return value.length > MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS
+    ? value.slice(value.length - MAX_SHELL_TRANSCRIPT_OUTPUT_CHARS)
+    : value;
+}
+
+function limitShellEntries(
+  order: readonly string[],
+  entries: Readonly<Record<string, ShellTranscriptState>>,
+): { order: readonly string[]; entries: Readonly<Record<string, ShellTranscriptState>> } {
+  if (order.length <= MAX_SHELL_TRANSCRIPT_ENTRIES) return { order, entries };
+  const nextOrder = [...order];
+  const nextEntries = { ...entries };
+  while (nextOrder.length > MAX_SHELL_TRANSCRIPT_ENTRIES) {
+    const candidate = nextOrder.find((id) => nextEntries[id]?.completed) ?? nextOrder[0];
+    if (!candidate) break;
+    delete nextEntries[candidate];
+    nextOrder.splice(nextOrder.indexOf(candidate), 1);
+  }
+  return { order: nextOrder, entries: nextEntries };
+}
+
+export function applyShellTranscriptEvent(
+  state: TerminalCollectionState,
+  event: ShellTranscriptEvent,
+): TerminalCollectionState {
+  const id = event.invocationId;
+  const current = state.shellEntries[id];
+  if (event.type === "started") {
+    if (current) return state;
+    const entry: ShellTranscriptState = {
+      id,
+      sessionId: event.sessionId,
+      taskId: event.taskId,
+      routeId: event.routeId,
+      invocationId: event.invocationId,
+      ...(event.ptyId ? { ptyId: event.ptyId } : {}),
+      command: event.command,
+      stdout: "",
+      stderr: "",
+      completed: false,
+      exitCode: null,
+      timedOut: false,
+    };
+    const next = limitShellEntries(
+      [...state.shellOrder, id],
+      { ...state.shellEntries, [id]: entry },
+    );
+    return {
+      ...state,
+      shellOrder: next.order,
+      shellEntries: next.entries,
+      activePtyId: state.activePtyId,
+      activeShellId: id,
+      activePane: entry.ptyId === undefined ? "shell" : state.activePane,
+    };
+  }
+  if (!current) return state;
+  if (event.type === "output") {
+    const output = trimTranscriptOutput(current[event.stream] + event.data);
+    return {
+      ...state,
+      shellEntries: {
+        ...state.shellEntries,
+        [id]: { ...current, [event.stream]: output },
+      },
+    };
+  }
+  return {
+    ...state,
+    shellEntries: {
+      ...state.shellEntries,
+      [id]: {
+        ...current,
+        completed: true,
+        exitCode: event.exitCode,
+        timedOut: event.timedOut,
+        ...(event.error ? { error: event.error } : {}),
+      },
+    },
+  };
 }
 
 export function addTerminal(
@@ -61,9 +173,11 @@ export function addTerminal(
     exitCode: null,
   };
   return {
+    ...state,
     order: [...state.order, created.ptyId],
     entries: { ...state.entries, [created.ptyId]: entry },
     activePtyId: created.ptyId,
+    activePane: "pty",
   };
 }
 
@@ -108,9 +222,11 @@ export function removeTerminal(state: TerminalCollectionState, ptyId: string): T
   delete entries[ptyId];
   const order = state.order.filter((id) => id !== ptyId);
   return {
+    ...state,
     order,
     entries,
     activePtyId: state.activePtyId === ptyId ? nextActive(order, entries) : state.activePtyId,
+    activePane: state.activePtyId === ptyId ? "pty" : state.activePane,
   };
 }
 
@@ -118,6 +234,15 @@ export function setActiveTerminal(
   state: TerminalCollectionState,
   ptyId: string,
 ): TerminalCollectionState {
-  if (!state.entries[ptyId] || state.activePtyId === ptyId) return state;
-  return { ...state, activePtyId: ptyId };
+  if (!state.entries[ptyId]) return state;
+  if (state.activePtyId === ptyId && state.activePane === "pty") return state;
+  return { ...state, activePtyId: ptyId, activePane: "pty" };
+}
+
+export function setActiveShell(
+  state: TerminalCollectionState,
+  shellId: string,
+): TerminalCollectionState {
+  if (!state.shellEntries[shellId] || state.activeShellId === shellId) return state;
+  return { ...state, activeShellId: shellId, activePane: "shell" };
 }

@@ -14,10 +14,13 @@ import type { TerminalIpcApi } from "../../../../shared/terminalIpc";
 import {
   addTerminal,
   emptyTerminalState,
+  applyShellTranscriptEvent,
   markStaleRoutes,
   markTerminalExited,
   removeTerminal,
   setActiveTerminal,
+  setActiveShell,
+  type ShellTranscriptState,
   type TerminalCollectionState,
   type TerminalEntryState,
   type TerminalRouteRef,
@@ -118,6 +121,23 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
   return <div ref={hostRef} className={visible ? "absolute inset-0" : "hidden"} />;
 }
 
+function ShellTranscriptView({ entry }: { entry: ShellTranscriptState }): React.JSX.Element {
+  const output = `${entry.stdout}${entry.stderr}`;
+  return (
+    <article className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto bg-(--color-app-bg) p-3 font-mono text-xs">
+      <div className="text-(--color-app-text)">{entry.command}</div>
+      {output && <pre className="whitespace-pre-wrap text-(--color-app-muted)">{output}</pre>}
+      {entry.completed && (
+        <div className={entry.error ? "text-red-600" : "text-(--color-app-muted)"}>
+          退出码 {entry.exitCode ?? "未知"}
+          {entry.timedOut && "（超时）"}
+          {entry.error && `：${entry.error}`}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: TerminalPanelProps): React.JSX.Element {
   const [collection, setCollection] = useState<TerminalCollectionState>(emptyTerminalState);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -127,6 +147,8 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
   const termsRef = useRef(new Map<string, Terminal>());
   const pendingRef = useRef(new Map<string, string>());
   const inflightRef = useRef(new Set<string>());
+  const pendingCreatesRef = useRef(new Map<string, { taskId: string; routeId: string }>());
+  const mountedRef = useRef(true);
   const activeRef = useRef(activeTask);
   activeRef.current = activeTask;
   // State read through a ref: the auto-create check must run on route/api
@@ -150,6 +172,8 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
   // Typed event subscriptions — exactly once for the panel's lifetime.
   useEffect(() => {
     const offOutput = api.onTerminalOutput((event) => {
+      const entry = collectionRef.current.entries[event.ptyId];
+      if (!entry || entry.taskId !== event.taskId || entry.routeId !== event.routeId) return;
       const term = termsRef.current.get(event.ptyId);
       if (term) term.write(event.data);
       else {
@@ -158,11 +182,19 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
       }
     });
     const offExit = api.onTerminalExit((event) => {
-      setCollection((prev) => markTerminalExited(prev, event.ptyId, event.exitCode));
+      setCollection((prev) => {
+        const entry = prev.entries[event.ptyId];
+        if (!entry || entry.taskId !== event.taskId || entry.routeId !== event.routeId) return prev;
+        return markTerminalExited(prev, event.ptyId, event.exitCode);
+      });
+    });
+    const offShell = api.onShellTranscript((event) => {
+      setCollection((prev) => applyShellTranscriptEvent(prev, event));
     });
     return () => {
       offOutput();
       offExit();
+      offShell();
     };
   }, [api]);
 
@@ -178,13 +210,18 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
   // disposed through the bridge so no shell trees leak in main. Keep-alive
   // across closes is rejected: the renderer state is gone, so re-opening
   // would spawn new terminals while the old PTYs stayed alive forever.
-  useEffect(() => () => {
-    for (const entry of Object.values(collectionRef.current.entries)) {
-      if (entry.exited) continue;
-      void api.dispose({ taskId: entry.taskId, routeId: entry.routeId, ptyId: entry.ptyId }).catch(
-        () => undefined,
-      );
-    }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pendingCreatesRef.current.clear();
+      for (const entry of Object.values(collectionRef.current.entries)) {
+        if (entry.exited) continue;
+        void api.dispose({ taskId: entry.taskId, routeId: entry.routeId, ptyId: entry.ptyId }).catch(
+          () => undefined,
+        );
+      }
+    };
   }, [api]);
 
   // Auto-create a terminal for the active route when none is live.
@@ -205,17 +242,23 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
     });
     if (exists) return;
     inflightRef.current.add(key);
+    pendingCreatesRef.current.set(key, route);
     api
       .create({ taskId: route.taskId, routeId: route.routeId })
       .then((created) => {
+        if (!mountedRef.current || !pendingCreatesRef.current.has(key)) {
+          void api.dispose(created).catch(() => undefined);
+          return;
+        }
         setCollection((prev) => addTerminal(prev, created, activeRef.current));
         setCreateError(null);
       })
       .catch((error) => {
-        setCreateError(error instanceof Error ? error.message : String(error));
+        if (mountedRef.current) setCreateError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         inflightRef.current.delete(key);
+        pendingCreatesRef.current.delete(key);
       });
   }, [api, activeTask]);
 
@@ -300,6 +343,25 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
               </div>
             );
           })}
+          {collection.shellOrder.map((shellId) => {
+            const entry = collection.shellEntries[shellId];
+            if (!entry || entry.ptyId !== undefined) return null;
+            const active = collection.activeShellId === entry.id;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setCollection((prev) => setActiveShell(prev, entry.id))}
+                className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[12px] ${
+                  active ? "bg-(--color-app-bubble) text-(--color-app-text)" : "text-(--color-app-muted)"
+                }`}
+              >
+                {entry.command}
+              </button>
+            );
+          })}
         </div>
         {createError && (
           <span role="alert" className="max-w-[280px] truncate text-[11px] text-red-600">
@@ -321,13 +383,18 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
           <TerminalView
             key={ptyId}
             entry={collection.entries[ptyId]}
-            visible={collection.activePtyId === ptyId}
+            visible={collection.activePane === "pty" && collection.activePtyId === ptyId}
             onInput={handleInput}
             onFit={handleFit}
             register={register}
             unregister={unregister}
           />
         ))}
+        {collection.activePane === "shell" && collection.activeShellId && collection.shellEntries[collection.activeShellId] ? (
+          <ShellTranscriptView entry={collection.shellEntries[collection.activeShellId]!} />
+        ) : collection.activePane === null ? (
+          <div className="p-3 text-xs text-(--color-app-muted)">无活动终端</div>
+        ) : null}
       </div>
     </section>
   );

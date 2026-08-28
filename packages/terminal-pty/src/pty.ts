@@ -62,8 +62,13 @@ export interface LivePtySessionOptions {
   /** Emitted for every output chunk and the final exit. */
   readonly onEvent: (event: PtyEvent) => void;
   /** Called exactly once when the session ends (registry cleanup). */
-  readonly onGone: () => void;
+  readonly onGone: (session: PtySession) => void;
 }
+
+export type PtySessionFactory = (
+  init: PtySessionInit,
+  options: LivePtySessionOptions,
+) => PtySession;
 
 /** Windows shell trees survive a plain kill() — taskkill /T /F is mandatory. */
 function killTree(pid: number): void {
@@ -152,7 +157,7 @@ export class LivePtySession implements PtySession {
         ptyId: this.ptyId,
         exitCode,
       };
-      this.options.onGone();
+      this.options.onGone(this);
       this.options.onEvent(event);
       for (const listener of this.exitListeners) listener(event);
       this.exitListeners.clear();

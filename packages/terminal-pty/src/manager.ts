@@ -2,12 +2,18 @@
 // (taskId, routeId) pair; creating for an occupied pair replaces the old
 // session (dispose first), so a stale renderer can never type into a shell
 // that belongs to a different route cwd.
-import { LivePtySession, type PtyEvent, type PtySession } from "./pty";
+import {
+  LivePtySession,
+  type PtyEvent,
+  type PtySession,
+  type PtySessionFactory,
+} from "./pty";
 
 export interface PtyManagerOptions {
   /** Every output chunk and the final exit, each carrying the identity triple. */
   readonly onEvent?: (event: PtyEvent) => void;
   readonly log?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
+  readonly createSession?: PtySessionFactory;
 }
 
 export interface PtyManager {
@@ -34,9 +40,24 @@ function sanitizeDimension(value: unknown, fallback: number): number {
 
 export function createPtyManager(options: PtyManagerOptions = {}): PtyManager {
   const log = options.log ?? (() => {});
-  const sessions = new Map<string, LivePtySession>();
+  const sessions = new Map<string, PtySession>();
+  const routeQueues = new Map<string, Promise<void>>();
+  let closing = false;
+  let disposeAllPromise: Promise<void> | undefined;
+  const createSession = options.createSession ?? ((init, sessionOptions) => new LivePtySession(init, sessionOptions));
 
-  const disposeForRoute = async (taskId: string, routeId: string): Promise<void> => {
+  function enqueueRoute<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = routeQueues.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    const tail = current.then(() => undefined, () => undefined);
+    routeQueues.set(key, tail);
+    void tail.finally(() => {
+      if (routeQueues.get(key) === tail) routeQueues.delete(key);
+    });
+    return current;
+  }
+
+  const disposeRouteNow = async (taskId: string, routeId: string): Promise<void> => {
     const key = routeKey(taskId, routeId);
     const session = sessions.get(key);
     if (!session) return;
@@ -46,38 +67,57 @@ export function createPtyManager(options: PtyManagerOptions = {}): PtyManager {
     );
   };
 
+  const disposeForRoute = (taskId: string, routeId: string): Promise<void> =>
+    enqueueRoute(routeKey(taskId, routeId), () => disposeRouteNow(taskId, routeId));
+
   return {
     async create(input) {
       if (!input.taskId || !input.routeId) {
         throw new Error("pty manager: create requires taskId and routeId");
       }
-      // Same-route re-create replaces: the old shell never outlives its route.
-      await disposeForRoute(input.taskId, input.routeId);
-      const session = new LivePtySession(
-        {
-          ptyId: mintPtyId(),
-          taskId: input.taskId,
-          routeId: input.routeId,
-          cwd: input.cwd,
-          cols: sanitizeDimension(input.cols, DEFAULT_COLS),
-          rows: sanitizeDimension(input.rows, DEFAULT_ROWS),
-        },
-        {
-          onEvent: (event) => options.onEvent?.(event),
-          onGone: () => {
-            sessions.delete(routeKey(input.taskId, input.routeId));
+      if (closing) throw new Error("pty manager: disposing");
+      return enqueueRoute(routeKey(input.taskId, input.routeId), async () => {
+        if (closing) throw new Error("pty manager: disposing");
+        // Same-route re-create replaces: the old shell never outlives its route.
+        await disposeRouteNow(input.taskId, input.routeId);
+        if (closing) throw new Error("pty manager: disposing");
+        const session = createSession(
+          {
+            ptyId: mintPtyId(),
+            taskId: input.taskId,
+            routeId: input.routeId,
+            cwd: input.cwd,
+            cols: sanitizeDimension(input.cols, DEFAULT_COLS),
+            rows: sanitizeDimension(input.rows, DEFAULT_ROWS),
           },
-        },
-      );
-      sessions.set(routeKey(input.taskId, input.routeId), session);
-      log("info", "pty created", `${input.taskId}/${input.routeId} -> ${session.ptyId}`);
-      return session;
+          {
+            onEvent: (event) => options.onEvent?.(event),
+            onGone: (gone) => {
+              const key = routeKey(gone.taskId, gone.routeId);
+              if (sessions.get(key) === gone) sessions.delete(key);
+            },
+          },
+        );
+        sessions.set(routeKey(input.taskId, input.routeId), session);
+        log("info", "pty created", `${input.taskId}/${input.routeId} -> ${session.ptyId}`);
+        return session;
+      });
     },
     get: (taskId, routeId) => sessions.get(routeKey(taskId, routeId)),
     disposeForRoute,
     async disposeAll() {
-      const pairs = [...sessions.values()].map((session) => [session.taskId, session.routeId] as const);
-      await Promise.all(pairs.map(([taskId, routeId]) => disposeForRoute(taskId, routeId)));
+      if (disposeAllPromise) {
+        await disposeAllPromise;
+        return;
+      }
+      closing = true;
+      disposeAllPromise = (async () => {
+        while (routeQueues.size > 0) {
+          await Promise.all([...routeQueues.values()]);
+        }
+        await Promise.all([...sessions.values()].map((session) => disposeRouteNow(session.taskId, session.routeId)));
+      })();
+      await disposeAllPromise;
     },
   };
 }

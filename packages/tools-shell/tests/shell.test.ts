@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
-import { ShellPlugin, bashTool, runCommand } from "../src";
+import { ShellPlugin, bashTool, runCommand, subscribeShellTranscript } from "../src";
 import {
   parseRuleSpec,
   PermissionEngine,
@@ -53,6 +53,19 @@ describe("runCommand", () => {
     expect(r.exitCode).toBe(3);
   });
 
+  it("applies the same output cap to realtime callbacks and final capture", async () => {
+    const realtime: string[] = [];
+    const r = await runCommand({
+      command: process.platform === "win32" ? "echo realtime" : "printf realtime",
+      cwd: root,
+      maxOutputChars: 5,
+      onOutput: (_stream, data) => realtime.push(data),
+    });
+    expect(realtime.join("").length).toBeLessThanOrEqual(5);
+    expect(r.stdout.length).toBeLessThanOrEqual(5);
+    expect(realtime.join("")).toBe(r.stdout);
+  });
+
   it("times out long-running commands", async () => {
     const isWin = process.platform === "win32";
     const r = await runCommand({
@@ -98,6 +111,22 @@ describe("bashTool", () => {
 
   it("rejects missing command arg", async () => {
     await expect(bashTool.execute({}, ctx())).rejects.toThrow("command");
+  });
+});
+
+describe("shell transcript events", () => {
+  it("publishes started, output, and completed events with route identity", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const unsubscribe = subscribeShellTranscript((event) => events.push(event));
+    const result = await bashTool.execute({ command: process.platform === "win32" ? "echo live" : "printf live" }, {
+      ...ctx(),
+      scope: { ...ctx().scope, taskId: "task-1", routeId: "route-1", invocationId: "inv-1" },
+    });
+    unsubscribe();
+    expect(result.isError).toBe(false);
+    expect(events[0]).toMatchObject({ type: "started", taskId: "task-1", routeId: "route-1", command: expect.any(String) });
+    expect(events.some((event) => event.type === "output" && String(event.data).includes("live"))).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "completed", taskId: "task-1", routeId: "route-1", exitCode: 0 });
   });
 });
 

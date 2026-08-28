@@ -17,6 +17,7 @@ import {
   PTY_OUTPUT_BUFFER_MAX_CHARS,
   type PtyEvent,
   type PtyManager,
+  type PtySession,
 } from "../src/index";
 
 const execFileAsync = promisify(execFile);
@@ -170,6 +171,107 @@ describe("PtyManager (real node-pty)", () => {
       await manager.disposeForRoute("t-cap", "r-cap");
     },
     40_000,
+  );
+
+  it(
+    "serializes concurrent recreate calls and disposes the intermediate session",
+    async () => {
+      const created: Array<PtySession & { disposeCalls: number; resolveDispose: () => void }> = [];
+      const scoped = createPtyManager({
+        createSession: (init) => {
+          let finishDispose: (() => void) | undefined;
+          const session = {
+            ptyId: init.ptyId,
+            taskId: init.taskId,
+            routeId: init.routeId,
+            cwd: init.cwd,
+            disposeCalls: 0,
+            resolveDispose: () => finishDispose?.(),
+            write: () => {},
+            resize: () => {},
+            output: async () => "",
+            onExit: () => () => {},
+            dispose: () => {
+              session.disposeCalls += 1;
+              return new Promise<void>((resolve) => {
+                finishDispose = resolve;
+              });
+            },
+          } as PtySession & { disposeCalls: number; resolveDispose: () => void };
+          created.push(session);
+          return session;
+        },
+      });
+      const first = await scoped.create({ taskId: "t-race", routeId: "r-race", cwd: fixtureRoot });
+      const recreateA = scoped.create({ taskId: "t-race", routeId: "r-race", cwd: fixtureRoot });
+      const recreateB = scoped.create({ taskId: "t-race", routeId: "r-race", cwd: fixtureRoot });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(created[0]?.disposeCalls).toBe(1);
+      created[0]!.resolveDispose();
+      const second = await recreateA;
+      expect(created).toHaveLength(2);
+      expect(created[1]?.disposeCalls).toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(created[1]?.disposeCalls).toBe(1);
+      created[1]!.resolveDispose();
+      const third = await recreateB;
+      expect(created).toHaveLength(3);
+      expect(first.ptyId).not.toBe(second.ptyId);
+      expect(second.ptyId).not.toBe(third.ptyId);
+      expect(created[1]?.disposeCalls).toBe(1);
+      expect(scoped.get("t-race", "r-race")?.ptyId).toBe(third.ptyId);
+      const disposing = scoped.disposeAll();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      created[2]!.resolveDispose();
+      await disposing;
+    },
+    20_000,
+  );
+
+  it(
+    "closes the barrier before disposeAll returns when a recreate is queued",
+    async () => {
+      let releaseDispose!: () => void;
+      let disposeStarted!: () => void;
+      const disposeStartedPromise = new Promise<void>((resolve) => {
+        disposeStarted = resolve;
+      });
+      const created: Array<PtySession & { disposeCalls: number }> = [];
+      const scoped = createPtyManager({
+        createSession: (init) => {
+          const session = {
+            ptyId: init.ptyId,
+            taskId: init.taskId,
+            routeId: init.routeId,
+            cwd: init.cwd,
+            disposeCalls: 0,
+            write: () => {},
+            resize: () => {},
+            output: async () => "",
+            onExit: () => () => {},
+            dispose: () => {
+              session.disposeCalls += 1;
+              disposeStarted();
+              return new Promise<void>((resolve) => {
+                releaseDispose = resolve;
+              });
+            },
+          } as PtySession & { disposeCalls: number };
+          created.push(session);
+          return session;
+        },
+      });
+      await scoped.create({ taskId: "t-shutdown", routeId: "r-shutdown", cwd: fixtureRoot });
+      const recreate = scoped.create({ taskId: "t-shutdown", routeId: "r-shutdown", cwd: fixtureRoot });
+      await disposeStartedPromise;
+      const shutdown = scoped.disposeAll();
+      releaseDispose();
+      await expect(recreate).rejects.toThrow(/disposing/);
+      await shutdown;
+      expect(scoped.get("t-shutdown", "r-shutdown")).toBeUndefined();
+      expect(created).toHaveLength(1);
+    },
+    20_000,
   );
 
   it(
