@@ -1,0 +1,18 @@
+{
+  "name": "@innocenceharness/plugin-agent-creation",
+  "version": "0.1.0",
+  "description": "InnocenceHarness creation agent mode: author and install user plugins",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@innocenceharness/harness-agent": "^0.1.0",
+    "@innocenceharness/harness-system-prompt": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪"
+}
