@@ -192,7 +192,7 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "agent-creation",
+  id: "skills" | "mcp" | "creation",
   options: () => { dirs: string[] } | { servers: Record<string, unknown> } | { userRoot: string },
 ): ObjectPlugin {
     return {
@@ -309,12 +309,14 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
     plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
-  } else if (!entry.disabled && id === "agent-creation") {
+  } else if (!entry.disabled && id === "creation") {
     // Factory builtin like skills/mcp: the staged default export is a factory
     // needing the host-resolved user plugin root (creation-mode directory
     // projection target and install_user_plugin destination). Falls back to
     // the same default root semantics as compose's defaultUserPluginRoot().
-    plugin = factoryPlugin(boot, "agent-creation", () => ({ userRoot: resolveUserPluginRoot() }));
+    // The staging id "creation" equals the registered agent mode id (switcher
+    // ⇄ session resolution invariant).
+    plugin = factoryPlugin(boot, "creation", () => ({ userRoot: resolveUserPluginRoot() }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
     const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
@@ -437,7 +439,7 @@ export function createSessionComposition(
       settings?: HarnessSettings,
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
-      // agent-creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
+	// creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
       // 缺省回落 compose 的 defaultUserPluginRoot()（~/.innocence/plugins，
       // 与 boot 的 resolver 双根一致——用户目录可影子覆盖模块本体）。
       const resolveUserPluginRoot = (): string =>

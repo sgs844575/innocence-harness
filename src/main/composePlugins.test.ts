@@ -44,12 +44,13 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 }
 
 // staging manifest 的清单 id 集：能力插件（内核原生插件，name 与 id 同名
-// 且有实例化分支——agent-default 直装载默认导出，agent-creation 默认导出
+// 且有实例化分支——default 直装载默认导出，creation 默认导出
 // 是工厂、由宿主 factoryPlugin 装配）+ example（渲染层示例插件：仅清单/
 // 投影面，无会话实例化分支）。provider/task 等由组合层另行装配不进清单。
+// 模式插件的 staging id 必须等于其注册的 agent 模式 id（default/creation）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "agent-default", "agent-creation",
+  "default", "creation",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -88,8 +89,8 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       ssh: "ssh",
       archive: "archive",
       todo: "todo",
-      "agent-default": "agent-default",
-      "agent-creation": "agent-creation",
+      default: "default",
+      creation: "creation",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -124,7 +125,9 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       readFileSync(path.join(stagingBootPaths().builtinRoot, "manifest.json"), "utf8"),
     ) as { plugins: Array<{ id: string; kind?: string; core?: boolean; dependencies?: string[] }> };
     const byId = new Map(manifest.plugins.map((entry) => [entry.id, entry]));
-    for (const id of ["agent-default", "agent-creation"]) {
+    // staging id 必须等于注册的 agent 模式 id（default/creation）——切换器按
+    // 清单 id 写设置、会话按注册 id 解析提示词，此处锁死两侧的一致性命名。
+    for (const id of ["default", "creation"]) {
       const entry = byId.get(id);
       expect(entry, `manifest 缺少 "${id}" 条目`).toBeDefined();
       expect(entry).toMatchObject({ kind: "agent-mode", dependencies: [] });
@@ -272,14 +275,14 @@ maybeDescribe("composePlugins user-root scan merge", () => {
     try {
       const modes = await composition.agentModes();
       const byId = new Map(modes.map((m) => [m.id, m]));
-      // readManifest kind 透传端到端：内置模式插件经白名单重建仍带 kind，
-      // 否则 agent-default/agent-creation 会从目录中消失。
-      expect(byId.get("agent-default")).toBeDefined();
-      expect(byId.get("agent-creation")).toBeDefined();
+      // readManifest kind 透传端到端：内置模式插件经白名单重建仍带 kind，且
+      // staging id 与注册的模式 id 一致（default/creation）——"creation" 没有
+      // 兜底，清单改名漂移会让它从目录消失并被本断言拦截。
+      expect(byId.get("creation")).toBeDefined();
+      // 内置 default 现在来自 manifest 投影（title 为包描述），不是兜底值。
+      expect(byId.get("default")).toMatchObject({ id: "default" });
       // 扫描并入：用户模式进目录，title/description 取 package.json 投影。
       expect(byId.get("my-user-mode")).toMatchObject({ id: "my-user-mode", title: "My User Mode", description: "User mode hint" });
-      // 兜底恒在。
-      expect(byId.get("default")).toEqual({ id: "default", title: "Default" });
     } finally {
       await composition.disposePluginBoot();
     }

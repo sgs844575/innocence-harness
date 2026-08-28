@@ -26,9 +26,12 @@ export const defaultModeFragments: PromptFragment[] = [
 ];
 
 /** Default agent mode plugin — registers the "default" mode and contributes its
- *  prompt fragments (shared + mode-specific + trait-conditional). */
+ *  prompt fragments (shared + mode-specific + trait-conditional). The plugin
+ *  name must equal the registered agent id: the mode switcher lists modes by
+ *  the staging manifest id, while the session resolves the prompt by the
+ *  registered id — a mismatch makes the selected mode silently fall back. */
 export const DefaultAgentModePlugin = {
-  name: "agent-default",
+  name: "default",
   apply(ctx: Context) {
     ctx.agents.register({ id: "default", title: "Default" });
     for (const fragment of defaultModeFragments) ctx.systemPrompt.registerFragment(fragment);

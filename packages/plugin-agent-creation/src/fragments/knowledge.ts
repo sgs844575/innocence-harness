@@ -40,7 +40,13 @@ surfaces. Pick the one that matches the capability:
   carry \`"innocenceharness": { "agentMode": { "title": "..." } }\`, where
   \`title\` is the display name the switcher lists. A plugin without that
   block is treated as a plain plugin and never reaches the switcher, so
-  every mode plugin must declare it.
+  every mode plugin must declare it. **The registered agent id, the
+  fragment \`modes\` tags, and the plugin id (its directory name in the
+  plugin root) must all be the same string**: the switcher stores the
+  plugin id into settings and the session resolves the prompt by the
+  registered id — if they diverge, the mode appears selectable but every
+  turn silently falls back to the base prompt. Tag the mode's fragments
+  with \`modes: ["<that id>"]\` so they load only for it.
 
 ## Manifest and roots
 

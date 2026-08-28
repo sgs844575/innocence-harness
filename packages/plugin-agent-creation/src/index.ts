@@ -26,7 +26,9 @@ export const creationFragments: PromptFragment[] = [
  */
 export function createCreationPlugin(options: { userRoot: string }) {
   return {
-    name: "agent-creation",
+    // Plugin name must equal the registered agent id (see the default mode
+    // plugin for the switcher-vs-session resolution invariant).
+    name: "creation",
     apply(ctx: Context) {
       ctx.agents.register({ id: "creation", title: "Creation" });
       for (const fragment of creationFragments) ctx.systemPrompt.registerFragment(fragment);
