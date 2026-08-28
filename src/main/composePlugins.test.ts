@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { DEFAULT_SETTINGS } from "@innocenceharness/harness-electron";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
 import { createSessionComposition } from "./pluginBoot";
 import { stagingBootPaths } from "./staging-paths";
 
@@ -50,10 +52,12 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // 模式插件的 staging id 必须等于其注册的 agent 模式 id（default/creation
 // 与单模式插件 plan/focus/minimal/learning——learn 包注册 id 是 "learning"）。
 // builtin-skills 为内置技能内容包：默认导出即插件对象（name 同 id），
-// 向 skills 脊柱服务注册六个常驻技能。
+// 向 skills 脊柱服务注册六个常驻技能。reminders 为消息侧提醒注入插件：
+// 默认导出是工厂（同 creation 形态），由宿主 factoryPlugin 装配并传入
+// settings 通道的许可档 getter（仿 creation 的映射与计数同步）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "builtin-skills",
+  "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
@@ -94,6 +98,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       archive: "archive",
       todo: "todo",
       "builtin-skills": "builtin-skills",
+      reminders: "reminders",
       default: "default",
       creation: "creation",
       plan: "plan",
@@ -148,9 +153,58 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     const builtinSkillsEntry = byId.get("builtin-skills");
     expect(builtinSkillsEntry, 'manifest 缺少 "builtin-skills" 条目').toBeDefined();
     expect(builtinSkillsEntry).toMatchObject({ dependencies: [] });
-    expect(builtinSkillsEntry?.core ?? false).toBe(false);
+    expect(builtinSkillsEntry?.core ?? false, '"builtin-skills" 必须非 core（可开关）').toBe(false);
     expect(builtinSkillsEntry?.kind).toBeUndefined();
     expect(builtinSkillsEntry?.title, '"builtin-skills" 缺 title').toMatch(/\S/);
+    // 消息侧提醒注入插件：工厂型能力插件（非 core、无依赖、无 kind），
+    // 由宿主 factoryPlugin 装配。
+    const remindersEntry = byId.get("reminders");
+    expect(remindersEntry, 'manifest 缺少 "reminders" 条目').toBeDefined();
+    expect(remindersEntry).toMatchObject({ dependencies: [] });
+    expect(remindersEntry?.core ?? false, '"reminders" 必须非 core（可开关）').toBe(false);
+    expect(remindersEntry?.kind).toBeUndefined();
+    expect(remindersEntry?.title, '"reminders" 缺 title').toMatch(/\S/);
+  });
+
+  it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
+    // 仿 creation 装配形态的工厂调用探针：条目名 "reminders"，内嵌
+    // factory:reminders 插件；应用到最小 ctx 后处理器落地（order 900），
+    // 且 settings.permissionMode === "plan" 经 getter 透传——plan 档提醒
+    // 注入，"auto" 装配面（无 settings）不注入。
+    const ws = await tempWorkspace({});
+    const settings = { ...DEFAULT_SETTINGS, permissionMode: "plan" as const };
+    const plugins = await composition.composePlugins(ws, undefined, settings);
+    const reminders = plugins.find((p) => p.name === "reminders");
+    expect(reminders, '条目 "reminders" 未装配').toBeTruthy();
+    expect(reminders && "plugin" in reminders && reminders.plugin?.name).toBe("factory:reminders");
+
+    const processors: MessageProcessor[] = [];
+    const factory = reminders && "plugin" in reminders ? reminders.plugin : undefined;
+    await factory?.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    expect(processors).toHaveLength(1);
+    expect(processors[0]).toMatchObject({ name: "reminders", order: 900 });
+
+    const planned = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+    await processors[0].process(planned as never, {
+      provider: { id: "probe" },
+      signal: new AbortController().signal,
+      scope: { sessionId: "s" },
+    } as never);
+    const plannedText = planned.parts.map((p) => (p as { text: string }).text).join("\n");
+    expect(plannedText).toMatch(/planning permission/i);
+
+    const unmanaged = await composition.composePlugins(ws);
+    const unmanagedReminders = unmanaged.find((p) => p.name === "reminders");
+    const unmanagedFactory = unmanagedReminders && "plugin" in unmanagedReminders ? unmanagedReminders.plugin : undefined;
+    const unmanagedProcessors: MessageProcessor[] = [];
+    await unmanagedFactory?.apply({ session: { registerProcessor: (p: MessageProcessor) => unmanagedProcessors.push(p) } } as never);
+    const auto = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+    await unmanagedProcessors[0].process(auto as never, {
+      provider: { id: "probe" },
+      signal: new AbortController().signal,
+      scope: { sessionId: "s" },
+    } as never);
+    expect(auto.parts.map((p) => (p as { text: string }).text).join("\n")).not.toMatch(/planning permission/i);
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------

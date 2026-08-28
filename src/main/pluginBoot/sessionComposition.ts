@@ -192,8 +192,12 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation",
-  options: () => { dirs: string[] } | { servers: Record<string, unknown> } | { userRoot: string },
+  id: "skills" | "mcp" | "creation" | "reminders",
+  options: () =>
+    | { dirs: string[] }
+    | { servers: Record<string, unknown> }
+    | { userRoot: string }
+    | { getPermissionMode: () => string },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -262,8 +266,9 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // Factory-only builtins: their staged default export is a factory that needs
 // host-assembled configuration (top-level builtinLoaderEntryFor wiring). A yml
 // group child would bypass that assembly and bare-load the factory function,
-// so declaring them inside a group is rejected here. "reminders" is registered
-// ahead of its factory conversion landing later in this batch.
+// so declaring them inside a group is rejected here. "reminders" reads the
+// current permission mode through the settings channel threaded from
+// composePlugins (getPermissionMode), not from group config.
 const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders"]);
 
 async function resolveGroupEntries(
@@ -313,6 +318,7 @@ async function builtinLoaderEntryFor(
   config: InnocenceConfig,
   workspaceRoot: string,
   resolveUserPluginRoot: () => string,
+  resolvePermissionMode: () => string,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -328,6 +334,12 @@ async function builtinLoaderEntryFor(
     // The staging id "creation" equals the registered agent mode id (switcher
     // ⇄ session resolution invariant).
     plugin = factoryPlugin(boot, "creation", () => ({ userRoot: resolveUserPluginRoot() }));
+  } else if (!entry.disabled && id === "reminders") {
+    // Same factory shape as creation: the staged default export is the
+    // reminders factory, and the permission-mode getter comes from the
+    // settings snapshot composePlugins received for this session build
+    // (absent settings fall back to "auto" — no reminders gated on plan).
+    plugin = factoryPlugin(boot, "reminders", () => ({ getPermissionMode: () => resolvePermissionMode() }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
     const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
@@ -450,11 +462,17 @@ export function createSessionComposition(
       settings?: HarnessSettings,
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
-	// creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
+      // creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
       // 缺省回落 compose 的 defaultUserPluginRoot()（~/.innocence/plugins，
       // 与 boot 的 resolver 双根一致——用户目录可影子覆盖模块本体）。
       const resolveUserPluginRoot = (): string =>
         options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
+      // reminders 工厂的许可档读取：复用 composePlugins 既有 settings 通道
+      // （宿主 pluginsForSession 每次会话组装传当次 settings 快照）；getter
+      // 每轮调用现读该快照，缺省回落 "auto"（无 settings 的组装面不注入
+      // plan 档提醒）。快照语义与 provider 组装一致：会话中途改档下一会话
+      // 生效。
+      const resolvePermissionMode = (): string => settings?.permissionMode ?? "auto";
       // 用户根扫描现算（不缓存，与项目配置读取并行）；解析依赖扫描结果，
       // 故 resolveBuiltinSet 在其后串行。
       const [config, scanned] = await Promise.all([
@@ -483,7 +501,7 @@ export function createSessionComposition(
       const plugins: SessionPlugin[] = [];
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
-        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot));
+        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot, resolvePermissionMode));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));

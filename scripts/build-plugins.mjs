@@ -45,6 +45,9 @@ const LIBS = [
 // builtin-skills 为内置技能内容包（B2 技能批次）：直装载默认导出，向
 // skills 脊柱服务注册六个常驻技能；清单序位于 "skills" 之后——磁盘技能
 // 先注册，同名冲突时用户/项目层技能胜出（与 resolver 用户根影子覆盖同义）。
+// reminders 为消息侧提醒注入插件（B3 提醒批次）：默认导出是工厂（同
+// creation 形态），由宿主 factoryPlugin 装配并传入许可档 getter——经
+// MessageProcessor 每轮追加 <system-reminder> text part，不触碰系统提示词。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -55,6 +58,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
   { id: "builtin-skills", dependencies: [] },
+  { id: "reminders", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
   { id: "creation", kind: "agent-mode", dependencies: [] },
   { id: "plan", kind: "agent-mode", dependencies: [] },
@@ -75,6 +79,7 @@ const PLUGINS = [
   { dir: "packages/plugin-subagent", id: "subagent" },
   { dir: "packages/plugin-task", id: "task" },
   { dir: "packages/plugin-builtin-skills", id: "builtin-skills" },
+  { dir: "packages/plugin-reminders", id: "reminders" },
   { dir: "packages/provider-anthropic", id: "provider-anthropic" },
   { dir: "packages/provider-google", id: "provider-google" },
   { dir: "packages/provider-openai", id: "provider-openai" },
