@@ -12,7 +12,13 @@ import {
 } from "@innocenceharness/harness-tools";
 import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import type { HarnessEvent, Message } from "@innocenceharness/harness-session";
-import { SubagentPlugin, taskTool } from "../src";
+import { BUILTIN_PRESETS, SubagentPlugin, createTaskTool } from "../src";
+
+// The preset-driven Task tool replaces the former hard-coded taskTool export.
+const taskTool = createTaskTool(BUILTIN_PRESETS);
+// Stable marker phrase from the built-in explore persona: distinguishes the
+// child session's system prompt from the parent's in the dual provider below.
+const EXPLORE_MARKER = "Read-Only Codebase Explorer";
 
 describe("Task tool via session spawner", () => {
   it("spawns a child session that runs tools and reports back to the parent", async () => {
@@ -25,7 +31,7 @@ describe("Task tool via session spawner", () => {
     const provider: Provider = {
       id: "dual",
       async *chat(req): AsyncIterable<Delta> {
-        const isChild = req.system.includes("只读研究代理");
+        const isChild = req.system.includes(EXPLORE_MARKER);
         if (isChild) {
           childTurn += 1;
           if (childTurn === 1) {
@@ -157,7 +163,7 @@ describe("Task tool via session spawner", () => {
     const provider: Provider = {
       id: "dual",
       async *chat(req): AsyncIterable<Delta> {
-        const isChild = req.system.includes("只读研究代理");
+        const isChild = req.system.includes(EXPLORE_MARKER);
         if (isChild) {
           childTurn += 1;
           if (childTurn === 1) {
@@ -253,7 +259,7 @@ describe("Task tool via session spawner", () => {
     const provider: Provider = {
       id: "dual",
       async *chat(req): AsyncIterable<Delta> {
-        if (req.system.includes("只读研究代理")) {
+        if (req.system.includes(EXPLORE_MARKER)) {
           yield { type: "text", text: "子代理报告" };
         } else {
           parentTurn += 1;
@@ -286,7 +292,7 @@ describe("Task tool via session spawner", () => {
     const provider: Provider = {
       id: "dual",
       async *chat(req): AsyncIterable<Delta> {
-        if (req.system.includes("只读研究代理")) {
+        if (req.system.includes(EXPLORE_MARKER)) {
           yield { type: "text", text: "不应到达" };
         } else {
           parentTurn += 1;
