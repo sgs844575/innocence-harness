@@ -15,6 +15,22 @@ describe("shared fragment clusters", () => {
       expect(f.id.startsWith("shared.communication.")).toBe(true);
     }
   });
+  it("correction-restraint fragment sits in the shared bucket and mounts for every mode", () => {
+    const fragment = communicationFragments.find((f) => f.id === "shared.communication.correction");
+    expect(fragment).toBeDefined();
+    expect(fragment!.order).toBe(1030);
+    expect(fragment!.modes).toBeUndefined();
+    expect(fragment!.when).toBeUndefined();
+    for (const mode of ["default", "creation"]) {
+      const text = fragment!.render({ activeMode: mode, traits: {} });
+      expect(text).not.toMatch(/[\u4e00-\u9fff]/); // 英文正文
+      expect(text).toMatch(/rejected/i); // 已否决方案不重提
+      expect(text).toMatch(/correction/i);
+      for (const re of [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i]) {
+        expect(text).not.toMatch(re);
+      }
+    }
+  });
   it("safety cluster is mode-agnostic", () => {
     for (const f of safetyFragments) expect(f.id.startsWith("shared.safety.")).toBe(true);
   });

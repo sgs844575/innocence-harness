@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { adaptedPresets } from "../src";
 
 describe("adapted subagent presets", () => {
-  it("exposes five well-formed presets with unique ids", () => {
+  it("exposes six well-formed presets with unique ids", () => {
     expect(adaptedPresets.map((p) => p.id)).toEqual([
-      "code-review", "security-review", "planner", "git-worker", "simplify",
+      "code-review", "security-review", "planner", "git-worker", "simplify", "summarizer",
     ]);
     for (const p of adaptedPresets) {
       expect(p.title.length).toBeGreaterThan(0);
@@ -28,5 +28,6 @@ describe("adapted subagent presets", () => {
     expect(text["security-review"]).toMatch(/injection|OWASP/i);
     expect(text["git-worker"]).toMatch(/commit/i);
     expect(text["simplify"]).toMatch(/simplif/i);
+    expect(text["summarizer"]).toMatch(/handover/i);
   });
 });
