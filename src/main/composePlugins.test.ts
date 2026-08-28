@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS } from "@innocenceharness/harness-electron";
+import { DEFAULT_SETTINGS, AgentSession } from "@innocenceharness/harness-electron";
+import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import { createSessionComposition } from "./pluginBoot";
 import { stagingBootPaths } from "./staging-paths";
@@ -433,6 +434,98 @@ maybeDescribe("composePlugins user-root scan merge", () => {
       else process.env.USERPROFILE = previousProfile;
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
+      await composition.disposePluginBoot();
+    }
+  });
+});
+
+// ---- 用户根 claude-code 布局适配（B5b 宿主适配器装载）--------------------
+// 伪用户根放 claude-code 目录（.claude-plugin/plugin.json + commands/ +
+// skills/）：composePlugins 产出的装配含适配器条目（plugin 字段携带宿主
+// 插件对象，绕过 dist/index.js 双根 resolver——该布局无此文件），应用后经
+// 真实会话链技能索引可见；disabled 描述符不装配。
+maybeDescribe("composePlugins claude-code ecosystem adapter", () => {
+  function claudeCodeComposition() {
+    const userRoot = mkdtempSync(path.join(tmpdir(), "ic-cc-user-plugins-"));
+    roots.push(userRoot);
+    const pluginDir = path.join(userRoot, "cc-tool");
+    mkdirSync(path.join(pluginDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      path.join(pluginDir, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: "cc-tool", description: "An external tool" }),
+      "utf8",
+    );
+    mkdirSync(path.join(pluginDir, "skills", "greet"), { recursive: true });
+    writeFileSync(
+      path.join(pluginDir, "skills", "greet", "SKILL.md"),
+      "---\nname: greet\ndescription: Greeting skill\n---\nGreet skill body.",
+      "utf8",
+    );
+    mkdirSync(path.join(pluginDir, "commands"), { recursive: true });
+    writeFileSync(
+      path.join(pluginDir, "commands", "hello.md"),
+      "---\nname: hello\ndescription: Say hello\n---\nHello command body.",
+      "utf8",
+    );
+    const logged: string[] = [];
+    const composition = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => userRoot,
+      enableHmrWatcher: false,
+      log: (_level, msg) => logged.push(msg),
+    });
+    return { composition, logged };
+  }
+
+  it("composes an adapter-carried entry and the skills reach the live session", async () => {
+    const { composition, logged } = claudeCodeComposition();
+    try {
+      const ws = await tempWorkspace({});
+      const plugins = await composition.composePlugins(ws);
+      const entry = plugins.find((p) => p.name === "cc-tool");
+      // plugin 字段在场 = createResolved 直挂内核插件对象（builtinLoaderEntryFor
+      // 同一机制）——不挂则装载走双根 resolver，claude-code 布局无 dist/index.js
+      // 必失败；清单行同样并入（扫描描述符 active 投影）。
+      expect(entry && "plugin" in entry && entry.plugin?.name).toBe("ecosystem:cc-tool");
+      const inventory = await composition.pluginInventory({ workspaceRoot: ws });
+      expect(inventory.find((e) => e.id === "cc-tool")).toMatchObject({ state: "active", toggleable: true });
+
+      const boot = await composition.ensureBoot();
+      const chats: unknown[] = [];
+      const session = await AgentSession.create({
+        scope: boot.createSessionScope(),
+        spine: boot.spine,
+        plugins,
+        provider: createMockProvider({ turns: [{ text: "ok" }], onChat: (req) => chats.push(req) }),
+        workspaceRoot: ws,
+        permission: { mode: "auto", decider: { ask: async () => "deny" } },
+        logger: (_level, message) => logged.push(message),
+      });
+      try {
+        await session.run("/greet hi");
+        // 技能经适配器注册进会话技能服务，"/name" 展开通道可见其正文。
+        const seen = JSON.stringify(chats);
+        expect(seen).toContain("已加载技能 greet");
+        expect(seen).toContain("Greet skill body.");
+        // 装载全程无 cc-tool 失败告警（resolver 失败路径未触发）。
+        expect(logged.filter((line) => line.includes("cc-tool") && line.includes("failed")).join("\n")).toBe("");
+      } finally {
+        await session.dispose();
+      }
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("disabled claude-code descriptor does not compose", async () => {
+    const { composition } = claudeCodeComposition();
+    try {
+      const ws = await tempWorkspace({});
+      const off = (await composition.composePlugins(ws, { "cc-tool": false })).map((p) => p.name);
+      expect(off).not.toContain("cc-tool");
+      expect(off).toContain("fs"); // 其余条目不受影响
+    } finally {
       await composition.disposePluginBoot();
     }
   });

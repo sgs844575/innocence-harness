@@ -31,6 +31,7 @@ import {
   type PluginBoot,
 } from "./compose";
 import { scanUserPlugins, nativeProbe, claudeCodeProbe, type UserPluginScanResult } from "./userPluginScan";
+import { createEcosystemAdapterPlugin } from "./ecosystemAdapter";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type {
   PluginDescriptor,
@@ -319,10 +320,17 @@ async function builtinLoaderEntryFor(
   workspaceRoot: string,
   resolveUserPluginRoot: () => string,
   resolvePermissionMode: () => string,
+  ecosystemPlugin?: ObjectPlugin,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
-  if (!entry.disabled && id === "skills") {
+  if (!entry.disabled && ecosystemPlugin) {
+    // 外部生态布局（claude-code）：宿主适配器包装的插件对象直接挂到
+    // loader 条目（同 skills/mcp 工厂的 plugin 携带机制，绕过双根
+    // resolver——该布局无 dist/index.js，直载必失败）。native 条目不传
+    // 适配器，走既有 resolver 路径（零改动）。
+    plugin = ecosystemPlugin;
+  } else if (!entry.disabled && id === "skills") {
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
     plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
@@ -499,10 +507,34 @@ export function createSessionComposition(
       }
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
+      // 外部生态布局（claude-code）条目目录：扫描描述符 format 标记 →
+      // 用户根下同名目录（与扫描同源）。native 条目不在表中——装载路径
+      // 零改动；descriptor 停用走 resolveBuiltinSet 既有语义（条目不组装）。
+      const ecosystemDirs = new Map<string, string>(
+        scanned.descriptors
+          .filter((descriptor) => descriptor.format === "claude-code")
+          .map((descriptor) => [descriptor.id, path.join(resolveUserPluginRoot(), descriptor.id)] as const),
+      );
+
       const plugins: SessionPlugin[] = [];
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
-        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot, resolvePermissionMode));
+        const ecosystemDir = ecosystemDirs.get(entry.id);
+        plugins.push(await builtinLoaderEntryFor(
+          boot,
+          entry,
+          config,
+          workspaceRoot,
+          resolveUserPluginRoot,
+          resolvePermissionMode,
+          ecosystemDir !== undefined
+            ? createEcosystemAdapterPlugin(
+              entry.id,
+              ecosystemDir,
+              (level, channel, detail) => options.log(level, channel, detail),
+            )
+            : undefined,
+        ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
