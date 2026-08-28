@@ -3,8 +3,7 @@ import { Popover } from "../ui/Popover";
 
 export interface AgentModeOption { id: string; title: string; description?: string; }
 
-/** 内建模式 id（staging 清单的 agent-mode 条目）：label 走 i18n；
- * plan/focus/minimal/learning 无 .desc 键，descFor 回落目录 description。 */
+/** 内建模式 id（staging 清单的 agent-mode 条目）：label 与 desc 均走 i18n。 */
 const BUILTIN_MODE_IDS = new Set(["default", "creation", "plan", "focus", "minimal", "learning"]);
 
 /** 内置模式用 i18n 显示；用户自建模式显示元数据 title。 */
@@ -13,9 +12,9 @@ export function labelFor(t: (k: string) => string, id: string, options: AgentMod
   return options.find((o) => o.id === id)?.title ?? id;
 }
 
-/** 模式描述（选项悬浮提示）：内置模式走 i18n 键；用户模式回落元数据 description，无则空串（不渲染 title）。 */
+/** 模式描述（选项悬浮提示）：内置模式（同一内建集合）走 i18n 描述键；用户模式回落元数据 description，无则空串（不渲染 title）。 */
 export function descFor(t: (k: string) => string, id: string, options: AgentModeOption[]): string {
-  if (id === "default" || id === "creation") return t(`agentMode.${id}.desc`);
+  if (BUILTIN_MODE_IDS.has(id)) return t(`agentMode.${id}.desc`);
   return options.find((o) => o.id === id)?.description ?? "";
 }
 

@@ -13,9 +13,13 @@ const t = (key: string) => {
     "agentMode.creation": "创造模式",
     "agentMode.creation.desc": "按需求创作、安装并验证你自己的插件",
     "agentMode.plan": "规划模式",
+    "agentMode.plan.desc": "先调研再规划；计划批准前不动手实现",
     "agentMode.focus": "专注模式",
+    "agentMode.focus.desc": "单任务深潜：不扩范围，读全相关文件再动手",
     "agentMode.minimal": "精简模式",
+    "agentMode.minimal.desc": "最简执行：只报结论与必要证据，适合小改动",
     "agentMode.learning": "讲解模式",
+    "agentMode.learning.desc": "边做边讲解：关键决策给理由，结束总结可复用要点",
   };
   return dict[key] ?? key;
 };
@@ -42,12 +46,15 @@ describe("labelFor", () => {
     expect(labelFor(t, "creation", options)).toBe("创造模式");
     expect(labelFor(t, "plan", options)).toBe("规划模式");
   });
-  it("单模式插件无 .desc 内建键：descFor 回落目录 description", () => {
-    // plan/focus/minimal/learning 仅有 label 键；描述走清单投影（package
-    // description），与用户自建模式的回落一致。
+  it("四个单模式插件的描述同样走 i18n 键（与 label 同一内建集合）", () => {
+    const keys = (k: string) => k;
+    expect(descFor(keys, "plan", options)).toBe("agentMode.plan.desc");
+    expect(descFor(keys, "focus", options)).toBe("agentMode.focus.desc");
+    expect(descFor(keys, "minimal", options)).toBe("agentMode.minimal.desc");
+    expect(descFor(keys, "learning", options)).toBe("agentMode.learning.desc");
+    // 翻译命中：忽略清单投影的英文包描述。
     expect(descFor(t, "plan", [{ id: "plan", title: "Plan", description: "Research-first planning persona" }]))
-      .toBe("Research-first planning persona");
-    expect(descFor(t, "plan", options)).toBe("");
+      .toBe("先调研再规划；计划批准前不动手实现");
   });
   it("未知 id 回落目录中的 title", () => {
     expect(labelFor(t, "custom-writer", options)).toBe("写作助手");
