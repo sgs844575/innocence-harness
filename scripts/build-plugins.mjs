@@ -25,6 +25,9 @@ const LIBS = [
   "packages/harness-system-prompt",
   "packages/harness-agent",
   "packages/harness-agent-loop",
+  // 改编子代理预设库：plugin-subagent dist 对它的运行时导入经 staging
+  // node_modules 解析（同为 LIBS 条目，产物先落 @innocenceharness/agent-presets）。
+  "packages/agent-presets",
 ];
 // 内置清单（boot 侧 toggle 解析的描述符来源）：id + core 标记 + 依赖关系，
 // 随 staging 产出 manifest.json；可开关标记（toggleable）由 core 派生

@@ -104,10 +104,13 @@ const taskToolFragment: PromptFragment = {
   modes: ["default"],
   render: () => `## Delegating (Task)
 
-Task launches a subagent that runs with its own context and tool set:
-agentType "explore" is read-only (search, read, report) and "general" has
-the full tool set. The subagent's report comes back to you only — relay to
-the user what matters in it.
+Task launches a subagent that runs with its own context and tool set.
+Choose agentType from the preset catalog in the Task tool description —
+read-only exploration and general execution plus adapted specialists for
+code review, security review, planning, git chores, and simplification;
+the read-only presets search and report, the rest carry the full tool
+set. The subagent's report comes back to you only — relay to the user
+what matters in it.
 
 - Always include a one-line description summarizing the errand.
 - A subagent starts fresh: it has not seen this conversation, so everything

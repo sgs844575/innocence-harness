@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@innocenceharness/agent-presets": "^0.1.0",
     "@innocenceharness/harness-tools": "^0.1.0",
     "@innocenceharness/kernel": "^0.1.0"
   },

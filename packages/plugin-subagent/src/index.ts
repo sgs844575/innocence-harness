@@ -4,6 +4,7 @@ import {
   type Tool,
   type ToolContext,
 } from "@innocenceharness/harness-tools";
+import { adaptedPresets } from "@innocenceharness/agent-presets";
 
 /** A subagent persona preset consumed by the Task tool. */
 export interface SubagentPreset {
@@ -171,6 +172,6 @@ export function createSubagentPlugin(options: SubagentPluginOptions = {}) {
   };
 }
 
-/** Subagent plugin — registers the Task tool with the built-in presets. */
-export const SubagentPlugin = createSubagentPlugin();
+/** Subagent plugin — registers the Task tool with built-in plus adapted presets. */
+export const SubagentPlugin = createSubagentPlugin({ extraPresets: adaptedPresets });
 export default SubagentPlugin;

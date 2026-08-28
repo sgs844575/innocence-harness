@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_PRESETS, createSubagentPlugin, createTaskTool } from "../src";
+import { BUILTIN_PRESETS, createSubagentPlugin, createTaskTool, SubagentPlugin } from "../src";
 
 describe("subagent presets", () => {
   it("built-in presets are English read-only/all pairs with unique ids", () => {
@@ -62,5 +62,15 @@ describe("subagent presets", () => {
     const enumValues = (registered[0] as { parameters: { properties: { agentType: { enum: string[] } } } })
       .parameters.properties.agentType.enum;
     expect(enumValues).toContain("custom");
+  });
+
+  it("default plugin exposes the full seven-preset catalog in the Task enum", () => {
+    const registered: unknown[] = [];
+    SubagentPlugin.apply({ tools: { register: (t: unknown) => registered.push(t) } } as never);
+    const enumValues = (registered[0] as { parameters: { properties: { agentType: { enum: string[] } } } })
+      .parameters.properties.agentType.enum;
+    expect(enumValues).toEqual([
+      "explore", "general", "code-review", "security-review", "planner", "git-worker", "simplify",
+    ]);
   });
 });
