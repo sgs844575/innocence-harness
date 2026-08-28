@@ -1,13 +1,28 @@
-// WorkbenchTabs — 辅助面板的页签（审查/路线/代码/终端，Task 11）。纯受控：
-// 展示 active 状态并上抛切换命令，内容渲染归 WorkbenchShell。
-// 页签清单自 1c 起从 workbench.panel 槽位派生（内置贡献由 builtinPanels
-// 注册；WorkbenchTabId 类型保留内置联合——类型面零破坏，清单运行时从槽位来）。
+// WorkbenchTabs — workbench destinations (home/assistant/review/routes/code/todo/terminal/browser).
+// Purely controlled: it displays the active state and emits tab-change commands;
+// content rendering belongs to WorkbenchShell.
 import { zhCN } from "../../lib/i18n";
 import { useSlotList } from "../../slots/react";
 
 const tZh = (key: string): string => zhCN[key] ?? key;
 
-export type WorkbenchTabId = "review" | "routes" | "code" | "terminal" | (string & {});
+const TAB_LABELS: Partial<Record<WorkbenchTabId, string>> = {
+  home: "首页",
+  assistant: "辅助对话",
+  review: "审查",
+  routes: "路线",
+  code: "代码",
+  todo: "待办",
+  terminal: "终端",
+  browser: "浏览器",
+};
+
+function labelFor(t: (key: string) => string, id: WorkbenchTabId, labelKey: string): string {
+  const translated = t(labelKey);
+  return translated === labelKey ? TAB_LABELS[id] ?? id : translated;
+}
+
+export type WorkbenchTabId = "home" | "assistant" | "review" | "routes" | "code" | "todo" | "terminal" | "browser" | (string & {});
 
 /** 面板槽位标识：每个页签一条贡献（render 闭包持有该页签的面板内容）。 */
 export const PANEL_SLOT = "workbench.panel";
@@ -50,7 +65,7 @@ export function WorkbenchTabs({ active, onSelect, t = tZh }: WorkbenchTabsProps)
                 : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"
             }`}
           >
-            {t(labelKey)}
+            {labelFor(t, id, labelKey)}
           </button>
         );
       })}

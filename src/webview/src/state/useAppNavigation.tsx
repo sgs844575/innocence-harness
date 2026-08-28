@@ -3,6 +3,7 @@ import {
   MessageSquarePlus,
   PanelLeftOpen,
   Settings as SettingsIcon,
+  SquareTerminal,
 } from "lucide-react";
 import { Sidebar } from "../components/Sidebar";
 import { SettingsNav, SettingsRail } from "../components/SettingsNav";
@@ -34,7 +35,7 @@ export function useAppNavigation({
   const sidebarState = useSidebarState(sessions.sessions);
   const sessionIds = useMemo(() => sessions.sessions.map((session) => session.id), [sessions.sessions]);
   const activeArchived = sessions.activeId !== null && sidebarState.state.archived[sessions.activeId] === true;
-  const { statuses: sessionStatuses, status: activeSessionStatus } = useSessionActivityProjection(
+  const { statuses: sessionStatuses, status: activeSessionStatus, subagents } = useSessionActivityProjection(
     sessions.activeId,
     activeArchived,
     sessionIds,
@@ -90,7 +91,10 @@ export function useAppNavigation({
         <NavRail
           logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: nav.expandNav }}
           top={{ icon: MessageSquarePlus, label: t("sidebar.nav.newChat"), onClick: () => { nav.closeDrawerOnNavigate(); sessions.newSession(); } }}
-          items={[{ icon: PanelLeftOpen, label: t("sidebar.open"), onClick: nav.expandNav }]}
+          items={[
+            { icon: PanelLeftOpen, label: t("sidebar.open"), onClick: nav.expandNav },
+            { icon: SquareTerminal, label: t("workbench.tab.terminal"), onClick: nav.workbench.openTerminal },
+          ]}
           bottom={{ icon: SettingsIcon, label: t("sidebar.settings"), onClick: nav.openSettings }}
         />
       ),
@@ -115,6 +119,7 @@ export function useAppNavigation({
     settingsView,
     activeArchived,
     activeSessionStatus,
+    subagents,
     selectedFilePath: presentation.selectedFilePath,
     selectFile: (path: string | undefined) => dispatchPresentation({ type: "file/select", path }),
   };

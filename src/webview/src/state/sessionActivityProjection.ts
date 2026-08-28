@@ -1,9 +1,48 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/ipc";
+import type { SubagentLifecycleEvent } from "../../../shared/ipc";
 import type { SidebarSessionStatusEvent } from "./sidebarSessionStatus";
 import { subscribeSidebarSessionStatus } from "./sidebarSessionStatus";
 
 export type SessionActivityStatus = "idle" | "running" | "waiting-permission" | "failed" | "archived";
+
+export interface SubagentProjection {
+  childId: string;
+  parentSessionId: string;
+  description: string;
+  status: SubagentLifecycleEvent["status"];
+  text: string;
+  error?: string;
+}
+
+export type SubagentProjectionMap = ReadonlyMap<string, SubagentProjection>;
+
+export function subagentKey(parentSessionId: string, childId: string): string {
+  return `${parentSessionId}:${childId}`;
+}
+
+export function reduceSubagentLifecycle(
+  current: SubagentProjectionMap,
+  event: SubagentLifecycleEvent,
+): Map<string, SubagentProjection> {
+  const next = new Map(current);
+  const key = subagentKey(event.parentSessionId, event.childId);
+  const previous = next.get(key);
+  const text = event.final !== undefined
+    ? event.final
+    : event.delta !== undefined
+      ? (previous?.text ?? "") + event.delta
+      : previous?.text ?? "";
+  next.set(key, {
+    childId: event.childId,
+    parentSessionId: event.parentSessionId,
+    description: event.description,
+    status: event.status,
+    text,
+    ...(event.error !== undefined ? { error: event.error } : previous?.error !== undefined ? { error: previous.error } : {}),
+  });
+  return next;
+}
 
 export function reduceSessionActivity(
   current: ReadonlyMap<string, SessionActivityStatus>,
@@ -38,8 +77,10 @@ export function useSessionActivityProjection(
 ): {
   statuses: ReadonlyMap<string, SessionActivityStatus>;
   status: SessionActivityStatus;
+  subagents: SubagentProjectionMap;
 } {
   const [statuses, setStatuses] = useState<Map<string, SessionActivityStatus>>(() => new Map());
+  const [subagents, setSubagents] = useState<Map<string, SubagentProjection>>(() => new Map());
 
   useEffect(() => {
     const apply = (event: SidebarSessionStatusEvent) => {
@@ -52,6 +93,9 @@ export function useSessionActivityProjection(
     const offPermission = api.onChatPermission((event) => apply({ type: "permission", sessionId: event.sessionId }));
     const offDone = api.onChatDone((event) => apply({ type: "done", sessionId: event.sessionId }));
     const offError = api.onChatError((event) => apply({ type: "error", sessionId: event.sessionId }));
+    const offSubagent = api.onSubagentLifecycle((event) => {
+      setSubagents((previous) => reduceSubagentLifecycle(previous, event));
+    });
     return () => {
       offLocal();
       offDelta();
@@ -60,14 +104,16 @@ export function useSessionActivityProjection(
       offPermission();
       offDone();
       offError();
+      offSubagent();
     };
   }, []);
 
   useEffect(() => {
     const validIds = new Set(sessionIds);
     setStatuses((previous) => new Map([...previous].filter(([id]) => validIds.has(id))));
+    setSubagents((previous) => new Map([...previous].filter(([, child]) => validIds.has(child.parentSessionId))));
   }, [sessionIds]);
 
   const status = useMemo(() => sessionActivityStatus(statuses, sessionId, archived), [statuses, sessionId, archived]);
-  return { statuses, status };
+  return { statuses, status, subagents };
 }

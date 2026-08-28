@@ -1,16 +1,40 @@
+import { useRef, useState } from "react";
 import { ShieldQuestion } from "lucide-react";
 import type { ChatPermissionEvent, PermissionChoice } from "../../../shared/ipc";
 
 interface Props {
   t: (key: string) => string;
   request: ChatPermissionEvent;
-  onRespond: (requestId: string, choice: PermissionChoice) => void;
+  onRespond: (requestId: string, choice: PermissionChoice) => void | Promise<void>;
 }
 
 /** Approval card shown while the agent waits for a tool-call decision. */
 export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Element {
   const argsText = JSON.stringify(request.args, null, 2);
   const { resource } = request;
+  const [responding, setResponding] = useState(false);
+  const respondingRef = useRef(false);
+
+  const respond = (choice: PermissionChoice) => {
+    if (respondingRef.current) return;
+    respondingRef.current = true;
+    setResponding(true);
+    try {
+      const result = onRespond(request.requestId, choice);
+      if (!result || typeof result.then !== "function") {
+        respondingRef.current = false;
+        setResponding(false);
+        return;
+      }
+      void result.then(
+        () => { respondingRef.current = false; setResponding(false); },
+        () => { respondingRef.current = false; setResponding(false); },
+      );
+    } catch {
+      respondingRef.current = false;
+      setResponding(false);
+    }
+  };
 
   return (
     <div
@@ -49,22 +73,25 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
-          onClick={() => onRespond(request.requestId, "deny")}
-          className="rounded-full bg-(--color-app-bubble) px-3.5 py-1.5 text-xs text-(--color-app-muted) transition-colors hover:bg-(--color-app-border) hover:text-(--color-app-text)"
+          onClick={() => respond("deny")}
+          disabled={responding}
+          className="rounded-full bg-(--color-app-bubble) px-3.5 py-1.5 text-xs text-(--color-app-muted) transition-colors hover:bg-(--color-app-border) hover:text-(--color-app-text) disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.deny")}
         </button>
         <button
           type="button"
-          onClick={() => onRespond(request.requestId, "allowSession")}
-          className="rounded-full border border-(--color-app-border) px-3.5 py-1.5 text-xs text-(--color-app-text) transition-colors hover:bg-(--color-app-bubble)"
+          onClick={() => respond("allowSession")}
+          disabled={responding}
+          className="rounded-full border border-(--color-app-border) px-3.5 py-1.5 text-xs text-(--color-app-text) transition-colors hover:bg-(--color-app-bubble) disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.allowSession")}
         </button>
         <button
           type="button"
-          onClick={() => onRespond(request.requestId, "allow")}
-          className="rounded-full bg-(--color-app-accent) px-3.5 py-1.5 text-xs font-medium text-(--color-app-accent-fg) shadow-md transition-transform active:scale-95"
+          onClick={() => respond("allow")}
+          disabled={responding}
+          className="rounded-full bg-(--color-app-accent) px-3.5 py-1.5 text-xs font-medium text-(--color-app-accent-fg) shadow-md transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.allow")}
         </button>

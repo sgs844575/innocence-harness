@@ -62,6 +62,40 @@ describe("ChatView review wiring (C3)", () => {
     expect(screen.getByText(/InnocenceHarness/)).toBeTruthy();
   });
 
+  it("passes projected child agents and their open callback into the activity capsule", () => {
+    const onOpenSubagent = vi.fn();
+    render(
+      <ChatView
+        t={t}
+        appName="InnocenceHarness"
+        messages={messages}
+        streaming={false}
+        settings={null}
+        permission={null}
+        onSettingsChange={() => {}}
+        onPermissionRespond={() => {}}
+        onSend={() => {}}
+        onStop={() => {}}
+        landing={false}
+        pendingProject=""
+        onPickProject={() => {}}
+        recentProjects={[]}
+        onOpenProjectDir={() => {}}
+        activity={{
+          agent: {
+            name: "default",
+            status: "running",
+            subagents: [{ childId: "child-1", description: "研究子会话", status: "running", text: "读取中" }],
+            onOpenSubagent,
+          },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /智能体/ }));
+    fireEvent.click(screen.getByRole("button", { name: /研究子会话/ }));
+    expect(onOpenSubagent).toHaveBeenCalledWith("child-1");
+  });
+
   it("renders TaskChangeCard for the keyed message and fires the review action", () => {
     const onOpenTaskReview = vi.fn();
     render(
@@ -101,6 +135,7 @@ describe("ChatView review wiring (C3)", () => {
     fireEvent.click(screen.getByRole("button", { name: "审查" }));
     expect(onOpenTaskReview).toHaveBeenCalledWith("msg_asst_1");
   });
+
 
   it("renders fork affordances through onForkMessage with the message id as turn id", () => {
     const onForkMessage = vi.fn();

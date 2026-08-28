@@ -145,7 +145,6 @@ export function Composer({
                 settings={pickerSettings}
                 activeProfileId={pickerSettings.activeProfileId}
                 activeModel={pickerSettings.activeModel}
-                showProvider={composerMode === "existing"}
                 onSelect={(profileId, modelId) =>
                   onSettingsChange({ activeProfileId: profileId, activeModel: modelId })
                 }

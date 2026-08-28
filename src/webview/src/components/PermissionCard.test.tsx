@@ -43,6 +43,28 @@ describe("PermissionCard 资源摘要渲染", () => {
     expect(screen.getByText(/"path": "src\/a\.ts"/)).toBeTruthy();
   });
 
+  it("rejects duplicate clicks while an async permission response is pending", async () => {
+    let resolve: (() => void) | undefined;
+    const onRespond = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    render(<PermissionCard t={t} request={request} onRespond={onRespond} />);
+    const allow = screen.getByText("permission.card.allow");
+    fireEvent.click(allow);
+    fireEvent.click(allow);
+    expect(onRespond).toHaveBeenCalledTimes(1);
+    resolve?.();
+    await vi.waitFor(() => expect((allow as HTMLButtonElement).disabled).toBe(false));
+  });
+  it("unlocks after a synchronous permission response throws", () => {
+    const onRespond = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("response failed"); })
+      .mockImplementationOnce(() => undefined);
+    render(<PermissionCard t={t} request={request} onRespond={onRespond} />);
+    const allow = screen.getByText("permission.card.allow");
+    fireEvent.click(allow);
+    expect(onRespond).toHaveBeenCalledTimes(1);
+    fireEvent.click(allow);
+    expect(onRespond).toHaveBeenCalledTimes(2);
+  });
   it("拒绝 / 会话内允许 / 允许一次 分别回调对应选择", () => {
     const onRespond = vi.fn();
     render(<PermissionCard t={t} request={request} onRespond={onRespond} />);

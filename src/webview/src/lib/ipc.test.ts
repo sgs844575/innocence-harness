@@ -22,6 +22,7 @@ describe("terminalApi preload proxy (C2)", () => {
       dispose: vi.fn(async () => {}),
       onTerminalOutput: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
+      onShellTranscript: vi.fn(() => () => {}),
     };
     windowRecord.innocencecodeTerminal = bridge;
 

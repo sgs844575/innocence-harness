@@ -44,6 +44,24 @@ describe("AppShell automation navigation", () => {
   });
 });
 
+describe("AppShell workbench navigation", () => {
+  it("starts the workbench on its home tab", () => {
+    render(
+      <SlotProvider registry={createSlotRegistry()}>
+        <AppShell
+          t={(key) => key}
+          titleBar={(nav) => <output data-testid="active-workbench-tab">{nav.workbench.tab}</output>}
+          sidebar={() => null}
+          rail={() => null}
+          chat={<div>Chat surface</div>}
+          settings={() => null}
+          panels={{}}
+        />
+      </SlotProvider>,
+    );
+    expect(screen.getByTestId("active-workbench-tab").textContent).toBe("home");
+  });
+});
 describe("AppShell sidebar collapse", () => {
   it("removes the full sidebar and rail when a wide sidebar is collapsed", () => {
     window.matchMedia = ((query: string) => ({
@@ -76,7 +94,7 @@ describe("AppShell sidebar collapse", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
     expect(screen.queryByTestId("full-sidebar")).toBeNull();
-    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
+    expect(screen.getByTestId("sidebar-rail")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
     expect(screen.getByTestId("full-sidebar")).toBeTruthy();
@@ -84,6 +102,42 @@ describe("AppShell sidebar collapse", () => {
   });
 });
 describe("AppShell global search", () => {
+  it("closes the responsive drawer before opening search", () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(min-width: 640px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    render(
+      <SlotProvider registry={createSlotRegistry()}>
+        <AppShell
+          t={(key) => key}
+          titleBar={() => null}
+          sidebar={(nav) => <button type="button" onClick={nav.openSearch}>Search from drawer</button>}
+          rail={(nav) => <button type="button" onClick={nav.expandNav}>Open drawer</button>}
+          chat={<div>Chat surface</div>}
+          search={(nav) => nav.searchOpen ? <div role="dialog">Search</div> : null}
+          settings={() => null}
+          panels={{}}
+        />
+      </SlotProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open drawer" }));
+    expect(screen.getByRole("button", { name: "Search from drawer" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Search from drawer" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Search from drawer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open drawer" }));
+    expect(screen.getByRole("button", { name: "Search from drawer" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("button", { name: "Search from drawer" })).toBeNull();
+  });
+
   it("opens the shell search dialog from both typed navigation and Ctrl/Cmd+K", () => {
     render(
       <SlotProvider registry={createSlotRegistry()}>

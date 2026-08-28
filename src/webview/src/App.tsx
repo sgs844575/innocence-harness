@@ -29,6 +29,7 @@ import { useWorkbenchState } from "./state/useWorkbenchState";
 import { useTaskReviewData } from "./state/useTaskReviewData";
 import { usePluginClients } from "./state/usePluginClients";
 import { useWorkbenchPresentation } from "./state/useWorkbenchPresentation";
+import type { WorkbenchTabId } from "./components/workbench/WorkbenchTabs";
 import { useChatWorkspacePresentation } from "./state/useChatWorkspacePresentation";
 import { useAppNavigation } from "./state/useAppNavigation";
 import { writeToolsBlocked } from "./state/workbenchState";
@@ -111,7 +112,7 @@ export function App(): React.JSX.Element {
     taskId: task?.taskId ?? "",
     routeId: workbench.state.activeRouteId,
   });
-  const { sidebar, rail, settingsView, activeSessionStatus, selectedFilePath, selectFile } = useAppNavigation({
+  const { sidebar, rail, settingsView, activeSessionStatus, subagents, selectedFilePath, selectFile } = useAppNavigation({
     t,
     sessions,
     settings,
@@ -120,13 +121,29 @@ export function App(): React.JSX.Element {
     onPickWorkspace: () => void handlePickWorkspace(),
   });
   const [terminalActivity, setTerminalActivity] = useState({ durationMs: 0, backgroundTasks: 0 });
+  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  const openSubagentPanel = useCallback((childId: string) => {
+    setSelectedSubagentId(childId);
+    shellNav.current?.workbench.setTab("assistant");
+    shellNav.current?.workbench.setOpen(true);
+  }, []);
+  const selectedSubagent = selectedSubagentId === null
+    ? null
+    : (subagents.get(`${sessions.activeId ?? ""}:${selectedSubagentId}`) ?? null);
   const { workbenchPanels, banner } = useWorkbenchPresentation({
     t,
     workbench,
     reviewData,
     onTerminalActivityChange: setTerminalActivity,
+    showError,
+    onCloseTerminal: () => shellNav.current?.workbench.setOpen(false),
+    selectedSubagent,
     selectedFilePath,
     onSelectFile: selectFile,
+    onSelectTab: (tab: WorkbenchTabId) => {
+      shellNav.current?.workbench.setTab(tab);
+      shellNav.current?.workbench.setOpen(true);
+    },
   });
 
   const openReviewPanel = useCallback(() => {
@@ -172,12 +189,15 @@ export function App(): React.JSX.Element {
     messages: chat.messages,
     streaming: chat.streaming,
     task,
+    sessionId: sessions.activeId,
     activeRouteId: workbench.state.activeRouteId,
     hunks: reviewData.hunks,
     changedFiles: reviewData.changedFiles,
     terminal: terminalActivity,
     agentName: settings?.activeAgent ?? "default",
     sessionStatus: activeSessionStatus,
+    subagents,
+    onOpenSubagent: openSubagentPanel,
     onCompare: openReviewPanel,
     onOpenProcess: openReviewPanel,
     onOpenTerminal: openTerminalPanel,
@@ -260,12 +280,12 @@ export function App(): React.JSX.Element {
             sessions={sessions.sessions}
             files={reviewData.files}
             actions={[
-              { id: "new-task", label: "新建任务", onSelect: () => { nav.backToChat(); sessions.newSession(); } },
-              { id: "open-review", label: "打开审查", onSelect: openReviewPanel },
-              { id: "open-automation", label: "自动化", onSelect: nav.openAutomation },
+              { id: "new-task", label: "新建任务", onSelect: () => { nav.closeDrawerOnNavigate(); nav.backToChat(); sessions.newSession(); } },
+              { id: "open-review", label: "打开审查", onSelect: () => { nav.closeDrawerOnNavigate(); openReviewPanel(); } },
+              { id: "open-automation", label: "自动化", onSelect: () => { nav.closeDrawerOnNavigate(); nav.openAutomation(); } },
             ]}
-            onSelectSession={(id) => { nav.backToChat(); sessions.selectSession(id); }}
-            onSelectFile={(path) => { selectFile(path); nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
+            onSelectSession={(id) => { nav.closeDrawerOnNavigate(); nav.backToChat(); sessions.selectSession(id); }}
+            onSelectFile={(path) => { nav.closeDrawerOnNavigate(); selectFile(path); nav.workbench.setTab("code"); nav.workbench.setOpen(true); }}
           />
         )}
         automation={<AutomationView

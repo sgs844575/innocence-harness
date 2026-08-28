@@ -5,10 +5,13 @@ import { RoutePanel } from "../components/task/RoutePanel";
 import { CodePanel } from "../components/code/CodePanel";
 import { TerminalPanel, type TerminalActivitySummary } from "../components/terminal/TerminalPanel";
 import { RecoveryBanner } from "../components/RecoveryBanner";
+import { WorkbenchHome } from "../components/workbench/WorkbenchHome";
+import { SubagentPanel, type SubagentPanelChild } from "../components/workbench/SubagentPanel";
 import { codeApi, terminalApi } from "../lib/ipc";
 import { groupHunksByFile } from "../components/task/taskViewModel";
 import type { WorkbenchStateController } from "./useWorkbenchState";
 import type { TaskReviewDataController } from "./useTaskReviewData";
+import type { WorkbenchTabId } from "../components/workbench/WorkbenchTabs";
 import { restartWarningVisible } from "./workbenchState";
 
 export function useWorkbenchPresentation({
@@ -16,34 +19,54 @@ export function useWorkbenchPresentation({
   workbench,
   reviewData,
   onTerminalActivityChange,
+  onSelectTab,
+  showError,
   selectedFilePath,
   onSelectFile,
+  onCloseTerminal,
+  selectedSubagent,
 }: {
   t: (key: string) => string;
   workbench: WorkbenchStateController;
   reviewData: TaskReviewDataController;
   onTerminalActivityChange?: (activity: TerminalActivitySummary) => void;
+  onSelectTab: (tab: WorkbenchTabId) => void;
+  showError: (message: string) => void;
   selectedFilePath?: string;
   onSelectFile?: (path: string) => void;
+  onCloseTerminal: () => void;
+  selectedSubagent?: SubagentPanelChild | null;
 }): { workbenchPanels: Record<string, ReactNode>; banner: ReactNode } {
   const task = workbench.state.task;
   const reviewFiles = useMemo(() => groupHunksByFile(reviewData.hunks), [reviewData.hunks]);
   const reviewAndRefresh = useCallback(
     async (dto: Parameters<typeof workbench.review>[0]) => {
-      await workbench.review(dto);
-      await reviewData.refresh();
+      try {
+        await workbench.review(dto);
+        await reviewData.refresh();
+      } catch (cause) {
+        console.error("workbench review failed", cause);
+        showError(t("error.review"));
+      }
     },
-    [workbench.review, reviewData],
+    [workbench.review, reviewData, showError, t],
   );
   const restoreAndRefresh = useCallback(
     async (request: Parameters<typeof workbench.restore>[0]) => {
-      await workbench.restore(request);
-      await reviewData.refresh();
+      try {
+        await workbench.restore(request);
+        await reviewData.refresh();
+      } catch (cause) {
+        console.error("workbench restore failed", cause);
+        showError(t("error.restore"));
+      }
     },
-    [workbench.restore, reviewData],
+    [workbench.restore, reviewData, showError, t],
   );
   const workbenchPanels = useMemo<Record<string, ReactNode>>(
     () => ({
+      home: <WorkbenchHome onSelect={onSelectTab} t={t} />,
+      assistant: <SubagentPanel child={selectedSubagent ?? null} />,
       review: (
         <ReviewPanel
           files={reviewFiles}
@@ -75,9 +98,11 @@ export function useWorkbenchPresentation({
           api={codeApi}
         />
       ),
-      terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} />,
+      todo: <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">{t("workbench.placeholder.todo")}</div>,
+      terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} onClose={onCloseTerminal} />,
+      browser: <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">{t("workbench.placeholder.browser")}</div>,
     }),
-    [t, task, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange, selectedFilePath, onSelectFile],
+    [t, task, selectedSubagent, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange, onSelectTab, selectedFilePath, onSelectFile, onCloseTerminal],
   );
   const banner = useMemo(() => {
     const recovery = workbench.state.recovery;

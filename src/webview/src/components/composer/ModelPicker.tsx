@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
-import type { HarnessSettings, ProviderKind } from "../../../../shared/ipc";
+import { PROVIDER_PRESET_MIRROR, type HarnessSettings, type ProviderKind, type ProviderProfile } from "../../../../shared/ipc";
 import { CapabilityTags } from "../tags/CapabilityTags";
 import { Popover } from "../ui/Popover";
 import { filterProfiles } from "./modelPickerFilter";
@@ -9,20 +9,19 @@ interface Props {
   settings: HarnessSettings;
   activeProfileId: string;
   activeModel: string;
-  showProvider?: boolean;
   onSelect: (profileId: string, modelId: string) => void;
 }
 
-/** 二级模型选择器：厂家列 → 模型列；chip 只显示模型名。 */
-export function ModelPicker({ settings, activeProfileId, activeModel, showProvider = false, onSelect }: Props): React.JSX.Element {
+/** 二级模型选择器：厂家列 → 模型列；chip 显示厂家和模型名。 */
+export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(activeProfileId);
   const profiles = useMemo(() => filterProfiles(settings, query), [settings, query]);
   const current = profiles.find((p) => p.id === focused) ?? profiles[0];
   const activeProfile = settings.profiles.find((profile) => profile.id === activeProfileId);
   const activeModelInfo = activeProfile?.models.find((model) => model.id === activeModel);
-  const modelLabel = activeModelInfo?.name ?? activeModel;
-  const label = showProvider && activeProfile ? `${activeProfile.name} / ${modelLabel}` : modelLabel;
+  const modelLabel = activeModelInfo?.name?.trim() || activeModel;
+  const label = activeProfile ? `${profileLabel(activeProfile)} / ${modelLabel}` : modelLabel;
 
   return (
     <Popover
@@ -61,7 +60,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, showProvid
               onClick={() => setFocused(p.id)}
               className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] ${p.id === current?.id ? "bg-(--color-app-accent-soft) text-(--color-app-text) shadow-[inset_2px_0_0_var(--color-app-accent)]" : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"}`}
             >
-              <span className="truncate">{p.name}</span>
+              <span className="truncate">{profileLabel(p)}</span>
               <ProtocolBadge kind={p.kind} />
             </button>
           ))}
@@ -88,6 +87,12 @@ export function ModelPicker({ settings, activeProfileId, activeModel, showProvid
       </div>
     </Popover>
   );
+}
+
+function profileLabel(profile: ProviderProfile): string {
+  const name = profile.name.trim();
+  if (name) return name;
+  return PROVIDER_PRESET_MIRROR.find((preset) => preset.kind === profile.kind)?.name ?? "Provider";
 }
 
 function ProtocolBadge({ kind }: { kind: ProviderKind }): React.JSX.Element {

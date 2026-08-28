@@ -18,12 +18,13 @@ const settings = {
 const t = (key: string) => key;
 
 describe("task 7 Composer states", () => {
-  it("landing shows project selection, @ and / guidance, access, model, and send", () => {
+  it("landing shows project selection, @ and / guidance, access, supplier/model, and send", () => {
     render(<Composer t={t} mode="landing" streaming={false} settings={settings} onSettingsChange={() => {}} onSend={() => {}} onStop={() => {}} header={<button type="button">选择项目</button>} />);
     expect(screen.getByRole("button", { name: "选择项目" })).toBeTruthy();
     expect(screen.getByText(/使用 @ 添加上下文/)).toBeTruthy();
-    expect(screen.getByText(/使用 \/ 选择命令/)).toBeTruthy();
+    expect(screen.getByText(/使用 \/ 选择命令或能力/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /permission.mode.full/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Provider \/ model-1/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "chat.send" })).toBeTruthy();
   });
 

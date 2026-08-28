@@ -2,7 +2,7 @@
 // 核心是纯 reducer（workbenchState.ts，纯函数测试覆盖）；本钩子只负责
 // IPC 订阅 → dispatch 与带真实数据的命令（switchRoute 等 resolve 完整
 // view model 后才更新 UI，避免旧内容闪回）。
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   TaskRestoreRequest,
   TaskReviewDto,
@@ -26,7 +26,7 @@ export interface WorkbenchStateController {
   /** worktree/回放失败后的重试入口（task:recover → bridge.recoverTask）。 */
   retryRecovery: (taskId: string) => Promise<boolean>;
   /** 拉取任务全量视图（getTask + listRoutes，真实 forkTurnId/workspaceKind）。 */
-  loadTask: (taskId: string) => Promise<void>;
+  loadTask: (taskId: string, landing?: LandingTaskContext) => Promise<void>;
   /**
    * task:start → loadTask（会话激活/首条消息入口）。create=false 只探测
    * （会话无任务返回 null，不创建）；成功后工作台获得完整任务上下文。
@@ -56,9 +56,39 @@ export function toRouteInfoList(
   }));
 }
 
+/**
+ * 落地创建的代际上下文：useChatStream.send 在 await ensureSession() 后同一
+ * 微任务内调用 ensureTask，此时 React 尚未提交新 activeId（sessionIdRef 仍
+ * 为 null），提交完成时代际还会 +1。落地下守卫放行并记录该目标会话，
+ * 后续校验只认「仍在落地（null）或已提交为目标会话」且代际未越过提交步。
+ */
+export interface LandingTaskContext {
+  sessionId: string;
+  generation: number;
+}
+
 export function useWorkbenchState(deps: { sessionId: string | null }): WorkbenchStateController {
   const { sessionId } = deps;
   const [state, dispatch] = useReducer(reduceWorkbenchState, emptyWorkbenchState);
+  const sessionIdRef = useRef(sessionId);
+  const sessionGenerationRef = useRef(0);
+  if (sessionIdRef.current !== sessionId) {
+    sessionIdRef.current = sessionId;
+    sessionGenerationRef.current += 1;
+  }
+
+  const isCurrentSession = useCallback((expectedSessionId: string | null, expectedGeneration: number): boolean => (
+    sessionIdRef.current === expectedSessionId && sessionGenerationRef.current === expectedGeneration
+  ), []);
+
+  // 落地豁免（参考 useChatStream.isCurrent 的落地分支）：目标会话匹配 +
+  // 代际允许提交步（g → g+1，即 null → 目标会话的那次提交）；提交步之后
+  // 的任何变化（切走又切回等）仍会被代际拦下。
+  const isLandingCurrent = useCallback((landing: LandingTaskContext): boolean => (
+    (sessionIdRef.current === null || sessionIdRef.current === landing.sessionId)
+    && (sessionGenerationRef.current === landing.generation
+      || sessionGenerationRef.current === landing.generation + 1)
+  ), []);
 
   // 会话切换：本会话之外的任务上下文整体清空（reducer 判定归属）。
   useEffect(() => {
@@ -75,11 +105,19 @@ export function useWorkbenchState(deps: { sessionId: string | null }): Workbench
     };
   }, []);
 
-  const loadTask = useCallback(async (taskId: string) => {
+  const loadTask = useCallback(async (taskId: string, landing?: LandingTaskContext) => {
+    const expectedSessionId = sessionIdRef.current;
+    const expectedGeneration = sessionGenerationRef.current;
     const [task, routes] = await Promise.all([
       taskApi.getTask({ taskId }),
       taskApi.listRoutes({ taskId }),
     ]);
+    if (landing !== undefined) {
+      // 落地创建：只认落地目标会话，且代际未越过提交步。
+      if (!isLandingCurrent(landing) || task.sessionId !== landing.sessionId) return;
+    } else if (!isCurrentSession(expectedSessionId, expectedGeneration) || task.sessionId !== expectedSessionId) {
+      return;
+    }
     dispatch({
       type: "task/loaded",
       activeRouteId: task.activeRouteId,
@@ -95,7 +133,7 @@ export function useWorkbenchState(deps: { sessionId: string | null }): Workbench
         expectedVersion: task.version ?? "",
       },
     });
-  }, []);
+  }, [isCurrentSession, isLandingCurrent]);
 
   const switchRoute = useCallback(
     async (request: TaskSwitchRouteRequest): Promise<RoutePanelModel> => {
@@ -133,19 +171,27 @@ export function useWorkbenchState(deps: { sessionId: string | null }): Workbench
   /**
    * task:start → loadTask（最终审查 C1）。会话激活用 create=false 探测；首
    * 条消息发送前 create=true 创建。已装载同会话任务时短路（切换会话由
-   * reducer 清空后自然重入）。
+   * reducer 清空后自然重入）。落地创建（ref 为 null，React 未提交新会话）
+   * 时放行并记录目标会话，提交步（代际 +1）不视为串会话。
    */
   const ensureTask = useCallback(
     async (sessionId: string, create = true) => {
+      const expectedGeneration = sessionGenerationRef.current;
+      const landing: LandingTaskContext | undefined = sessionIdRef.current === null
+        ? { sessionId, generation: expectedGeneration }
+        : undefined;
+      if (landing === undefined && !isCurrentSession(sessionId, expectedGeneration)) return;
       if (state.task !== null && state.task.sessionId === sessionId) return;
       try {
         const started = await taskApi.start({ sessionId, create });
-        if (started) await loadTask(started.taskId);
+        if (!started) return;
+        if (landing !== undefined ? !isLandingCurrent(landing) : !isCurrentSession(sessionId, expectedGeneration)) return;
+        await loadTask(started.taskId, landing);
       } catch (cause) {
         console.error("task start failed", cause);
       }
     },
-    [state.task, loadTask],
+    [isCurrentSession, isLandingCurrent, loadTask, state.task],
   );
 
   const review = useCallback(async (dto: TaskReviewDto) => {

@@ -1,8 +1,4 @@
-// useTaskReviewData — 审查面数据源（最终审查 C3）。task:changes（状态化
-// hunks + 变更文件）与 code:list-files（文件树）按 taskId/routeId 拉取；
-// 纯加载器与钩子分离（loadTaskReviewData 可脱 React 测试）。刷新入口
-// 供 accept/restore 之后由 App 调用对账。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CodeIpcApi } from "../../../shared/codeIpc";
 import type { TaskChangesResponse, TaskHunkDto, TaskIpcApi } from "../../../shared/taskIpc";
 import { codeApi, taskApi } from "../lib/ipc";
@@ -44,17 +40,28 @@ export function useTaskReviewData(deps: {
 }): TaskReviewDataController {
   const { taskId, routeId } = deps;
   const [data, setData] = useState<TaskReviewData>(emptyTaskReviewData);
+  const requestGenerationRef = useRef(0);
+  const requestKeyRef = useRef(`${taskId}\u0000${routeId}`);
+
+  if (requestKeyRef.current !== `${taskId}\u0000${routeId}`) {
+    requestKeyRef.current = `${taskId}\u0000${routeId}`;
+    requestGenerationRef.current += 1;
+  }
 
   const refresh = useCallback(async () => {
+    const requestKey = `${taskId}\u0000${routeId}`;
+    const generation = ++requestGenerationRef.current;
+    const isCurrent = () => requestKeyRef.current === requestKey && requestGenerationRef.current === generation;
     if (taskId === "" || routeId === "") {
-      setData(emptyTaskReviewData);
+      if (isCurrent()) setData(emptyTaskReviewData);
       return;
     }
     try {
-      setData(await loadTaskReviewData({ task: taskApi, code: codeApi }, { taskId, routeId }));
+      const next = await loadTaskReviewData({ task: taskApi, code: codeApi }, { taskId, routeId });
+      if (isCurrent()) setData(next);
     } catch (cause) {
       console.error("task review data load failed", cause);
-      setData(emptyTaskReviewData);
+      if (isCurrent()) setData(emptyTaskReviewData);
     }
   }, [taskId, routeId]);
 

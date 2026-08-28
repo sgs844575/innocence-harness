@@ -102,19 +102,23 @@ export function AppShell({
   }, [closeDrawerOnNavigate]);
 
   const backToChat = useCallback(() => setView("chat"), []);
-  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const openSearch = useCallback(() => {
+    closeDrawerOnNavigate();
+    setSearchOpen(true);
+  }, [closeDrawerOnNavigate]);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        closeDrawerOnNavigate();
         setSearchOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [closeDrawerOnNavigate]);
 
   const selectSection = useCallback(
     (next: SettingsSection) => {
@@ -170,7 +174,7 @@ export function AppShell({
             {navFull}
           </div>
         )}
-        {isMedium ? (
+        {(isMedium || (isWide && railMode)) ? (
           <div className="w-12 shrink-0 border-r border-(--color-app-hairline) bg-(--color-app-sidebar)">
             {navRail}
           </div>

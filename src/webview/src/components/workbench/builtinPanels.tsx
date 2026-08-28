@@ -1,7 +1,6 @@
-// 内置面板贡献：App 装配层的四个面板（审查/路线/代码/终端）注册进
-// workbench.panel 槽位。面板 props 来自 App 状态——贡献对象经 useMemo 只构造
-// 一次（引用稳定，满足 T2 list 槽位不重注册契约），render 闭包经 ref 读取
-// 最新面板内容（App 的 panels memo 更新即时生效，无需重注册/不漂移队尾）。
+// 内置面板贡献：工作台首页、辅助对话、审查、路线、代码、待办、终端和浏览器注册进
+// workbench.panel 槽位。面板 props 来自 App 状态；贡献对象经 useMemo 只构造
+// 一次，render 闭包经 ref 读取最新面板内容。
 import { useMemo, useRef } from "react";
 import { useRegisterList } from "../../slots/react";
 import { PANEL_SLOT, type WorkbenchPanelContribution, type WorkbenchTabId } from "./WorkbenchTabs";
@@ -25,10 +24,14 @@ export function BuiltinPanels({
   latest.current = panels;
   const contributions = useMemo<readonly WorkbenchPanelContribution[]>(
     () => [
+      { id: "home", labelKey: "workbench.tab.home", render: () => latest.current.home },
+      { id: "assistant", labelKey: "workbench.tab.assistant", render: () => latest.current.assistant },
       { id: "review", labelKey: "workbench.tab.review", render: () => latest.current.review },
       { id: "routes", labelKey: "workbench.tab.routes", render: () => latest.current.routes },
       { id: "code", labelKey: "workbench.tab.code", render: () => latest.current.code },
+      { id: "todo", labelKey: "workbench.tab.todo", render: () => latest.current.todo },
       { id: "terminal", labelKey: "workbench.tab.terminal", render: () => latest.current.terminal },
+      { id: "browser", labelKey: "workbench.tab.browser", render: () => latest.current.browser },
     ],
     [],
   );

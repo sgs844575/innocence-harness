@@ -3,7 +3,7 @@
 // the view model (statused hunks + changed paths) and the file tree
 // (code:list-files); ReviewPanel renders straight from the DTO through
 // groupHunksByFile — the shape the main-side handler produces.
-import { act, render, renderHook, cleanup } from "@testing-library/react";
+import { act, render, renderHook, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskChangesResponse } from "../../../shared/taskIpc";
 import { ReviewPanel } from "../components/task/ReviewPanel";
@@ -74,6 +74,56 @@ describe("useTaskReviewData (hook)", () => {
       await result.current.refresh();
     });
     expect(result.current.hunks).toHaveLength(0);
+  });
+
+  it("does not let a stale task/route load overwrite the newly selected review", async () => {
+    let resolveOldChanges: ((value: TaskChangesResponse) => void) | undefined;
+    let resolveOldFiles: ((value: { files: string[] }) => void) | undefined;
+    const oldChanges = new Promise<TaskChangesResponse>((resolve) => { resolveOldChanges = resolve; });
+    const oldFiles = new Promise<{ files: string[] }>((resolve) => { resolveOldFiles = resolve; });
+    const nextChanges: TaskChangesResponse = { hunks: [], changedFiles: ["new.ts"] };
+    apisMock.task.changes.mockImplementation((request: unknown) =>
+      (request as { taskId: string }).taskId === "old" ? oldChanges : Promise.resolve(nextChanges));
+    apisMock.code.listFiles.mockImplementation((request: unknown) =>
+      (request as { taskId: string }).taskId === "old" ? oldFiles : Promise.resolve({ files: ["new.ts"] }));
+
+    const { result, rerender } = renderHook(({ taskId }) => useTaskReviewData({ taskId, routeId: "main" }), {
+      initialProps: { taskId: "old" },
+    });
+    rerender({ taskId: "new" });
+    await waitFor(() => expect(result.current.changedFiles).toEqual(["new.ts"]));
+
+    resolveOldChanges?.(changesResponse);
+    resolveOldFiles?.({ files: ["old.ts"] });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.changedFiles).toEqual(["new.ts"]);
+    expect(result.current.files).toEqual(["new.ts"]);
+  });
+
+  it("does not let an older refresh overwrite a newer task/route request", async () => {
+    const nextChanges: TaskChangesResponse = { hunks: [], changedFiles: ["new.ts"] };
+    apisMock.task.changes.mockResolvedValue(changesResponse);
+    apisMock.code.listFiles.mockResolvedValue({ files: ["old.ts"] });
+    const { result, rerender } = renderHook(({ taskId }) => useTaskReviewData({ taskId, routeId: "main" }), {
+      initialProps: { taskId: "old" },
+    });
+    await waitFor(() => expect(result.current.changedFiles).toEqual(["src/a.ts", "logo.png"]));
+
+    let resolveRefresh: ((value: TaskChangesResponse) => void) | undefined;
+    const staleRefresh = new Promise<TaskChangesResponse>((resolve) => { resolveRefresh = resolve; });
+    apisMock.task.changes.mockImplementation((request: unknown) =>
+      (request as { taskId: string }).taskId === "old" ? staleRefresh : Promise.resolve(nextChanges));
+    apisMock.code.listFiles.mockResolvedValue({ files: ["new.ts"] });
+    let oldRefresh: Promise<void> | undefined;
+    act(() => { oldRefresh = result.current.refresh(); });
+
+    rerender({ taskId: "new" });
+    await waitFor(() => expect(result.current.changedFiles).toEqual(["new.ts"]));
+    resolveRefresh?.(changesResponse);
+    await act(async () => { await oldRefresh; });
+    expect(result.current.changedFiles).toEqual(["new.ts"]);
   });
 
   it("feeds ReviewPanel: the handler DTO renders through groupHunksByFile", async () => {

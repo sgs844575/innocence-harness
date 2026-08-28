@@ -20,7 +20,7 @@ function Probe(): React.JSX.Element | null {
 
 /** 标准装配：Provider + 内置贡献注册 + 单个消费方节点。 */
 function mountPanels(
-  panels: Partial<Record<"review" | "routes" | "code" | "terminal", React.ReactNode>>,
+  panels: Partial<Record<"home" | "assistant" | "review" | "routes" | "code" | "todo" | "terminal" | "browser", React.ReactNode>>,
   child: React.ReactNode,
 ): ReturnType<typeof render> {
   return render(
@@ -32,24 +32,28 @@ function mountPanels(
 }
 
 describe("builtin panel contributions", () => {
-  it("四个内置面板按固定序注册（id/labelKey）", () => {
+  it("registers the unified built-in panel sequence", () => {
     mountPanels({}, <Probe />);
     expect(listed.map(({ id, labelKey }) => ({ id, labelKey }))).toEqual([
+      { id: "home", labelKey: "workbench.tab.home" },
+      { id: "assistant", labelKey: "workbench.tab.assistant" },
       { id: "review", labelKey: "workbench.tab.review" },
       { id: "routes", labelKey: "workbench.tab.routes" },
       { id: "code", labelKey: "workbench.tab.code" },
+      { id: "todo", labelKey: "workbench.tab.todo" },
       { id: "terminal", labelKey: "workbench.tab.terminal" },
+      { id: "browser", labelKey: "workbench.tab.browser" },
     ]);
   });
 
   it("render 闭包读取最新面板内容；panels 更新不重注册（清单快照身份不变）", () => {
-    const first = mountPanels({ review: <p>面板v1</p> }, <Probe />);
+    const first = mountPanels({ home: <p>面板v1</p> }, <Probe />);
     expect(screen.getByText("面板v1")).toBeTruthy();
     const before = listed;
 
     first.rerender(
       <SlotProvider>
-        <BuiltinPanels panels={{ review: <p>面板v2</p> }} />
+        <BuiltinPanels panels={{ home: <p>面板v2</p> }} />
         <Probe />
       </SlotProvider>,
     );
@@ -64,11 +68,11 @@ describe("WorkbenchTabs 槽位派生", () => {
   it("页签清单从 workbench.panel 槽位派生（默认 zh 文案序 + 激活态）", () => {
     mountPanels(
       {},
-      <WorkbenchTabs active="routes" onSelect={() => {}} />,
+      <WorkbenchTabs active="todo" onSelect={() => {}} />,
     );
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["审查", "路线", "代码", "终端"]);
-    expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["首页", "辅助对话", "审查", "路线", "代码", "待办", "终端", "浏览器"]);
+    expect(tabs[5].getAttribute("aria-selected")).toBe("true");
     expect(tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")).toHaveLength(1);
   });
 });

@@ -29,7 +29,7 @@ export interface WorkbenchShellProps {
   /** 受控开关（缺省非受控，默认 true）。 */
   open?: boolean;
   onClose?: () => void;
-  /** 受控页签（缺省非受控，默认 review）。 */
+  /** 受控页签（缺省非受控，默认 home）。 */
   activeTab?: WorkbenchTabId;
   onTabChange?: (tab: WorkbenchTabId) => void;
   /** 主列（聊天）；窄屏面板打开时隐藏。 */
@@ -65,7 +65,7 @@ export function useWorkbenchLayout(): {
   setTab: (tab: WorkbenchTabId) => void;
 } {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<WorkbenchTabId>("review");
+  const [tab, setTab] = useState<WorkbenchTabId>("home");
   const togglePanel = useCallback(() => setOpen((value) => !value), []);
   const openTerminal = useCallback(() => {
     setTab("terminal");
@@ -112,7 +112,7 @@ export function WorkbenchShell({
   }, [onClose]);
 
   // 页签：同款受控-可选模式。
-  const [tabState, setTabState] = useState<WorkbenchTabId>(activeTab ?? "review");
+  const [tabState, setTabState] = useState<WorkbenchTabId>(activeTab ?? "home");
   useEffect(() => {
     if (activeTab !== undefined) setTabState(activeTab);
   }, [activeTab]);

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ChatMessage } from "../../../shared/ipc";
+import type { SubagentProjectionMap } from "./sessionActivityProjection";
 import type { TaskChangeCardCommand } from "../components/MessageItem";
 import {
   agentActivityFromWorkspace,
@@ -14,12 +15,15 @@ export function useChatWorkspacePresentation(input: {
   messages: readonly ChatMessage[];
   streaming: boolean;
   task: WorkbenchTask | null;
+  sessionId?: string | null;
   activeRouteId: string;
   hunks: Parameters<typeof summarizeChanges>[0];
   changedFiles: readonly string[];
   terminal: TerminalActivitySummary;
   agentName: string;
   sessionStatus?: AgentActivityProjection["agent"]["status"];
+  subagents?: SubagentProjectionMap;
+  onOpenSubagent?: (childId: string) => void;
   onCompare: () => void;
   onOpenProcess: () => void;
   onOpenTerminal: () => void;
@@ -28,10 +32,14 @@ export function useChatWorkspacePresentation(input: {
   taskChanges: Record<string, TaskChangeCardCommand> | undefined;
 } {
   const process = useMemo(
-    () => processActivityFromMessages(input.messages, input.streaming ? "正在生成回复" : "等待下一步"),
-    [input.messages, input.streaming],
+    () => processActivityFromMessages(input.messages, "等待下一步"),
+    [input.messages],
   );
   const changeSummary = useMemo(() => summarizeChanges(input.hunks), [input.hunks]);
+  const taskChangeSummary = useMemo(
+    () => ({ ...changeSummary, fileCount: Math.max(changeSummary.fileCount, input.changedFiles.length) }),
+    [changeSummary, input.changedFiles],
+  );
 
   const taskChanges = useMemo<Record<string, TaskChangeCardCommand> | undefined>(() => {
     let lastAssistant: ChatMessage | undefined;
@@ -41,12 +49,12 @@ export function useChatWorkspacePresentation(input: {
         break;
       }
     }
-    if (!input.task || !lastAssistant || changeSummary.fileCount === 0) return undefined;
+    if (!input.task || !lastAssistant || input.changedFiles.length === 0) return undefined;
     const checkpointId = input.task.routes.find((route) => route.routeId === input.activeRouteId)?.checkpointId ?? "";
     return {
-      [lastAssistant.id]: { summary: changeSummary, checkpointId, validation: null },
+      [lastAssistant.id]: { summary: taskChangeSummary, checkpointId, validation: null },
     };
-  }, [input.messages, input.task, input.activeRouteId, changeSummary]);
+  }, [input.messages, input.task, input.activeRouteId, input.changedFiles, taskChangeSummary]);
 
   const activity = useMemo(
     () => agentActivityFromWorkspace({
@@ -61,8 +69,12 @@ export function useChatWorkspacePresentation(input: {
       onCompare: input.onCompare,
       onOpenProcess: input.task ? input.onOpenProcess : undefined,
       onOpenTerminal: input.task ? input.onOpenTerminal : undefined,
+      subagents: input.subagents
+        ? [...input.subagents.values()].filter((child) => child.parentSessionId === input.sessionId)
+        : undefined,
+      onOpenSubagent: input.onOpenSubagent,
     }),
-    [input.task, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.onCompare, input.onOpenProcess, input.onOpenTerminal, changeSummary, process],
+    [input.task, input.sessionId, input.subagents, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.onCompare, input.onOpenProcess, input.onOpenTerminal, input.onOpenSubagent, changeSummary, process],
   );
 
   return { activity, taskChanges };

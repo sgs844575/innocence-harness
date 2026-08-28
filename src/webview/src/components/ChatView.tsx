@@ -173,6 +173,8 @@ export function ChatView({
       process={activity.process}
       terminal={activity.terminal}
       agent={activity.agent}
+      subagents={activity.agent.subagents}
+      onOpenSubagent={activity.agent.onOpenSubagent}
       placement={layout.capsulePlacement}
     />
   ) : null;

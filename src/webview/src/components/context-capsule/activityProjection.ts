@@ -1,16 +1,32 @@
-import type { ChatMessage } from "../../../../shared/ipc";
+import type { ChatMessage, SubagentLifecycleEvent } from "../../../../shared/ipc";
 
 export type AgentActivityStatus = "idle" | "running" | "waiting-permission" | "failed" | "archived";
 
+export type TodoStatus = "pending" | "in_progress" | "completed";
+
+export interface TodoView {
+  content: string;
+  status: TodoStatus;
+}
+
 export interface ProcessActivity {
+  todos?: TodoView[];
   completed: number;
   total: number;
   current: string;
   pending: number;
 }
 
+export interface SubagentActivityView {
+  childId: string;
+  description: string;
+  status: SubagentLifecycleEvent["status"];
+  text: string;
+  error?: string;
+}
+
 export interface AgentActivityProjection {
-  environment: {
+  environment?: {
     branch: string | null;
     changedFiles: number;
     additions: number;
@@ -18,14 +34,20 @@ export interface AgentActivityProjection {
     workspaceKind: string;
     onCompare?: () => void;
   };
-  process: ProcessActivity & { onOpen?: () => void };
-  terminal: { durationMs: number; backgroundTasks: number; onOpen?: () => void };
-  agent: { name: string; status: AgentActivityStatus };
+  process?: ProcessActivity & { onOpen?: () => void };
+  terminal?: { durationMs: number; backgroundTasks: number; onOpen?: () => void };
+  agent: {
+    name: string;
+    status: AgentActivityStatus;
+    subagents?: readonly SubagentActivityView[];
+    onOpenSubagent?: (childId: string) => void;
+  };
 }
 
-interface TodoView {
-  content: string;
-  status: string;
+interface TodoInput {
+  content: unknown;
+  status: unknown;
+  priority: unknown;
 }
 
 function agentStatus(input: {
@@ -44,7 +66,7 @@ export function agentActivityFromWorkspace(input: {
   task: { gitBranch: string | null; workspaceKind: string; status?: string } | null;
   changedFiles: readonly string[];
   changeSummary: { added: number; removed: number };
-  process: ProcessActivity;
+  process?: ProcessActivity;
   terminal: { durationMs: number; backgroundTasks: number };
   agentName: string;
   streaming: boolean;
@@ -52,18 +74,30 @@ export function agentActivityFromWorkspace(input: {
   onCompare: () => void;
   onOpenProcess?: () => void;
   onOpenTerminal?: () => void;
+  subagents?: readonly SubagentActivityView[];
+  onOpenSubagent?: (childId: string) => void;
 }): AgentActivityProjection {
+  // 项目不存在 git（分支不可检测）或没有变更时隐藏 environment 段：
+  // branch 为空时展示的“未检测”空壳没有信息量，宁可整段隐藏。
+  const hasEnvironment = Boolean(input.task?.gitBranch) && input.changedFiles.length > 0;
+  const hasTerminal = input.terminal.backgroundTasks > 0;
   return {
-    environment: {
-      branch: input.task?.gitBranch ?? null,
-      changedFiles: input.changedFiles.length,
-      additions: input.changeSummary.added,
-      deletions: input.changeSummary.removed,
-      workspaceKind: input.task?.workspaceKind ?? "unknown",
-      ...(input.task ? { onCompare: input.onCompare } : {}),
-    },
-    process: { ...input.process, ...(input.onOpenProcess ? { onOpen: input.onOpenProcess } : {}) },
-    terminal: { ...input.terminal, ...(input.onOpenTerminal ? { onOpen: input.onOpenTerminal } : {}) },
+    ...(hasEnvironment ? {
+      environment: {
+        branch: input.task?.gitBranch ?? null,
+        changedFiles: input.changedFiles.length,
+        additions: input.changeSummary.added,
+        deletions: input.changeSummary.removed,
+        workspaceKind: input.task?.workspaceKind ?? "unknown",
+        ...(input.task ? { onCompare: input.onCompare } : {}),
+      },
+    } : {}),
+    ...(input.process ? {
+      process: { ...input.process, ...(input.onOpenProcess ? { onOpen: input.onOpenProcess } : {}) },
+    } : {}),
+    ...(hasTerminal ? {
+      terminal: { ...input.terminal, ...(input.onOpenTerminal ? { onOpen: input.onOpenTerminal } : {}) },
+    } : {}),
     agent: {
       name: input.agentName,
       status: agentStatus({
@@ -71,11 +105,13 @@ export function agentActivityFromWorkspace(input: {
         sessionStatus: input.sessionStatus,
         streaming: input.streaming,
       }),
+      ...(input.subagents && input.subagents.length > 0 ? { subagents: input.subagents } : {}),
+      ...(input.onOpenSubagent ? { onOpenSubagent: input.onOpenSubagent } : {}),
     },
   };
 }
 
-export function processActivityFromMessages(messages: readonly ChatMessage[], fallback: string): ProcessActivity {
+export function processActivityFromMessages(messages: readonly ChatMessage[], fallback: string): ProcessActivity | undefined {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const parts = messages[messageIndex].parts;
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
@@ -85,6 +121,7 @@ export function processActivityFromMessages(messages: readonly ChatMessage[], fa
       if (todos === undefined) continue;
       const current = todos.find((todo) => todo.status === "in_progress")?.content ?? fallback;
       return {
+        todos,
         completed: todos.filter((todo) => todo.status === "completed").length,
         total: todos.length,
         current,
@@ -92,15 +129,20 @@ export function processActivityFromMessages(messages: readonly ChatMessage[], fa
       };
     }
   }
-  return { completed: 0, total: 0, current: fallback, pending: 0 };
+  return undefined;
 }
 
 function readTodos(value: unknown): TodoView[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.filter((entry): entry is TodoView =>
-    typeof entry === "object" &&
-    entry !== null &&
-    typeof (entry as TodoView).content === "string" &&
-    typeof (entry as TodoView).status === "string",
-  );
+  if (value.length === 0) return [];
+  const todos: TodoView[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const todo = entry as TodoInput;
+    if (typeof todo.content !== "string" || todo.content.trim().length === 0) return undefined;
+    if (todo.status !== "pending" && todo.status !== "in_progress" && todo.status !== "completed") return undefined;
+    if (todo.priority !== "high" && todo.priority !== "medium" && todo.priority !== "low") return undefined;
+    todos.push({ content: todo.content, status: todo.status });
+  }
+  return todos;
 }

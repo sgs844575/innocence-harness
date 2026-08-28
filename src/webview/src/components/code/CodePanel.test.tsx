@@ -209,12 +209,13 @@ describe("WorkbenchShell responsive modes", () => {
     expect(screen.getByRole("dialog", { name: "辅助面板" }).style.width).toBe("720px");
   });
 
-  it("switches panel content through the workbench tabs", () => {
+  it("switches panel content through the unified workbench tabs", () => {
     mountShell(
       <WorkbenchShell
         viewportWidth={1280}
         open
         panels={{
+          home: <div>home-content</div>,
           review: <div>review-content</div>,
           code: <div>code-content</div>,
         }}
@@ -222,10 +223,12 @@ describe("WorkbenchShell responsive modes", () => {
         <div>chat-main</div>
       </WorkbenchShell>,
     );
+    expect(screen.getByText("home-content")).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "审查" }));
     expect(screen.getByText("review-content")).toBeVisible();
+    expect(screen.queryByText("home-content")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "代码" }));
     expect(screen.getByText("code-content")).toBeVisible();
-    expect(screen.queryByText("review-content")).toBeNull();
   });
 
   it("makes the panel and the main view mutually exclusive below the narrow breakpoint", () => {
@@ -251,9 +254,9 @@ describe("WorkbenchShell responsive modes", () => {
 });
 
 describe("WorkbenchShell tab labels", () => {
-  it("offers review, routes, code and terminal in order", () => {
+  it("offers the unified workbench tabs in order", () => {
     mountShell(<WorkbenchShell viewportWidth={720} open />);
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
-    expect(tabs).toEqual(["审查", "路线", "代码", "终端"]);
+    expect(tabs).toEqual(["首页", "辅助对话", "审查", "路线", "代码", "待办", "终端", "浏览器"]);
   });
 });

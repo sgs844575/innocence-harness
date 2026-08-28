@@ -14,14 +14,43 @@ const settings = {
 } as unknown as HarnessSettings;
 
 describe("ModelPicker", () => {
-  it("打开面板、选择模型回调、chip 只显示模型名", async () => {
+  it("打开面板、选择模型回调、chip 显示供应商和模型名", async () => {
     const onSelect = vi.fn();
     render(<ModelPicker settings={settings} activeProfileId="p1" activeModel="glm-4.6" onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: /GLM-4.6/ }));
+    fireEvent.click(screen.getByRole("button", { name: /智谱 \/ GLM-4.6/ }));
     await waitFor(() => screen.getByText("智谱"));
-    // 面板打开后 trigger 与模型行同名，需在 dialog 面板内定位模型行
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /GLM-4.6/ }));
     expect(onSelect).toHaveBeenCalledWith("p1", "glm-4.6");
+  });
+
+  it("空名称按供应商 kind 回退且改名后立即更新 chip", () => {
+    const unnamed = {
+      ...settings,
+      profiles: [{ ...settings.profiles[0]!, name: "" }],
+    } as HarnessSettings;
+    const { rerender } = render(<ModelPicker settings={unnamed} activeProfileId="p1" activeModel="glm-4.6" onSelect={() => {}} />);
+    expect(screen.getByRole("button", { name: /OpenAI \/ GLM-4.6/ })).toBeTruthy();
+
+    const renamed = {
+      ...unnamed,
+      profiles: [{ ...unnamed.profiles[0]!, name: "自定义供应商" }],
+    } as HarnessSettings;
+    rerender(<ModelPicker settings={renamed} activeProfileId="p1" activeModel="glm-4.6" onSelect={() => {}} />);
+    expect(screen.getByRole("button", { name: /自定义供应商 \/ GLM-4.6/ })).toBeTruthy();
+  });
+
+  it("同一模型在不同供应商下显示不同供应商标签", () => {
+    const duplicateModelSettings = {
+      ...settings,
+      profiles: [
+        { ...settings.profiles[0]!, name: "供应商一" },
+        { ...settings.profiles[0]!, id: "p2", name: "供应商二" },
+      ],
+    } as HarnessSettings;
+    const { rerender } = render(<ModelPicker settings={duplicateModelSettings} activeProfileId="p1" activeModel="glm-4.6" onSelect={() => {}} />);
+    expect(screen.getByRole("button", { name: /供应商一 \/ GLM-4.6/ })).toBeTruthy();
+    rerender(<ModelPicker settings={duplicateModelSettings} activeProfileId="p2" activeModel="glm-4.6" onSelect={() => {}} />);
+    expect(screen.getByRole("button", { name: /供应商二 \/ GLM-4.6/ })).toBeTruthy();
   });
 
   it("显示 native generative transport badge", async () => {
@@ -33,7 +62,7 @@ describe("ModelPicker", () => {
       }],
     } as HarnessSettings;
     render(<ModelPicker settings={nativeSettings} activeProfileId="p1" activeModel="glm-4.6" onSelect={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /GLM-4.6/ }));
+    fireEvent.click(screen.getByRole("button", { name: /智谱 \/ GLM-4.6/ }));
     const dialog = await waitFor(() => screen.getByRole("dialog"));
     expect(within(dialog).getByText("google-generative")).toBeTruthy();
   });
@@ -45,9 +74,8 @@ describe("ModelPicker", () => {
     }));
     const big = { profiles: manyProfiles } as unknown as HarnessSettings;
     render(<ModelPicker settings={big} activeProfileId="p0" activeModel="m0" onSelect={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /m0/ }));
+    fireEvent.click(screen.getByRole("button", { name: /厂家0 \/ m0/ }));
     const dialog = await waitFor(() => screen.getByRole("dialog"));
-    // 80 个模型全部渲染（不虚拟化），容器滚动而非撑开
     expect(within(dialog).getAllByRole("button", { name: /m\d+/ })).toHaveLength(80);
     const panes = dialog.querySelectorAll(".overflow-y-auto");
     expect(panes.length).toBeGreaterThanOrEqual(2);

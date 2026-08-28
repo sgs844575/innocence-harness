@@ -85,12 +85,105 @@ describe("useWorkbenchState.ensureTask (C1)", () => {
     expect(taskApiMock.getTask).not.toHaveBeenCalled();
   });
 
-  it("swallows start failures (the chat still works without a task context)", async () => {
-    taskApiMock.start.mockRejectedValue(new Error("no workspace root"));
-    const { result } = renderHook(() => useWorkbenchState({ sessionId: "s1" }));
-    await act(async () => {
-      await result.current.ensureTask("s1");
+  it("does not install a task started for an old session after switching sessions", async () => {
+    let resolveStart: ((value: typeof taskView) => void) | undefined;
+    taskApiMock.start.mockReturnValue(new Promise<typeof taskView>((resolve) => { resolveStart = resolve; }));
+    taskApiMock.getTask.mockResolvedValue(taskView);
+    taskApiMock.listRoutes.mockResolvedValue(routes);
+
+    const { result, rerender } = renderHook(({ sessionId }) => useWorkbenchState({ sessionId }), {
+      initialProps: { sessionId: "s1" as string | null },
     });
+    let pending: Promise<void> | undefined;
+    act(() => { pending = result.current.ensureTask("s1"); });
+    rerender({ sessionId: "s2" });
+    resolveStart?.(taskView);
+    await act(async () => { await pending; });
+
+    expect(result.current.state.sessionId).toBe("s2");
+    expect(result.current.state.task).toBeNull();
+  });
+
+  it("does not install a task loaded for an old session after switching sessions", async () => {
+    taskApiMock.getTask.mockReturnValue(new Promise<typeof taskView>((resolve) => {
+      setTimeout(() => resolve(taskView), 0);
+    }));
+    taskApiMock.listRoutes.mockResolvedValue(routes);
+    const { result, rerender } = renderHook(({ sessionId }) => useWorkbenchState({ sessionId }), {
+      initialProps: { sessionId: "s1" as string | null },
+    });
+    let pending: Promise<void> | undefined;
+    act(() => { pending = result.current.loadTask("t1"); });
+    rerender({ sessionId: "s2" });
+    await act(async () => { await pending; });
+
+    expect(result.current.state.sessionId).toBe("s2");
+    expect(result.current.state.task).toBeNull();
+  });
+
+  // 落地创建（首条消息）：useChatStream.send 在 await ensureSession() 后同一
+  // 微任务内调用 ensureTask，React 尚未提交新 activeId（ref 仍为 null）。
+  it("starts the task with create:true when called before React commits the landing session", async () => {
+    let resolveStart: ((value: typeof taskView) => void) | undefined;
+    taskApiMock.start.mockReturnValue(new Promise<typeof taskView>((resolve) => { resolveStart = resolve; }));
+    taskApiMock.getTask.mockResolvedValue(taskView);
+    taskApiMock.listRoutes.mockResolvedValue(routes);
+
+    const { result, rerender } = renderHook(({ sessionId }) => useWorkbenchState({ sessionId }), {
+      initialProps: { sessionId: null as string | null },
+    });
+    let pending: Promise<void> | undefined;
+    act(() => { pending = result.current.ensureTask("s1"); });
+
+    expect(taskApiMock.start).toHaveBeenCalledWith({ sessionId: "s1", create: true });
+
+    // 提交发生在 task:start 往返期间：ref null → s1 且代际 +1（提交步）。
+    rerender({ sessionId: "s1" });
+    resolveStart?.(taskView);
+    await act(async () => { await pending; });
+
+    expect(result.current.state.sessionId).toBe("s1");
+    expect(result.current.state.task).toMatchObject({ taskId: "t1", sessionId: "s1" });
+    expect(result.current.activeTask).toEqual({ taskId: "t1", routeId: "main" });
+  });
+
+  it("still installs the landing task when React commits during the post-start load", async () => {
+    taskApiMock.start.mockResolvedValue(taskView);
+    let resolveGetTask: ((value: typeof taskView) => void) | undefined;
+    taskApiMock.getTask.mockReturnValue(new Promise<typeof taskView>((resolve) => { resolveGetTask = resolve; }));
+    taskApiMock.listRoutes.mockResolvedValue(routes);
+
+    const { result, rerender } = renderHook(({ sessionId }) => useWorkbenchState({ sessionId }), {
+      initialProps: { sessionId: null as string | null },
+    });
+    let pending: Promise<void> | undefined;
+    await act(async () => { pending = result.current.ensureTask("s1"); });
+
+    // 提交发生在 loadTask（getTask/listRoutes）往返期间。
+    rerender({ sessionId: "s1" });
+    resolveGetTask?.(taskView);
+    await act(async () => { await pending; });
+
+    expect(result.current.state.task).toMatchObject({ taskId: "t1", sessionId: "s1" });
+  });
+
+  it("does not install a landing task when the user switches to another session before commit", async () => {
+    let resolveStart: ((value: typeof taskView) => void) | undefined;
+    taskApiMock.start.mockReturnValue(new Promise<typeof taskView>((resolve) => { resolveStart = resolve; }));
+    taskApiMock.getTask.mockResolvedValue(taskView);
+    taskApiMock.listRoutes.mockResolvedValue(routes);
+
+    const { result, rerender } = renderHook(({ sessionId }) => useWorkbenchState({ sessionId }), {
+      initialProps: { sessionId: null as string | null },
+    });
+    let pending: Promise<void> | undefined;
+    act(() => { pending = result.current.ensureTask("s1"); });
+    // 用户在提交前切到既有会话 s2：落地目标不是 s1，任务不得安装。
+    rerender({ sessionId: "s2" });
+    resolveStart?.(taskView);
+    await act(async () => { await pending; });
+
+    expect(result.current.state.sessionId).toBe("s2");
     expect(result.current.state.task).toBeNull();
   });
 });
