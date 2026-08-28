@@ -11,6 +11,7 @@ import { createAutomationService, type AutomationCandidate, type AutomationServi
 import { createAutomationLifecycle, type AutomationLifecycle } from "./automationLifecycle";
 import { createAutomationStore } from "./automationStore";
 import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
+import { createLazyNotifySink } from "./notifySink";
 import { createAutomationCandidateService, createStructuredOutputPort } from "@innocenceharness/harness-ai-runtime";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { app, dialog, powerMonitor } from "electron";
@@ -77,6 +78,8 @@ function getAutomationService(): AutomationService {
       runtime,
       sessionExists: (sessionId) => sessions.getSession(sessionId) !== undefined,
       taskRouteFor: (sessionId) => sessionTaskRoutes.get(sessionId),
+      notify: createLazyNotifySink(),
+      onNotifyError: (error) => logger.warn("automation notify failed", error),
     }),
   });
   return automationService;

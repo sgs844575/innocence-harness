@@ -1,0 +1,26 @@
+{
+  "name": "@innocenceharness/notify-channel",
+  "version": "0.1.0",
+  "description": "InnocenceHarness notification channel sink: instant-message delivery for automation runs",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:packages": "npm run typecheck",
+    "test": "vitest run --passWithNoTests --maxWorkers=1"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.61.1"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/notify-channel"
+  }
+}

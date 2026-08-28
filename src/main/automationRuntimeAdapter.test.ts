@@ -59,4 +59,50 @@ describe("automation runtime dispatch adapter", () => {
     await done;
     expect(runtime.stop).toHaveBeenCalledWith("session-1", "route-1");
   });
+
+  it("delivers candidate notify actions through the sink after the turn is sent", async () => {
+    const runtime = { send: vi.fn(async () => {}), stop: vi.fn() };
+    const notify = { send: vi.fn().mockResolvedValue(undefined) };
+    const dispatch = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => ({ taskId: "task-1", routeId: "route-1" }),
+      notify,
+    });
+    const candidate = request();
+    candidate.candidate.actions = [
+      { kind: "notify", command: "任务已完成" },
+      { kind: "run-command", command: "npm test" },
+      { kind: "notify", command: "请查看结果" },
+    ];
+    await dispatch.dispatch(candidate);
+    expect(notify.send).toHaveBeenCalledTimes(2);
+    expect(notify.send).toHaveBeenNthCalledWith(1, { title: "自动化 automation-1 已触发", text: "任务已完成" });
+    expect(notify.send).toHaveBeenNthCalledWith(2, { title: "自动化 automation-1 已触发", text: "请查看结果" });
+  });
+
+  it("skips notification without a sink and never fails the dispatch on notify errors", async () => {
+    const runtime = { send: vi.fn(async () => {}), stop: vi.fn() };
+    const onNotifyError = vi.fn();
+    const notify = { send: vi.fn().mockRejectedValue(new Error("channel down")) };
+    const dispatch = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => undefined,
+      notify,
+      onNotifyError,
+    });
+    const candidate = request();
+    candidate.candidate.actions = [{ kind: "notify", command: "任务已完成" }];
+    await dispatch.dispatch(candidate);
+    await vi.waitFor(() => expect(onNotifyError).toHaveBeenCalledTimes(1));
+    expect(onNotifyError.mock.calls[0]![0]).toBeInstanceOf(Error);
+
+    const silent = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => undefined,
+    });
+    await silent.dispatch(candidate);
+  });
 });
