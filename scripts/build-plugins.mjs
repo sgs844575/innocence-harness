@@ -36,9 +36,12 @@ const LIBS = [
 // 实例化分支，client 标记驱动 webview 侧装载链；manifest 内即 toggleable）。
 // default/creation 为 agent 模式插件（kind "agent-mode" 能力类别标记，模式
 // 目录投影用）：default 直装载默认导出，creation 默认导出是工厂，由宿主
-// factoryPlugin 装配（见 pluginBoot/sessionComposition）。staging id 必须与
+// factoryPlugin 装配（见 pluginBoot/sessionComposition）。plan/focus/
+// minimal/learning 为四个单模式插件（B1 模式预设库）：直装载默认导出，
+// 各注册一个同名模式 + 一个模式标签人设片段。staging id 必须与
 // 插件内 AgentsService 注册的模式 id 一致——切换器按清单 id 展示并写入设置，
-// 会话侧按注册 id 解析提示词，两侧不一致会导致选中后静默回落基础提示词。
+// 会话侧按注册 id 解析提示词，两侧不一致会导致选中后静默回落基础提示词
+// （learn 包目录名与模式 id 不同，清单 id 锁死 "learning"）。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -50,6 +53,10 @@ const BUILTIN_DESCRIPTORS = [
   { id: "todo", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
   { id: "creation", kind: "agent-mode", dependencies: [] },
+  { id: "plan", kind: "agent-mode", dependencies: [] },
+  { id: "focus", kind: "agent-mode", dependencies: [] },
+  { id: "minimal", kind: "agent-mode", dependencies: [] },
+  { id: "learning", kind: "agent-mode", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -69,6 +76,10 @@ const PLUGINS = [
   { dir: "packages/provider-mock", id: "provider-mock" },
   { dir: "packages/plugin-agent-default", id: "default" },
   { dir: "packages/plugin-agent-creation", id: "creation" },
+  { dir: "packages/plugin-agent-plan", id: "plan" },
+  { dir: "packages/plugin-agent-focus", id: "focus" },
+  { dir: "packages/plugin-agent-minimal", id: "minimal" },
+  { dir: "packages/plugin-agent-learn", id: "learning" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

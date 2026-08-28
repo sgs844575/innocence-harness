@@ -3,9 +3,13 @@ import { Popover } from "../ui/Popover";
 
 export interface AgentModeOption { id: string; title: string; description?: string; }
 
+/** 内建模式 id（staging 清单的 agent-mode 条目）：label 走 i18n；
+ * plan/focus/minimal/learning 无 .desc 键，descFor 回落目录 description。 */
+const BUILTIN_MODE_IDS = new Set(["default", "creation", "plan", "focus", "minimal", "learning"]);
+
 /** 内置模式用 i18n 显示；用户自建模式显示元数据 title。 */
 export function labelFor(t: (k: string) => string, id: string, options: AgentModeOption[]): string {
-  if (id === "default" || id === "creation") return t(`agentMode.${id}`);
+  if (BUILTIN_MODE_IDS.has(id)) return t(`agentMode.${id}`);
   return options.find((o) => o.id === id)?.title ?? id;
 }
 

@@ -1,0 +1,22 @@
+{
+  "name": "@innocenceharness/plugin-agent-focus",
+  "version": "0.1.0",
+  "description": "InnocenceHarness focus agent mode: single-task deep-dive persona",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@innocenceharness/harness-agent": "^0.1.0",
+    "@innocenceharness/harness-system-prompt": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/plugin-agent-focus"
+  }
+}
