@@ -65,7 +65,13 @@ export async function scanUserPlugins(
       continue;
     }
     const dir = path.join(userRoot, name);
-    const entries = (await readdir(dir)).map((e) => e);
+    let entries: string[];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      warnings.push(`user plugin directory unreadable; skipped: ${name}`);
+      continue;
+    }
     const probe = probes.find((p) => p.matches(entries));
     if (!probe) {
       warnings.push(`user plugin directory has no known format; skipped: ${name}`);

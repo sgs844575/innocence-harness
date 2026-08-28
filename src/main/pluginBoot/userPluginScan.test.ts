@@ -1,8 +1,25 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scanUserPlugins } from "./userPluginScan";
+
+// EACCES 无法跨平台真实构造（Windows chmod 只置只读位、悬空 junction 又被
+// 根级 isDirectory 过滤），故在 IO 缝上定向模拟单个子目录 readdir 失败。
+const failReaddirFor = vi.hoisted(() => ({ dir: null as string | null }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      const target = args[0];
+      if (typeof target === "string" && target === failReaddirFor.dir) {
+        throw Object.assign(new Error(`EACCES: permission denied, scandir '${target}'`), { code: "EACCES" });
+      }
+      return actual.readdir(...args);
+    },
+  };
+});
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), "scanroot-")); });
@@ -33,5 +50,18 @@ describe("scanUserPlugins", () => {
     const { descriptors, warnings } = await scanUserPlugins(root);
     expect(descriptors).toEqual([]);
     expect(warnings.length).toBeGreaterThanOrEqual(2);
+  });
+  it("downgrades a single unreadable subdirectory to a warning without losing other plugins", async () => {
+    plugin("healthy", { name: "healthy", description: "Healthy plugin" });
+    const locked = join(root, "locked");
+    mkdirSync(locked, { recursive: true });
+    failReaddirFor.dir = locked;
+    try {
+      const { descriptors, warnings } = await scanUserPlugins(root);
+      expect(descriptors.map((d) => d.id)).toEqual(["healthy"]);
+      expect(warnings).toEqual([`user plugin directory unreadable; skipped: locked`]);
+    } finally {
+      failReaddirFor.dir = null;
+    }
   });
 });
