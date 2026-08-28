@@ -259,6 +259,13 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
   return { id: value.id, entries: value.entries };
 }
 
+// Factory-only builtins: their staged default export is a factory that needs
+// host-assembled configuration (top-level builtinLoaderEntryFor wiring). A yml
+// group child would bypass that assembly and bare-load the factory function,
+// so declaring them inside a group is rejected here. "reminders" is registered
+// ahead of its factory conversion landing later in this batch.
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders"]);
+
 async function resolveGroupEntries(
   boot: PluginBoot,
   entries: readonly unknown[],
@@ -281,6 +288,10 @@ async function resolveGroupEntries(
     if (options.disabled) {
       resolved.push(options);
       continue;
+    }
+    const childName = options.name ?? options.id;
+    if (FACTORY_ONLY_BUILTINS.has(childName)) {
+      throw new Error(`loader group entry "${ownerId}" declares factory-only builtin "${childName}"; declare it at top level instead`);
     }
     if (options.name === "skills" || options.name === "kernel:skills") {
       options.plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", options.config, workspaceRoot, config));

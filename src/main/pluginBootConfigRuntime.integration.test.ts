@@ -199,6 +199,19 @@ maybeDescribe("plugin boot config and route loader", () => {
     await expect(host.composePlugins(workspace)).resolves.toBeTruthy();
     await host.disposePluginBoot();
   });
+  it("rejects a group child declaring a factory-only builtin", async () => {
+    const workspace = tempRoot("ic-factory-only-group-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  basic:\n    entries:\n      - id: creation\n        name: creation\n",
+      "utf8",
+    );
+    const host = composition();
+    await expect(host.composePlugins(workspace)).rejects.toThrow(/factory-only/);
+    await host.disposePluginBoot();
+  });
+
   it("recursively mounts nested groups and resolves deepest factory children", async () => {
     const workspace = tempRoot("ic-nested-group-project-");
     mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
