@@ -30,7 +30,7 @@ import {
   readManifest,
   type PluginBoot,
 } from "./compose";
-import { scanUserPlugins, type UserPluginScanResult } from "./userPluginScan";
+import { scanUserPlugins, nativeProbe, claudeCodeProbe, type UserPluginScanResult } from "./userPluginScan";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type {
   PluginDescriptor,
@@ -409,6 +409,7 @@ export function createSessionComposition(
   const scanCurrentUserRoot = async (): Promise<UserPluginScanResult> => {
     const scanned = await scanUserPlugins(
       options.getUserPluginRoot?.() ?? defaultUserPluginRoot(),
+      [nativeProbe, claudeCodeProbe],
     );
     for (const warning of scanned.warnings) {
       options.log("warn", "user plugin scan", { warning });
