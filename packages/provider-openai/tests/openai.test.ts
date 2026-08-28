@@ -1,151 +1,132 @@
 import { describe, expect, it } from "vitest";
-import type { ChatRequest } from "@innocenceharness/harness-providers";
-import { toOpenAIBody } from "../src/mapping";
-import { openAIDeltasFromDataLines } from "../src/stream";
-import type { Delta } from "@innocenceharness/harness-providers";
+import type { Message, ProviderModel, ToolSpec } from "@innocenceharness/harness-providers";
+import {
+  createModelFactory,
+  streamOneHarnessStep,
+  type HarnessStepEvent,
+} from "@innocenceharness/harness-ai-runtime";
 
-async function* lines(arr: string[]): AsyncIterable<string> {
-  yield* arr;
-}
+// Full wire frames (SSE `data:` lines) replayed through the shared model
+// runtime — SSE parsing and payload mapping below this boundary belong to
+// the runtime and its protocol stack, not to this package.
+const wire = (frames: string[]): string =>
+  frames.map((frame) => `data: ${frame}`).join("\n\n") + "\n\ndata: [DONE]\n\n";
 
-async function collect(src: string[]): Promise<Delta[]> {
-  const out: Delta[] = [];
-  for await (const d of openAIDeltasFromDataLines(lines(src))) out.push(d);
-  return out;
-}
-
-// Payload strings as parseSSEData yields them (the `data:` prefix is already
-// stripped upstream); the full-path tests cover the prefix-stripping layer.
 const chunk = (o: object) => JSON.stringify(o);
 
-// ---- Recorded-format SSE fixtures -------------------------------------------
-
-const TEXT_ONLY = [
+const TEXT_ONLY = wire([
   chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "你好" }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: { content: "，世界" }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
   chunk({ choices: [{ index: 0, delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 5 } }),
-  "data: [DONE]",
-];
+]);
 
-const TEXT_AND_TOOL = [
+const FRAGMENTED_TOOL = wire([
   chunk({ choices: [{ index: 0, delta: { content: "让我读一下" }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_abc", type: "function", function: { name: "Read", arguments: "" } }] }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":"a' } }] }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '.ts"}' } }] }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }),
-  "data: [DONE]",
-];
+]);
 
-const MULTIPLE_TOOLS = [
+const MULTIPLE_TOOLS = wire([
   chunk({ choices: [{ index: 0, delta: { tool_calls: [
     { index: 0, id: "call_1", type: "function", function: { name: "Read", arguments: '{"path":"x"}' } },
     { index: 1, id: "call_2", type: "function", function: { name: "Grep", arguments: '{"pat' } },
   ] }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 1, function: { arguments: 'tern":"foo"}' } }] }, finish_reason: null }] }),
   chunk({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }),
-  "data: [DONE]",
-];
+]);
 
-const ERROR_STREAM = [
+const ERROR_STREAM = wire([
   chunk({ error: { message: "Incorrect API key provided", type: "invalid_request_error" } }),
-  "data: [DONE]",
-];
+]);
 
-// -----------------------------------------------------------------------------
+const READ_TOOL: ToolSpec = { name: "Read", description: "read", parameters: { type: "object" } };
+const GREP_TOOL: ToolSpec = { name: "Grep", description: "g", parameters: { type: "object" } };
+const USER_READ: Message[] = [{ role: "user", parts: [{ type: "text", text: "读 a.ts" }] }];
 
-describe("openAIDeltasFromDataLines (fixture replay)", () => {
+type ReplayOptions = {
+  sse: string;
+  status?: number;
+  capture?: (url: string, init: RequestInit) => void;
+};
+
+function replayModel({ sse, status = 200, capture }: ReplayOptions): ProviderModel {
+  return createModelFactory().create({
+    providerId: "openai",
+    protocol: "openai",
+    modelId: "gpt-4o",
+    credential: "test-key",
+    fetchImpl: async (url, init) => {
+      capture?.(String(url), init ?? {});
+      return new Response(sse, { status, headers: { "content-type": "text/event-stream" } });
+    },
+  });
+}
+
+async function collect(model: ProviderModel, tools: ToolSpec[] = [READ_TOOL]): Promise<HarnessStepEvent[]> {
+  const events: HarnessStepEvent[] = [];
+  for await (const event of streamOneHarnessStep({
+    model,
+    system: "s",
+    messages: USER_READ,
+    tools,
+  })) {
+    events.push(event);
+  }
+  return events;
+}
+
+describe("OpenAI-compatible wire replay through the shared model runtime", () => {
   it("streams pure text and reports usage", async () => {
-    const deltas = await collect(TEXT_ONLY);
-    expect(deltas).toEqual([
+    const events = await collect(replayModel({ sse: TEXT_ONLY }));
+    expect(events.filter((e) => e.type === "text")).toEqual([
       { type: "text", text: "你好" },
       { type: "text", text: "，世界" },
-      { type: "usage", inputTokens: 10, outputTokens: 5 },
     ]);
+    expect(events.filter((e) => e.type === "usage")).toMatchObject([
+      { type: "usage", usage: { inputTokens: 10, outputTokens: 5 } },
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "finish" });
   });
 
   it("aggregates fragmented tool-call arguments into one complete call", async () => {
-    const deltas = await collect(TEXT_AND_TOOL);
-    expect(deltas[0]).toEqual({ type: "text", text: "让我读一下" });
-    expect(deltas[1]).toEqual({
-      type: "toolCall",
-      id: "call_abc",
-      toolName: "Read",
-      args: { path: "a.ts" },
-    });
-    expect(deltas).toHaveLength(2);
+    const events = await collect(replayModel({ sse: FRAGMENTED_TOOL }));
+    expect(events.filter((e) => e.type === "text")).toEqual([{ type: "text", text: "让我读一下" }]);
+    expect(events.filter((e) => e.type === "toolCall")).toEqual([
+      { type: "toolCall", id: "call_abc", toolName: "Read", args: { path: "a.ts" } },
+    ]);
   });
 
   it("aggregates multiple parallel tool calls in index order", async () => {
-    const deltas = await collect(MULTIPLE_TOOLS);
-    const calls = deltas.filter((d) => d.type === "toolCall");
-    expect(calls.map((c) => (c as { toolName: string }).toolName)).toEqual(["Read", "Grep"]);
+    const events = await collect(replayModel({ sse: MULTIPLE_TOOLS }), [READ_TOOL, GREP_TOOL]);
+    const calls = events.filter((e): e is Extract<HarnessStepEvent, { type: "toolCall" }> => e.type === "toolCall");
+    expect(calls.map((c) => c.toolName)).toEqual(["Read", "Grep"]);
     expect(calls[1]).toMatchObject({ args: { pattern: "foo" } });
   });
 
-  it("throws on in-stream error payloads", async () => {
-    await expect(collect(ERROR_STREAM)).rejects.toThrow("Incorrect API key");
-  });
-});
-
-describe("toOpenAIBody", () => {
-  const req: ChatRequest = {
-    system: "be helpful",
-    tools: [{ name: "Read", description: "read", parameters: { type: "object" } }],
-    messages: [
-      { role: "user", parts: [{ type: "text", text: "读 a.ts" }] },
-      {
-        role: "assistant",
-        parts: [
-          { type: "text", text: "好的" },
-          { type: "toolCall", id: "c1", toolName: "Read", args: { path: "a.ts" } },
-        ],
-      },
-      {
-        role: "user",
-        parts: [
-          { type: "toolResult", toolCallId: "c1", content: "1\thello" },
-          { type: "text", text: "然后呢" },
-        ],
-      },
-    ],
-  };
-
-  it("maps system, tool results to role:tool, tool specs to function format", () => {
-    const body = toOpenAIBody(req, { model: "gpt-4o" }) as Record<string, any>;
-    expect(body.model).toBe("gpt-4o");
-    expect(body.stream).toBe(true);
-    const msgs = body.messages;
-    expect(msgs[0]).toEqual({ role: "system", content: "be helpful" });
-    expect(msgs[1]).toEqual({ role: "user", content: "读 a.ts" });
-    expect(msgs[2].tool_calls[0]).toMatchObject({
-      id: "c1",
-      type: "function",
-      function: { name: "Read", arguments: '{"path":"a.ts"}' },
-    });
-    expect(msgs[3]).toEqual({ role: "tool", tool_call_id: "c1", content: "1\thello" });
-    expect(msgs[4]).toEqual({ role: "user", content: "然后呢" });
-    expect(body.tools[0]).toMatchObject({ type: "function", function: { name: "Read" } });
+  it("surfaces in-stream error payloads as error events", async () => {
+    const events = await collect(replayModel({ sse: ERROR_STREAM }));
+    expect(events.filter((e) => e.type === "error").length).toBeGreaterThan(0);
   });
 
-  it("omits tools when none are provided", () => {
-    const body = toOpenAIBody(
-      { system: "s", tools: [], messages: [{ role: "user", parts: [{ type: "text", text: "hi" }] }] },
-      { model: "m" },
-    ) as Record<string, unknown>;
-    expect("tools" in body).toBe(false);
-  });
-
-  it("reasoning_effort: 设置档位时携带，off/未设置时省略", () => {
-    const base = {
-      system: "s",
-      tools: [],
-      messages: [{ role: "user" as const, parts: [{ type: "text" as const, text: "hi" }] }],
-    };
-    expect(toOpenAIBody(base, { model: "m", reasoningEffort: "high" }).reasoning_effort).toBe("high");
-    // max（GLM 系"最高"）原样透传，由端点解释
-    expect(toOpenAIBody(base, { model: "m", reasoningEffort: "max" }).reasoning_effort).toBe("max");
-    expect(toOpenAIBody(base, { model: "m", reasoningEffort: "off" }).reasoning_effort).toBeUndefined();
-    expect(toOpenAIBody(base, { model: "m" }).reasoning_effort).toBeUndefined();
+  it("hits the chat-completions endpoint with bearer credentials and the requested model", async () => {
+    let capturedURL = "";
+    let capturedInit: RequestInit | undefined;
+    await collect(
+      replayModel({
+        sse: TEXT_ONLY,
+        capture: (url, init) => {
+          capturedURL = url;
+          capturedInit = init;
+        },
+      }),
+    );
+    expect(capturedURL).toBe("https://api.openai.com/v1/chat/completions");
+    expect((capturedInit!.headers as Record<string, string>).authorization).toBe("Bearer test-key");
+    const wireBody = JSON.parse(String(capturedInit!.body));
+    expect(wireBody.model).toBe("gpt-4o");
+    expect(wireBody.messages[0].role).toBe("system");
   });
 });

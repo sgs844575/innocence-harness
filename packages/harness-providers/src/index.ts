@@ -14,7 +14,6 @@ export type {
   TurnMetadata,
   UsageMetadata,
 } from "./types";
-export { parseSSEData } from "./sse";
 export {
   ProvidersPlugin,
   createProviderPlugin,
