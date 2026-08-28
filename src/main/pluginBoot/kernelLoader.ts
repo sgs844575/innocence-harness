@@ -5,6 +5,7 @@
 // type-only imports from the kernel package stay allowed everywhere.
 import { pathToFileURL } from "node:url";
 import type * as KernelModule from "@innocenceharness/kernel";
+import { assertKernelModuleIdentity } from "./kernelIdentity";
 
 /** The kernel surface boot needs (the staged dist's module namespace). */
 export type Kernel = typeof KernelModule;
@@ -31,8 +32,13 @@ export function resetKernelCache(): void {
  */
 export function loadKernel(kernelPath: string): Promise<Kernel> {
   if (!kernelPromise) {
-    const attempt = import(pathToFileURL(kernelPath).href).then(
-      (module: unknown) => module as Kernel,
+    const attempt = (async () => {
+      // 身份与版本门在导入前执行：staging 树指向错误内核/不兼容版本时
+      // 明确失败；该失败发生在 attempt 内，因此同样不被缓存（可重试）。
+      assertKernelModuleIdentity(kernelPath);
+      return (await import(pathToFileURL(kernelPath).href)) as Kernel;
+    })().then(
+      (module: Kernel) => module,
       (error: unknown) => {
         // Only forget OUR attempt: a concurrent success (or a test reset)
         // may have already replaced the memo — never clobber it.
