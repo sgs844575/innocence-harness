@@ -273,7 +273,7 @@ const runtime = new HarnessRuntime({
     return detectProjectTraits({
       platform: {
         os: process.platform,
-        shell: process.platform === "win32" ? "powershell" : "bash",
+        shell: process.platform === "win32" ? "cmd" : "bash",
       },
       rootPackageJson: pkgRaw,
       lockfiles,

@@ -44,12 +44,17 @@ describe("scanUserPlugins", () => {
     expect(mode?.title).toBe("My Mode");
     expect(warnings).toEqual([]);
   });
-  it("skips and warns on broken directories and unsafe ids", async () => {
-    mkdirSync(join(root, "..evil"), { recursive: true }); // 非法段名
+  it("skips and warns on dot-prefixed names and unknown formats with distinct messages", async () => {
+    // 点前缀段名即使含合法 package.json（native 格式命中）也走 unsafe-name
+    // 分支——与装载器/安装器谓词对齐，避免进开关空间后模块解析失败。
+    plugin("..evil", { name: "..evil", description: "dot-dot prefix" });
+    plugin(".hidden", { name: ".hidden", description: "hidden prefix" });
     mkdirSync(join(root, "empty-pkg"), { recursive: true }); // 无 package.json
     const { descriptors, warnings } = await scanUserPlugins(root);
     expect(descriptors).toEqual([]);
-    expect(warnings.length).toBeGreaterThanOrEqual(2);
+    expect(warnings).toContain("user plugin directory has unsafe name; skipped: ..evil");
+    expect(warnings).toContain("user plugin directory has unsafe name; skipped: .hidden");
+    expect(warnings).toContain("user plugin directory has no known format; skipped: empty-pkg");
   });
   it("downgrades a single unreadable subdirectory to a warning without losing other plugins", async () => {
     plugin("healthy", { name: "healthy", description: "Healthy plugin" });

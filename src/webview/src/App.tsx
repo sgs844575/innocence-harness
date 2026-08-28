@@ -66,7 +66,9 @@ export function App(): React.JSX.Element {
   }, []);
 
   // agent 模式目录（agents:modes 通道）：App 组装层拉取，经 props 下发 Composer。
-  const agentModes = useAgentModes(api);
+  // refreshKey 接插件清单状态——清单每次刷新（初载 / plugins:changed 事件 /
+  // 设置提交后的 refresh 链）都换新引用，模式目录随之同时机重拉。
+  const agentModes = useAgentModes(api, pluginInventory);
 
   const commitSettingsPatch = useMemo(
     () => createSettingsCommitter({

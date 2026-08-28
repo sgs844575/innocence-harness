@@ -18,9 +18,10 @@ export interface AgentDef {
 }
 
 /**
- * Agents registry service. Built-in definitions (default/plan/full) are
- * contributed by the host wiring; this service only owns registration and
- * lookup, so any host can register its own set.
+ * Agents registry service. Mode definitions are contributed by plugins
+ * through registration (the packaged mode plugins among them); this
+ * service only owns registration and lookup, so any host can register
+ * its own set.
  */
 export interface AgentsService {
   /** Registers one agent definition; duplicate ids are rejected. */

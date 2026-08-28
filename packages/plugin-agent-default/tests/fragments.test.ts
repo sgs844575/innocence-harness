@@ -48,8 +48,8 @@ describe("conditional fragments & trademark sweep", () => {
       conditionalFragments.map((f) => f.render({ activeMode: "default", traits })).join("");
     expect(text({ test: "vitest" })).toMatch(/vitest/i);
     expect(text({})).not.toMatch(/vitest/i);
-    expect(text({ os: "win32" })).toMatch(/PowerShell/i);
-    expect(text({ os: "linux" })).not.toMatch(/PowerShell/i);
+    expect(text({ os: "win32" })).toMatch(/Windows shell/i);
+    expect(text({ os: "linux" })).not.toMatch(/Windows shell/i);
   });
   it("all exported fragments stay free of banned tokens across modes and trait sets", () => {
     const banned = [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i];

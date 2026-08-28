@@ -10,57 +10,42 @@ import type { PromptFragment } from "@innocenceharness/harness-system-prompt";
  *  vitest suite, desktop Electron application). */
 export const conditionalFragments: PromptFragment[] = [
   {
-    id: "default.conditional.powershell",
+    id: "default.conditional.winshell",
     order: 3000,
     when: (t) => t.os === "win32",
     render: (ctx) => (ctx.traits.os === "win32" ? `# Windows shell notes
 
-On this host the shell tool speaks cmd, and PowerShell is a program you
-opt into by name — \`powershell\` for edition 5.1, \`pwsh\` for 7+ — when a
-task genuinely needs it: registry work, service control, Windows
-management objects, or cmd-unfriendly scripting.
+On this host the shell tool runs commands through cmd, not a POSIX
+shell: quoting, escapes, and the available utilities all differ.
 
-## Editions to keep apart
+## Quoting and escapes
 
-- 5.1 (\`powershell.exe\`) is missing every modern operator: no \`&&\` or
-  \`||\` chaining, no ternary, no null-coalescing, and no null-conditional
-  member access — writing any of them is a parse error. Sequence
-  statements with \`;\`, guard success with \`if ($?)\`, branch with
-  \`if/else\`, and test for emptiness against \`$null\` outright.
-- 7+ (\`pwsh\`) understands all of those and writes UTF-8 with no byte
-  order mark by default. When you cannot tell which edition will execute
-  a script, stay inside the 5.1 subset — it runs under both.
-- Assorted 5.1 traps: pointing \`2>&1\` at a native tool's error stream
-  wraps each line into an error record and counts the pipeline as failed
-  even though the process exited zero, while the tool already collects
-  that stream for you; \`Set-Content\` keeps writing the legacy ANSI
-  codepage unless \`-Encoding utf8\` is passed, which matters the moment
-  another tool reads the file back; and \`ConvertFrom-Json\` yields a
-  \`PSCustomObject\` rather than a hashtable.
+- Double quotes are the quoting character; single quotes are ordinary
+  text. Wrap an argument that contains spaces in double quotes, and
+  escape a literal double quote inside a quoted stretch by doubling it.
+- The caret \`^\` escapes the next character. A \`%\` pair expands
+  variables even inside double quotes, so spell out any literal percent
+  sign deliberately or keep it out of echoed text.
 
-## Quotes and escapes
+## Missing POSIX utilities
 
-- Single-quoted strings are literal — embed one quote by writing it
-  twice (\`'it''s'\`) — and double quotes interpolate, so prefer single
-  quotes around text carrying \`$\` or backticks that must arrive intact.
-- Carry multi-line text in a here-string (\`@'\` opening, \`'@\` closing at
-  column 0) instead of stacking escape sequences.
-- The cmd layer sits underneath: a \`powershell -Command\` line sent
-  through the shell tool is parsed by cmd first, and \`%\` or doubled
-  quotes can shift meaning before PowerShell ever sees them.
+- Pipes (\`|\`), redirection (\`>\` and \`>>\`), and \`&&\` / \`||\` chaining
+  exist; \`grep\`, \`sed\`, \`awk\`, and \`ls\` do not. Reach for the
+  equivalents: \`findstr\` for text search, \`dir\` for listings, and
+  when nothing in cmd fits, a short Node one-liner (\`node -e "…"\`)
+  beats a pile of caret continuations.
 
-## Waiting
+## Paths and long runs
 
-\`Start-Sleep\` gets the same discipline as any other wait: commands that
-are ready go out now; a failing command gets its cause diagnosed, not a
-pause and a repeat; an outside process is polled with a command that
-reports its state; and a pause that cannot be avoided stays a few
-seconds.
-
-Windows and a Linux subsystem sharing one machine stay separate
-environments for configuration: settings travel between them only where
-an explicit flag carries them, and when both sides set a rule, the
-Windows value wins.` : ""),
+- Paths use backslashes and often contain spaces: quote the whole path
+  (\`"C:\\Program Files\\app"\`) instead of relying on the tool to guess
+  where it ends.
+- Give long-running commands — installs, builds, test suites — an
+  explicit generous \`timeoutMs\` rather than letting the default cut
+  them short.
+- Sleeping stays a last resort: issue a ready command now, diagnose a
+  failing one instead of pausing and repeating it, and poll an outside
+  process with a command that reports its actual state.` : ""),
   },
   {
     id: "default.conditional.monorepo",
@@ -70,7 +55,8 @@ Windows value wins.` : ""),
 
 This repository is one npm-workspaces tree: the root manifest holds the
 shared configuration and the lockfile, and each workspace is a package
-under \`packages/<name>\` with its own manifest, sources, and tests.
+under \`packages/<name>\` or \`vendor/<name>\` with its own manifest,
+sources, and tests.
 
 - Find a file's package before acting on it: walk up to the nearest
   \`package.json\` and treat that directory as the unit of scope —

@@ -42,8 +42,9 @@ when its criterion holds; do not start the next step around a gap.
    place under the plugin's id.
 8. **Verify loading.** After installing, tell the user plainly: the plugin
    is picked up the next time a session is built, and it can be switched
-   off in the plugin manifest. Criterion: the user knows how to enable,
-   disable, and revisit the artifact.
+   off in the plugin manifest; a mode plugin also appears in the mode
+   switcher by its manifest \`agentMode\` title. Criterion: the user knows
+   how to enable, disable, and revisit the artifact.
 
 ## No-build user plugin form
 
@@ -51,7 +52,12 @@ A user plugin is a plain directory under the user plugin root
 (\`~/.innocence/plugins/<id>/\`) holding:
 
 - \`package.json\` — name and metadata; no build step, no dependencies to
-  compile.
+  compile. When the plugin contributes an agent mode, this manifest must
+  also carry \`"innocenceharness": { "agentMode": { "title": "..." } }\`:
+  the host reads that block to list the plugin in the mode switcher, and
+  \`title\` is the display name the switcher shows (without the block the
+  plugin still loads, but its mode never reaches the switcher). Plugins
+  that contribute no mode leave the block out.
 - \`dist/index.js\` — the plugin entry as pure ESM JavaScript with a default
   export \`{ name, apply(ctx) }\`; \`apply\` receives the plugin context and
   performs the registrations.

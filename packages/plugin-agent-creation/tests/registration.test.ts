@@ -36,4 +36,10 @@ describe("creation agent mode plugin", () => {
       for (const re of banned) expect(`${f.id}: ${text}`).not.toMatch(re);
     }
   });
+
+  it("documents the manifest agentMode metadata contract for the mode switcher", () => {
+    const text = creationFragments.map((f) => f.render({ activeMode: "creation", traits: {} })).join("\n");
+    expect(text).toContain("innocenceharness");
+    expect(text).toContain("agentMode");
+  });
 });

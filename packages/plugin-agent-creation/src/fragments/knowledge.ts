@@ -34,7 +34,13 @@ surfaces. Pick the one that matches the capability:
   paired with \`ctx.systemPrompt.registerFragment(fragment)\`. Fragments
   carry an id, an \`order\`, an optional \`modes\` tag, an optional \`when\`
   trait predicate, and a \`render(ctx)\`; fragments without a \`modes\` tag
-  load for every mode, tagged ones only for their modes.
+  load for every mode, tagged ones only for their modes. Registration
+  makes the mode resolvable inside sessions; the host-side mode switcher
+  catalogs it from the manifest instead: the plugin's package.json must
+  carry \`"innocenceharness": { "agentMode": { "title": "..." } }\`, where
+  \`title\` is the display name the switcher lists. A plugin without that
+  block is treated as a plain plugin and never reaches the switcher, so
+  every mode plugin must declare it.
 
 ## Manifest and roots
 

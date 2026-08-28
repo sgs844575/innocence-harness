@@ -20,7 +20,9 @@ export interface UserPluginFormatProbe {
 }
 
 function validSegment(value: string): boolean {
-  return value.length > 0 && value.trim() === value && !/[\\/:]/.test(value);
+  // 与装载器 plain-plugin-id / 安装器谓词对齐：拒绝点前缀、路径分隔符、
+  // 首尾空白（"."、".."、".hidden" 一律非法——否则会进开关空间后模块解析失败）。
+  return value.length > 0 && value.trim() === value && !value.startsWith(".") && !/[\\/:]/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
