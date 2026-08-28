@@ -12,26 +12,34 @@ declare module "@innocenceharness/kernel" {
   }
 }
 
-/** Renderable prompt section appended after the base (e.g. an agents section). */
-export interface PromptSection {
-  id: string;
-  order: number;
-  render(): string;
+/** 项目特征（宿主探测注入；只读键值对，如 language:test:framework）。 */
+export interface ProjectTraits {
+  readonly [key: string]: string | undefined;
 }
 
-/**
- * System-prompt spine service: owns the base prompt and ordered extra
- * sections, and assembles the final prompt as
- * base + registered sections (ascending `order`, registration order on
- * ties) + skills index (appendSkillIndex semantics). With no registered
- * section the output is byte-identical to the previous private
- * AgentSession.buildSystemPrompt.
- */
+/** 片段渲染上下文。 */
+export interface PromptContext {
+  activeMode: string;
+  traits: ProjectTraits;
+}
+
+/** 可条件装载的提示词片段。分桶规则（缓存纪律，波动性从低到高）：
+ *  共享桶（无 modes 无 when）→ 模式桶（有 modes 且命中 activeMode，when 可叠加）
+ *  → 条件桶（无 modes 有 when 且命中）→ 技能索引（appendSkillIndex 语义）。
+ *  桶内按 (order, id) 升序；render 为空串则跳过。 */
+export interface PromptFragment {
+  id: string;
+  order?: number;
+  modes?: readonly string[];
+  when?: (traits: ProjectTraits) => boolean;
+  render(ctx: PromptContext): string;
+}
+
 export interface SystemPromptService {
   setBase(prompt: string | undefined): void;
-  registerSection(section: { id: string; order: number; render(): string }): void;
-  /** Assembles base + registered sections + skills index. */
-  build(skills: readonly Skill[]): string;
+  registerFragment(fragment: PromptFragment): void;
+  /** Assembles base + shared + mode + conditional fragments + skills index. */
+  build(skills: readonly Skill[], ctx?: PromptContext): string;
 }
 
 /**
@@ -47,25 +55,36 @@ export const SystemPromptPlugin: {
   name: "harness-system-prompt",
   apply(ctx) {
     let base = "";
-    const sections: PromptSection[] = [];
+    const fragments: PromptFragment[] = [];
+    const DEFAULT_CTX: PromptContext = { activeMode: "default", traits: {} };
 
     const service: SystemPromptService = {
       setBase: (prompt) => {
         base = prompt ?? "";
       },
-      registerSection: (section) => {
-        if (sections.some((s) => s.id === section.id)) {
-          throw new Error(`duplicate prompt section registration: ${section.id}`);
+      registerFragment: (fragment) => {
+        if (fragments.some((f) => f.id === fragment.id)) {
+          throw new Error(`duplicate prompt fragment registration: ${fragment.id}`);
         }
-        sections.push(section);
+        fragments.push(fragment);
       },
-      build: (skills) => {
-        const ordered = sections
-          .map((section, index) => ({ section, index }))
-          .sort((a, b) => a.section.order - b.section.order || a.index - b.index);
+      build: (skills, ctx = DEFAULT_CTX) => {
+        const shared: PromptFragment[] = [];
+        const mode: PromptFragment[] = [];
+        const conditional: PromptFragment[] = [];
+        for (const f of fragments) {
+          const modeHit = !f.modes || f.modes.includes(ctx.activeMode);
+          const traitHit = !f.when || f.when(ctx.traits);
+          if (!modeHit || !traitHit) continue;
+          if (f.modes) mode.push(f);
+          else if (f.when) conditional.push(f);
+          else shared.push(f);
+        }
+        const byOrderThenId = (a: PromptFragment, b: PromptFragment) =>
+          (a.order ?? 0) - (b.order ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
         let prompt = base;
-        for (const { section } of ordered) {
-          const rendered = section.render();
+        for (const f of [...shared.sort(byOrderThenId), ...mode.sort(byOrderThenId), ...conditional.sort(byOrderThenId)]) {
+          const rendered = f.render(ctx);
           if (rendered) prompt = prompt ? `${prompt}\n\n${rendered}` : rendered;
         }
         return appendSkillIndex(prompt, skills);

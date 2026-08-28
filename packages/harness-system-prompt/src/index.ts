@@ -1,5 +1,7 @@
 export {
   SystemPromptPlugin,
-  type PromptSection,
+  type ProjectTraits,
+  type PromptContext,
+  type PromptFragment,
   type SystemPromptService,
 } from "./service";

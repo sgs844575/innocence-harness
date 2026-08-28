@@ -1,4 +1,5 @@
-import type { Skill } from "@innocenceharness/harness-skills";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
+import { SkillsPlugin, type Skill } from "@innocenceharness/harness-skills";
 import { Context } from "@innocenceharness/kernel";
 import {
   SystemPromptPlugin,
@@ -80,46 +81,46 @@ describe("setBase", () => {
   });
 });
 
-describe("registerSection", () => {
-  it("appends sections after the base in ascending order", async () => {
+describe("registerFragment", () => {
+  it("appends fragments after the base in ascending order", async () => {
     const ctx = await withPrompt();
     ctx.systemPrompt.setBase("base");
-    ctx.systemPrompt.registerSection({ id: "agents", order: 20, render: () => "agent 段" });
-    ctx.systemPrompt.registerSection({ id: "early", order: 10, render: () => "早段" });
+    ctx.systemPrompt.registerFragment({ id: "agents", order: 20, render: () => "agent 段" });
+    ctx.systemPrompt.registerFragment({ id: "early", order: 10, render: () => "早段" });
     expect(ctx.systemPrompt.build([])).toBe("base\n\n早段\n\nagent 段");
   });
 
-  it("keeps registration order for equal order values", async () => {
+  it("breaks order ties by ascending fragment id", async () => {
     const ctx = await withPrompt();
     ctx.systemPrompt.setBase("base");
-    ctx.systemPrompt.registerSection({ id: "a", order: 10, render: () => "A" });
-    ctx.systemPrompt.registerSection({ id: "b", order: 10, render: () => "B" });
+    ctx.systemPrompt.registerFragment({ id: "b", order: 10, render: () => "B" });
+    ctx.systemPrompt.registerFragment({ id: "a", order: 10, render: () => "A" });
     expect(ctx.systemPrompt.build([])).toBe("base\n\nA\n\nB");
   });
 
-  it("skips sections that render to an empty string", async () => {
+  it("skips fragments that render to an empty string", async () => {
     const ctx = await withPrompt();
     ctx.systemPrompt.setBase("base");
-    ctx.systemPrompt.registerSection({ id: "empty", order: 0, render: () => "" });
-    ctx.systemPrompt.registerSection({ id: "kept", order: 1, render: () => "kept" });
+    ctx.systemPrompt.registerFragment({ id: "empty", order: 0, render: () => "" });
+    ctx.systemPrompt.registerFragment({ id: "kept", order: 1, render: () => "kept" });
     expect(ctx.systemPrompt.build([])).toBe("base\n\nkept");
   });
 
-  it("places the skills index after every registered section", async () => {
+  it("places the skills index after every registered fragment", async () => {
     const ctx = await withPrompt();
     ctx.systemPrompt.setBase("base");
-    ctx.systemPrompt.registerSection({ id: "agents", order: 10, render: () => "agent 段" });
+    ctx.systemPrompt.registerFragment({ id: "agents", order: 10, render: () => "agent 段" });
     expect(ctx.systemPrompt.build([skill("review", "代码审查指南")])).toBe(
       "base\n\nagent 段\n\n可用技能（用户以 /名称 调用；相关时你也可以建议）：\n- review: 代码审查指南",
     );
   });
 
-  it("rejects duplicate section ids", async () => {
+  it("rejects duplicate fragment ids", async () => {
     const ctx = await withPrompt();
-    ctx.systemPrompt.registerSection({ id: "dup", order: 0, render: () => "x" });
+    ctx.systemPrompt.registerFragment({ id: "dup", order: 0, render: () => "x" });
     expect(() =>
-      ctx.systemPrompt.registerSection({ id: "dup", order: 1, render: () => "y" }),
-    ).toThrow("duplicate prompt section registration: dup");
+      ctx.systemPrompt.registerFragment({ id: "dup", order: 1, render: () => "y" }),
+    ).toThrow("duplicate prompt fragment registration: dup");
   });
 });
 
@@ -145,5 +146,71 @@ describe("system-prompt service lifecycle on the kernel", () => {
     // the detached service object stays usable.
     expect((ctx as { systemPrompt?: SystemPromptService }).systemPrompt).toBeUndefined();
     expect(() => service.setBase("detached")).not.toThrow();
+  });
+});
+
+// Fragments bucket by volatility (shared → mode → conditional → skills
+// index). `ctx.plugin` never runs plugin code synchronously (kernel fiber
+// contract), so the helper awaits each load before touching the service.
+async function makeService(): Promise<SystemPromptService> {
+  const ctx = new Context();
+  await ctx.plugin(ToolsPlugin);
+  await ctx.plugin(SkillsPlugin);
+  await ctx.plugin(SystemPromptPlugin);
+  return ctx.systemPrompt;
+}
+
+describe("fragment assembly", () => {
+  it("buckets by volatility: shared before mode before conditional, then skills index", async () => {
+    const sp = await makeService();
+    sp.setBase("BASE");
+    sp.registerFragment({ id: "c1", when: () => true, render: () => "COND1" });
+    sp.registerFragment({ id: "m1", modes: ["creation"], order: 5, render: () => "MODE-B" });
+    sp.registerFragment({ id: "m0", modes: ["creation", "default"], order: 1, render: () => "MODE-A" });
+    sp.registerFragment({ id: "s1", render: () => "SHARED" });
+    const out = sp.build([], { activeMode: "creation", traits: {} });
+    expect(out.indexOf("SHARED")).toBeLessThan(out.indexOf("MODE-A"));
+    expect(out.indexOf("MODE-A")).toBeLessThan(out.indexOf("MODE-B"));
+    expect(out.indexOf("MODE-B")).toBeLessThan(out.indexOf("COND1"));
+    expect(out.startsWith("BASE")).toBe(true);
+  });
+
+  it("mode fragments load only for the active mode; when-gated fragments respect traits", async () => {
+    const sp = await makeService();
+    sp.registerFragment({ id: "m", modes: ["creation"], render: () => "CREATION-ONLY" });
+    sp.registerFragment({ id: "w", when: (t) => t["test"] === "vitest", render: () => "VITEST" });
+    expect(sp.build([], { activeMode: "default", traits: {} })).not.toContain("CREATION-ONLY");
+    expect(sp.build([], { activeMode: "default", traits: { test: "vitest" } })).toContain("VITEST");
+    expect(sp.build([], { activeMode: "default", traits: {} })).not.toContain("VITEST");
+  });
+
+  it("byte-identical for identical inputs; mode switch preserves the shared prefix", async () => {
+    const sp = await makeService();
+    sp.setBase("BASE");
+    sp.registerFragment({ id: "s", render: () => "SHARED" });
+    sp.registerFragment({ id: "m", modes: ["default"], render: () => "DEFAULT" });
+    sp.registerFragment({ id: "m2", modes: ["creation"], render: () => "CREATION" });
+    const a1 = sp.build([], { activeMode: "default", traits: {} });
+    const a2 = sp.build([], { activeMode: "default", traits: {} });
+    expect(a1).toBe(a2);
+    const c = sp.build([], { activeMode: "creation", traits: {} });
+    const sharedPrefix = "BASE\n\nSHARED";
+    expect(a1.startsWith(sharedPrefix)).toBe(true);
+    expect(c.startsWith(sharedPrefix)).toBe(true);
+  });
+
+  it("sorts within a bucket by (order, id) and skips empty renders", async () => {
+    const sp = await makeService();
+    sp.registerFragment({ id: "b", order: 2, render: () => "B" });
+    sp.registerFragment({ id: "a", order: 2, render: () => "A" });
+    sp.registerFragment({ id: "z", order: 1, render: () => "" });
+    const out = sp.build([], { activeMode: "default", traits: {} });
+    expect(out).toBe("A\n\nB"); // z 渲染为空被跳过；同 order 按 id 升序
+  });
+
+  it("defaults ctx to {activeMode:'default', traits:{}}", async () => {
+    const sp = await makeService();
+    sp.registerFragment({ id: "m", modes: ["default"], render: () => "OK" });
+    expect(sp.build([])).toContain("OK");
   });
 });
