@@ -30,7 +30,7 @@ describe("creation agent mode plugin", () => {
   });
 
   it("fragments carry no banned tokens", () => {
-    const banned = [/Claude/i, /Anthropic/i, /OpenAI/i, /Codex/i];
+    const banned = [/Claude/i, /Anthropic/i, /OpenAI/i, /Codex/i, /ChatGPT/i, /Gemini/i];
     for (const f of creationFragments) {
       const text = f.render({ activeMode: "creation", traits: {} });
       for (const re of banned) expect(`${f.id}: ${text}`).not.toMatch(re);
