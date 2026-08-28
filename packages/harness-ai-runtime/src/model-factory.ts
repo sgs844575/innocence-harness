@@ -3,6 +3,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { ModelRequestOptions, ProviderModel } from "@innocenceharness/harness-providers";
 import { registerModelProtocol } from "./request-options";
+import { resolveModelFetch } from "./proxy-fetch";
 
 export type ProviderProtocol = "openai" | "openai-compatible" | "anthropic" | "google";
 
@@ -73,10 +74,13 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
       const credential = profile.credential?.trim();
       if (!credential) throw new Error("Provider credential is required");
 
+      // Transport selection: injected fetch wins, env-declared proxies get the
+      // env-aware dispatcher, otherwise no fetch override is attached.
+      const transport = resolveModelFetch({ fetchImpl: profile.fetchImpl });
       const options = {
         apiKey: credential,
         ...(profile.baseURL ? { baseURL: profile.baseURL } : {}),
-        ...(profile.fetchImpl ? { fetch: profile.fetchImpl } : {}),
+        ...(transport.fetch ? { fetch: transport.fetch } : {}),
         name: profile.providerId,
       };
       const protocol = toSupportedProtocol(profile.protocol);

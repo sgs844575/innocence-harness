@@ -6,6 +6,12 @@ export {
   type ProviderProtocol,
 } from "./model-factory";
 export { toSdkMessages } from "./message-mapping";
+export {
+  resolveModelFetch,
+  resetModelProxyDispatcher,
+  type ModelFetchOptions,
+  type ModelFetchResolution,
+} from "./proxy-fetch";
 export { streamOneHarnessStep, type HarnessStepEvent, type StreamOneHarnessStepRequest } from "./stream-step";
 export {
   AutomationCandidateSchema,
