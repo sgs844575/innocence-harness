@@ -5,7 +5,7 @@
 // 测试直接以 staging 路径构造，不再需要 electron mock）；测试因此需要
 // 真实 staging 树（npm run build:plugins 产出）；无 staging 的干净检出按
 // packaged-exit 先例设计性跳过。
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,10 +40,14 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
   return root;
 }
 
-// staging manifest 的清单 id 集：六个能力插件（内核原生插件，name 与 id
-// 同名且有实例化分支）+ example（渲染层示例插件：仅清单/投影面，无会话
-// 实例化分支）。provider/task 等由组合层另行装配不进清单。
-const MANIFEST_IDS = ["fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo"] as const;
+// staging manifest 的清单 id 集：能力插件（内核原生插件，name 与 id 同名
+// 且有实例化分支——agent-default 直装载默认导出，agent-creation 默认导出
+// 是工厂、由宿主 factoryPlugin 装配）+ example（渲染层示例插件：仅清单/
+// 投影面，无会话实例化分支）。provider/task 等由组合层另行装配不进清单。
+const MANIFEST_IDS = [
+  "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
+  "agent-default", "agent-creation",
+] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
 maybeDescribe("composePlugins (declarative composition root)", () => {
@@ -81,6 +85,8 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       ssh: "ssh",
       archive: "archive",
       todo: "todo",
+      "agent-default": "agent-default",
+      "agent-creation": "agent-creation",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -108,6 +114,19 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     }
     expect(resolved.active).not.toContain("mcp");
     expect(resolved.active).not.toContain("subagent");
+  });
+
+  it("staging manifest 快照：agent 模式插件登记（kind agent-mode、非 core、无依赖）", () => {
+    const manifest = JSON.parse(
+      readFileSync(path.join(stagingBootPaths().builtinRoot, "manifest.json"), "utf8"),
+    ) as { plugins: Array<{ id: string; kind?: string; core?: boolean; dependencies?: string[] }> };
+    const byId = new Map(manifest.plugins.map((entry) => [entry.id, entry]));
+    for (const id of ["agent-default", "agent-creation"]) {
+      const entry = byId.get(id);
+      expect(entry, `manifest 缺少 "${id}" 条目`).toBeDefined();
+      expect(entry).toMatchObject({ kind: "agent-mode", dependencies: [] });
+      expect(entry?.core ?? false, `"${id}" 必须非 core（可开关）`).toBe(false);
+    }
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------

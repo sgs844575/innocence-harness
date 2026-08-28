@@ -31,6 +31,9 @@ const LIBS = [
 // （core 恒不可关）。可开关的能力插件——provider/task 等由宿主组合层按需
 // 装配，不进 toggle 面；example 为渲染层示例插件（client-only：无会话
 // 实例化分支，client 标记驱动 webview 侧装载链；manifest 内即 toggleable）。
+// agent-default/agent-creation 为 agent 模式插件（kind "agent-mode" 能力
+// 类别标记，模式目录投影用）：default 直装载默认导出，creation 默认导出
+// 是工厂，由宿主 factoryPlugin 装配（见 pluginBoot/sessionComposition）。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -40,6 +43,8 @@ const BUILTIN_DESCRIPTORS = [
   { id: "ssh", dependencies: [] },
   { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
+  { id: "agent-default", kind: "agent-mode", dependencies: [] },
+  { id: "agent-creation", kind: "agent-mode", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -57,6 +62,8 @@ const PLUGINS = [
   { dir: "packages/provider-google", id: "provider-google" },
   { dir: "packages/provider-openai", id: "provider-openai" },
   { dir: "packages/provider-mock", id: "provider-mock" },
+  { dir: "packages/plugin-agent-default", id: "agent-default" },
+  { dir: "packages/plugin-agent-creation", id: "agent-creation" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

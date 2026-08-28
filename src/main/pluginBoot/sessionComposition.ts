@@ -24,7 +24,7 @@ import {
 } from "@innocenceharness/harness-electron";
 import type { Provider } from "@innocenceharness/harness-providers";
 import type { ObjectPlugin } from "@innocenceharness/kernel";
-import { createPluginBoot, type PluginBoot } from "./compose";
+import { createPluginBoot, defaultUserPluginRoot, type PluginBoot } from "./compose";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type { PluginToggleSource } from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
@@ -176,8 +176,8 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp",
-  options: () => { dirs: string[] } | { servers: Record<string, unknown> },
+  id: "skills" | "mcp" | "agent-creation",
+  options: () => { dirs: string[] } | { servers: Record<string, unknown> } | { userRoot: string },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -285,6 +285,7 @@ async function builtinLoaderEntryFor(
   entry: import("@innocenceharness/kernel-loader").EntryOptions,
   config: InnocenceConfig,
   workspaceRoot: string,
+  resolveUserPluginRoot: () => string,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -292,6 +293,12 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
     plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
+  } else if (!entry.disabled && id === "agent-creation") {
+    // Factory builtin like skills/mcp: the staged default export is a factory
+    // needing the host-resolved user plugin root (creation-mode directory
+    // projection target and install_user_plugin destination). Falls back to
+    // the same default root semantics as compose's defaultUserPluginRoot().
+    plugin = factoryPlugin(boot, "agent-creation", () => ({ userRoot: resolveUserPluginRoot() }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
     const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
@@ -391,9 +398,13 @@ export function createSessionComposition(
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
       const plugins: SessionPlugin[] = [];
+      // agent-creation 工厂入参：宿主钩子优先，缺省回落 compose 的
+      // defaultUserPluginRoot()（~/.innocence/plugins，与 boot 解析一致）。
+      const resolveUserPluginRoot = (): string =>
+        options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
-        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot));
+        plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));

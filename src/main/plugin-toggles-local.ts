@@ -22,6 +22,8 @@ export interface PluginDescriptor {
   client?: boolean;
   /** 是否可开关（清单派生：core 恒 false、其余 true；缺省回落 !core）。 */
   toggleable?: boolean;
+  /** 能力类别标记；agent-mode = agent 模式插件（模式目录投影用）。 */
+  kind?: "agent-mode";
 }
 
 export type PluginSkipReason = "disabled-by-config" | "dependency-disabled";

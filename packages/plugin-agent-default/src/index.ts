@@ -1,5 +1,8 @@
 import type { Context } from "@innocenceharness/kernel";
 import type { PromptFragment } from "@innocenceharness/harness-system-prompt";
+// Side-effect type import: pulls the Context service augmentation (ctx.agents)
+// into src-only builds (tsconfig.build.json excludes the test-side imports).
+import type {} from "@innocenceharness/harness-agent";
 import { identityFragments } from "./fragments/identity";
 import { communicationFragments } from "./fragments/communication";
 import { safetyFragments } from "./fragments/safety";
