@@ -148,8 +148,11 @@ export function defaultUserPluginRoot(): string {
   return path.join(os.homedir(), ".innocence", "plugins");
 }
 
-/** Read and validate staging `manifest.json` (build:plugins artifact). */
-async function readManifest(builtinRoot: string): Promise<PluginDescriptor[]> {
+/** Read and validate staging `manifest.json` (build:plugins artifact).
+ *  Exported for the agents:modes catalog projection (sessionComposition):
+ *  the catalog reads the same manifest (resolvePaths-derived builtinRoot)
+ *  instead of a parallel reader. */
+export async function readManifest(builtinRoot: string): Promise<PluginDescriptor[]> {
   const file = path.join(builtinRoot, "manifest.json");
   let parsed: unknown;
   try {
@@ -182,6 +185,9 @@ async function readManifest(builtinRoot: string): Promise<PluginDescriptor[]> {
       ...(typeof descriptor.title === "string" ? { title: descriptor.title } : {}),
       ...(descriptor.client === true ? { client: true } : {}),
       ...(typeof descriptor.toggleable === "boolean" ? { toggleable: descriptor.toggleable } : {}),
+      // 能力类别标记透传：仅认 "agent-mode"（其余值丢弃——白名单只放行
+      // 协议定义的类别，模式目录投影依赖 kind 流到运行时描述符）。
+      ...(descriptor.kind === "agent-mode" ? { kind: descriptor.kind } : {}),
     };
   });
 }

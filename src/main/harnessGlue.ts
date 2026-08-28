@@ -26,7 +26,7 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocenceharness/harness-electron";
-import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc";
+import { IPC, type AgentModeInfo, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
@@ -367,6 +367,13 @@ export async function getPluginInventory(): Promise<PluginInventory> {
     workspaceRoot: settings.workspaceRoot || undefined,
     userToggles: settings.pluginToggles,
   });
+}
+
+/** Agent 模式目录（IPC agents:modes）：staging manifest + 用户根扫描现算
+ *  投影（去重合并、恒含 default 兜底）——与 getPluginInventory 同构，经
+ *  sessionComposition 面现算，不缓存。 */
+export function getAgentModes(): Promise<AgentModeInfo[]> {
+  return sessionComposition.agentModes();
 }
 
 export function setHarnessSettings(next: HarnessSettingsPatch) {

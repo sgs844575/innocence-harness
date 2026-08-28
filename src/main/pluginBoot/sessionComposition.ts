@@ -24,10 +24,20 @@ import {
 } from "@innocenceharness/harness-electron";
 import type { Provider } from "@innocenceharness/harness-providers";
 import type { ObjectPlugin } from "@innocenceharness/kernel";
-import { createPluginBoot, defaultUserPluginRoot, type PluginBoot } from "./compose";
+import {
+  createPluginBoot,
+  defaultUserPluginRoot,
+  readManifest,
+  type PluginBoot,
+} from "./compose";
+import { scanUserPlugins } from "./userPluginScan";
 import type { HostHmrWatcher } from "./hmrWatcher";
-import type { PluginToggleSource } from "../plugin-toggles-local";
+import type {
+  PluginDescriptor,
+  PluginToggleSource,
+} from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
+import type { AgentModeInfo } from "../../shared/ipc";
 
 /** Inputs of {@link createSessionComposition}. */
 export interface SessionCompositionOptions {
@@ -71,6 +81,12 @@ export interface SessionComposition {
     userToggles?: PluginToggleSource,
     settings?: HarnessSettings,
   ): Promise<SessionPlugin[]>;
+  /**
+   * Agent 模式目录（IPC agents:modes）：staging manifest（readManifest，
+   * 含 kind 透传）+ 用户根扫描现算 → projectAgentModes 投影（去重合并、
+   * 恒含 default 兜底）。每次调用现算，不缓存。
+   */
+  agentModes(): Promise<AgentModeInfo[]>;
 }
 
 /** Project permission rules (.innocence/config.json) as a plugin, so the
@@ -315,6 +331,25 @@ async function builtinLoaderEntryFor(
 }
 
 /**
+ * Agent 模式目录投影（IPC agents:modes 载荷源）：manifest 与用户扫描描述
+ * 符去重合并（manifest 优先——同 id 时清单条目胜出），仅保留 kind
+ * "agent-mode" 条目；恒含 default 兜底（无任何模式插件时目录仍可用，
+ * 不与显式 default 描述符重复）。title 缺省回落 id。纯函数、无 IO。
+ */
+export function projectAgentModes(
+  manifest: readonly PluginDescriptor[],
+  userDescriptors: readonly PluginDescriptor[],
+): AgentModeInfo[] {
+  const byId = new Map<string, AgentModeInfo>();
+  for (const descriptor of [...manifest, ...userDescriptors]) {
+    if (descriptor.kind !== "agent-mode" || byId.has(descriptor.id)) continue;
+    byId.set(descriptor.id, { id: descriptor.id, title: descriptor.title ?? descriptor.id });
+  }
+  if (!byId.has("default")) byId.set("default", { id: "default", title: "Default" });
+  return [...byId.values()];
+}
+
+/**
  * Host composition root: one workspace's plugin set — workspace tools,
  * subagents, project permission rules, project skills, MCP servers, the
  * session todo tool and the settings-based provider. Declarative assembly:
@@ -381,7 +416,14 @@ export function createSessionComposition(
       settings?: HarnessSettings,
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
-      const [config, resolved] = await Promise.all([
+      // agent-creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
+      // 缺省回落 compose 的 defaultUserPluginRoot()（~/.innocence/plugins，
+      // 与 boot 的 resolver 双根一致——用户目录可影子覆盖模块本体）。
+      const resolveUserPluginRoot = (): string =>
+        options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
+      // 用户根扫描现算（不缓存，与配置解析并行）：新装插件下次会话构建即
+      // 生效；目录非法/不可读一律降级为告警，不阻断会话装配。
+      const [config, resolved, scanned] = await Promise.all([
         loadInnocenceConfig(workspaceRoot),
         boot.resolveBuiltinSet({
           workspaceRoot,
@@ -391,20 +433,42 @@ export function createSessionComposition(
           logger: (level, msg, data) =>
             options.log(level === "error" ? "error" : "warn", msg, data),
         }),
+        scanUserPlugins(resolveUserPluginRoot()),
       ]);
+      for (const warning of scanned.warnings) {
+        options.log("warn", "user plugin scan", { warning });
+      }
       for (const { id, reason, via } of resolved.skipped) {
         options.log("info", "plugin skipped", { id, reason, via });
       }
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
       const plugins: SessionPlugin[] = [];
-      // agent-creation 工厂入参：宿主钩子优先，缺省回落 compose 的
-      // defaultUserPluginRoot()（~/.innocence/plugins，与 boot 解析一致）。
-      const resolveUserPluginRoot = (): string =>
-        options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
       for (const entry of resolved.entries) {
         if (entry.id === "example" || entry.disabled) continue;
         plugins.push(await builtinLoaderEntryFor(boot, entry, config, workspaceRoot, resolveUserPluginRoot));
+      }
+      // 扫描描述符并入（manifest id 优先去重）：清单未覆盖的用户插件按同一
+      // loader 条目形状追加——经 boot 的双根 resolver 从磁盘装载（用户根在
+      // 前）。同 id 时 manifest 描述符胜出（用户目录对模块本体的影子覆盖由
+      // resolver 根序保证，不在此重复建条目）；扫描条目暂不参与 toggles/
+      // configs 层解析（键空间仍为清单派生，设置面清单投影亦为清单面）。
+      const manifestIds = new Set(
+        resolved.entries
+          .filter((entry) => entry.name !== "kernel:group")
+          .map((entry) => entry.id),
+      );
+      for (const descriptor of scanned.descriptors) {
+        if (manifestIds.has(descriptor.id)) continue;
+        plugins.push(
+          await builtinLoaderEntryFor(
+            boot,
+            { id: descriptor.id, name: descriptor.id },
+            config,
+            workspaceRoot,
+            resolveUserPluginRoot,
+          ),
+        );
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
@@ -412,6 +476,19 @@ export function createSessionComposition(
       // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(await buildProviderFromSettings(boot, settings ?? DEFAULT_SETTINGS)));
       return plugins;
+    },
+    async agentModes(): Promise<AgentModeInfo[]> {
+      // 现算：manifest（readManifest 与 boot 同一读取路径，kind 已透传）+
+      // 用户根扫描（并行）→ 投影。不缓存：新装模式插件下次目录拉取即生效。
+      const { builtinRoot } = options.resolvePaths();
+      const [manifest, scanned] = await Promise.all([
+        readManifest(builtinRoot),
+        scanUserPlugins(options.getUserPluginRoot?.() ?? defaultUserPluginRoot()),
+      ]);
+      for (const warning of scanned.warnings) {
+        options.log("warn", "user plugin scan", { warning });
+      }
+      return projectAgentModes(manifest, scanned.descriptors);
     },
   };
 }

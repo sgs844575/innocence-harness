@@ -23,10 +23,15 @@ function tempRoot(prefix: string): string {
   return root;
 }
 
+// 密闭性：composePlugins 现算扫描用户根（缺省回落 ~/.innocence/plugins），
+// 集成断言不得依赖开发机内容——钉死为不存在的路径（扫描结果恒空）。
+const noUserPluginsRoot = path.join(tmpdir(), "ic-no-user-plugins");
+
 function composition(log: (message: string) => void = () => {}) {
   return createSessionComposition({
     resolvePaths: () => paths,
     getWorkspaceRoot: () => undefined,
+    getUserPluginRoot: () => noUserPluginsRoot,
     log: (_level, message) => log(message),
   });
 }
@@ -87,6 +92,7 @@ maybeDescribe("plugin boot config and route loader", () => {
       const host = createSessionComposition({
         resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
         getWorkspaceRoot: () => undefined,
+        getUserPluginRoot: () => noUserPluginsRoot,
         log: () => {},
       });
       const boot = await host.ensureBoot();
@@ -160,6 +166,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     const host = createSessionComposition({
       resolvePaths: () => paths,
       getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => noUserPluginsRoot,
       log: (_level, message) => warnings.push(message),
     });
     await host.composePlugins(workspace);
@@ -186,6 +193,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     const host = createSessionComposition({
       resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
       getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => noUserPluginsRoot,
       log: () => {},
     });
     await expect(host.composePlugins(workspace)).resolves.toBeTruthy();
@@ -237,6 +245,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     const host = createSessionComposition({
       resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
       getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => noUserPluginsRoot,
       log: () => {},
     });
     const boot = await host.ensureBoot();
@@ -272,6 +281,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     const host = createSessionComposition({
       resolvePaths: () => ({ kernelPath: paths.kernelPath, builtinRoot: pluginRoot }),
       getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => noUserPluginsRoot,
       log: (_level, message) => logs.push(message),
     });
     const boot = await host.ensureBoot();

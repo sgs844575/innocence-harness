@@ -37,6 +37,8 @@ export const IPC = {
   // 插件清单投影（1c）：main 按当前 toggles 现算的 manifest 投影。
   pluginsList: "plugins:list",
   pluginsChanged: "plugins:changed",
+  // Agent 模式目录（任务 13）：main 按 manifest + 用户根扫描现算的模式目录。
+  agentsModes: "agents:modes",
   // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
   skillsDiscover: "skills:discover",
   skillsImport: "skills:import",
@@ -403,6 +405,8 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   setProviderApiKey(profileId: string, apiKey: string): Promise<HarnessSettings>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;
+  /** Agent 模式目录（main 按 manifest + 用户根扫描现算；恒含 default）。 */
+  listAgentModes(): Promise<AgentModeInfo[]>;
   /** Fired after a development plugin client reload request. */
   onPluginsChanged(cb: () => void): () => void;
   /** 外部技能发现清单（main 探测已知外部智能体目录）。 */

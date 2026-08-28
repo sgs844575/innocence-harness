@@ -19,6 +19,9 @@ const maybeDescribe = stagingAvailable ? describe : describe.skip;
 const composition = createSessionComposition({
   resolvePaths: stagingBootPaths,
   getWorkspaceRoot: () => undefined,
+  // 密闭性：composePlugins 现算扫描用户根，组合级计数断言不得依赖开发机
+  // 的 ~/.innocence/plugins 内容——钉死为不存在的路径（扫描结果恒空）。
+  getUserPluginRoot: () => path.join(tmpdir(), "ic-compose-no-user-plugins"),
   log: () => {},
 });
 const composePlugins = (workspaceRoot: string, userToggles?: { subagent?: boolean; skills?: boolean; mcp?: boolean; todo?: boolean }) =>
@@ -177,6 +180,109 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       via: "user",
     });
     expect(entries.find((e) => e.id === "mcp")?.state).toBe("active");
+  });
+});
+
+// ---- 用户根扫描并入装配（任务 13）----------------------------------------
+// 独立组合根：getUserPluginRoot 指向伪用户根（原生格式目录），验证扫描描
+// 述符并入 composePlugins 产出、manifest id 冲突时清单胜出、扫描告警进
+// 宿主日志，以及 agents:modes 目录投影（readManifest kind 透传端到端）。
+maybeDescribe("composePlugins user-root scan merge", () => {
+  function scanComposition(userPlugins: Record<string, Record<string, unknown>>) {
+    const userRoot = mkdtempSync(path.join(tmpdir(), "ic-user-plugins-"));
+    roots.push(userRoot);
+    for (const [id, pkg] of Object.entries(userPlugins)) {
+      mkdirSync(path.join(userRoot, id, "dist"), { recursive: true });
+      writeFileSync(path.join(userRoot, id, "package.json"), JSON.stringify(pkg), "utf8");
+      writeFileSync(
+        path.join(userRoot, id, "dist", "index.js"),
+        `export default { name: ${JSON.stringify(id)}, apply() {} };`,
+        "utf8",
+      );
+    }
+    return createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => userRoot,
+      enableHmrWatcher: false,
+      log: () => {},
+    });
+  }
+
+  it("scanned native user plugins join the composed session entries", async () => {
+    const composition = scanComposition({
+      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode" } } },
+    });
+    try {
+      const ws = await tempWorkspace({});
+      const names = (await composition.composePlugins(ws)).map((p) => p.name);
+      expect(names.filter((n) => n === "my-user-mode")).toHaveLength(1);
+      expect(names).toContain("fs"); // 内置集不受扫描并入影响
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("manifest descriptor wins on id collision: single entry, manifest toggle semantics", async () => {
+    const composition = scanComposition({
+      // 与清单同 id：manifest 描述符胜出——条目唯一，toggle 语义随 manifest
+      // （用户目录对模块本体的影子覆盖由 resolver 根序保证，不在此复活）。
+      mcp: { name: "mcp", innocenceharness: { agentMode: { title: "Shadow MCP" } } },
+    });
+    try {
+      const ws = await tempWorkspace({});
+      const on = (await composition.composePlugins(ws)).map((p) => p.name);
+      expect(on.filter((n) => n === "mcp")).toHaveLength(1);
+      const off = (await composition.composePlugins(ws, { mcp: false })).map((p) => p.name);
+      expect(off).not.toContain("mcp");
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("scan warnings surface through the composition log sink", async () => {
+    const userRoot = mkdtempSync(path.join(tmpdir(), "ic-user-plugins-"));
+    roots.push(userRoot);
+    mkdirSync(path.join(userRoot, "no-format"), { recursive: true }); // 无已知格式 → 告警
+    const logged: Array<[string, string, unknown]> = [];
+    const composition = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => userRoot,
+      enableHmrWatcher: false,
+      log: (level, msg, data) => logged.push([level, msg, data]),
+    });
+    try {
+      const ws = await tempWorkspace({});
+      await composition.composePlugins(ws);
+      expect(logged).toContainEqual([
+        "warn",
+        "user plugin scan",
+        { warning: expect.stringContaining("no known format") },
+      ]);
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("agentModes: manifest kind passthrough + scanned user mode + default fallback", async () => {
+    const composition = scanComposition({
+      "my-user-mode": { name: "my-user-mode", innocenceharness: { agentMode: { title: "My User Mode" } } },
+    });
+    try {
+      const modes = await composition.agentModes();
+      const byId = new Map(modes.map((m) => [m.id, m]));
+      // readManifest kind 透传端到端：内置模式插件经白名单重建仍带 kind，
+      // 否则 agent-default/agent-creation 会从目录中消失。
+      expect(byId.get("agent-default")).toBeDefined();
+      expect(byId.get("agent-creation")).toBeDefined();
+      // 扫描并入：用户模式进目录，title 取 package.json 投影。
+      expect(byId.get("my-user-mode")).toMatchObject({ id: "my-user-mode", title: "My User Mode" });
+      // 兜底恒在。
+      expect(byId.get("default")).toEqual({ id: "default", title: "Default" });
+    } finally {
+      await composition.disposePluginBoot();
+    }
   });
 });
 

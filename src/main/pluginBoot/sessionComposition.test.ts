@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, resolveStagedProvider } from "./sessionComposition";
+import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider } from "./sessionComposition";
+import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
 
 function settingsFor(profile: HarnessSettings["profiles"][number]): HarnessSettings {
@@ -108,6 +109,41 @@ describe("resolveStagedProvider", () => {
       reasoningEffort: undefined,
     });
     expect(provider.model).toEqual(model("google-native", "gemini-2.5-pro"));
+  });
+});
+
+describe("projectAgentModes (agents:modes catalog projection)", () => {
+  const mode = (id: string, title?: string): PluginDescriptor => ({
+    id,
+    dependencies: [],
+    ...(title ? { title } : {}),
+    kind: "agent-mode",
+  });
+  const plain = (id: string): PluginDescriptor => ({ id, dependencies: [] });
+
+  it("merges manifest and scanned descriptors with manifest priority, agent-mode kind only", () => {
+    const manifest = [mode("agent-default", "Manifest Default"), plain("fs"), mode("custom", "Manifest Custom")];
+    const user = [mode("custom", "User Custom"), mode("my-mode", "My Mode"), plain("user-tool")];
+    const modes = projectAgentModes(manifest, user);
+    expect(modes.map((m) => m.id)).toEqual(["agent-default", "custom", "my-mode", "default"]);
+    // 同 id 冲突：manifest 条目胜出（title 取 manifest 描述符）。
+    expect(modes.find((m) => m.id === "custom")?.title).toBe("Manifest Custom");
+    expect(modes.find((m) => m.id === "my-mode")?.title).toBe("My Mode");
+  });
+
+  it("falls back to the descriptor id when no title is present", () => {
+    const modes = projectAgentModes([mode("untitled")], []);
+    expect(modes.find((m) => m.id === "untitled")?.title).toBe("untitled");
+  });
+
+  it("always contains the default fallback entry", () => {
+    expect(projectAgentModes([], [])).toEqual([{ id: "default", title: "Default" }]);
+  });
+
+  it("keeps an explicit default descriptor instead of appending a duplicate", () => {
+    const modes = projectAgentModes([mode("default", "Built-in Default")], [mode("extra")]);
+    expect(modes.filter((m) => m.id === "default")).toHaveLength(1);
+    expect(modes.find((m) => m.id === "default")?.title).toBe("Built-in Default");
   });
 });
 

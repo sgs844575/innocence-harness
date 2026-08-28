@@ -11,6 +11,7 @@ import { TaskIpcChannels } from "../shared/taskIpc";
 import { broadcastTheme, getTheme, setTheme } from "./theme";
 import * as sessions from "./sessions";
 import {
+  getAgentModes,
   getCommittedHarnessSettings,
   getHarnessSettings,
   getPluginInventory,
@@ -160,6 +161,8 @@ export function registerIpcHandlers(): void {
   );
   // 插件清单投影：main 按当前 toggles 现算（无 boot 时阻塞到 boot 完成）。
   ipcMain.handle(IPC.pluginsList, () => getPluginInventory());
+  // Agent 模式目录：manifest 直读 + 用户根扫描现算（无 boot 依赖）。
+  ipcMain.handle(IPC.agentsModes, () => getAgentModes());
   ipcMain.handle(IPC.automationCandidate, (_e, prompt: string) => generateAutomationCandidate(prompt));
   ipcMain.handle(IPC.automationConfirm, (_e, request) => confirmAutomation(request.candidate, request.name, request.targetSessionId));
   ipcMain.handle(IPC.automationUpdate, (_e, request) => updateAutomation(
