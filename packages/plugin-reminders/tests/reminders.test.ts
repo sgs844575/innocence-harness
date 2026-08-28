@@ -6,13 +6,15 @@ function makeMessage(text: string) {
   return { role: "user" as const, parts: [{ type: "text" as const, text }] };
 }
 const provider = { id: "anthropic" };
-function makeContext() {
+function makeContext(sessionId = "s") {
   return {
     provider,
     signal: new AbortController().signal,
-    scope: { sessionId: "s" },
+    scope: { sessionId },
   } as never;
 }
+const textOf = (m: { parts: Array<{ type: string; text?: string }> }) =>
+  m.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
 
 describe("reminder processor", () => {
   it("registers a single processor named reminders at order 900", () => {
@@ -51,11 +53,31 @@ describe("reminder processor", () => {
     const processor = processors[0];
     const normal = makeMessage("go");
     await processor.process(normal, makeContext());
-    expect(normal.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n")).not.toMatch(/planning permission|plan mode/i);
+    expect(textOf(normal)).not.toMatch(/planning permission|plan mode/i);
     permissionMode = "plan";
     const planned = makeMessage("go2");
     await processor.process(planned, makeContext());
-    expect(planned.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n")).toMatch(/planning permission|plan mode/i);
+    expect(textOf(planned)).toMatch(/planning permission|plan mode/i);
+  });
+
+  it("keeps the plan-permission reminder inside the session that first used the processor", async () => {
+    // Child sessions inherit the parent's identical processor instances
+    // (subagent spawner), and the child's run passes through the same
+    // processUserInput pipeline — so plan-mode gating must be per session,
+    // not per plugin instance. The parent (first user of the instance)
+    // keeps the reminder; an inherited child session does not, while the
+    // provider-context reminder still applies to it.
+    const plugin = createRemindersPlugin({ getPermissionMode: () => "plan" });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const processor = processors[0];
+    const parent = makeMessage("go");
+    await processor.process(parent, makeContext("parent"));
+    expect(textOf(parent)).toMatch(/planning permission|plan mode/i);
+    const child = makeMessage("research this and return findings");
+    await processor.process(child, makeContext("child"));
+    expect(textOf(child)).not.toMatch(/planning permission|plan mode/i);
+    expect(textOf(child)).toMatch(/provider/i);
   });
 
   it("does not mutate the original user text part", async () => {
@@ -69,7 +91,7 @@ describe("reminder processor", () => {
 
   it("templates are English and banned-token free", () => {
     for (const t of reminderTemplates) {
-      const text = t.render({ provider, permissionMode: "plan", firstTurn: true });
+      const text = t.render({ provider, permissionMode: "plan", firstTurn: true, ownerSession: true });
       expect(text).not.toMatch(/[\u4e00-\u9fff]/);
       for (const re of [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i]) {
         expect(text).not.toMatch(re);

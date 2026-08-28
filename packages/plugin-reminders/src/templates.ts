@@ -12,6 +12,14 @@ export interface ReminderState {
   permissionMode: string;
   /** True only for the first user turn of this session. */
   firstTurn: boolean;
+  /**
+   * True when this turn's session is the one that first used this processor
+   * instance (the session that owns it). False for inherited child sessions
+   * (the subagent spawner registers the parent's identical processor
+   * instances into child sessions, whose runs pass through the same
+   * pipeline) — session-scoped reminders must not fire there.
+   */
+  ownerSession: boolean;
 }
 
 export interface ReminderTemplate {
@@ -30,10 +38,11 @@ const providerContextTemplate: ReminderTemplate = {
   when: () => true,
   render: () =>
     "The model request behind this turn is served by the session's active provider, " +
-    "which may not be that vendor's primary endpoint. Capabilities differ between " +
-    "providers, so let the tools and features actually exposed in this session define " +
-    "what you attempt. Treat any capability that has not been offered here as " +
-    "unavailable, and avoid presuming support you have not seen demonstrated.",
+    "and it may not travel through the primary endpoint of the vendor behind that " +
+    "provider. Capabilities differ between providers, so let the tools and features " +
+    "actually exposed in this session define what you attempt. Treat any capability " +
+    "that has not been offered here as unavailable, and avoid presuming support you " +
+    "have not seen demonstrated.",
 };
 
 // External trust boundary (source: system-reminder-external-source-trust-boundary.md).
@@ -51,10 +60,13 @@ const externalTrustBoundaryTemplate: ReminderTemplate = {
 
 // Plan permission active (sources: system-reminder-plan-mode-is-active.md plus
 // the "wait for approval" semantics of system-reminder-plan-mode-approval-tool-enforcement.md,
-// generalized to neutral wording).
+// generalized to neutral wording). Session-gated: child sessions inherit the
+// parent's processor instances but run under a return-findings contract, where
+// "present a plan and wait for approval" would be a misdirected instruction —
+// so the reminder fires only in the session that first used the instance.
 const planPermissionActiveTemplate: ReminderTemplate = {
   id: "plan-permission-active",
-  when: (state) => state.permissionMode === "plan",
+  when: (state) => state.permissionMode === "plan" && state.ownerSession,
   render: () =>
     "This conversation is running under planning permission. Restrict yourself to " +
     "investigation and plan preparation: do not modify files and do not run commands " +

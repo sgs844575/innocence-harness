@@ -44,20 +44,34 @@ function envelope(body: string): string {
  * the outbound turn and its stored history). The first-turn flag lives in
  * this closure, and the plugin instance is created per session composition
  * (host `pluginsForSession`), so the flag is session-scoped by construction.
+ *
+ * Child sessions inherit the parent's identical processor instances (the
+ * subagent spawner passes `inherit.processors` into the child session
+ * factory), and their runs pass through the same processUserInput pipeline —
+ * so instance-scoped state alone is NOT session-scoped. The first-seen
+ * session id below therefore gates session-scoped reminders: the plan
+ * reminder only fires in the session that first used this instance, never
+ * in an inherited child session (whose contract is "return findings", not
+ * "present a plan for approval"). The provider-context reminder applies to
+ * child turns as well (their requests are served by the same provider), and
+ * the trust boundary is already consumed by the parent's first turn.
  */
 export function createRemindersPlugin(options: RemindersPluginOptions): RemindersPlugin {
   return {
     name: "reminders",
     apply(ctx) {
       let firstTurn = true;
+      let firstSessionId: string | undefined;
       ctx.session.registerProcessor({
         name: "reminders",
         order: REMINDERS_PROCESSOR_ORDER,
         async process(message: Message, context: MessageProcessorContext): Promise<Message> {
+          firstSessionId ??= context.scope.sessionId;
           const state: ReminderState = {
             provider: { id: context.provider?.id ?? "unknown" },
             permissionMode: options.getPermissionMode(),
             firstTurn,
+            ownerSession: context.scope.sessionId === firstSessionId,
           };
           firstTurn = false;
           for (const template of reminderTemplates) {
