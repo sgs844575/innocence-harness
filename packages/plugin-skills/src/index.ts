@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import type { Context } from "@innocenceharness/kernel";
 import type { Skill } from "@innocenceharness/harness-skills";
 import type { Message, MessagePart } from "@innocenceharness/harness-session";
@@ -20,18 +21,29 @@ export interface ParsedSkillFile {
 }
 
 /**
- * Parses a SKILL.md file: `---`-delimited frontmatter with simple
- * `key: value` lines (name, description), body after the closing fence.
+ * Parses a SKILL.md file: `---`-delimited YAML frontmatter (name,
+ * description), body after the closing fence. Malformed frontmatter
+ * degrades to null — the entry is skipped, never fatal.
  */
 export function parseSkillMarkdown(raw: string): ParsedSkillFile | null {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!match) return null;
-  const frontmatter = match[1];
-  const body = match[2];
-  const name = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim();
-  const description = /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim();
+  let meta: unknown;
+  try {
+    meta = parseYaml(match[1]);
+  } catch {
+    return null;
+  }
+  const name = stringField(meta, "name");
+  const description = stringField(meta, "description");
   if (!name || !description) return null;
-  return { name, description, body: body.trim() };
+  return { name, description, body: match[2].trim() };
+}
+
+function stringField(meta: unknown, key: string): string | undefined {
+  if (typeof meta !== "object" || meta === null) return undefined;
+  const value = (meta as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
 async function loadSkillFrom(dir: string, entry: string): Promise<Skill | null> {

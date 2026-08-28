@@ -5,6 +5,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 /** A skill discovered in a known external agent directory. */
 export interface DiscoveredSkill {
@@ -94,8 +95,19 @@ async function discoverEntry(
   if (raw === null) return null;
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
   if (!match) return null;
-  const name = /^name:\s*(.+)$/m.exec(match[1])?.[1]?.trim();
-  const description = /^description:\s*(.+)$/m.exec(match[1])?.[1]?.trim();
+  let meta: unknown;
+  try {
+    meta = parseYaml(match[1]);
+  } catch {
+    return null;
+  }
+  const field = (key: string): string | undefined => {
+    if (typeof meta !== "object" || meta === null) return undefined;
+    const value = (meta as Record<string, unknown>)[key];
+    return typeof value === "string" ? value.trim() : undefined;
+  };
+  const name = field("name");
+  const description = field("description");
   if (!name || !description) return null; // malformed — degraded skip
   return {
     name,
