@@ -8,6 +8,7 @@ import {
 } from "../../../shared/ipc";
 import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
+import { AgentModePicker, type AgentModeOption } from "./composer/AgentModePicker";
 import { ThinkingEffortPicker } from "./composer/ThinkingEffortPicker";
 
 interface Props {
@@ -22,6 +23,8 @@ interface Props {
   companionGap?: number;
   streaming: boolean;
   settings: HarnessSettings | null;
+  /** agent 模式目录（缺省回落仅内置 default，App 层经 useAgentModes 注入）。 */
+  agentModes?: AgentModeOption[];
   onSettingsChange: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -43,6 +46,7 @@ export function Composer({
   companionGap = 0,
   streaming,
   settings,
+  agentModes,
   onSettingsChange,
   onSend,
   onStop,
@@ -128,6 +132,12 @@ export function Composer({
               t={t}
               value={settings?.permissionMode ?? "ask"}
               onChange={(mode) => onSettingsChange({ permissionMode: mode })}
+            />
+            <AgentModePicker
+              t={t}
+              value={settings?.activeAgentMode ?? "default"}
+              options={agentModes ?? [{ id: "default", title: "Default" }]}
+              onChange={(mode) => onSettingsChange({ activeAgentMode: mode })}
             />
             {composerMode === "existing" && (
               <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-(--color-app-muted)" aria-label="上下文数量">

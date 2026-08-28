@@ -4,6 +4,7 @@ import { MessageItem, type ForkMessageCommand, type TaskChangeCardCommand } from
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
 import { ProjectPicker, type RecentProject } from "./composer/ProjectPicker";
+import type { AgentModeOption } from "./composer/AgentModePicker";
 import { ConversationHeader } from "./chat/ConversationHeader";
 import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
 import type { AgentActivityProjection } from "./context-capsule/activityProjection";
@@ -18,6 +19,8 @@ interface Props {
   messages: ChatMessage[];
   streaming: boolean;
   settings: HarnessSettings | null;
+  /** agent 模式目录（App 层 useAgentModes 拉取，透传 Composer）。 */
+  agentModes?: AgentModeOption[];
   permission: ChatPermissionEvent | null;
   onSettingsChange: (patch: Partial<HarnessSettings>) => void;
   onPermissionRespond: (requestId: string, choice: PermissionChoice) => void;
@@ -49,6 +52,7 @@ export function ChatView({
   messages,
   streaming,
   settings,
+  agentModes,
   permission,
   onSettingsChange,
   onPermissionRespond,
@@ -140,6 +144,7 @@ export function ChatView({
               mode="landing"
               streaming={streaming}
               settings={settings}
+              agentModes={agentModes}
               onSettingsChange={onSettingsChange}
               onSend={onSend}
               onStop={onStop}
@@ -236,6 +241,7 @@ export function ChatView({
         companionGap={companionGap}
         streaming={streaming}
         settings={settings}
+        agentModes={agentModes}
         onSettingsChange={onSettingsChange}
         onSend={onSend}
         onStop={onStop}

@@ -34,6 +34,7 @@ import { useChatWorkspacePresentation } from "./state/useChatWorkspacePresentati
 import { useAppNavigation } from "./state/useAppNavigation";
 import { writeToolsBlocked } from "./state/workbenchState";
 import { createSettingsCommitter } from "./state/settingsCommitter";
+import { useAgentModes } from "./state/agentModes";
 import { diffSettingsSnapshot } from "../../shared/settingsPatch";
 
 const APP_NAME = "InnocenceHarness";
@@ -63,6 +64,9 @@ export function App(): React.JSX.Element {
     void api.getAppInfo().then(setAppInfo);
     void api.getHarnessSettings().then(setSettings);
   }, []);
+
+  // agent 模式目录（agents:modes 通道）：App 组装层拉取，经 props 下发 Composer。
+  const agentModes = useAgentModes(api);
 
   const commitSettingsPatch = useMemo(
     () => createSettingsCommitter({
@@ -305,6 +309,7 @@ export function App(): React.JSX.Element {
             messages={chat.messages}
             streaming={chat.streaming}
             settings={settings}
+            agentModes={agentModes}
             permission={chat.permission}
             onSettingsChange={applySettingsPatch}
             onPermissionRespond={chat.respondPermission}
