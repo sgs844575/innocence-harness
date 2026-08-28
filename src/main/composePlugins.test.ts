@@ -55,9 +55,11 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // 向 skills 脊柱服务注册六个常驻技能。reminders 为消息侧提醒注入插件：
 // 默认导出是工厂（同 creation 形态），由宿主 factoryPlugin 装配并传入
 // settings 通道的许可档 getter（仿 creation 的映射与计数同步）。
+// reference 为按需参考资料工具插件：默认导出即插件对象（name 同 id），
+// 向 tools 服务注册只读 read_reference（四个内置参考条目的固定目录）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "builtin-skills", "reminders",
+  "reference", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
@@ -97,6 +99,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       ssh: "ssh",
       archive: "archive",
       todo: "todo",
+      reference: "reference",
       "builtin-skills": "builtin-skills",
       reminders: "reminders",
       default: "default",
@@ -156,6 +159,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(builtinSkillsEntry?.core ?? false, '"builtin-skills" 必须非 core（可开关）').toBe(false);
     expect(builtinSkillsEntry?.kind).toBeUndefined();
     expect(builtinSkillsEntry?.title, '"builtin-skills" 缺 title').toMatch(/\S/);
+    // 按需参考资料工具插件：普通能力插件（非 core、无依赖、无 kind），
+    // 默认导出即插件对象——通用装载链直装载，name 与 staging id 同名。
+    const referenceEntry = byId.get("reference");
+    expect(referenceEntry, 'manifest 缺少 "reference" 条目').toBeDefined();
+    expect(referenceEntry).toMatchObject({ dependencies: [] });
+    expect(referenceEntry?.core ?? false, '"reference" 必须非 core（可开关）').toBe(false);
+    expect(referenceEntry?.kind).toBeUndefined();
+    expect(referenceEntry?.title, '"reference" 缺 title').toMatch(/\S/);
     // 消息侧提醒注入插件：工厂型能力插件（非 core、无依赖、无 kind），
     // 由宿主 factoryPlugin 装配。
     const remindersEntry = byId.get("reminders");

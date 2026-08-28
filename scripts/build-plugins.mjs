@@ -48,6 +48,10 @@ const LIBS = [
 // reminders 为消息侧提醒注入插件（B3 提醒批次）：默认导出是工厂（同
 // creation 形态），由宿主 factoryPlugin 装配并传入许可档 getter——经
 // MessageProcessor 每轮追加 <system-reminder> text part，不触碰系统提示词。
+// reference 为按需参考资料工具插件（B4 参考资料批次）：默认导出即插件
+// 对象（name 同 id），向 tools 服务注册只读工具 read_reference——四个
+// 英文参考条目的目录固定，参考资料不常驻提示词，模型按需逐条拉取
+// （缓存纪律：稳定前缀不被参考内容扰动）。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -57,6 +61,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "ssh", dependencies: [] },
   { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
+  { id: "reference", dependencies: [] },
   { id: "builtin-skills", dependencies: [] },
   { id: "reminders", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
@@ -72,6 +77,7 @@ const PLUGINS = [
   { dir: "packages/tools-fs", id: "fs" },
   { dir: "packages/tools-shell", id: "shell" },
   { dir: "packages/tools-todo", id: "todo" },
+  { dir: "packages/tools-reference", id: "reference" },
   { dir: "packages/plugin-skills", id: "skills" },
   { dir: "packages/plugin-mcp", id: "mcp" },
   { dir: "packages/tools-ssh", id: "ssh" },
