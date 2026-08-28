@@ -48,6 +48,9 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
     messageId,
   });
   const workspaceRoot = routeRoot || settingsRoot;
+  // Project traits for the session's effective workspace (route-resolved):
+  // feeds the conditional prompt fragments; no hook = empty traits.
+  const traits = (await host.options.projectTraitsFor?.(workspaceRoot)) ?? {};
 
   const decider: PermissionDecider = {
     ask: async (request) => {
@@ -87,6 +90,8 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         ...(host.options.sessionSpine ? { requireInjectedSpine: true } : {}),
         workspaceRoot,
         systemPrompt: BUILTIN_FALLBACK_PROMPT,
+        agentMode: settings.activeAgentMode ?? "default",
+        traits,
         permission: {
           mode: settings.permissionMode,
           decider,

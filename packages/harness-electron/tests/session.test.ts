@@ -2,12 +2,20 @@
 // retired core package; assertions unchanged, imports re-pointed to
 // the spine packages that own each type face).
 import { describe, expect, it, vi } from "vitest";
-import { AgentSession, staticSpineSuite, type HarnessPlugin, type SessionSpineSuite } from "../src";
+import {
+  AgentSession,
+  BUILTIN_FALLBACK_PROMPT,
+  staticSpineSuite,
+  type HarnessPlugin,
+  type SessionPlugin,
+  type SessionSpineSuite,
+} from "../src";
 import { createTestSession, echoProvider } from "./helpers/testSession";
 import * as loopModule from "@innocenceharness/harness-agent-loop";
 import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
 import type { MessagePart } from "@innocenceharness/harness-session";
+import type { PromptFragment } from "@innocenceharness/harness-system-prompt";
 
 function baseOptions() {
   return {
@@ -699,6 +707,108 @@ describe("AgentSession", () => {
     await session.run("双轨装载");
     expect(nativeSpy.calls).toBe(1);
     expect(legacySpy.calls).toBe(1);
+  });
+});
+
+describe("AgentSession agent-mode prompt assembly", () => {
+  /** Kernel-native plugin registering prompt fragments — the face a mode
+   *  plugin uses (spine systemPrompt service reached through the kernel
+   *  context). */
+  function fragmentPlugin(name: string, fragments: PromptFragment[]): SessionPlugin {
+    return {
+      name,
+      apply(ctx) {
+        for (const fragment of fragments) ctx.systemPrompt.registerFragment(fragment);
+      },
+    };
+  }
+
+  /** Provider that records every request's system prompt. */
+  function systemCaptureProvider(systems: string[]): Provider {
+    return {
+      id: "system-capture",
+      async *chat(req): AsyncIterable<Delta> {
+        systems.push(req.system);
+        yield { type: "text", text: "ok" };
+      },
+    };
+  }
+
+  it("loads the active mode's fragments beside the shared bucket (mode filter)", async () => {
+    const systems: string[] = [];
+    const plugins = [
+      fragmentPlugin("mode-alpha", [
+        { id: "alpha-only", modes: ["alpha"], render: () => "ALPHA-ONLY-FRAGMENT" },
+      ]),
+      fragmentPlugin("shared", [
+        { id: "shared-note", render: () => "SHARED-FRAGMENT" },
+      ]),
+    ];
+
+    const alpha = await createTestSession({
+      plugins,
+      provider: systemCaptureProvider(systems),
+      agentMode: "alpha",
+    });
+    await alpha.run("问题");
+    await alpha.dispose();
+    expect(systems[0]).toContain("ALPHA-ONLY-FRAGMENT");
+    expect(systems[0]).toContain("SHARED-FRAGMENT");
+
+    const beta = await createTestSession({
+      plugins,
+      provider: systemCaptureProvider(systems),
+      agentMode: "beta",
+    });
+    await beta.run("问题");
+    await beta.dispose();
+    // A non-matching active mode keeps the mode bucket out; shared stays.
+    expect(systems[1]).toContain("SHARED-FRAGMENT");
+    expect(systems[1]).not.toContain("ALPHA-ONLY-FRAGMENT");
+  });
+
+  it("falls back to the builtin base prompt when no mode fragment matches", async () => {
+    const systems: string[] = [];
+    const session = await createTestSession({
+      plugins: [
+        fragmentPlugin("mode-beta-only", [
+          { id: "beta-only", modes: ["beta"], render: () => "BETA-ONLY-FRAGMENT" },
+        ]),
+        fragmentPlugin("shared", [
+          { id: "shared-note", render: () => "SHARED-FRAGMENT" },
+        ]),
+      ],
+      provider: systemCaptureProvider(systems),
+      systemPrompt: BUILTIN_FALLBACK_PROMPT,
+      agentMode: "unregistered",
+    });
+    await session.run("问题");
+    await session.dispose();
+    // 回退链：无模式片段命中时宿主回退 base 仍是 system 的前缀。
+    expect(systems[0].startsWith(BUILTIN_FALLBACK_PROMPT)).toBe(true);
+    expect(systems[0]).not.toContain("BETA-ONLY-FRAGMENT");
+    expect(systems[0]).toContain("SHARED-FRAGMENT");
+  });
+
+  it("freezes the assembled system prompt across runs of one session", async () => {
+    const systems: string[] = [];
+    let renders = 0;
+    // Volatile fragment: a fresh per-turn assembly would drift (render runs
+    // again); the session-level freeze must reuse the first assembly.
+    const session = await createTestSession({
+      plugins: [
+        fragmentPlugin("volatile", [
+          { id: "volatile-counter", render: () => `RENDER-CALL-${(renders += 1)}` },
+        ]),
+      ],
+      provider: systemCaptureProvider(systems),
+      agentMode: "alpha",
+    });
+    await session.run("第一问");
+    await session.run("第二问");
+    await session.dispose();
+    expect(systems).toHaveLength(2);
+    expect(systems[0]).toBe(systems[1]);
   });
 });
 

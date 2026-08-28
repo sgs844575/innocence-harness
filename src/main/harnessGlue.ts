@@ -30,6 +30,7 @@ import { IPC, type PermissionChoice, type PluginInventory } from "../shared/ipc"
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
+import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTraits";
 import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
 import * as sessions from "./sessions";
@@ -251,6 +252,34 @@ const runtime = new HarnessRuntime({
       fallbackRoot: settings.workspaceRoot,
     }),
   forkRoute: (input) => taskBridge.forkRoute(input),
+  // Project traits for the session's effective workspace: reads the root
+  // package.json + directory listing + lockfiles, then derives the trait set
+  // (pure detection lives in pluginBoot/projectTraits). Every read degrades
+  // silently — a partially probed root yields partial facts, never a failed
+  // session build.
+  projectTraitsFor: async (workspaceRoot) => {
+    const [pkgRaw, entries] = await Promise.all([
+      // A non-object parse (array/primitive) degrades inside the detector:
+      // every field is read optionally, so the cast needs no runtime guard.
+      fs.readFile(path.join(workspaceRoot, "package.json"), "utf8")
+        .then((text) => JSON.parse(text) as ProjectFacts["rootPackageJson"])
+        .catch(() => undefined),
+      fs.readdir(workspaceRoot, { withFileTypes: true })
+        .then((dirents) => dirents.map((entry) => entry.name))
+        .catch(() => [] as string[]),
+    ]);
+    const lockfiles = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"]
+      .filter((file) => entries.includes(file));
+    return detectProjectTraits({
+      platform: {
+        os: process.platform,
+        shell: process.platform === "win32" ? "powershell" : "bash",
+      },
+      rootPackageJson: pkgRaw,
+      lockfiles,
+      topEntries: entries,
+    });
+  },
   pluginsForSession: async (context) => [
     ...(await sessionComposition.composePlugins(
       context.workspaceRoot,

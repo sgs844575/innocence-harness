@@ -1,6 +1,7 @@
 import type { Context } from "@innocenceharness/kernel";
 import type { PermissionAuditor, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
+import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { Logger, SessionPlugin } from "./registry";
 import type { SubagentLifecyclePort } from "@innocenceharness/harness-agent";
 import type { SessionLoaderPlugin } from "./session-loader";
@@ -25,6 +26,11 @@ export interface AgentSessionOptions {
   providerId?: string;
   workspaceRoot: string;
   systemPrompt?: string;
+  /** Active agent mode id for the system-prompt assembly (open plugin set);
+   *  omitted normalizes to "default" at the kernel mount. */
+  agentMode?: string;
+  /** Host-detected project traits feeding conditional prompt fragments. */
+  traits?: ProjectTraits;
   permission: {
     mode: PermissionMode;
     decider: PermissionDecider;

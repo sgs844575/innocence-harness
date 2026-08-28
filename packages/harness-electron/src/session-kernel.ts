@@ -13,7 +13,7 @@ import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import type { Provider, ProvidersService } from "@innocenceharness/harness-providers";
 import type { SessionService } from "@innocenceharness/harness-session";
 import type { SkillsService } from "@innocenceharness/harness-skills";
-import type { SystemPromptService } from "@innocenceharness/harness-system-prompt";
+import type { ProjectTraits, SystemPromptService } from "@innocenceharness/harness-system-prompt";
 import type { ToolsService } from "@innocenceharness/harness-tools";
 import type { AgentSessionOptions } from "./session";
 import type { Logger, SessionPlugin } from "./registry";
@@ -56,6 +56,10 @@ export interface SessionKernel {
   readonly provider: Provider;
   readonly services: SessionKernelServices;
   readonly view: SessionRegistryView;
+  /** Session prompt-assembly inputs, normalized: the active agent mode id
+   *  (never empty) and the host-detected project traits (never undefined). */
+  readonly agentMode: string;
+  readonly traits: ProjectTraits;
   /** Session plugin fibers (native, adapted, and loader owner) in activation order. */
   readonly pluginFibers: readonly Fiber[];
   /** Loader tree entries created in this route scope. */
@@ -80,6 +84,10 @@ export interface SessionKernelInit {
   providerId?: string;
   workspaceRoot: string;
   systemPrompt?: string;
+  /** Active agent mode id fed to the prompt assembly; omitted = "default". */
+  agentMode?: string;
+  /** Host-detected project traits; omitted = empty traits (inert conditions). */
+  traits?: ProjectTraits;
   permission: AgentSessionOptions["permission"];
   compaction?: AgentSessionOptions["compaction"];
   logger: Logger;
@@ -218,10 +226,16 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
       permissions.engine.addRules(spine.permissions.rulesFromConfig(init.permission.projectConfig));
     }
     ctx.systemPrompt.setBase(init.systemPrompt ?? "");
+    // Prompt-assembly inputs normalize here (single point) and travel with the
+    // kernel result so the session's buildSystemPrompt reads stable values.
+    const agentMode = init.agentMode ?? "default";
+    const traits: ProjectTraits = init.traits ?? {};
 
     return {
       ctx,
       provider,
+      agentMode,
+      traits,
       services: {
         tools: ctx.tools,
         permissions,

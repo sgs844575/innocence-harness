@@ -11,6 +11,7 @@ import { nextRouteId, nextSessionId, type ExecutionScopeIdentity } from "@innoce
 import type { HarnessEventListener, Message } from "@innocenceharness/harness-session";
 import type { PermissionEngine, PermissionMode } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
+import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { Logger } from "./registry";
 import { mountSessionKernel, type SessionKernel } from "./session-kernel";
 import type { SessionRegistryView } from "./session-registry-view";
@@ -35,6 +36,9 @@ export class AgentSession {
   readonly permission: PermissionEngine;
   readonly provider: Provider;
   readonly workspaceRoot: string;
+  /** Normalized prompt-assembly inputs (kernel-provided; see SessionKernel). */
+  readonly agentMode: string;
+  readonly traits: ProjectTraits;
   readonly sessionId: string;
   readonly history: Message[];
   readonly options: AgentSessionOptions;
@@ -46,6 +50,8 @@ export class AgentSession {
   private readonly logger: Logger;
   private abort: AbortController | undefined;
   private activeRun: Promise<unknown> | undefined;
+  /** Frozen first system-prompt assembly (see buildSystemPrompt). */
+  private assembledPrompt: string | undefined;
   /** Set as soon as dispose() starts: a released session never runs again. */
   private disposed = false;
   private disposeInFlight: Promise<void> | undefined;
@@ -63,6 +69,8 @@ export class AgentSession {
     this.permission = kernel.services.permissions.engine;
     this.provider = kernel.provider;
     this.workspaceRoot = options.workspaceRoot;
+    this.agentMode = kernel.agentMode;
+    this.traits = kernel.traits;
     this.sessionId = sessionId;
     this.history = kernel.services.session.history;
     this.loaderEntries = kernel.loaderEntries;
@@ -108,6 +116,8 @@ export class AgentSession {
       providerId: sessionOptions.providerId,
       workspaceRoot: sessionOptions.workspaceRoot,
       systemPrompt: sessionOptions.systemPrompt,
+      agentMode: sessionOptions.agentMode,
+      traits: sessionOptions.traits,
       permission: sessionOptions.permission,
       compaction: sessionOptions.compaction,
       logger: sessionOptions.logger ?? noopLogger,
@@ -124,15 +134,23 @@ export class AgentSession {
 
   setSystemPrompt(prompt: string): void {
     this.kernel.services.systemPrompt.setBase(prompt);
+    // The base change must reach the next assembly — drop the frozen string.
+    this.assembledPrompt = undefined;
   }
 
   setPermissionMode(mode: PermissionMode): void {
     this.permission.setMode(mode);
   }
 
-  /** Base prompt + registered sections + the skills index (descriptions only). */
+  /** Base prompt + registered sections + the skills index (descriptions only).
+   *  会话内字节冻结：inputs（插件集/模式/特征/技能）在会话生命周期内不变，
+   *  首次组装后缓存（缓存纪律——逐轮复用同一前缀）。 */
   private buildSystemPrompt(): string {
-    return this.kernel.services.systemPrompt.build(this.kernel.services.skills.all());
+    this.assembledPrompt ??= this.kernel.services.systemPrompt.build(
+      this.kernel.services.skills.all(),
+      { activeMode: this.agentMode, traits: this.traits },
+    );
+    return this.assembledPrompt;
   }
 
   /**

@@ -6,6 +6,7 @@ import type { PermissionRequest } from "@innocenceharness/harness-permissions";
 import type { Message, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { Provider, TurnCompletion } from "@innocenceharness/harness-providers";
+import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
 import type { SubagentLifecycleEvent } from "@innocenceharness/harness-agent";
 import type { AgentSession } from "./session";
@@ -157,6 +158,14 @@ export interface RuntimeOptions {
   workspaceRootFor?(
     context: RouteWorkspaceContext,
   ): string | undefined | Promise<string | undefined>;
+  /**
+   * Host port that detects project traits for the session's effective
+   * workspace root (package manager, language, framework...): the result feeds
+   * the conditional system-prompt fragments. Consulted once per session build;
+   * an absent hook or an undefined result = empty traits (fragments with
+   * `when` conditions stay inert). Read failures degrade inside the hook.
+   */
+  projectTraitsFor?: (workspaceRoot: string) => Promise<ProjectTraits> | ProjectTraits;
   /** Host port that owns Git/task storage orchestration for route creation. */
   forkRoute?(input: RuntimeForkRouteInput): Promise<Route & { prompt: string }>;
   /** Directory for JSONL session transcripts; omitted = no persistence. */
