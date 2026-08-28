@@ -8,6 +8,17 @@ export function registerModelProtocol(value: unknown, protocol: ProviderProtocol
   if (value && typeof value === "object") protocolByModel.set(value, protocol);
 }
 
+/**
+ * Reads the provider protocol for an opaque model value: the protocol
+ * registered by the runtime model factory, falling back to the model's
+ * provider identifier. Returns undefined for values that never passed
+ * through the factory and expose no recognizable provider.
+ */
+export function modelProtocolOf(value: unknown): ProviderProtocol | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  return protocolByModel.get(value) ?? protocolFor(value);
+}
+
 export function toSdkRequestOptions(model: ProviderModel): {
   temperature?: number;
   maxOutputTokens?: number;
@@ -16,7 +27,7 @@ export function toSdkRequestOptions(model: ProviderModel): {
   const options = model.requestOptions;
   if (!options) return {};
 
-  const protocol = protocolByModel.get(model.value as object) ?? protocolFor(model.value);
+  const protocol = modelProtocolOf(model.value);
   const providerOptions = protocol ? toProviderOptions(protocol, options) : undefined;
   return {
     ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),

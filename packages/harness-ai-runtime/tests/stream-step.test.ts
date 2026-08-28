@@ -1,6 +1,7 @@
+import type { Message } from "@innocenceharness/harness-providers";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { createModelFactory, streamOneHarnessStep } from "../src/index";
+import { createModelFactory, streamOneHarnessStep, type HarnessStepEvent } from "../src/index";
 
 const usage = {
   inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
@@ -243,6 +244,187 @@ describe("streamOneHarnessStep", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("places a cache breakpoint on the system prompt for anthropic protocol models", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "anthropic-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createAnthropic: () => ({ chat: () => model }),
+    }).create({
+      providerId: "caching-profile",
+      protocol: "anthropic",
+      modelId: "model",
+      credential: "secret",
+    });
+
+    await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system prompt with stable prefix",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [],
+      }),
+    );
+
+    expect(model.doStreamCalls[0]?.prompt[0]).toEqual({
+      role: "system",
+      content: "system prompt with stable prefix",
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    });
+  });
+
+  it("places a cache breakpoint on the last part of the last message only, without mutating the input", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "anthropic-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createAnthropic: () => ({ chat: () => model }),
+    }).create({
+      providerId: "caching-profile",
+      protocol: "anthropic",
+      modelId: "model",
+      credential: "secret",
+    });
+    const messages: Message[] = [
+      { role: "user", parts: [{ type: "text", text: "Hi" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "text", text: "part-a" },
+          { type: "text", text: "part-b" },
+        ],
+      },
+    ];
+    const snapshot = JSON.parse(JSON.stringify(messages));
+    for (const message of messages) {
+      Object.freeze(message);
+      for (const part of message.parts) Object.freeze(part);
+    }
+
+    await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system",
+        messages,
+        tools: [],
+      }),
+    );
+
+    expect(messages).toEqual(snapshot);
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt[1]).toEqual({ role: "user", content: [{ type: "text", text: "Hi" }] });
+    const lastMessage = prompt[2];
+    expect(lastMessage?.role).toBe("assistant");
+    expect(lastMessage?.content[0]).toEqual({ type: "text", text: "part-a" });
+    expect(lastMessage?.content[1]).toEqual({
+      type: "text",
+      text: "part-b",
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    });
+    expect(JSON.stringify(prompt.slice(1, -1))).not.toContain("cacheControl");
+  });
+
+  it("keeps the plain string system prompt and no cache breakpoints for openai protocol", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "openai-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createOpenAI: () => ({ chat: () => model }),
+    }).create({
+      providerId: "openai-profile",
+      protocol: "openai",
+      modelId: "model",
+      credential: "secret",
+    });
+
+    await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system prompt",
+        messages: [
+          { role: "user", parts: [{ type: "text", text: "Hi" }] },
+          {
+            role: "assistant",
+            parts: [
+              { type: "text", text: "part-a" },
+              { type: "text", text: "part-b" },
+            ],
+          },
+        ],
+        tools: [],
+      }),
+    );
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt[0]).toEqual({ role: "system", content: "system prompt" });
+    expect(prompt[1]).toEqual({ role: "user", content: [{ type: "text", text: "Hi" }] });
+    expect(prompt[2]).toEqual({
+      role: "assistant",
+      content: [
+        { type: "text", text: "part-a" },
+        { type: "text", text: "part-b" },
+      ],
+    });
+    expect(JSON.stringify(prompt)).not.toContain("cacheControl");
+    expect(JSON.stringify(prompt)).not.toContain("providerOptions");
+  });
+
+  it("places only the system breakpoint when messages are empty for anthropic", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "anthropic-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createAnthropic: () => ({ chat: () => model }),
+    }).create({
+      providerId: "caching-profile",
+      protocol: "anthropic",
+      modelId: "model",
+      credential: "secret",
+    });
+
+    // The runtime SDK rejects empty message lists before dispatching, so the
+    // breakpoint logic must tolerate emptiness the same way every other
+    // protocol does: no throw, neutral error event, no dispatched request.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let events: HarnessStepEvent[] = [];
+    try {
+      events = await collect(
+        streamOneHarnessStep({
+          model: carrier,
+          system: "system prompt",
+          messages: [],
+          tools: [],
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    expect(events).toContainEqual({ type: "error", error: { message: "Model request failed" } });
+    expect(model.doStreamCalls).toHaveLength(0);
   });
 
   it("emits an abort event when the caller has already stopped the step", async () => {

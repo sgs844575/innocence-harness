@@ -6,10 +6,20 @@ import type {
   TurnMetadata,
   UsageMetadata,
 } from "@innocenceharness/harness-providers";
-import { stepCountIs, streamText, type LanguageModel, type TextStreamPart } from "ai";
+import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
+import {
+  stepCountIs,
+  streamText,
+  type AssistantContent,
+  type LanguageModel,
+  type ModelMessage,
+  type TextStreamPart,
+  type ToolContent,
+  type UserContent,
+} from "ai";
 import { hasUsage, toUsageMetadata } from "./metadata";
 import { toSdkMessages } from "./message-mapping";
-import { toSdkRequestOptions } from "./request-options";
+import { modelProtocolOf, toSdkRequestOptions } from "./request-options";
 import { toSdkTools, type SchemaOnlyTools } from "./tool-mapping";
 
 export interface StreamOneHarnessStepRequest {
@@ -43,11 +53,25 @@ export async function* streamOneHarnessStep(
   }
 
   try {
+    // Anthropic prompt caching: the provider allows at most 4 cache
+    // breakpoints per request. This runtime places exactly 2: breakpoint 1 at
+    // the end of the system prompt (covers the stable system-prompt prefix)
+    // and breakpoint 2 at the last part of the last message (rolls forward
+    // with the growing message prefix). Every other protocol keeps the plain
+    // string system prompt and untouched messages.
+    const cacheBreakpointOptions: SharedV3ProviderOptions = {
+      anthropic: { cacheControl: { type: "ephemeral" } },
+    };
+    const isAnthropic = modelProtocolOf(request.model.value) === "anthropic";
+    const messages = toSdkMessages(request.messages);
+
     const result = streamText({
       model: request.model.value as LanguageModel,
       ...toSdkRequestOptions(request.model),
-      system: request.system,
-      messages: toSdkMessages(request.messages),
+      system: isAnthropic
+        ? [{ role: "system" as const, content: request.system, providerOptions: cacheBreakpointOptions }]
+        : request.system,
+      messages: isAnthropic ? withLastPartCacheBreakpoint(messages, cacheBreakpointOptions) : messages,
       tools: toSdkTools(request.tools),
       abortSignal: request.signal,
       stopWhen: stepCountIs(1),
@@ -148,4 +172,76 @@ const SAFE_MODEL_ERROR_MESSAGE = "Model request failed";
 
 function toNeutralError(_error: unknown): { message: string } {
   return { message: SAFE_MODEL_ERROR_MESSAGE };
+}
+
+/**
+ * Attaches the cache breakpoint to a shallow copy of the last message's last
+ * part. The input messages and their parts are never mutated: only the last
+ * message and its last part are copied. Returns the input array unchanged
+ * when there is no part to attach to.
+ */
+function withLastPartCacheBreakpoint(
+  messages: ModelMessage[],
+  providerOptions: SharedV3ProviderOptions,
+): ModelMessage[] {
+  const last = messages[messages.length - 1];
+  if (!last) return messages;
+
+  let patched: ModelMessage;
+  switch (last.role) {
+    case "user":
+      patched =
+        typeof last.content === "string"
+          ? { ...last, content: [{ type: "text", text: last.content, providerOptions }] }
+          : { ...last, content: patchUserContent(last.content, providerOptions) };
+      break;
+    case "assistant":
+      patched =
+        typeof last.content === "string"
+          ? { ...last, content: [{ type: "text", text: last.content, providerOptions }] }
+          : { ...last, content: patchAssistantContent(last.content, providerOptions) };
+      break;
+    case "tool":
+      patched = { ...last, content: patchToolContent(last.content, providerOptions) };
+      break;
+    case "system":
+      return messages;
+  }
+
+  const result = messages.slice();
+  result[result.length - 1] = patched;
+  return result;
+}
+
+function patchUserContent(
+  parts: Exclude<UserContent, string>,
+  providerOptions: SharedV3ProviderOptions,
+): Exclude<UserContent, string> {
+  return parts.map((part, index) =>
+    index === parts.length - 1
+      ? { ...part, providerOptions: { ...part.providerOptions, ...providerOptions } }
+      : part,
+  );
+}
+
+function patchAssistantContent(
+  parts: Exclude<AssistantContent, string>,
+  providerOptions: SharedV3ProviderOptions,
+): Exclude<AssistantContent, string> {
+  return parts.map((part, index) =>
+    index === parts.length - 1 && part.type !== "tool-approval-request"
+      ? { ...part, providerOptions: { ...part.providerOptions, ...providerOptions } }
+      : part,
+  );
+}
+
+function patchToolContent(
+  parts: ToolContent,
+  providerOptions: SharedV3ProviderOptions,
+): ToolContent {
+  return parts.map((part, index) =>
+    index === parts.length - 1 && part.type !== "tool-approval-response"
+      ? { ...part, providerOptions: { ...part.providerOptions, ...providerOptions } }
+      : part,
+  );
 }
