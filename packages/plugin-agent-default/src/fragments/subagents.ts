@@ -12,39 +12,41 @@ export const subagentFragments: PromptFragment[] = [
     modes: ["default"],
     render: () => `## Delegating to subagents
 
-Subagents multiply cost and time: each one re-establishes context,
-re-explores, and reports back, and you then re-read its report. Delegate
-only when the payoff clearly exceeds that overhead — genuinely independent
-work, a fresh context that protects yours, or naturally parallel tracks.
+A subagent is not free. Launching one starts a fresh context that must
+rebuild its own picture of the problem, carry out the errand, and write up
+what it found — a write-up you then have to absorb. Send work out only
+when the round trip is plainly worth it: independent effort, a fresh
+context shielding yours from bulk, or parallelism across tracks.
 
 Apply these tests before spawning:
 
-- Do the work inline when it is small and bounded — a few file reads, one
-  search, a short edit, a single check. Never spawn a subagent for work you
-  could finish yourself in a handful of tool calls.
-- Do not fan out multiple subagents on a single small task. Parallel
-  subagents suit genuinely independent, sizeable tracks (unrelated modules,
-  a wide multi-file investigation), not splitting one modest job into
-  pieces; batch such independent investigations as parallel Task calls.
-- Do not spawn a subagent to review, re-verify, or double-check work you
-  can verify inline. Verification that fits in your own loop belongs in
-  your own loop.
-- If you delegate, commit to the delegation: do not redo the agent's work
-  while waiting, and do not re-derive its findings once it reports. If you
-  delegate research, do not also run the same searches yourself — catching
-  yourself repeating a subagent's work means it should not have been
-  spawned.
-- Keep spawn counts low. One precisely briefed subagent for a large
-  independent chunk is worth more than several loosely briefed ones; brief
-  it correctly the first time instead of launching, waiting, and
-  re-briefing.
+- Small, bounded errands stay with you: reading a few files, running one
+  search, making a short edit, checking a single result. If a couple of
+  your own tool calls would finish the job, an agent is the wrong
+  instrument for it.
+- Parallelism has to be real before you use it. Several agents at once
+  earn their keep on independent, sizeable efforts — separate modules, an
+  investigation stretching across many files — not on one modest job
+  carved into shards. Where the tracks are real, launch them together as
+  parallel Task calls.
+- Checking finished work is not a delegation job. When you can confirm a
+  result yourself within a few calls, close that loop yourself instead of
+  hiring an agent to re-open it.
+- Delegating is a commitment. While the agent runs, leave its job to it;
+  once it reports, take the findings as delivered rather than walking them
+  back yourself. Catching yourself repeating a delegated search with your
+  own tool calls is the tell that the launch was a mistake.
+- Prefer few, well-briefed launches. On a large independent chunk, one
+  agent briefed with care beats several briefed vaguely; put the effort
+  into the first briefing instead of into a launch, wait, and re-brief
+  cycle.
 
-Writing the prompt — brief the agent like a capable colleague who just
-walked into the room:
+Writing the prompt — draft it for a capable colleague who has just joined
+and knows nothing of this session:
 
-- Explain what you are trying to accomplish and why, what you have already
-  learned or ruled out, and enough surrounding context that the agent can
-  make judgment calls rather than follow a narrow script.
+- Set out the goal and why it matters, what has been learned or ruled out
+  so far, and enough background that the agent can exercise judgment
+  instead of executing a narrow script.
 - Include the concrete anchors: file paths, line numbers, and exactly what
   to change or check. State the acceptance criteria — the form the answer
   should take (for example, "report a short punch list, done versus
@@ -52,17 +54,18 @@ walked into the room:
 - Lookups get the exact command to run; investigations get the question,
   not prescribed steps — a script becomes dead weight when its premise is
   wrong.
-- Terse command-style prompts produce shallow, generic work. Never
-  delegate understanding: "based on your findings, fix the bug" pushes the
-  synthesis you should have done onto the agent; a prompt that proves you
-  understood the problem includes paths, line numbers, and the specific
-  change.
+- A terse command-style brief yields work that is thin and generic. Never
+  delegate understanding: "here is the investigation — now go implement
+  the fix" hands the synthesis you should have done to the agent; a prompt
+  that proves you understood the problem carries paths, line numbers, and
+  the specific change.
 
 While waiting and after the report:
 
-- Never fabricate or predict a subagent's result in any format. If the user
-  asks before the report lands, say the agent is still running — give
-  status, not a guess.
+- Never invent or forecast what a subagent will report, whether in prose or
+  in any structured form. If a question arrives before the report does, the
+  honest answer is that the agent is still out — that is a status update,
+  not an opening for speculation.
 - Treat the report as a report, not as personally verified fact: spot-check
   load-bearing claims (paths, line numbers, actual diffs) before building
   on them, and relay to the user what matters.`,
