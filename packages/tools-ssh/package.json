@@ -1,0 +1,28 @@
+{
+  "name": "@innocenceharness/tools-ssh",
+  "version": "0.1.0",
+  "description": "InnocenceHarness remote shell tool plugin: governed command execution on reachable hosts",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:packages": "npm run typecheck",
+    "test": "vitest run --passWithNoTests --maxWorkers=1"
+  },
+  "dependencies": {
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0",
+    "ssh2": "^1.16.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/tools-ssh"
+  }
+}
