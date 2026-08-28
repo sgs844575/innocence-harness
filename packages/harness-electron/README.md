@@ -2,7 +2,7 @@
 
 `@innocenceharness/harness-electron` 是 AgentSession 会话（本包自带，见 session.ts）与 Electron 宿主之间的运行时胶水：
 按聊天路由（`sessionId:routeId`）持有/重建 `AgentSession`，把 harness 事件翻译为宿主流式 UI 钩子，
-并负责设置持久化、Provider 构建、会话转录（JSONL）与内置代理提示词。
+并负责设置持久化、Provider 构建、会话转录（JSONL）与 agent 模式回退提示词。
 包本身不 import 任何 Electron API——UI 桥全部经注入的 `RuntimeHooks` 端口，因此可在 Node 测试中直接运行。
 
 ## 作用
@@ -67,5 +67,5 @@ const result = await runtime.send({ sessionId, routeId, text: "帮我看看构�
 npx vitest run packages/harness-electron
 ```
 
-`tests/`：运行时、设置、转录、内置代理、模型预设、IPC 镜像防漂移，以及自举验收替身 `bootstrap.test.ts`
+`tests/`：运行时、设置、转录、agent 模式回退（`agents.test.ts`）、模型预设、IPC 镜像防漂移，以及自举验收替身 `bootstrap.test.ts`
 （完整运行时 + 真实文件工具 + shell + 审批门控跑通"读 → 改 → 写 → 验证"）。

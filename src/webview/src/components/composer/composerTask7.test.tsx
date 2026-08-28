@@ -12,7 +12,6 @@ const settings = {
   activeModel: "model-1",
   workspaceRoot: "D:/workspace",
   permissionMode: "full",
-  activeAgent: "default",
   reasoningEffort: "high",
 } as unknown as HarnessSettings;
 const t = (key: string) => key;

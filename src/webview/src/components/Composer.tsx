@@ -8,7 +8,6 @@ import {
 } from "../../../shared/ipc";
 import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
-import { AgentPicker } from "./composer/AgentPicker";
 import { ThinkingEffortPicker } from "./composer/ThinkingEffortPicker";
 
 interface Props {
@@ -52,9 +51,6 @@ export function Composer({
   header,
 }: Props): React.JSX.Element {
   const composerMode = mode ?? (header ? "landing" : "existing");
-  // Legacy callers without an explicit mode retain the old agent chip. Explicit
-  // task-7 modes follow the approved landing/existing control sets.
-  const legacyControls = mode === undefined;
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -159,15 +155,7 @@ export function Composer({
               </button>
             )}
 
-            {legacyControls && (
-              <AgentPicker
-                t={t}
-                value={settings?.activeAgentMode ?? "default"}
-                onChange={(agent) => onSettingsChange({ activeAgentMode: agent })}
-              />
-            )}
-
-            {(composerMode === "existing" || legacyControls) && (
+            {composerMode === "existing" && (
               <ThinkingEffortPicker
                 t={t}
                 value={settings?.reasoningEffort ?? ""}
