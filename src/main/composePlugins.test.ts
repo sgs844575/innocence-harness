@@ -43,7 +43,7 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // staging manifest 的清单 id 集：六个能力插件（内核原生插件，name 与 id
 // 同名且有实例化分支）+ example（渲染层示例插件：仅清单/投影面，无会话
 // 实例化分支）。provider/task 等由组合层另行装配不进清单。
-const MANIFEST_IDS = ["fs", "shell", "subagent", "skills", "mcp", "todo"] as const;
+const MANIFEST_IDS = ["fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo"] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
 maybeDescribe("composePlugins (declarative composition root)", () => {
@@ -78,6 +78,8 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       subagent: "subagent",
       skills: "skills",
       mcp: "mcp",
+      ssh: "ssh",
+      archive: "archive",
       todo: "todo",
     };
     for (const id of MANIFEST_IDS) {
