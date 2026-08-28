@@ -63,7 +63,13 @@ export const config: ForgeConfig = {
     },
     afterCopy: [pruneWindowsX64NodePtyPrebuilds],
   },
-  rebuildConfig: {},
+  // cpu-features is the OPTIONAL crypto-acceleration dependency of the remote
+  // shell dependency. It targets system-Node internals (not Electron/N-API)
+  // and its node-gyp build fails against Electron headers, blocking the
+  // "Preparing native dependencies" step. The shell library ships a pure-JS
+  // fallback, so skipping its rebuild is safe; other native modules are
+  // unaffected and still rebuild.
+  rebuildConfig: { ignoreModules: ["cpu-features"] },
   makers: [
     new MakerSquirrel({
       name: packagingArtifactNames.makerName,
