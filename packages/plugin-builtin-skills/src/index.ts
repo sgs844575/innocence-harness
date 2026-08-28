@@ -8,6 +8,11 @@ import { verifySkill } from "./skills/verify";
 import { runAppSkill } from "./skills/runApp";
 import { dataVisualizationSkill } from "./skills/dataVisualization";
 import { agentDesignPatternsSkill } from "./skills/agentDesignPatterns";
+import { stuckDiagnosticsSkill } from "./skills/stuckDiagnostics";
+import { costOptimizationSkill } from "./skills/costOptimization";
+import { promptAuditSkill } from "./skills/promptAudit";
+import { modelMigrationSkill } from "./skills/modelMigration";
+import { permissionAllowlistSkill } from "./skills/permissionAllowlist";
 
 /**
  * All built-in skill definitions, in registration (index) order. The
@@ -21,10 +26,15 @@ export const builtinSkills = [
   runAppSkill,
   dataVisualizationSkill,
   agentDesignPatternsSkill,
+  stuckDiagnosticsSkill,
+  costOptimizationSkill,
+  promptAuditSkill,
+  modelMigrationSkill,
+  permissionAllowlistSkill,
 ] as const;
 
 /**
- * Built-in skill pack plugin — registers the six resident skills on the
+ * Built-in skill pack plugin — registers the eleven resident skills on the
  * spine skills service at apply time (no scanning; bodies are compiled
  * in). Name collisions are tolerated silently and resolved first-wins:
  * in manifest order this plugin mounts after the disk-scanning "skills"
