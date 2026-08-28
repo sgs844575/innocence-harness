@@ -325,7 +325,7 @@ async function builtinLoaderEntryFor(
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
   if (!entry.disabled && ecosystemPlugin) {
-    // 外部生态布局（claude-code）：宿主适配器包装的插件对象直接挂到
+    // 外部生态布局条目：宿主适配器包装的插件对象直接挂到
     // loader 条目（同 skills/mcp 工厂的 plugin 携带机制，绕过双根
     // resolver——该布局无 dist/index.js，直载必失败）。native 条目不传
     // 适配器，走既有 resolver 路径（零改动）。
@@ -507,12 +507,18 @@ export function createSessionComposition(
       }
       for (const warning of resolved.warnings) options.log("warn", "plugin set", warning);
 
-      // 外部生态布局（claude-code）条目目录：扫描描述符 format 标记 →
-      // 用户根下同名目录（与扫描同源）。native 条目不在表中——装载路径
-      // 零改动；descriptor 停用走 resolveBuiltinSet 既有语义（条目不组装）。
+      // 外部生态布局条目目录：扫描描述符 format 标记 → 用户根下同名目录
+      // （与扫描同源）。清单 id 冲突的扫描描述符在 resolveBuiltinSet 并入时
+      // 已被丢弃（mergeExtraDescriptors 清单优先）——这里同样减去清单 id：
+      // 同名外部目录不得顶替清单条目的工厂/core 装载（skills 静默无技能、
+      // core 失败中止构建）。native 条目不在表中——装载路径零改动；
+      // descriptor 停用走 resolveBuiltinSet 既有语义（条目不组装）。
+      const manifestIds = new Set(
+        (await readManifest(boot.builtinRoot)).map((descriptor) => descriptor.id),
+      );
       const ecosystemDirs = new Map<string, string>(
         scanned.descriptors
-          .filter((descriptor) => descriptor.format === "claude-code")
+          .filter((descriptor) => descriptor.format === "claude-code" && !manifestIds.has(descriptor.id))
           .map((descriptor) => [descriptor.id, path.join(resolveUserPluginRoot(), descriptor.id)] as const),
       );
 

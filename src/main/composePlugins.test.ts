@@ -439,13 +439,13 @@ maybeDescribe("composePlugins user-root scan merge", () => {
   });
 });
 
-// ---- 用户根 claude-code 布局适配（B5b 宿主适配器装载）--------------------
-// 伪用户根放 claude-code 目录（.claude-plugin/plugin.json + commands/ +
-// skills/）：composePlugins 产出的装配含适配器条目（plugin 字段携带宿主
-// 插件对象，绕过 dist/index.js 双根 resolver——该布局无此文件），应用后经
-// 真实会话链技能索引可见；disabled 描述符不装配。
-maybeDescribe("composePlugins claude-code ecosystem adapter", () => {
-  function claudeCodeComposition() {
+// ---- 用户根外部生态布局适配（B5b 宿主适配器装载）--------------------------
+// 伪用户根放外部生态布局目录（.claude-plugin/plugin.json + commands/ +
+// skills/，探测目标为互操作数据）：composePlugins 产出的装配含适配器条目
+// （plugin 字段携带宿主插件对象，绕过 dist/index.js 双根 resolver——该布
+// 局无此文件），应用后经真实会话链技能索引可见；disabled 描述符不装配。
+maybeDescribe("composePlugins external ecosystem adapter", () => {
+  function ecosystemComposition() {
     const userRoot = mkdtempSync(path.join(tmpdir(), "ic-cc-user-plugins-"));
     roots.push(userRoot);
     const pluginDir = path.join(userRoot, "cc-tool");
@@ -479,13 +479,13 @@ maybeDescribe("composePlugins claude-code ecosystem adapter", () => {
   }
 
   it("composes an adapter-carried entry and the skills reach the live session", async () => {
-    const { composition, logged } = claudeCodeComposition();
+    const { composition, logged } = ecosystemComposition();
     try {
       const ws = await tempWorkspace({});
       const plugins = await composition.composePlugins(ws);
       const entry = plugins.find((p) => p.name === "cc-tool");
       // plugin 字段在场 = createResolved 直挂内核插件对象（builtinLoaderEntryFor
-      // 同一机制）——不挂则装载走双根 resolver，claude-code 布局无 dist/index.js
+      // 同一机制）——不挂则装载走双根 resolver，外部生态布局无 dist/index.js
       // 必失败；清单行同样并入（扫描描述符 active 投影）。
       expect(entry && "plugin" in entry && entry.plugin?.name).toBe("ecosystem:cc-tool");
       const inventory = await composition.pluginInventory({ workspaceRoot: ws });
@@ -518,13 +518,57 @@ maybeDescribe("composePlugins claude-code ecosystem adapter", () => {
     }
   });
 
-  it("disabled claude-code descriptor does not compose", async () => {
-    const { composition } = claudeCodeComposition();
+  it("disabled ecosystem descriptor does not compose", async () => {
+    const { composition } = ecosystemComposition();
     try {
       const ws = await tempWorkspace({});
       const off = (await composition.composePlugins(ws, { "cc-tool": false })).map((p) => p.name);
       expect(off).not.toContain("cc-tool");
       expect(off).toContain("fs"); // 其余条目不受影响
+    } finally {
+      await composition.disposePluginBoot();
+    }
+  });
+
+  it("manifest id collision keeps the builtin load path and attaches no adapter", async () => {
+    // 用户根放与清单同 id（skills 工厂 / fs core）的外部生态布局目录：
+    // resolveBuiltinSet 并入时清单优先（mergeExtraDescriptors），冲突的扫描
+    // 描述符被丢弃——适配器同样不得挂载，否则第三方目录顶替清单条目的
+    // 工厂/core 装载（skills 静默无技能、fs core 失败中止会话构建）。
+    const userRoot = mkdtempSync(path.join(tmpdir(), "ic-ecosystem-collision-"));
+    roots.push(userRoot);
+    for (const id of ["skills", "fs"]) {
+      const pluginDir = path.join(userRoot, id);
+      mkdirSync(path.join(pluginDir, ".claude-plugin"), { recursive: true });
+      writeFileSync(
+        path.join(pluginDir, ".claude-plugin", "plugin.json"),
+        JSON.stringify({ name: id }),
+        "utf8",
+      );
+      mkdirSync(path.join(pluginDir, "commands"), { recursive: true });
+      writeFileSync(
+        path.join(pluginDir, "commands", "shadow.md"),
+        "---\nname: shadow\ndescription: shadow\n---\nshadow body.",
+        "utf8",
+      );
+    }
+    const composition = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => userRoot,
+      enableHmrWatcher: false,
+      log: () => {},
+    });
+    try {
+      const ws = await tempWorkspace({});
+      const plugins = await composition.composePlugins(ws);
+      // 清单条目胜出：skills 仍是宿主工厂装配，fs 仍走 resolver（无 plugin）。
+      const skills = plugins.find((p) => p.name === "skills");
+      expect(skills && "plugin" in skills && skills.plugin?.name).toBe("factory:skills");
+      const coreFs = plugins.find((p) => p.name === "fs");
+      expect(coreFs && ("plugin" in coreFs ? coreFs.plugin : undefined)).toBeUndefined();
+      // 全装配无任何适配器条目（冲突目录两处均不得复活为 ecosystem:*）。
+      expect(plugins.some((p) => "plugin" in p && p.plugin?.name?.startsWith("ecosystem:"))).toBe(false);
     } finally {
       await composition.disposePluginBoot();
     }

@@ -1,4 +1,4 @@
-// 外部生态插件（claude-code 布局）的内核插件包装：commands/*.md 与
+// 外部生态插件的内核插件包装：commands/*.md 与
 // skills/*/SKILL.md 映射为 harness 技能（经既有技能索引与 /name 展开通道
 // 生效）；agents/*.md 为子代理人设——预设注入通道未立，本批跳过并告警；
 // hooks 等其余目录同理。适配器只读外部目录、不写盘 shim、不持有资源；
