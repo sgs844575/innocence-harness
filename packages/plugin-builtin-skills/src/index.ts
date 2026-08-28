@@ -13,6 +13,8 @@ import { costOptimizationSkill } from "./skills/costOptimization";
 import { promptAuditSkill } from "./skills/promptAudit";
 import { modelMigrationSkill } from "./skills/modelMigration";
 import { permissionAllowlistSkill } from "./skills/permissionAllowlist";
+import { harnessConfigurationSkill } from "./skills/harnessConfiguration";
+import { repoInstructionsSkill } from "./skills/repoInstructions";
 
 /**
  * All built-in skill definitions, in registration (index) order. The
@@ -31,10 +33,12 @@ export const builtinSkills = [
   promptAuditSkill,
   modelMigrationSkill,
   permissionAllowlistSkill,
+  harnessConfigurationSkill,
+  repoInstructionsSkill,
 ] as const;
 
 /**
- * Built-in skill pack plugin — registers the eleven resident skills on the
+ * Built-in skill pack plugin — registers the thirteen resident skills on the
  * spine skills service at apply time (no scanning; bodies are compiled
  * in). Name collisions are tolerated silently and resolved first-wins:
  * in manifest order this plugin mounts after the disk-scanning "skills"

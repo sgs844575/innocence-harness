@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers eleven skills with unique names", () => {
+  it("registers thirteen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(11);
+    expect(new Set(names).size).toBe(13);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -41,6 +41,8 @@ describe("builtin skills", () => {
       "prompt-audit",
       "model-migration",
       "permission-allowlist",
+      "harness-configuration",
+      "repo-instructions",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -60,13 +62,13 @@ describe("builtin skills", () => {
       activeMode: "default",
       traits: {},
     });
-    expect(prompt).toMatch(/- debugging:/);
-    expect(prompt).toMatch(/- code-review:/);
-    expect(prompt).toMatch(/- run-app:/);
-    expect(prompt).toMatch(/- agent-design-patterns:/);
+    // Full index coverage: every builtin skill name has its index row.
+    for (const s of builtinSkills) {
+      expect(prompt).toContain(`- ${s.name}:`);
+    }
   });
 
-  it("registers all eleven on the skills service in order", async () => {
+  it("registers all thirteen on the skills service in order", async () => {
     const ctx = await setup();
     expect(ctx.skills.all().map((s) => s.name)).toEqual(
       builtinSkills.map((s) => s.name),
@@ -77,7 +79,7 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(11);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(13);
   });
 
   it("is English and free of banned tokens", () => {
