@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, it } from "vitest";
 import { _electron as desktopDriver } from "playwright-core";
 import { selectExternalUiRuntime } from "./externalUiRuntime";
 
@@ -157,12 +157,6 @@ async function clickButton(session: DesktopSession, matcher: string): Promise<vo
     }
   }
   throw new Error(`no control matches ${matcher}`);
-}
-
-async function cleanupTempRoot(root: string): Promise<void> {
-  await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  const index = tempRoots.indexOf(root);
-  if (index >= 0) tempRoots.splice(index, 1);
 }
 
 afterEach(async () => {
