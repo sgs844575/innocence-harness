@@ -13,11 +13,14 @@ import {
 import { sha256Hex, ToolsPlugin } from "@innocenceharness/harness-tools";
 import type { Message, MessageProcessor } from "@innocenceharness/harness-session";
 import {
-  APPROVED_REMINDERS,
+  APPROVAL_BASE_BODY,
+  APPROVAL_PLAN_DUTY_BODY,
   DENIED_REMINDER,
+  PLAN_RECORD_BODY,
   PlanflowPlugin,
   PLANFLOW_PROCESSOR_ORDER,
   PLAN_SUBMIT_TOOL_NAME,
+  approvedReminderEnvelopes,
   planSubmitTool,
 } from "../src";
 
@@ -25,11 +28,11 @@ function makeMessage(text: string): Message {
   return { role: "user", parts: [{ type: "text", text }] };
 }
 
-function makeProcessorContext(): never {
+function makeProcessorContext(sessionId = "s1"): never {
   return {
     signal: new AbortController().signal,
     provider: { id: "test" },
-    scope: { sessionId: "s1" },
+    scope: { sessionId },
   } as never;
 }
 
@@ -40,26 +43,30 @@ interface Mounted {
   ctx: Context;
   fiber: Awaited<ReturnType<Context["plugin"]>>;
   approveCalls: { count: number };
+  mode: { value: string };
   processors: MessageProcessor[];
 }
 
 /** Mounts the plugin on a real kernel Context: the real ToolsPlugin gate,
- *  a recording fake permissions service, a capturing fake session service. */
+ *  a recording fake permissions service (mutable engine mode), a capturing
+ *  fake session service. */
 async function mountPlanflow(): Promise<Mounted> {
   const ctx = new Context();
   const approveCalls = { count: 0 };
+  const mode = { value: "plan" };
   const processors: MessageProcessor[] = [];
   await ctx.plugin(ToolsPlugin);
   ctx.provide("permissions", {
     approvePlan: () => {
       approveCalls.count += 1;
     },
+    engine: { getMode: () => mode.value },
   } as unknown as PermissionsService);
   ctx.provide("session", {
     registerProcessor: (p: MessageProcessor) => processors.push(p),
   });
   const fiber = await ctx.plugin(PlanflowPlugin);
-  return { ctx, fiber, approveCalls, processors };
+  return { ctx, fiber, approveCalls, mode, processors };
 }
 
 function emitPermission(
@@ -142,13 +149,15 @@ describe("plan_submit tool", () => {
     );
   });
 
-  it("executes into an English confirmation that defers to the permission prompt", async () => {
+  it("executes into a mode-neutral English confirmation", async () => {
     const result = await planSubmitTool.execute({ plan: "step 1" }, toolCtx());
     expect(result.isError).toBeFalsy();
     expect(result.content).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(result.content).toMatch(/permission prompt/i);
+    // 中性句：不预设必有权限卡（auto/full 档不经询问），只描述批准/被拒语义。
+    expect(result.content).not.toMatch(/permission prompt/i);
     expect(result.content).toMatch(/approval|approved/i);
     expect(result.content).toMatch(/write operation/i);
+    expect(result.content).toMatch(/declined|rejected/i);
   });
 });
 
@@ -236,7 +245,7 @@ describe("planflow reminder processor", () => {
   });
 
   it("after approval appends exactly two envelopes once, then consumes the state", async () => {
-    const mounted = await mountPlanflow();
+    const mounted = await mountPlanflow(); // 默认伪引擎档位 plan
     emitPermission(mounted.ctx, "allow", "ask");
     const message = makeMessage("go ahead");
     await mounted.processors[0].process(message, makeProcessorContext());
@@ -248,12 +257,47 @@ describe("planflow reminder processor", () => {
       expect(body).toContain("<system-reminder>");
       expect(body).toContain("</system-reminder>");
     }
-    expect(first).toBe(APPROVED_REMINDERS[0].enveloped);
-    expect(second).toBe(APPROVED_REMINDERS[1].enveloped);
+    const [unlockEnvelope, recordEnvelope] = approvedReminderEnvelopes("plan");
+    expect(first).toBe(unlockEnvelope);
+    expect(second).toBe(recordEnvelope);
+    // plan 档下第一条含子代理只读分工句（面向主代理的解锁提示）。
+    expect(first).toMatch(/subagent/i);
     // 只注入一次：后续消息不再追加。
     const again = makeMessage("still going");
     await mounted.processors[0].process(again, makeProcessorContext());
     expect(textsOf(again)).toEqual(["still going"]);
+  });
+
+  it("outside plan mode the approval pair drops the subagent-duty sentence (mode-neutral text)", async () => {
+    const mounted = await mountPlanflow();
+    mounted.mode.value = "ask"; // 批准后切档：注入时读到的档位决定措辞
+    emitPermission(mounted.ctx, "allow", "ask");
+    const message = makeMessage("go ahead");
+    await mounted.processors[0].process(message, makeProcessorContext());
+    const texts = textsOf(message);
+    expect(texts).toHaveLength(3);
+    const [unlockEnvelope, recordEnvelope] = approvedReminderEnvelopes("ask");
+    expect(texts[1]).toBe(unlockEnvelope);
+    expect(texts[2]).toBe(recordEnvelope);
+    expect(texts[1]).not.toMatch(/subagent/i);
+    expect(texts[1]).toMatch(/approval/i);
+  });
+
+  it("child sessions never consume the verdict reminders (owner-session gating)", async () => {
+    // 真实时序：父会话输入先过管线（未决不注入）→ 模型提交获准（事件置
+    // approved）→ 同轮派生子代理；子代理按对象继承本处理器实例，其输入
+    // 不得注入面向主代理的信封，也不得消费注入机会。
+    const mounted = await mountPlanflow();
+    const parentFirst = makeMessage("research and plan");
+    await mounted.processors[0].process(parentFirst, makeProcessorContext("parent"));
+    expect(textsOf(parentFirst)).toEqual(["research and plan"]); // 未决
+    emitPermission(mounted.ctx, "allow", "ask");
+    const child = makeMessage("research this and return findings");
+    await mounted.processors[0].process(child, makeProcessorContext("child-1"));
+    expect(textsOf(child)).toEqual(["research this and return findings"]); // 子会话不注入
+    const parentSecond = makeMessage("go ahead");
+    await mounted.processors[0].process(parentSecond, makeProcessorContext("parent"));
+    expect(textsOf(parentSecond)).toHaveLength(3); // 属主会话仍注入一次（未被消费）
   });
 
   it("after rejection appends one revise-and-resubmit envelope once", async () => {
@@ -360,7 +404,9 @@ describe("end to end", () => {
 describe("text discipline", () => {
   it("reminder and confirmation bodies are English and banned-token free", async () => {
     const bodies = [
-      ...APPROVED_REMINDERS.map((r) => r.body),
+      APPROVAL_BASE_BODY,
+      APPROVAL_PLAN_DUTY_BODY,
+      PLAN_RECORD_BODY,
       DENIED_REMINDER.body,
       (await planSubmitTool.execute({ plan: "step 1" }, toolCtx())).content,
     ];

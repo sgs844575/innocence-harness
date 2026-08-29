@@ -9,7 +9,10 @@ export const PLAN_SUBMIT_TOOL_NAME = "plan_submit";
 
 /**
  * Parses and validates the raw submission args. Throws naming the failing
- * field (never its content) — tool errors enter history/audit unredacted.
+ * field (never its content). Defense-in-depth only: the loop's preparation
+ * phase replaces any thrown diagnostic with a neutral failure message
+ * before anything is persisted, and execute-time re-validation keeps even
+ * the unredacted execute error path content-free.
  */
 function requirePlan(args: Record<string, unknown>): { plan: string; summary?: string } {
   if (typeof args.plan !== "string" || args.plan.trim().length === 0) {
@@ -21,16 +24,18 @@ function requirePlan(args: Record<string, unknown>): { plan: string; summary?: s
   return args.summary === undefined ? { plan: args.plan } : { plan: args.plan, summary: args.summary };
 }
 
-/** English confirmation returned on every accepted submission. Adapted from
- *  upstream plan-mode reminder material; restructured rewrite, never
- *  verbatim; neutral terminology only. Exported for text-discipline tests. */
+/** English confirmation returned on every accepted submission. Mode-neutral:
+ *  it describes what approval and rejection mean without presuming the
+ *  session asks for confirmation (auto/full modes allow without asking).
+ *  Adapted from upstream plan-mode reminder material; restructured rewrite,
+ *  never verbatim; neutral terminology only. Exported for text-discipline
+ *  tests. */
 export const SUBMIT_CONFIRMATION = [
-  "The plan text is recorded and now sits before the user for review.",
-  "Hold off on changes until the decision arrives on the permission prompt:",
-  "approval opens the implementation stage, and every write operation still",
-  "passes through the ordinary permission checkpoints one by one.",
-  "If the submission is declined, rework the plan using the feedback and",
-  "submit it again.",
+  "The plan text is recorded and presented for review.",
+  "Where the session asks for confirmation, the user's approval opens the",
+  "implementation stage and every write operation still passes through the",
+  "ordinary permission checkpoints one by one. A declined submission can",
+  "be reworked with the feedback and submitted again.",
 ].join(" ");
 
 /**

@@ -9,7 +9,7 @@ import type { Context } from "@innocenceharness/kernel";
 // this compilation: "harness/event" on Events plus ctx.session
 // (harness-session) and ctx.permissions (harness-permissions), mirroring
 // the plugin-reminders/plugin-agent-plan precedent.
-import type { Message, MessageProcessor } from "@innocenceharness/harness-session";
+import type { Message, MessageProcessor, MessageProcessorContext } from "@innocenceharness/harness-session";
 import type {} from "@innocenceharness/harness-permissions";
 import { PLAN_SUBMIT_TOOL_NAME, planSubmitTool } from "./planSubmit";
 
@@ -40,28 +40,39 @@ function reminder(body: string): PlanReminder {
 }
 
 /**
- * Reminders injected after approval. English adaptations of the upstream
+ * Approval reminder bodies. English adaptations of the upstream
  * plan-approved / exited-plan-mode / approval-enforcement / subagent and
  * plan-file-reference material; restructured rewrites, never verbatim;
- * neutral terminology only.
+ * neutral terminology only. The base pair is mode-neutral; the subagent
+ * duty line applies only while plan gating is still the active mode.
  */
-export const APPROVED_REMINDERS: readonly [PlanReminder, PlanReminder] = [
-  reminder(
-    [
-      "The plan received user approval: the implementation stage is open.",
-      "Write operations still pass through the ordinary permission",
-      "checkpoints individually, and delegated subagents stay on read-only",
-      "research duty for this stage.",
-    ].join(" "),
-  ),
-  reminder(
-    [
-      "The full plan text is kept in this session's record.",
-      "Point at that record in later steps instead of restating the plan's",
-      "contents.",
-    ].join(" "),
-  ),
-];
+export const APPROVAL_BASE_BODY = [
+  "The plan received user approval: the implementation stage is open.",
+  "Write operations still pass through the ordinary permission",
+  "checkpoints individually.",
+].join(" ");
+
+/** Plan-mode-only companion line (never injected outside the plan mode). */
+export const APPROVAL_PLAN_DUTY_BODY = [
+  "Delegated subagents stay on read-only research duty while plan gating",
+  "applies.",
+].join(" ");
+
+/** Companion reminder body: the stored plan is the reference point. */
+export const PLAN_RECORD_BODY = [
+  "The full plan text is kept in this session's record.",
+  "Point at that record in later steps instead of restating the plan's",
+  "contents.",
+].join(" ");
+
+/** Renders the two approval envelopes for the session's permission mode at
+ *  injection time: the subagent duty line rides along only in plan mode,
+ *  so ask/auto/full sessions get the mode-neutral pair. */
+export function approvedReminderEnvelopes(mode: string): [string, string] {
+  const unlock =
+    mode === "plan" ? `${APPROVAL_BASE_BODY} ${APPROVAL_PLAN_DUTY_BODY}` : APPROVAL_BASE_BODY;
+  return [envelope(unlock), envelope(PLAN_RECORD_BODY)];
+}
 
 /** Reminder injected after rejection (inverse of the exited/unlocked
  *  wording): revise per the feedback, then submit again. */
@@ -73,12 +84,20 @@ export const DENIED_REMINDER: PlanReminder = reminder(
   ].join(" "),
 );
 
+/** Reads the live permission mode through the permissions service; empty
+ *  string when the service is absent, degrading to the neutral reminders. */
+function currentMode(ctx: Context): string {
+  const permissions = ctx.permissions;
+  return permissions ? permissions.engine.getMode() : "";
+}
+
 /** Plan flow plugin — wires the tool, the verdict listener and the reminder
  *  processor onto one session's kernel context. */
 export const PlanflowPlugin = {
   name: "planflow" as const,
   apply(ctx: Context) {
     let state: PlanFlowState = "pending";
+    let ownerSessionId: string | undefined;
 
     ctx.tools.register(planSubmitTool);
 
@@ -117,15 +136,25 @@ export const PlanflowPlugin = {
     ctx.session.registerProcessor({
       name: "planflow",
       order: PLANFLOW_PROCESSOR_ORDER,
-      async process(message: Message): Promise<Message> {
+      async process(message: Message, context: MessageProcessorContext): Promise<Message> {
+        // Child sessions inherit this identical processor instance (the
+        // subagent spawner hands the parent's processor objects into the
+        // child session factory), and child inputs run through the same
+        // processUserInput pipeline — so instance-scoped state alone is NOT
+        // session-scoped. The first session to use this instance owns the
+        // verdict reminders; an inherited child session neither receives the
+        // parent-facing envelopes nor consumes the pending injection (its
+        // contract is "return findings", not "present a plan for approval").
+        ownerSessionId ??= context.scope.sessionId;
+        if (context.scope.sessionId !== ownerSessionId) return message;
         if (state === "approved") {
           // Append-only: existing parts are never rewritten (the session
           // contract — the envelopes become part of the outbound turn), and
-          // the pair is injected exactly once per verdict.
-          message.parts.push(
-            { type: "text", text: APPROVED_REMINDERS[0].enveloped },
-            { type: "text", text: APPROVED_REMINDERS[1].enveloped },
-          );
+          // the pair is injected exactly once per verdict. The wording reads
+          // the live permission mode at injection time, so the subagent duty
+          // line never leaks into sessions no longer gated by plan mode.
+          const [unlock, record] = approvedReminderEnvelopes(currentMode(ctx));
+          message.parts.push({ type: "text", text: unlock }, { type: "text", text: record });
           state = "consumed";
         } else if (state === "denied") {
           message.parts.push({ type: "text", text: DENIED_REMINDER.enveloped });
