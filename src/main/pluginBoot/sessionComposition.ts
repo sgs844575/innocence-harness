@@ -193,12 +193,13 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory",
   options: () =>
     | { dirs: string[] }
     | { servers: Record<string, unknown> }
     | { userRoot: string }
-    | { getPermissionMode: () => string },
+    | { getPermissionMode: () => string }
+    | { getUserRoot: () => string; getProjectRoot: () => string },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -269,8 +270,10 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // group child would bypass that assembly and bare-load the factory function,
 // so declaring them inside a group is rejected here. "reminders" reads the
 // current permission mode through the settings channel threaded from
-// composePlugins (getPermissionMode), not from group config.
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders"]);
+// composePlugins (getPermissionMode), not from group config. "memory" reads
+// the two memory roots through getters threaded from composePlugins
+// (getUserRoot/getProjectRoot), likewise not from group config.
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory"]);
 
 async function resolveGroupEntries(
   boot: PluginBoot,
@@ -348,6 +351,17 @@ async function builtinLoaderEntryFor(
     // settings snapshot composePlugins received for this session build
     // (absent settings fall back to "auto" — no reminders gated on plan).
     plugin = factoryPlugin(boot, "reminders", () => ({ getPermissionMode: () => resolvePermissionMode() }));
+  } else if (!entry.disabled && id === "memory") {
+    // Same factory shape as creation/reminders: the staged default export is
+    // the memory plugin factory, and the two memory roots resolve per call —
+    // user entries land under the user data root (~/.innocence/memory),
+    // project entries under the workspace's .innocence/memory; the plugin's
+    // merged index reads the user root first (user shadows project on equal
+    // ids, matching the resolver's dual-root direction).
+    plugin = factoryPlugin(boot, "memory", () => ({
+      getUserRoot: () => path.join(os.homedir(), ".innocence"),
+      getProjectRoot: () => path.join(workspaceRoot, ".innocence"),
+    }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
     const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);

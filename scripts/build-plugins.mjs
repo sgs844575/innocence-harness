@@ -55,6 +55,10 @@ const LIBS = [
 // planflow 为计划提交流插件（B4A 规划工具链）：默认导出即插件对象
 // （name 同 id），静态形态走通用装载链——注册 plan_submit 工具、监听
 // 权限决议事件（ask 级 allow 即计划批准）、在消息侧注入批准/拒绝提醒。
+// memory 为双根记忆存储插件（B4B 记忆批次）：默认导出是工厂（同
+// creation/reminders 形态），由宿主 factoryPlugin 装配并传入用户/项目两
+// 个记忆根 getter——注册写列读三工具，条目落 <root>/memory/<id>.md，
+// 用户根在前影子覆盖项目根同 id 条目。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -74,6 +78,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "minimal", kind: "agent-mode", dependencies: [] },
   { id: "learning", kind: "agent-mode", dependencies: [] },
   { id: "planflow", dependencies: [] },
+  { id: "memory", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -101,6 +106,7 @@ const PLUGINS = [
   { dir: "packages/plugin-agent-minimal", id: "minimal" },
   { dir: "packages/plugin-agent-learn", id: "learning" },
   { dir: "packages/plugin-planflow", id: "planflow" },
+  { dir: "packages/plugin-memory", id: "memory" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

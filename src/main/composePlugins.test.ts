@@ -61,11 +61,15 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // planflow 为计划提交流插件（批次 4A）：默认导出即插件对象（name 同
 // id），静态插件形态——注册 plan_submit 工具 + 权限事件监听 + 批准/拒绝
 // 提醒处理器，走通用装载链（无宿主工厂入参）。
+// memory 为双根记忆存储插件（批次 4B）：默认导出是工厂（同 creation/
+// reminders 形态），由宿主 factoryPlugin 装配并传入用户/项目记忆根 getter
+// ——注册 memory_write/memory_list/memory_read 三工具。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning",
   "planflow",
+  "memory",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -114,6 +118,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       minimal: "minimal",
       learning: "learning",
       planflow: "planflow",
+      memory: "memory",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -189,6 +194,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(planflowEntry?.core ?? false, '"planflow" 必须非 core（可开关）').toBe(false);
     expect(planflowEntry?.kind).toBeUndefined();
     expect(planflowEntry?.title, '"planflow" 缺 title').toMatch(/\S/);
+    // 双根记忆存储插件（批次 4B）：工厂型能力插件（非 core、无依赖、无
+    // kind），由宿主 factoryPlugin 装配并传入两根 getter。
+    const memoryEntry = byId.get("memory");
+    expect(memoryEntry, 'manifest 缺少 "memory" 条目').toBeDefined();
+    expect(memoryEntry).toMatchObject({ dependencies: [] });
+    expect(memoryEntry?.core ?? false, '"memory" 必须非 core（可开关）').toBe(false);
+    expect(memoryEntry?.kind).toBeUndefined();
+    expect(memoryEntry?.title, '"memory" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
@@ -230,6 +243,32 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       scope: { sessionId: "s" },
     } as never);
     expect(auto.parts.map((p) => (p as { text: string }).text).join("\n")).not.toMatch(/planning permission/i);
+  });
+
+  it("memory entry mounts the staged factory with host-threaded roots", async () => {
+    // 仿 reminders 装配形态的工厂调用探针：条目名 "memory"，内嵌
+    // factory:memory 插件；应用到最小 ctx 后三工具落地，且默认 project
+    // 域写入落进 <ws>/.innocence/memory（根由宿主线程化注入——探针只写
+    // 临时工作区，不触碰真实用户根）。
+    const ws = await tempWorkspace({});
+    const plugins = await composition.composePlugins(ws);
+    const memory = plugins.find((p) => p.name === "memory");
+    expect(memory, '条目 "memory" 未装配').toBeTruthy();
+    expect(memory && "plugin" in memory && memory.plugin?.name).toBe("factory:memory");
+
+    const registered: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<{ content: string; isError?: boolean }> }> = [];
+    const factory = memory && "plugin" in memory ? memory.plugin : undefined;
+    await factory?.apply({ tools: { register: (t: unknown) => registered.push(t as never) } } as never);
+    expect(registered.map((t) => t.name)).toEqual(["memory_write", "memory_list", "memory_read"]);
+
+    const ctxProbe = { workspaceRoot: ws, signal: new AbortController().signal, log: () => {}, scope: {} } as never;
+    const write = registered.find((t) => t.name === "memory_write")!;
+    const written = await write.execute({ id: "probe-note", content: "Factory probe body." }, ctxProbe);
+    expect(written.isError).toBeFalsy();
+    expect(existsSync(path.join(ws, ".innocence", "memory", "probe-note.md"))).toBe(true);
+    const list = registered.find((t) => t.name === "memory_list")!;
+    const listed = await list.execute({}, ctxProbe);
+    expect(listed.content).toContain("probe-note [project]");
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
