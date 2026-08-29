@@ -68,7 +68,8 @@ export function resourceGrantKey(toolName: string, resource: PermissionResource)
  *   2. any deny rule         -> DENY（仅非 full 模式会执行到这一步）
  *   3. plan mode (未批准)    -> readOnly ? ALLOW : DENY
  *                                （approvePlan() 后跳过本短路，
- *                                  写操作落回 4-7 常规管线）
+ *                                  写操作落回 4-7 常规管线；
+ *                                  kind plan 资源=批准通道本身，恒跳过本短路）
  *   4. any allow rule        -> ALLOW
  *   5. auto mode             -> ALLOW
  *   6. session grant (resource key) -> ALLOW
@@ -181,7 +182,15 @@ export class PermissionEngine {
       }
     }
 
-    if (this.mode === "plan" && !this.planApproved) {
+    // 计划提交资源（kind === "plan"）是批准通道本身：plan 档内跳过整个
+    // plan 短路（既不 planReadOnly 放行也不 planMode 硬拒），落回常规管线
+    // ——plan 档下终点即 ask，用户在权限卡上的回答就是"批准/拒绝该计划"
+    // （与 planApproved 置位后的"落回常规管线"同路径；deny 规则仍在其前）。
+    if (
+      this.mode === "plan" &&
+      !this.planApproved &&
+      request.resource.kind !== "plan"
+    ) {
       // 计划模式（未批准）= 只读探索自由、写操作硬拒（deny 规则仍优先于本短路）。
       // 批准后（planApproved）不短路：落回 allow 规则→auto→sessionGrant→ask 常规管线。
       if (toolMeta.readOnly) {

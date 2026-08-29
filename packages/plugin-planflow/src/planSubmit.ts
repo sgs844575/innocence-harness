@@ -1,7 +1,8 @@
 // Plan submission tool (batch 4A task 2): the model presents a finished plan
-// through this tool; the user's verdict arrives later on the permission ask
-// of the very submission, and the planflow listener turns that verdict into
-// the engine's plan approval plus the unlock/reject reminders.
+// through this tool. In plan mode the engine routes the plan-kind resource
+// straight to the user ask — submitting the plan IS the approval prompt —
+// and the planflow listener turns that verdict into the engine's plan
+// approval plus the unlock/reject reminders.
 import { sha256Hex, type Tool } from "@innocenceharness/harness-tools";
 
 export const PLAN_SUBMIT_TOOL_NAME = "plan_submit";
@@ -42,9 +43,9 @@ export const planSubmitTool: Tool = {
   description:
     "提交计划全文供用户在权限卡上审批：批准后进入实现阶段，被拒时按反馈修订后重新提交。",
   // 纯会话状态：计划全文只留档 transcript，无工作区/进程/网络副作用——
-  // 按只读分类（plan 档研究期可自由调用，无需先解锁）；资源 submit/plan/
-  // session 描述的是"呈报一份计划"这一逻辑动作，批准面是它在 ask 级
-  // 权限卡上的用户决议。
+  // readOnly 是"无外部副作用"的诚实分类；plan 档内本资源经引擎特例
+  // （kind plan 跳过 plan 短路）直达 ask 级权限卡，用户在该卡上的回答
+  // 即计划的批准/拒绝（批准面）。
   readOnly: true,
   sideEffect: "none",
   parameters: {

@@ -338,6 +338,61 @@ describe("PermissionEngine plan approval (approvePlan)", () => {
   });
 });
 
+describe("PermissionEngine plan-kind approval channel", () => {
+  // 计划提交资源（引擎特例的批准通道本身）：与实际 plan_submit 工具同形。
+  const planReq = request("plan_submit", "submit", "session", "plan");
+
+  it("unapproved plan mode routes plan-kind resources straight to ask (the approval face)", async () => {
+    const { decider, requests } = recordingDecider("allow");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    const r = await engine.resolve(planReq, read);
+    expect(r.decision).toBe("allow");
+    expect(r.via).toBe("ask");
+    expect(requests).toHaveLength(1); // decider 被调：plan 档内提交即询问
+  });
+
+  it("a denied submission ask leaves the plan state untouched (writes still planMode-deny)", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    const r = await engine.resolve(planReq, read);
+    expect(r.decision).toBe("deny");
+    expect(r.via).toBe("ask");
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("deny");
+    expect(w.via).toBe("planMode"); // 被拒的提交不解锁任何写操作
+    expect(requests).toHaveLength(1);
+  });
+
+  it("plan-kind routing changes nothing for other resources (readOnly allow / write deny)", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    expect((await engine.resolve(readReq, read)).via).toBe("planReadOnly");
+    expect((await engine.resolve(editReq, write)).via).toBe("planMode");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("deny rules still precede the plan-kind channel (stage order preserved)", async () => {
+    const { decider, requests } = recordingDecider("allow");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    engine.addRules([
+      { name: "deny:plan_submit", match: (c) => (c.toolName === "plan_submit" ? "deny" : "skip") },
+    ]);
+    const r = await engine.resolve(planReq, read);
+    expect(r.decision).toBe("deny");
+    expect(r.via).toBe("denyRule");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("outside plan mode plan-kind resources just follow the regular pipeline", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({ mode: "ask", decider });
+    const r = await engine.resolve(planReq, read);
+    expect(r.decision).toBe("deny");
+    expect(r.via).toBe("ask");
+    expect(requests).toHaveLength(1);
+  });
+});
+
 describe("PermissionEngine path normalization", () => {
   it("absolute paths under the root become relative for rule matching", async () => {
     const { decider } = recordingDecider("deny");

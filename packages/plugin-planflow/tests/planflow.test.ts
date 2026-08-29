@@ -3,7 +3,13 @@
 // the unlock/reject reminder processor states, and one end-to-end pass.
 import { describe, expect, it } from "vitest";
 import { Context } from "@innocenceharness/kernel";
-import type { PermissionResolution, PermissionsService } from "@innocenceharness/harness-permissions";
+import {
+  createPermissionsService,
+  PermissionEngine,
+  type PermissionRequest,
+  type PermissionResolution,
+  type PermissionsService,
+} from "@innocenceharness/harness-permissions";
 import { sha256Hex, ToolsPlugin } from "@innocenceharness/harness-tools";
 import type { Message, MessageProcessor } from "@innocenceharness/harness-session";
 import {
@@ -202,6 +208,22 @@ describe("permission event listener", () => {
     emitPermission(mounted.ctx, "allow", "ask");
     expect(mounted.approveCalls.count).toBe(0);
   });
+
+  it("drops verdicts arriving while the permissions service is absent (no false unlock)", async () => {
+    // 无权限脊柱的内核（拆卸竞态/极简宿主）：缺席窗口内到达的决议整体
+    // 丢弃——不崩溃、不解锁、不注入"已批准"提醒。
+    const ctx = new Context();
+    const processors: MessageProcessor[] = [];
+    await ctx.plugin(ToolsPlugin);
+    ctx.provide("session", {
+      registerProcessor: (p: MessageProcessor) => processors.push(p),
+    });
+    await ctx.plugin(PlanflowPlugin);
+    expect(() => emitPermission(ctx, "allow", "ask")).not.toThrow();
+    const message = makeMessage("next turn");
+    await processors[0].process(message, makeProcessorContext());
+    expect(textsOf(message)).toEqual(["next turn"]);
+  });
 });
 
 describe("planflow reminder processor", () => {
@@ -272,6 +294,66 @@ describe("end to end", () => {
     expect(joined).toMatch(/approval|approved/i);
     expect(joined).toMatch(/plan/i);
     expect(message.parts[0]).toEqual({ type: "text", text: "start implementing" });
+  });
+
+  it("plan mode closes the loop: submission asks, allow verdict approves, writes fall to the regular ladder", async () => {
+    // 真引擎 + 真权限服务（唯一伪件：decider 记录并回答 allow，模拟权限卡）。
+    const asked: PermissionRequest[] = [];
+    const engine = new PermissionEngine({
+      mode: "plan",
+      decider: {
+        ask: async (req) => {
+          asked.push(req);
+          return "allow";
+        },
+      },
+    });
+    const service = createPermissionsService(engine);
+    const ctx = new Context();
+    const processors: MessageProcessor[] = [];
+    await ctx.plugin(ToolsPlugin);
+    ctx.provide("permissions", service);
+    ctx.provide("session", {
+      registerProcessor: (p: MessageProcessor) => processors.push(p),
+    });
+    await ctx.plugin(PlanflowPlugin);
+
+    const writeRequest: PermissionRequest = {
+      toolName: "Edit",
+      resource: { action: "write", kind: "path", scope: "src/a.ts" },
+      args: {},
+    };
+    // 未批准 plan 档：写操作 planMode 硬拒。
+    expect((await engine.resolve(writeRequest, { readOnly: false })).via).toBe("planMode");
+
+    // plan 档内 plan_submit 资源经引擎特例直达 ask，用户在卡上允许。
+    const submitResolution = await engine.resolve(
+      {
+        toolName: PLAN_SUBMIT_TOOL_NAME,
+        resource: { action: "submit", kind: "plan", scope: "session" },
+        args: { plan: "step 1" },
+      },
+      { readOnly: true },
+    );
+    expect(submitResolution.decision).toBe("allow");
+    expect(submitResolution.via).toBe("ask");
+
+    // loop 语义：每次决议发射 permission 事件 -> 监听器 -> 真 approvePlan。
+    ctx.emit("harness/event", {
+      type: "permission",
+      id: "perm-1",
+      toolName: PLAN_SUBMIT_TOOL_NAME,
+      resolution: submitResolution,
+    });
+    const message = makeMessage("implement now");
+    await processors[0].process(message, makeProcessorContext());
+    expect(textsOf(message)).toHaveLength(3); // 批准对已注入（原文 + 两条信封）
+
+    // 批准后写资源不再 planMode 硬拒：落回常规管线末端 ask，逐项放行。
+    const afterApproval = await engine.resolve(writeRequest, { readOnly: false });
+    expect(afterApproval.decision).toBe("allow");
+    expect(afterApproval.via).toBe("ask");
+    expect(asked.map((r) => r.toolName)).toEqual([PLAN_SUBMIT_TOOL_NAME, "Edit"]);
   });
 });
 

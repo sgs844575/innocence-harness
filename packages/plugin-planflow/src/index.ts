@@ -86,21 +86,28 @@ export const PlanflowPlugin = {
     // the loop's emission site): a permission event carries
     // {type, id, toolName, resolution{decision, via, reason}} and NO resource
     // field, so the plan-kind resource of this plugin is identified by the
-    // tool name. Only ask-stage resolutions are user verdicts: the plan-mode
-    // short-circuits (planReadOnly allow / planMode deny) are engine
-    // auto-decisions and must neither self-approve nor auto-reject the plan
-    // — the permission ask is the approval face of this flow.
+    // tool name. Only ask-stage resolutions are user verdicts: the engine
+    // routes the plan-kind submission resource past the plan-mode
+    // short-circuits straight to the ask stage, so the user's answer on that
+    // ask IS the plan's approval or rejection — engine auto-decisions
+    // (planReadOnly allow / planMode deny) for other tools must never flip
+    // this state.
     //
     // The subscription is an effect of this plugin's fiber (EventBus kernel
     // contract), so it disappears when the fiber unloads — no manual
     // cleanup path exists or is needed here.
     ctx.on("harness/event", (event) => {
       if (event.type !== "permission" || event.toolName !== PLAN_SUBMIT_TOOL_NAME) return;
+      // ServiceTable 契约：permissions 成员仅在权限脊柱 fiber 存活期内可达。
+      // 缺席窗口（拆卸竞态、无权限脊柱的宿主）内到达的决议整体丢弃——
+      // 不崩溃，也不注入无引擎背书的"已批准"提醒。
+      const permissions = ctx.permissions;
+      if (!permissions) return;
       if (event.resolution.via !== "ask") return;
       if (event.resolution.decision === "allow") {
         // Unlock writes in the engine (no-op outside plan mode by design);
         // the closure state only drives the reminders below.
-        ctx.permissions.approvePlan();
+        permissions.approvePlan();
         state = "approved";
       } else {
         state = "denied";
