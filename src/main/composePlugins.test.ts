@@ -247,28 +247,52 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
 
   it("memory entry mounts the staged factory with host-threaded roots", async () => {
     // 仿 reminders 装配形态的工厂调用探针：条目名 "memory"，内嵌
-    // factory:memory 插件；应用到最小 ctx 后三工具落地，且默认 project
-    // 域写入落进 <ws>/.innocence/memory（根由宿主线程化注入——探针只写
-    // 临时工作区，不触碰真实用户根）。
-    const ws = await tempWorkspace({});
-    const plugins = await composition.composePlugins(ws);
-    const memory = plugins.find((p) => p.name === "memory");
-    expect(memory, '条目 "memory" 未装配').toBeTruthy();
-    expect(memory && "plugin" in memory && memory.plugin?.name).toBe("factory:memory");
+    // factory:memory 插件；应用到最小 ctx 后三工具与 memory-index 处理器
+    // （order -500）落地，且默认 project 域写入落进 <ws>/.innocence/memory。
+    // 用户根纯化：临时 home 覆盖 USERPROFILE/HOME（用户层 cordis.yml 用例
+    // 的既有同源模式）——factory 的 getUserRoot 每次调用现读 os.homedir()，
+    // 覆盖窗口含装配与执行全程，探针不读开发者真实 ~/.innocence。
+    const home = mkdtempSync(path.join(tmpdir(), "ic-memory-probe-home-"));
+    roots.push(home);
+    const previousProfile = process.env.USERPROFILE;
+    const previousHome = process.env.HOME;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      const ws = await tempWorkspace({});
+      const plugins = await composition.composePlugins(ws);
+      const memory = plugins.find((p) => p.name === "memory");
+      expect(memory, '条目 "memory" 未装配').toBeTruthy();
+      expect(memory && "plugin" in memory && memory.plugin?.name).toBe("factory:memory");
 
-    const registered: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<{ content: string; isError?: boolean }> }> = [];
-    const factory = memory && "plugin" in memory ? memory.plugin : undefined;
-    await factory?.apply({ tools: { register: (t: unknown) => registered.push(t as never) } } as never);
-    expect(registered.map((t) => t.name)).toEqual(["memory_write", "memory_list", "memory_read"]);
+      const registered: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<{ content: string; isError?: boolean }> }> = [];
+      const processors: MessageProcessor[] = [];
+      const factory = memory && "plugin" in memory ? memory.plugin : undefined;
+      await factory?.apply({
+        tools: { register: (t: unknown) => registered.push(t as never) },
+        session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+      } as never);
+      expect(registered.map((t) => t.name)).toEqual(["memory_write", "memory_list", "memory_read"]);
+      expect(processors).toHaveLength(1);
+      expect(processors[0]).toMatchObject({ name: "memory-index", order: -500 });
 
-    const ctxProbe = { workspaceRoot: ws, signal: new AbortController().signal, log: () => {}, scope: {} } as never;
-    const write = registered.find((t) => t.name === "memory_write")!;
-    const written = await write.execute({ id: "probe-note", content: "Factory probe body." }, ctxProbe);
-    expect(written.isError).toBeFalsy();
-    expect(existsSync(path.join(ws, ".innocence", "memory", "probe-note.md"))).toBe(true);
-    const list = registered.find((t) => t.name === "memory_list")!;
-    const listed = await list.execute({}, ctxProbe);
-    expect(listed.content).toContain("probe-note [project]");
+      const ctxProbe = { workspaceRoot: ws, signal: new AbortController().signal, log: () => {}, scope: {} } as never;
+      const write = registered.find((t) => t.name === "memory_write")!;
+      const written = await write.execute({ id: "probe-note", content: "Factory probe body." }, ctxProbe);
+      expect(written.isError).toBeFalsy();
+      expect(existsSync(path.join(ws, ".innocence", "memory", "probe-note.md"))).toBe(true);
+      const list = registered.find((t) => t.name === "memory_list")!;
+      const listed = await list.execute({}, ctxProbe);
+      expect(listed.content).toContain("probe-note [project]");
+      // 纯化自证：tmp home 用户根为空，合并索引只见 project 行——真实
+      // 用户根有条目时不再泄漏进探针输出。
+      expect(listed.content).not.toMatch(/\[user\]/);
+    } finally {
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
