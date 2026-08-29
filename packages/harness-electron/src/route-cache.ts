@@ -68,6 +68,13 @@ export class RouteSessionCache {
     return this.disposing.has(key);
   }
 
+  /** Whether a run controller is currently registered for this key (one
+   *  route runs one turn at a time — hosts use this as the busy face for
+   *  peer routing instead of piling a second concurrent run onto a session). */
+  isRunning(key: string): boolean {
+    return this.running.has(key);
+  }
+
   /** Registers the run controller of one key; one route runs one turn at a time. */
   startRun(key: string, controller: AbortController): void {
     this.running.set(key, controller);

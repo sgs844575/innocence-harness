@@ -33,6 +33,7 @@ import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTraits";
 import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
+import { createSendToTeammate } from "./teammatePort";
 import * as sessions from "./sessions";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
@@ -51,6 +52,7 @@ import {
   taskPluginsForRoute,
   type TaskRuntimeBridge,
 } from "./taskRuntimeBridge";
+import { reduceTask } from "@innocenceharness/task-core";
 
 let settings: PkgSettings = DEFAULT_SETTINGS;
 const settingsMutationGate = createSettingsMutationGate();
@@ -212,12 +214,24 @@ export function bootPaths(): { kernelPath: string; builtinRoot: string } {
 /** Session composition: the boot singleton (retry-on-failure), builtin
  *  plugin loading and per-session plugin assembly live in pluginBoot/
  *  sessionComposition (Electron-free, Node-testable); this module injects
- *  the Electron-side path/workspace/log ports. */
+ *  the Electron-side path/workspace/log ports. The teammate port factory
+ *  closes over runtime/taskBridge below — it only ever runs at session
+ *  build time, long after both are initialized. */
 const sessionComposition = createSessionComposition({
   resolvePaths: bootPaths,
   getWorkspaceRoot: () => settings.workspaceRoot || undefined,
   getUserPluginRoot: () => currentTestOverrides(app.isPackaged).userPluginRoot ?? undefined,
   enableHmrWatcher: !app.isPackaged && process.env.NODE_ENV !== "production",
+  createTeammatePort: (identity) =>
+    createSendToTeammate(
+      {
+        runtime,
+        listTeammateRoutes: async (taskId) => [
+          ...reduceTask(await taskBridge.listEvents(taskId)).routes.keys(),
+        ],
+      },
+      identity,
+    ),
   onPluginClientChange: () => {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send(IPC.pluginsChanged);
@@ -309,6 +323,12 @@ const runtime = new HarnessRuntime({
       context.workspaceRoot,
       settings.pluginToggles,
       settings,
+      // 会话身份（批次 4E）：team 工厂的队友端口绑定到当次构建的路由会话。
+      {
+        sessionId: context.sessionId,
+        routeId: context.routeId,
+        ...(context.taskId ? { taskId: context.taskId } : {}),
+      },
     )),
     // Route-scoped task sessions get the change-capture middleware bound to
     // the live task's port; plain chat contexts contribute nothing.

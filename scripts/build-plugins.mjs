@@ -65,6 +65,11 @@ const LIBS = [
 // 顶层 hooks 声明（项目 plugins.yml 覆盖用户 cordis.yml 同键）+ 会话工作
 // 区根两个 getter——注册消息处理器（order -450，会话启动/用户输入两面）
 // 与工具执行中间件（pre 拦截/post 附注），命令执行无 shell、限时限量。
+// team 为具名队友协作插件（B4E 协作批次）：默认导出是工厂（同
+// creation/reminders/memory/hooks 形态），由宿主 factoryPlugin 装配并传入
+// 绑定当次路由会话身份的 sendToTeammate 投递端口——注册 send_message
+// 工具（向具名队友路由投递携带对等权威信封的回合并取回回复；持久化仅
+// 队友名与消息摘要），无任务路由的组装面恒答"无具名队友"。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -87,6 +92,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "planflow", dependencies: [] },
   { id: "memory", dependencies: [] },
   { id: "hooks", dependencies: [] },
+  { id: "team", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -117,6 +123,7 @@ const PLUGINS = [
   { dir: "packages/plugin-planflow", id: "planflow" },
   { dir: "packages/plugin-memory", id: "memory" },
   { dir: "packages/plugin-hooks", id: "hooks" },
+  { dir: "packages/plugin-team", id: "team" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

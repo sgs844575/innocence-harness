@@ -71,6 +71,9 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // getter（项目 yml 顶层 hooks: 覆盖用户 cordis.yml 同键）+ 会话工作区根
 // getter——注册消息处理器（name "hooks"，order -450）与工具执行中间件
 // （name "hooks"，pre 拦截/post 附注）两面。
+// team 为具名队友协作插件（批次 4E）：默认导出是工厂（同 hooks 形态），
+// 由宿主 factoryPlugin 装配并传入绑定路由会话身份的 sendToTeammate 端口
+// ——注册 send_message 工具（对等权威信封投递 + 回复取回）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "builtin-skills", "reminders",
@@ -78,6 +81,7 @@ const MANIFEST_IDS = [
   "planflow",
   "memory",
   "hooks",
+  "team",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -129,6 +133,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       planflow: "planflow",
       memory: "memory",
       hooks: "hooks",
+      team: "team",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -221,6 +226,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(hooksEntry?.core ?? false, '"hooks" 必须非 core（可开关）').toBe(false);
     expect(hooksEntry?.kind).toBeUndefined();
     expect(hooksEntry?.title, '"hooks" 缺 title').toMatch(/\S/);
+    // 具名队友协作插件（批次 4E）：工厂型能力插件（非 core、无依赖、无
+    // kind），由宿主 factoryPlugin 装配并传入身份绑定的投递端口。
+    const teamEntry = byId.get("team");
+    expect(teamEntry, 'manifest 缺少 "team" 条目').toBeDefined();
+    expect(teamEntry).toMatchObject({ dependencies: [] });
+    expect(teamEntry?.core ?? false, '"team" 必须非 core（可开关）').toBe(false);
+    expect(teamEntry?.kind).toBeUndefined();
+    expect(teamEntry?.title, '"team" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
@@ -424,6 +437,77 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
     }
+  });
+
+  it("team entry mounts the staged factory with the identity-bound teammate port", async () => {
+    // 仿 hooks 装配形态的工厂调用探针（批次 4E）：条目名 "team"，内嵌
+    // factory:team 插件；应用到最小 ctx（tools.register——4B 教训：供应
+    // 插件需要的全部面）后 send_message 落地，且宿主 createTeammatePort
+    // 收到 composePlugins 的会话身份、工具执行经端口往返（ok/!ok 两态）。
+    const delivered: Array<{ teammate: string; message: string }> = [];
+    const identities: unknown[] = [];
+    const probe = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => path.join(tmpdir(), "ic-compose-no-user-plugins"),
+      enableHmrWatcher: false,
+      createTeammatePort: (identity) => {
+        identities.push(identity);
+        return async (teammate, message) => {
+          delivered.push({ teammate, message });
+          return teammate === "ghost"
+            ? { ok: false, error: 'Unknown teammate "ghost"; available teammates: worker-1.' }
+            : { ok: true, reply: `ack from ${teammate}` };
+        };
+      },
+      log: () => {},
+    });
+    try {
+      const ws = await tempWorkspace({});
+      const identity = { sessionId: "chat-9", routeId: "main", taskId: "task-9" };
+      const plugins = await probe.composePlugins(ws, undefined, undefined, identity);
+      const team = plugins.find((p) => p.name === "team");
+      expect(team, '条目 "team" 未装配').toBeTruthy();
+      expect(team && "plugin" in team && team.plugin?.name).toBe("factory:team");
+
+      const registered: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<{ content: string; isError?: boolean }> }> = [];
+      const factory = team && "plugin" in team ? team.plugin : undefined;
+      await factory?.apply({
+        tools: { register: (t: unknown) => registered.push(t as never) },
+      } as never);
+      expect(registered.map((t) => t.name)).toEqual(["send_message"]);
+
+      const ctxProbe = { signal: new AbortController().signal } as never;
+      const acked = await registered[0].execute({ teammate: "worker-1", message: "probe ping" }, ctxProbe);
+      expect(acked.isError).toBeFalsy();
+      expect(acked.content).toBe("ack from worker-1");
+      expect(delivered).toEqual([{ teammate: "worker-1", message: "probe ping" }]);
+      // 身份只经宿主钩子流入工厂（组合层不吞不换）。
+      expect(identities).toEqual([identity]);
+      const failed = await registered[0].execute({ teammate: "ghost", message: "anyone there" }, ctxProbe);
+      expect(failed.isError).toBe(true);
+      expect(failed.content).toContain("Unknown teammate");
+    } finally {
+      await probe.disposePluginBoot();
+    }
+  });
+
+  it("team entry without the host port still mounts and answers the no-teammates error", async () => {
+    // 无 createTeammatePort 钩子的组装面（本文件级组合根即无）：插件照常
+    // 挂载，send_message 恒答 no-teammates 错误（无路由系统的既定语义）。
+    const ws = await tempWorkspace({});
+    const plugins = await composePlugins(ws);
+    const team = plugins.find((p) => p.name === "team");
+    expect(team, '无端口钩子时条目 "team" 仍装配').toBeTruthy();
+    expect(team && "plugin" in team && team.plugin?.name).toBe("factory:team");
+    const registered: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<{ content: string; isError?: boolean }> }> = [];
+    const factory = team && "plugin" in team ? team.plugin : undefined;
+    await factory?.apply({
+      tools: { register: (t: unknown) => registered.push(t as never) },
+    } as never);
+    const result = await registered[0].execute({ teammate: "anyone", message: "hi" }, { signal: new AbortController().signal } as never);
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/no named teammates/i);
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------

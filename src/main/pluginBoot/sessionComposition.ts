@@ -14,6 +14,10 @@ import {
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import {
+  unavailableTeammatePort,
+  type SendToTeammatePort,
+} from "@innocenceharness/plugin-team";
+import {
   DEFAULT_SETTINGS,
   MOCK_GREETING,
   resolveActive,
@@ -59,6 +63,22 @@ export interface SessionCompositionOptions {
   enableHmrWatcher?: boolean;
   /** Called after a watched plugin client changes. */
   onPluginClientChange?: (id: string) => void;
+  /**
+   * Teammate delivery port factory (batch 4E): binds one sendToTeammate port
+   * to the identity of the route session being composed. Absent — or a
+   * composition without session identity — still mounts the team plugin, and
+   * every send_message call answers the no-teammates error.
+   */
+  createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort;
+}
+
+/** Identity of the route session a composePlugins call assembles for. */
+export interface ComposeSessionIdentity {
+  sessionId: string;
+  /** Normalized route id ("main" for plain chat turns). */
+  routeId: string;
+  /** Task the route belongs to; absent for plain chat (no teammates). */
+  taskId?: string;
 }
 
 /** The composition face the host glue consumes. */
@@ -76,11 +96,14 @@ export interface SessionComposition {
     workspaceRoot?: string;
     userToggles?: PluginToggleSource;
   }): Promise<PluginInventoryEntry[]>;
-  /** One workspace's session plugin set (staging manifest + toggles + disk). */
+  /** One workspace's session plugin set (staging manifest + toggles + disk).
+   *  The optional session identity (supplied by hosts whose runtime builds
+   *  route sessions) is what the team factory binds its teammate port to. */
   composePlugins(
     workspaceRoot: string,
     userToggles?: PluginToggleSource,
     settings?: HarnessSettings,
+    sessionIdentity?: ComposeSessionIdentity,
   ): Promise<SessionPlugin[]>;
   /**
    * Agent 模式目录（IPC agents:modes）：staging manifest（readManifest，
@@ -193,14 +216,15 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team",
   options: () =>
     | { dirs: string[] }
     | { servers: Record<string, unknown> }
     | { userRoot: string }
     | { getPermissionMode: () => string }
     | { getUserRoot: () => string; getProjectRoot: () => string }
-    | { getHooksConfig: () => Promise<unknown>; getWorkspaceRoot: () => string },
+    | { getHooksConfig: () => Promise<unknown>; getWorkspaceRoot: () => string }
+    | { sendToTeammate: SendToTeammatePort },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -273,11 +297,14 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // current permission mode through the settings channel threaded from
 // composePlugins (getPermissionMode), not from group config. "memory" reads the
 // two memory roots through getters threaded from composePlugins
-// (getUserRoot/getProjectRoot), likewise not from group config. "hooks" reads
-// the merged top-level "hooks" declarations (project layer over user layer,
+// (getUserRoot/getProjectRoot), likewise not from group config. "hooks" reads the
+// merged top-level "hooks" declarations (project layer over user layer,
 // from the same resolveBuiltinSet pass) plus the per-composition workspace
-// root through getters — never from group config.
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks"]);
+// root through getters — never from group config. "team" receives the
+// teammate delivery port bound to the composing route session's identity
+// (createTeammatePort + composePlugins' session identity) — never from
+// group config.
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team"]);
 
 async function resolveGroupEntries(
   boot: PluginBoot,
@@ -329,6 +356,8 @@ async function builtinLoaderEntryFor(
   resolvePermissionMode: () => string,
   hooksConfig: unknown,
   ecosystemPlugin?: ObjectPlugin,
+  sessionIdentity?: ComposeSessionIdentity,
+  createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -379,6 +408,19 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "hooks", () => ({
       getHooksConfig: () => Promise.resolve(hooksConfig),
       getWorkspaceRoot: () => workspaceRoot,
+    }));
+  } else if (!entry.disabled && id === "team") {
+    // Same factory shape as creation/reminders/memory/hooks: the staged
+    // default export is the team plugin factory. The host injects the
+    // sendToTeammate port bound to THIS route session's identity (a task's
+    // named routes are the teammate namespace); without the host hook — or
+    // without session identity — the plugin still mounts and every
+    // send_message answers the no-teammates error.
+    plugin = factoryPlugin(boot, "team", () => ({
+      sendToTeammate:
+        createTeammatePort && sessionIdentity
+          ? createTeammatePort(sessionIdentity)
+          : unavailableTeammatePort,
     }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
@@ -501,6 +543,7 @@ export function createSessionComposition(
       workspaceRoot: string,
       userToggles?: PluginToggleSource,
       settings?: HarnessSettings,
+      sessionIdentity?: ComposeSessionIdentity,
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
       // creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
@@ -575,6 +618,8 @@ export function createSessionComposition(
               (level, channel, detail) => options.log(level, channel, detail),
             )
             : undefined,
+          sessionIdentity,
+          options.createTeammatePort,
         ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。

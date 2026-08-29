@@ -802,6 +802,28 @@ describe("HarnessRuntime route forks", () => {
     await expect(runtime.forkRoute(input)).resolves.toEqual({ ...route, prompt: "original prompt" });
     expect(forkRoute).toHaveBeenCalledWith(input);
   });
+
+  it("isRouteRunning mirrors the run window of one route (busy face for peer routing)", async () => {
+    // startRun 在 send 内首个 await 之前同步注册——用组合根 gate 持住回合，
+    // 断言忙闲面恰好覆盖回合窗口；缺省 routeId 与 send 一样落到 main。
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "ok" }], { workspaceRoot: workspace }),
+      pluginsForSession: () => gate.then(() => []),
+    });
+
+    expect(runtime.isRouteRunning("busy-1")).toBe(false);
+    expect(runtime.isRouteRunning("busy-1", "main")).toBe(false);
+    expect(runtime.isRouteRunning("busy-1", "child")).toBe(false);
+    const turn = chatTurn(runtime, "busy-1", "hi", "m-b1");
+    expect(runtime.isRouteRunning("busy-1")).toBe(true);
+    expect(runtime.isRouteRunning("busy-1", "main")).toBe(true);
+    expect(runtime.isRouteRunning("busy-1", "child")).toBe(false);
+    release();
+    await turn;
+    expect(runtime.isRouteRunning("busy-1")).toBe(false);
+  });
 });
 
 describe("HarnessRuntime route cache", () => {

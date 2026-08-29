@@ -19,6 +19,7 @@ export {
 } from "./pluginBoot/compose";
 export {
   createSessionComposition,
+  type ComposeSessionIdentity,
   type SessionComposition,
   type SessionCompositionOptions,
 } from "./pluginBoot/sessionComposition";

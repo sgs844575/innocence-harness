@@ -212,6 +212,21 @@ maybeDescribe("plugin boot config and route loader", () => {
     await host.disposePluginBoot();
   });
 
+  it("rejects a group child declaring the team factory-only builtin (4E)", async () => {
+    // team 工厂需要宿主身份绑定的投递端口，组内声明会绕过装配直载工厂
+    // 函数——与 creation/reminders/memory/hooks 同一拒绝语义。
+    const workspace = tempRoot("ic-factory-only-team-");
+    mkdirSync(path.join(workspace, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".innocence", "plugins.yml"),
+      "groups:\n  basic:\n    entries:\n      - id: team\n        name: team\n",
+      "utf8",
+    );
+    const host = composition();
+    await expect(host.composePlugins(workspace)).rejects.toThrow(/factory-only/);
+    await host.disposePluginBoot();
+  });
+
   it("recursively mounts nested groups and resolves deepest factory children", async () => {
     const workspace = tempRoot("ic-nested-group-project-");
     mkdirSync(path.join(workspace, ".innocence"), { recursive: true });

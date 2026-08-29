@@ -130,6 +130,13 @@ export class HarnessRuntime {
     if (!this.options.forkRoute) throw new Error("forkRoute host port is not configured");
     return this.options.forkRoute(input);
   }
+  /** Whether one route currently runs a turn (empty routeId = the main
+   *  route, like send) — the busy face peer routing refuses fail-fast on
+   *  instead of corrupting the session with a second concurrent run. */
+  isRouteRunning(sessionId: string, routeId?: string): boolean {
+    return this.cache.isRunning(routeCacheKey(sessionId, routeId || DEFAULT_ROUTE_ID));
+  }
+
   /** Stops the active run of one route (empty routeId = the main route,
    *  like send; omitted route = every route of the chat session). */
   stop(sessionId: string, routeId?: string): void {

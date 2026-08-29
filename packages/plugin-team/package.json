@@ -1,0 +1,25 @@
+{
+  "name": "@innocenceharness/plugin-team",
+  "version": "0.1.0",
+  "description": "InnocenceHarness 队友协作插件：具名队友消息工具与对等权威信封",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/plugin-team"
+  }
+}
