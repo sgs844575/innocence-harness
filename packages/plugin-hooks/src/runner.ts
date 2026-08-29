@@ -25,18 +25,27 @@ const SPAWN_MAX_BUFFER = 64 * 1024;
 export interface HookRunInput {
   toolName?: string;
   inputPreview?: string;
+  /** Working directory for the command — the session's workspace root. */
+  cwd?: string;
 }
 
 export interface HookRunResult {
   ok: boolean;
   output: string;
   timedOut?: boolean;
+  /**
+   * Numeric exit status when the command itself exited non-zero — the
+   * explicit user-hook refusal signal. Absent for infrastructure failures
+   * (timeout kill, spawn error), so wiring can deny only on real exits.
+   */
+  exitCode?: number;
 }
 
 export interface HookExecFileOptions {
   env?: NodeJS.ProcessEnv;
   windowsHide?: boolean;
   maxBuffer?: number;
+  cwd?: string;
 }
 
 export type HookExecFileError = Error & {
@@ -141,6 +150,7 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
               env: buildEnvironment(hook, input),
               windowsHide: true,
               maxBuffer: SPAWN_MAX_BUFFER,
+              ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
             },
             (error, stdout, stderr) => {
               const parts: string[] = [];
@@ -154,6 +164,9 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
                 ok: error === null && !timedOut,
                 output: capText(parts.join("\n"), MAX_HOOK_OUTPUT_CHARS, OUTPUT_TRUNCATION_MARKER),
                 ...(timedOut ? { timedOut: true } : {}),
+                ...(error !== null && !timedOut && typeof error.code === "number"
+                  ? { exitCode: error.code }
+                  : {}),
               });
             },
           );

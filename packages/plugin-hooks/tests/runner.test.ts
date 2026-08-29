@@ -159,6 +159,54 @@ describe("createHookRunner", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("passes the workspace cwd into the process layer options", async () => {
+    let observed: HookExecFileOptions | undefined;
+    const execFile: HookExecFile = (_file, _args, options, callback) => {
+      observed = options;
+      callback(null, "", "");
+      return { pid: undefined, kill() {} };
+    };
+    await createHookRunner({ execFile }).runHook(
+      { event: "sessionStart", command: "boot-hook" },
+      { cwd: "D:/ws/root" },
+    );
+    expect(observed!.cwd).toBe("D:/ws/root");
+  });
+
+  it("reports the numeric exit code for explicit non-zero exits", async () => {
+    const execFile: HookExecFile = (_file, _args, _options, callback) => {
+      callback(errorWith(3, "process exited"), "", "");
+      return { pid: undefined, kill() {} };
+    };
+    const result = await createHookRunner({ execFile }).runHook(
+      { event: "preToolCall", command: "guard-hook" },
+      {},
+    );
+    expect(result.exitCode).toBe(3);
+  });
+
+  it("leaves exitCode undefined on timeouts and spawn failures", async () => {
+    const timedOut = await createHookRunner({
+      execFile: (_file, _args, _options, callback) => ({
+        pid: undefined,
+        kill() {
+          callback(Object.assign(new Error("killed"), { killed: true }), "", "");
+        },
+      }),
+    }).runHook({ event: "preToolCall", command: "slow-hook", timeoutMs: 30 }, {});
+    expect(timedOut.timedOut).toBe(true);
+    expect(timedOut.exitCode).toBeUndefined();
+
+    const missing = await createHookRunner({
+      execFile: (_file, _args, _options, callback) => {
+        callback(errorWith("ENOENT", "spawn failed"), "", "");
+        return { pid: undefined, kill() {} };
+      },
+    }).runHook({ event: "preToolCall", command: "ghost-hook" }, {});
+    expect(missing.ok).toBe(false);
+    expect(missing.exitCode).toBeUndefined();
+  });
+
   it("passes bounded spawn options without a shell", async () => {
     let observedOptions: HookExecFileOptions | undefined;
     const execFile: HookExecFile = (_file, _args, options, callback) => {

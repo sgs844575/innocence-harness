@@ -1,29 +1,39 @@
-// Hooks plugin (batch 4C task 1): factory skeleton for declarative session
-// hooks. This task lands the configuration parsing and the bounded command
-// runner; the prompt/tool/session-start wiring arrives with the next task,
-// so apply is a harmless placeholder.
+// Hooks plugin (batch 4C): declarative session hooks. Task 1 landed the
+// configuration parsing and the bounded command runner; this factory composes
+// them into the session — one prompt processor plus one tool middleware
+// registered through the spine faces (ctx.session / ctx.tools), so hooks fire
+// at session start, on user input, and around every tool call, for inherited
+// child sessions too (a hook is session-level policy; see wiring.ts).
 import type { Context } from "@innocenceharness/kernel";
+// The wiring module imports harness-session and harness-tools, which pulls
+// their Context service augmentations (ctx.session, ctx.tools) into this
+// compilation — the same pattern as plugin-memory.
+import { createHooksWiring, type HooksWiringOptions } from "./wiring";
 
 export * from "./config";
 export * from "./runner";
+export * from "./wording";
+export * from "./wiring";
 
-export interface HooksPluginOptions {
-  /** Reads the raw "hooks" configuration (unknown shape) per composition. */
-  getHooksConfig: () => Promise<unknown>;
-}
+export type HooksPluginOptions = HooksWiringOptions;
 
 export interface HooksPlugin {
   readonly name: "hooks";
   apply(ctx: Context): void;
 }
 
-/** Creates the hooks plugin for one session; the wiring lands with task 2. */
-export function createHooksPlugin(_options: HooksPluginOptions): HooksPlugin {
+/**
+ * Creates the hooks plugin for one session composition: apply registers the
+ * processor and the middleware bound to the option getters, so the hooks
+ * config and the workspace root resolve per composition without rebuilding.
+ */
+export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
   return {
     name: "hooks",
-    apply(_ctx: Context) {
-      // Intentionally empty: processor and middleware registration
-      // surfaces arrive with the wiring task.
+    apply(ctx: Context) {
+      const { processor, middleware } = createHooksWiring(options);
+      ctx.session.registerProcessor(processor);
+      ctx.tools.registerMiddleware(middleware);
     },
   };
 }

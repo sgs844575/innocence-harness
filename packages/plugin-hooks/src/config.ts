@@ -99,7 +99,7 @@ export function parseHookDefinitions(raw: unknown): ParsedHooks {
     hooks.push({
       event,
       command: command.trim(),
-      ...(match !== undefined ? { match } : {}),
+      ...(match !== undefined ? { match: match.trim() } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
   });

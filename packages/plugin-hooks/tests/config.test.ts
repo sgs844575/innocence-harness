@@ -1,8 +1,11 @@
-// plugin-hooks config tests (batch 4C task 1): declarative hook array
-// parsing — the four-event enum gate, command/match/timeout validation,
-// ceiling clamping with a warning, skip-and-warn degradation for bad
-// entries, duplicate preservation, and the factory plugin skeleton.
+// plugin-hooks config tests (batch 4C task 1 + task 2 trim fix): declarative
+// hook array parsing — the four-event enum gate, command/match/timeout
+// validation, ceiling clamping with a warning, skip-and-warn degradation
+// for bad entries, duplicate preservation, and the factory plugin skeleton
+// (task 2 wires apply through the session faces).
 import type { Context } from "@innocenceharness/kernel";
+import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
@@ -87,6 +90,16 @@ describe("parseHookDefinitions", () => {
     expect(parsed.warnings).toHaveLength(2);
   });
 
+  it("trims the match value alongside the command", () => {
+    const parsed = parseHookDefinitions([
+      { event: "preToolCall", command: "  guard-hook  ", match: "  Write  " },
+    ]);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.hooks).toEqual([
+      { event: "preToolCall", command: "guard-hook", match: "Write" },
+    ]);
+  });
+
   it("keeps duplicated commands across events without deduplication", () => {
     const parsed = parseHookDefinitions([
       { event: "preToolCall", command: "audit-hook" },
@@ -112,11 +125,21 @@ describe("parseHookDefinitions", () => {
 });
 
 describe("createHooksPlugin", () => {
-  it("returns a factory-shaped plugin skeleton with a placeholder apply", () => {
-    const plugin = createHooksPlugin({ getHooksConfig: async () => [] });
+  it("returns a factory-shaped plugin whose apply registers both faces", () => {
+    const plugin = createHooksPlugin({
+      getHooksConfig: async () => [],
+      getWorkspaceRoot: () => "D:/ws/root",
+    });
     expect(plugin.name).toBe("hooks");
     expect(typeof plugin.apply).toBe("function");
-    expect(() => plugin.apply({} as Context)).not.toThrow();
+    const processors: MessageProcessor[] = [];
+    const middlewares: ToolExecutionMiddleware[] = [];
+    plugin.apply({
+      session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+      tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
+    } as unknown as Context);
+    expect(processors).toHaveLength(1);
+    expect(middlewares).toHaveLength(1);
     expect(hooksDefault).toBe(createHooksPlugin);
   });
 });
