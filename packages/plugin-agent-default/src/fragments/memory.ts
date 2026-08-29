@@ -41,6 +41,17 @@ needs has a better home elsewhere.
   memory_read and follow it as settled guidance instead of guessing. Entries
   scoped to the user shape how you explain things; entries scoped to the
   project carry the context the code cannot tell you, and they are the
-  surface shared across everyone working in this workspace.`,
+  surface shared across everyone working in this workspace.
+
+The project scope is the team's shared record. Everything saved there is
+read by every contributor to this workspace, so word project entries for a
+teammate who never saw this conversation: name the work, the decision, and
+its reason in terms that stand alone, because readers arrive without the
+context that produced the note. Preferences about how one person likes to
+work belong in the user scope, never folded into the project record; team
+agreements, conventions the group settled on, and notes on who owns which
+area are exactly what the project scope exists to carry. The index serves
+the whole team the same way: its lines are what a teammate scans first, so
+keep each pointer to one line and keep entry bodies out.`,
   },
 ];

@@ -71,6 +71,23 @@ describe("shared fragment clusters", () => {
     expect(text).toMatch(/memory_read/);
     expect(text).toMatch(/index/i);
   });
+  it("memory discipline fragment carries the team-shared project-scope anchors", () => {
+    const text = memoryFragments
+      .find((f) => f.id === "shared.memory.discipline")!
+      .render({ activeMode: "default", traits: {} });
+    // 批次 4E 增补段：project 作用域即团队共享。
+    expect(text).toMatch(/project scope is the team/i);
+    // 条目措辞面向团队可读（他人无本会话上下文也能理解）。
+    expect(text).toMatch(/never saw this conversation/i);
+    // 个人偏好归 user 档，不混入 project。
+    expect(text).toMatch(/user scope/);
+    expect(text).toMatch(/preference/i);
+    // 团队约定与分工记录适合 project 档。
+    expect(text).toMatch(/convention/i);
+    expect(text).toMatch(/who\s+owns\s+which\s+area/i);
+    // 索引取用同样适用（团队面：一行指针、正文不进索引）。
+    expect(text).toMatch(/its lines are what a teammate scans/i);
+  });
   it("renders contain no banned third-party tokens", () => {
     const banned = [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i];
     for (const f of [...communicationFragments, ...safetyFragments]) {

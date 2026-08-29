@@ -112,6 +112,14 @@ describe("builtin skills", () => {
     expect(skill!.body).toMatch(/session ends|wrap|user asks/i);
   });
 
+  it("memory-upkeep weighs team readability when reviewing project-scope rows", () => {
+    const skill = builtinSkills.find((s) => s.name === "memory-upkeep");
+    expect(skill).toBeDefined();
+    // 批次 4E 增补：复审时兼顾团队可读性（无本会话上下文的队友也能读懂）。
+    expect(skill!.body).toMatch(/weigh the team/);
+    expect(skill!.body).toMatch(/never saw this session/);
+  });
+
   it("autonomous-loop carries the setup, pacing, monitoring, scheduling and local-cost anchors", () => {
     const skill = builtinSkills.find((s) => s.name === "autonomous-loop");
     expect(skill).toBeDefined();

@@ -23,7 +23,8 @@ read the questionable entries with memory_read before changing anything.
 Judge every row as a retrieval surface: does the id still say what the entry
 is, and does the first line still carry the words a later search would use?
 Whatever the body says, a stale first line is a stale index row for every
-future session.
+future session. For a project-scope row, also weigh the team: a teammate
+who never saw this session should still make sense of the entry.
 
 ## Merge near-duplicates
 
