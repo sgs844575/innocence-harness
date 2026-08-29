@@ -165,6 +165,32 @@ export async function captureBaseline(git: GitRunner, root: string): Promise<Git
   return { root: info.root, headCommit: info.headCommit, branch: info.branch, entries };
 }
 
+const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Renames temp -> target, retrying briefly on transient Windows file locks
+ * (scanner/indexer or a handle not yet released after close) before giving up.
+ */
+async function renameWithRetry(temp: string, target: string): Promise<void> {
+  let delay = 25;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(temp, target);
+      return;
+    } catch (error) {
+      if (attempt >= 8 || !TRANSIENT_RENAME_CODES.has((error as NodeJS.ErrnoException).code ?? "")) {
+        throw error;
+      }
+      await sleep(delay);
+      delay = Math.min(delay * 2, 400); // 25..400ms backoff, ~2s total window
+    }
+  }
+}
+
 /**
  * Atomic file write inside a root: temp file in the same directory, fsync,
  * rename. A read-only bit on an EXISTING target is cleared first — Windows
@@ -192,7 +218,7 @@ export async function writeGitFile(
     }
     // Clear a readonly target before the rename (ENOENT when absent is fine).
     await fs.chmod(target, 0o666).catch(() => undefined);
-    await fs.rename(temp, target);
+    await renameWithRetry(temp, target);
   } catch (error) {
     await fs.rm(temp, { force: true });
     throw error;
