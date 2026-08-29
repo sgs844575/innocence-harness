@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers fourteen skills with unique names", () => {
+  it("registers fifteen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(14);
+    expect(new Set(names).size).toBe(15);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -44,6 +44,7 @@ describe("builtin skills", () => {
       "harness-configuration",
       "repo-instructions",
       "memory-upkeep",
+      "autonomous-loop",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -69,7 +70,7 @@ describe("builtin skills", () => {
     }
   });
 
-  it("registers all fourteen on the skills service in order", async () => {
+  it("registers all fifteen on the skills service in order", async () => {
     const ctx = await setup();
     expect(ctx.skills.all().map((s) => s.name)).toEqual(
       builtinSkills.map((s) => s.name),
@@ -80,7 +81,7 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(14);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(15);
   });
 
   it("is English and free of banned tokens", () => {
@@ -109,5 +110,53 @@ describe("builtin skills", () => {
     expect(skill!.body).toMatch(/fewer|sparing/i);
     // 建议周期：会话结束/用户要求。
     expect(skill!.body).toMatch(/session ends|wrap|user asks/i);
+  });
+
+  it("autonomous-loop carries the setup, pacing, monitoring, scheduling and local-cost anchors", () => {
+    const skill = builtinSkills.find((s) => s.name === "autonomous-loop");
+    expect(skill).toBeDefined();
+    // 建立循环：清单文件约定（标题 + 复选列表）与本仓路径。
+    expect(skill!.body).toMatch(/\.innocence\/loop\.md/);
+    expect(skill!.body).toMatch(/title/);
+    expect(skill!.body).toMatch(/checkbox/);
+    // 每轮处理首个未勾项并在文件内打勾（文件即进度记录）。
+    expect(skill!.body).toMatch(/unticked/);
+    expect(skill!.body).toMatch(/marks\s+it\s+done/);
+    // 经设置面创建自动化定义：目标会话、loop 载荷（清单 + 步频）。
+    expect(skill!.body).toMatch(/automation\s+configuration\s+view|automation\s+definition/i);
+    expect(skill!.body).toMatch(/target\s+session/);
+    expect(skill!.body).toMatch(/loop\s+payload/);
+    expect(skill!.body).toMatch(/pacing/);
+    // 间隔选择起点：短任务分钟级、长任务小时级；可立即首跑。
+    expect(skill!.body).toMatch(/minutes/);
+    expect(skill!.body).toMatch(/hours/);
+    expect(skill!.body).toMatch(/immediately/);
+    // 停止条件先行：全完成 / 错误上限 / 手动停用。
+    expect(skill!.body).toMatch(/stop\s+conditions?/);
+    expect(skill!.body).toMatch(/all\s+entries\s+ticked/);
+    expect(skill!.body).toMatch(/error\s+ceiling/);
+    // 自步频：有产出收紧、无产出拉长，上下限钳制（本仓 pacing 语义）。
+    expect(skill!.body).toMatch(/productive/);
+    expect(skill!.body).toMatch(/floor/);
+    expect(skill!.body).toMatch(/ceiling/);
+    // 为什么：成本 / 噪声 / 避免空转。
+    expect(skill!.body).toMatch(/cost/);
+    expect(skill!.body).toMatch(/noise/);
+    expect(skill!.body).toMatch(/\bspin\b/);
+    // 监控与终止：周期查看进度；条件满足即停用。
+    expect(skill!.body).toMatch(/progress/);
+    expect(skill!.body).toMatch(/disable the definition/);
+    // 异常时的退避预期。
+    expect(skill!.body).toMatch(/backoff/);
+    // 调度语义：间隔式（everyMs/idle）非完整 cron；复杂日历调度不支持，如实说明。
+    expect(skill!.body).toMatch(/interval-based/);
+    expect(skill!.body).toMatch(/milliseconds/);
+    expect(skill!.body).toMatch(/idle/);
+    expect(skill!.body).toMatch(/cron/);
+    expect(skill!.body).toMatch(/not supported/);
+    // 本地运行注意：配额与上下文消耗、长循环的会话压缩影响。
+    expect(skill!.body).toMatch(/quota/);
+    expect(skill!.body).toMatch(/context/);
+    expect(skill!.body).toMatch(/compaction/);
   });
 });
