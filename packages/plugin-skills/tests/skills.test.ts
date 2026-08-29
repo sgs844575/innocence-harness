@@ -230,6 +230,50 @@ describe("skill re-mention note", () => {
     expect(noteText(onlyDerived)).not.toMatch(/<system-reminder>/);
   });
 
+  it("keeps the note to at most two sentences", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 扩"));
+    const mention = await ctx.session.processUserInput(textMessage("user", "按 review 办"));
+    const texts = noteText(mention);
+    const body = texts.slice(texts.indexOf("<system-reminder>"));
+    expect(body).not.toContain("one-time setup"); // 旧四句版的裁撤面
+    expect(body).not.toContain("cite the skill body");
+    const sentences = body
+      .replace(/<\/?system-reminder>/g, "")
+      .trim()
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) => sentence.trim().length > 0);
+    expect(sentences.length).toBeGreaterThanOrEqual(1);
+    expect(sentences.length).toBeLessThanOrEqual(2);
+  });
+
+  it("injects the note once per skill name across turns", async () => {
+    // 日常词技能名（如 verify）连续多轮提及不得逐轮刷注记——每个名字
+    // 只注入一次；其他技能名各自有自己的一次。
+    const extra = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-skills-once-"));
+    await fs.mkdir(path.join(extra, "verify"), { recursive: true });
+    await fs.writeFile(
+      path.join(extra, "verify", "SKILL.md"),
+      "---\nname: verify\ndescription: 校验指南\n---\n\n校验正文：逐项核对。",
+      "utf8",
+    );
+    try {
+      const ctx = await mountSkills([skillsDir, extra]);
+      await ctx.session.processUserInput(textMessage("user", "/review 扩一次"));
+      await ctx.session.processUserInput(textMessage("user", "/verify 扩一次"));
+      const first = noteText(await ctx.session.processUserInput(textMessage("user", "按 review 说说")));
+      expect(first).toMatch(/<system-reminder>/);
+      const second = noteText(await ctx.session.processUserInput(textMessage("user", "再按 review 说说")));
+      expect(second).not.toMatch(/<system-reminder>/); // 同名第二次：静默
+      const other = noteText(await ctx.session.processUserInput(textMessage("user", "按 verify 说说")));
+      expect(other).toMatch(/<system-reminder>/); // 其他名字：各自的一次
+      const otherAgain = noteText(await ctx.session.processUserInput(textMessage("user", "再按 verify 说说")));
+      expect(otherAgain).not.toMatch(/<system-reminder>/);
+    } finally {
+      await fs.rm(extra, { recursive: true, force: true });
+    }
+  });
+
   it("the note is English and banned-token free", async () => {
     const ctx = await mountSkills([skillsDir]);
     await ctx.session.processUserInput(textMessage("user", "/review 请检查"));

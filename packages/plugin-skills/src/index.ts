@@ -113,18 +113,15 @@ function envelope(body: string): string {
 
 /**
  * The re-mention note body (source: system-reminder-previously-invoked-skills.md,
- * adapted to the mention-not-invocation case): the named skills were already
- * expanded earlier in this session, a prose mention is not a request to
- * reload, and one-time setup must not repeat.
+ * adapted to the mention-not-invocation case, converged to two sentences):
+ * the named skills were already expanded in this session; a plain mention is
+ * not a reload — re-run the slash form only when the full text is needed.
  */
 function mentionNoteBody(names: readonly string[]): string {
   const slashForms = names.map((name) => `/${name}`).join(" or ");
   return (
-    `Skill ${names.join(", ")} was expanded earlier in this session; a plain mention is not ` +
-    "a fresh invocation. Rely on the guidance already in effect, cite the skill body where " +
-    `it is still present in context, and run the explicit ${slashForms} command again only ` +
-    "when the full text is needed. Do not repeat one-time setup steps the skill performed " +
-    "on its first load."
+    `Skill ${names.join(", ")} was expanded earlier in this session. ` +
+    `A plain mention does not reload it — run ${slashForms} again if the full text is needed.`
   );
 }
 
@@ -226,8 +223,11 @@ export function createSkillsPlugin(options: SkillsPluginOptions): SkillsPlugin {
       // composition scope): the expansion pass records every skill it
       // expanded, and a later prose turn that mentions one of those names —
       // without opening with its /name invocation form — gets a one-line
-      // note appended to the message tail (mention, not invocation).
+      // note appended to the message tail (mention, not invocation). The
+      // note fires once per skill name (notedNames): common-word names
+      // mentioned turn after turn must not re-inject the reminder every turn.
       const expandedNames = new Set<string>();
+      const notedNames = new Set<string>();
       ctx.session.registerProcessor({
         name: "skill-expansion",
         order: SKILL_EXPANSION_ORDER,
@@ -237,12 +237,14 @@ export function createSkillsPlugin(options: SkillsPluginOptions): SkillsPlugin {
             ctx.skills,
             expandedNames,
           );
-          if (mentions.length === 0) return expanded;
+          const fresh = mentions.filter((name) => !notedNames.has(name));
+          if (fresh.length === 0) return expanded;
+          for (const name of fresh) notedNames.add(name);
           return {
             role: expanded.role,
             parts: [
               ...expanded.parts,
-              { type: "text" as const, text: envelope(mentionNoteBody(mentions)) },
+              { type: "text" as const, text: envelope(mentionNoteBody(fresh)) },
             ],
           };
         },

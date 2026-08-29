@@ -9,6 +9,20 @@ interface Route {
   contentType?: string | null;
   body?: string;
   hang?: boolean;
+  /** When set, the response carries an open body stream whose cancel hook fires here. */
+  onBodyCancel?: () => void;
+}
+
+function trackedBody(onCancel: () => void): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(Buffer.from("discarded body bytes", "utf8"));
+      // deliberately left open: only cancel() should end this stream
+    },
+    cancel() {
+      onCancel();
+    },
+  });
 }
 
 /** Fake transport: routed responses plus a call log (offline by construction). */
@@ -29,6 +43,7 @@ function fakeFetch(routes: Record<string, Route>) {
     return Promise.resolve({
       status: route.status ?? (route.location !== undefined ? 302 : 200),
       headers: { get: (name: string) => headers.get(name.toLowerCase()) ?? null },
+      body: route.onBodyCancel ? trackedBody(route.onBodyCancel) : null,
       text: async () => route.body ?? "",
     });
   };
@@ -152,21 +167,79 @@ describe("web_fetch tool", () => {
     }
   });
 
-  it("follows up to five redirects and reports the final url", async () => {
+  it("follows up to five same-host redirects and reports the final url", async () => {
     const routes: Record<string, Route> = {
-      "https://a.example/start": { location: "https://b.example/1" },
-      "https://b.example/1": { location: "https://c.example/2" },
-      "https://c.example/2": { location: "https://d.example/3" },
-      "https://d.example/3": { location: "https://e.example/4" },
-      "https://e.example/4": { location: "https://f.example/end" },
-      "https://f.example/end": { body: "landed" },
+      "https://a.example/start": { location: "https://a.example/r1" },
+      "https://a.example/r1": { location: "https://a.example/r2" },
+      "https://a.example/r2": { location: "https://a.example/r3" },
+      "https://a.example/r3": { location: "https://a.example/r4" },
+      "https://a.example/r4": { location: "https://a.example/end" },
+      "https://a.example/end": { body: "landed" },
     };
     const { impl, calls } = fakeFetch(routes);
     const res = await tool(impl).execute({ url: "https://a.example/start" }, ctx);
     expect(res.isError).toBeFalsy();
     expect(calls).toHaveLength(6);
-    expect(res.content).toContain("final=https://f.example/end");
+    expect(res.content).toContain("final=https://a.example/end");
     expect(res.content).toContain("landed");
+  });
+
+  it("terminates cross-host redirects instead of following them", async () => {
+    // Domain-scope discipline: the permission decision covers the entry host;
+    // a redirect to any other host must terminate so the caller re-enters the
+    // pipeline with the true scope instead of the tool silently hopping there.
+    let hopCancelled = false;
+    const routes: Record<string, Route> = {
+      "https://entry.example/go": {
+        location: "https://other.example/x",
+        onBodyCancel: () => {
+          hopCancelled = true;
+        },
+      },
+      "https://other.example/x": { body: "must not be fetched" },
+    };
+    const { impl, calls } = fakeFetch(routes);
+    const res = await tool(impl).execute({ url: "https://entry.example/go" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("other.example"); // 错误含最终域名
+    expect(res.content).toContain("https://other.example/x"); // 供重新调用的最终 URL
+    expect(calls).toEqual(["https://entry.example/go"]); // 不跟随跳变
+    expect(hopCancelled).toBe(true); // 丢弃的跳变响应体被释放
+    // 权限资源仍以入口域名为 scope——决议不因重定向稀释。
+    const t = createWebFetchTool({ fetchImpl: impl });
+    expect(t.permissionResource({ url: "https://entry.example/go" }, ctx)).toEqual({
+      action: "read",
+      kind: "web",
+      scope: "entry.example",
+    });
+  });
+
+  it("cancels discarded bodies on followed redirects and non-text rejections", async () => {
+    let redirectCancelled = false;
+    let rejectCancelled = false;
+    const follow = fakeFetch({
+      "https://example.com/a": {
+        location: "/b",
+        onBodyCancel: () => {
+          redirectCancelled = true;
+        },
+      },
+      "https://example.com/b": { body: "ok" },
+    });
+    const ok = await tool(follow.impl).execute({ url: "https://example.com/a" }, ctx);
+    expect(ok.isError).toBeFalsy();
+    expect(redirectCancelled).toBe(true);
+    const reject = fakeFetch({
+      "https://example.com/blob": {
+        contentType: "image/png",
+        onBodyCancel: () => {
+          rejectCancelled = true;
+        },
+      },
+    });
+    const denied = await tool(reject.impl).execute({ url: "https://example.com/blob" }, ctx);
+    expect(denied.isError).toBe(true);
+    expect(rejectCancelled).toBe(true);
   });
 
   it("rejects a sixth redirect hop", async () => {
@@ -335,6 +408,7 @@ describe("web_fetch tool", () => {
     expect(t.description).toContain("最终 URL");
     expect(t.description).toContain("字面量");
     expect(t.description).toContain("不可信");
+    expect(t.description).toContain("跨主机重定向不自动跟随");
   });
 
   it("registers via the plugin", () => {
