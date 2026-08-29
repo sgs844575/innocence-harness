@@ -5,7 +5,10 @@ import { defineSkill } from "../define";
  * memory-consolidation pass, its instruction-file reconciliation, and the
  * memory attachment-selection heuristic; shared-store handling is trimmed to
  * this harness's boundary — the project root is the shared surface, with no
- * cross-team store yet).
+ * cross-team store yet. Batch 5 task 4 folds in the extraction turn-budget
+ * reminder (reads gathered before writes) and the disconnected-store
+ * warning (stop on an unreadable store; a stale listing is not current),
+ * mapped onto a local file store that has no connection state).
  */
 export const memoryUpkeepSkill = defineSkill(
   "memory-upkeep",
@@ -20,6 +23,12 @@ asks for a cleanup, or whenever a listing shows the store drifting.
 
 Start from the lessons this session just produced, then call memory_list and
 read the questionable entries with memory_read before changing anything.
+Work in two batches: collect every listing and read in one stretch, then
+make every edit in the next, rather than interleaving one read with one
+write at a time — the grouped order spends fewer turns for the same result.
+If the store itself answers with errors or comes back unreadable, stop and
+say so plainly: an earlier listing is stale, not a current picture, and no
+maintenance should be invented for a store that could not be read.
 Judge every row as a retrieval surface: does the id still say what the entry
 is, and does the first line still carry the words a later search would use?
 Whatever the body says, a stale first line is a stale index row for every

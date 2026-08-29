@@ -5,7 +5,12 @@ import { defineSkill } from "../define";
  * family, its self-pacing and dynamic-pacing execution modes, the local
  * runtime note, and its recurring-cron scheduling flow; the cloud-scheduler
  * offer is trimmed — this harness schedules locally on plain intervals, and
- * calendar-style patterns are unsupported, which the body states honestly).
+ * calendar-style patterns are unsupported, which the body states honestly.
+ * Batch 5 task 4 folds in the scheduled-firing reminder's residual manual
+ * trigger semantic — the run-now control fires one pass on demand under
+ * the same machine-trigger envelope — and the queued-notification
+ * delivery's boundary line, restated for a fire-and-forget notify sink
+ * with no queue and no retry).
  */
 export const autonomousLoopSkill = defineSkill(
   "autonomous-loop",
@@ -29,7 +34,11 @@ until the work runs out.
   points at the checklist file and may carry pacing bounds.
 - Pick the starting interval from the work: minutes for short items,
   hours for longer ones. The first run can go out immediately instead of
-  waiting a full interval.
+  waiting a full interval. The run-now control on a saved definition is
+  the manual trigger: it fires one pass on demand without touching the
+  cadence, and the pass it starts carries the same machine-trigger
+  envelope as a scheduled one — pressing it operates the loop, it is not
+  a way of talking to it.
 - Settle the stop conditions before the first pass fires: all entries
   ticked, an error ceiling, or the user switching the definition off.
   Note the error ceiling in the checklist header.
@@ -49,7 +58,10 @@ is the system cooling down, not a stall to fight.
 Check in on your own period: list the definitions, open the checklist,
 compare ticked entries against elapsed time. When a stop condition is met,
 disable the definition. Completion handles itself once the last entry
-lands; an error ceiling or a human decision needs a hand. Say what ended
+lands; an error ceiling or a human decision needs a hand. The completion
+notice is fire-and-forget: delivery is attempted once, and a failure is
+logged, not retried — do not promise the user a message a failed channel
+may have swallowed. Say what ended
 the loop and what remains open.
 
 ## Scheduling semantics here

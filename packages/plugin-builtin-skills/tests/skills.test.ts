@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers fifteen skills with unique names", () => {
+  it("registers sixteen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(15);
+    expect(new Set(names).size).toBe(16);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -45,6 +45,7 @@ describe("builtin skills", () => {
       "repo-instructions",
       "memory-upkeep",
       "autonomous-loop",
+      "session-to-skill",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -70,7 +71,7 @@ describe("builtin skills", () => {
     }
   });
 
-  it("registers all fifteen on the skills service in order", async () => {
+  it("registers all sixteen on the skills service in order", async () => {
     const ctx = await setup();
     expect(ctx.skills.all().map((s) => s.name)).toEqual(
       builtinSkills.map((s) => s.name),
@@ -81,7 +82,7 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(15);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(16);
   });
 
   it("is English and free of banned tokens", () => {
@@ -166,5 +167,45 @@ describe("builtin skills", () => {
     expect(skill!.body).toMatch(/quota/);
     expect(skill!.body).toMatch(/context/);
     expect(skill!.body).toMatch(/compaction/);
+    // 批次 5 任务 4 增补：立即执行即手动触发（一次按需回合，不改步频）。
+    expect(skill!.body).toMatch(/manual trigger/);
+    expect(skill!.body).toMatch(/run-now/);
+    // 批次 5 任务 4 增补：完成通知即发即忘（失败只留日志不重试）。
+    expect(skill!.body).toMatch(/not retried/);
+  });
+
+  it("memory-upkeep carries the batched-pass and store-unavailable anchors", () => {
+    const skill = builtinSkills.find((s) => s.name === "memory-upkeep");
+    expect(skill).toBeDefined();
+    // 批次 5 任务 4 增补：批量节制——先集齐读取再集中编辑，不读写交错。
+    expect(skill!.body).toMatch(/batch/i);
+    expect(skill!.body).toMatch(/interleav/i);
+    // 批次 5 任务 4 增补：存储不可用降级——明说并停止，不拿旧清当当现状。
+    expect(skill!.body).toMatch(/unreadable|unavailable|cannot be read/i);
+    expect(skill!.body).toMatch(/stale/);
+  });
+
+  it("session-to-skill carries the candidate, distill, write and verify anchors", () => {
+    const skill = builtinSkills.find((s) => s.name === "session-to-skill");
+    expect(skill).toBeDefined();
+    // 识别可沉淀流程：重复出现的多步操作/纠错路径；用户纠正是高价值材料。
+    expect(skill!.body).toMatch(/more than once|repeated|recurs/i);
+    expect(skill!.body).toMatch(/correction/i);
+    // 提炼为通用步骤：去会话特定细节（路径/一次性取值参数化），步骤记成败判据。
+    expect(skill!.body).toMatch(/generic|session-specific/i);
+    expect(skill!.body).toMatch(/success criteri|what proves|worked/i);
+    // 落盘形态：.innocence/skills/<name>/SKILL.md，frontmatter 仅 name+description。
+    expect(skill!.body).toMatch(/\.innocence\/skills/);
+    expect(skill!.body).toMatch(/SKILL\.md/);
+    expect(skill!.body).toMatch(/frontmatter/);
+    expect(skill!.body).toMatch(/description/);
+    // 双根选择：项目根（本仓工作流）vs 用户根（跨仓通用）。
+    expect(skill!.body).toMatch(/project|workspace/i);
+    expect(skill!.body).toMatch(/personal|user root|home/i);
+    // 触发条件写清（描述行供技能索引，写 Use when）。
+    expect(skill!.body).toMatch(/Use when|when to use|trigger/i);
+    // 验证：新会话 /name 调用走通。
+    expect(skill!.body).toMatch(/fresh session|new session/);
+    expect(skill!.body).toMatch(/\/[a-z-]+ invocation|invocation/);
   });
 });
