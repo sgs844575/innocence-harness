@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationDispatchRequest } from "@innocenceharness/harness-automation";
 import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
-import { appendObservedReplyDelta, beginObservedReply, endObservedReply } from "./automationReplyObserver";
+import {
+  appendObservedReplyDelta,
+  beginObservedReply,
+  endObservedReply,
+  markObservedReplyError,
+} from "./automationReplyObserver";
 
 const request = (signal = new AbortController().signal): AutomationDispatchRequest => ({
   automationId: "automation-1",
@@ -176,10 +181,10 @@ describe("automation loop dispatch adapter", () => {
     expect(disable).not.toHaveBeenCalled();
   });
 
-  it("disables the definition and delivers the completion notify when the reply carries the termination marker", async () => {
+  it("disables the definition and delivers the completion notify when the reply carries the termination marker on its own line", async () => {
     const runtime = {
       send: vi.fn<(input: SendInput) => Promise<void>>(async (input) => {
-        appendObservedReplyDelta(input.messageId, "[loop-complete]");
+        appendObservedReplyDelta(input.messageId, "\n  [loop-complete]  \n");
       }),
       stop: vi.fn(),
     };
@@ -200,6 +205,74 @@ describe("automation loop dispatch adapter", () => {
     expect(disable).toHaveBeenCalledWith("automation-loop-1");
     expect(notify.send).toHaveBeenCalledTimes(1);
     expect(notify.send).toHaveBeenCalledWith({ title: "自动化 automation-loop-1 已完成", text: "循环已完成" });
+  });
+
+  it("backs off an errored turn even when mirrored warning text and the marker were collected", async () => {
+    const runtime = {
+      send: vi.fn<(input: SendInput) => Promise<void>>(async (input) => {
+        appendObservedReplyDelta(input.messageId, "\n\n> ⚠️ provider stream failed\n");
+        appendObservedReplyDelta(input.messageId, "[loop-complete]");
+        markObservedReplyError(input.messageId);
+      }),
+      stop: vi.fn(),
+    };
+    const disable = vi.fn<(automationId: string) => Promise<void>>().mockResolvedValue(undefined);
+    const notify = { send: vi.fn().mockResolvedValue(undefined) };
+    const dispatch = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => ({ taskId: "task-1", routeId: "route-1" }),
+      notify,
+      loop: { definitionFor: loopDefinitionFor, disable },
+    });
+
+    const outcome = await dispatch.dispatch(loopRequest());
+
+    expect(outcome).toEqual({ productive: false });
+    expect(disable).not.toHaveBeenCalled();
+    expect(notify.send).not.toHaveBeenCalled();
+  });
+
+  it("treats a turn whose only text is the mirrored compaction notice as idle", async () => {
+    const runtime = {
+      send: vi.fn<(input: SendInput) => Promise<void>>(async (input) => {
+        appendObservedReplyDelta(input.messageId, "\n\n> 🗜️ 已压缩较早的对话历史\n");
+      }),
+      stop: vi.fn(),
+    };
+    const disable = vi.fn<(automationId: string) => Promise<void>>().mockResolvedValue(undefined);
+    const dispatch = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => ({ taskId: "task-1", routeId: "route-1" }),
+      loop: { definitionFor: loopDefinitionFor, disable },
+    });
+
+    const outcome = await dispatch.dispatch(loopRequest());
+
+    expect(outcome).toEqual({ productive: false });
+    expect(disable).not.toHaveBeenCalled();
+  });
+
+  it("does not complete when the marker is referenced inside prose", async () => {
+    const runtime = {
+      send: vi.fn<(input: SendInput) => Promise<void>>(async (input) => {
+        appendObservedReplyDelta(input.messageId, "Will reply [loop-complete] once the list is finished.");
+      }),
+      stop: vi.fn(),
+    };
+    const disable = vi.fn<(automationId: string) => Promise<void>>().mockResolvedValue(undefined);
+    const dispatch = createAutomationRuntimeDispatch({
+      runtime,
+      sessionExists: () => true,
+      taskRouteFor: () => ({ taskId: "task-1", routeId: "route-1" }),
+      loop: { definitionFor: loopDefinitionFor, disable },
+    });
+
+    const outcome = await dispatch.dispatch(loopRequest());
+
+    expect(outcome).toEqual({ productive: true });
+    expect(disable).not.toHaveBeenCalled();
   });
 
   it("reports a productive outcome without disabling for a non-empty reply without the marker", async () => {
@@ -259,8 +332,16 @@ describe("automation reply observer", () => {
     beginObservedReply("observed-message");
     appendObservedReplyDelta("observed-message", "one ");
     appendObservedReplyDelta("observed-message", "two");
-    expect(endObservedReply("observed-message")).toBe("one two");
-    expect(endObservedReply("observed-message")).toBe("");
-    expect(endObservedReply("never-begun")).toBe("");
+    expect(endObservedReply("observed-message")).toEqual({ text: "one two", errored: false });
+    expect(endObservedReply("observed-message")).toEqual({ text: "", errored: false });
+    expect(endObservedReply("never-begun")).toEqual({ text: "", errored: false });
+  });
+
+  it("keeps the error flag of a begun id and ignores errors of unknown ids", () => {
+    markObservedReplyError("unmarked-message");
+    beginObservedReply("marked-message");
+    appendObservedReplyDelta("marked-message", "partial text");
+    markObservedReplyError("marked-message");
+    expect(endObservedReply("marked-message")).toEqual({ text: "partial text", errored: true });
   });
 });

@@ -3,7 +3,7 @@ import type {
   AutomationDispatchRequest,
   DispatchOutcome,
 } from "@innocenceharness/harness-automation";
-import { beginObservedReply, endObservedReply } from "./automationReplyObserver";
+import { beginObservedReply, endObservedReply, type ObservedReply } from "./automationReplyObserver";
 
 export interface AutomationRuntimePort {
   send(input: {
@@ -109,6 +109,20 @@ function deliverNotifications(
   }
 }
 
+/** 剥离宿主镜像的通知行（runtime-events 的告警/压缩提示）：它们不是 agent
+ * 的自述文本，不得伪造非空回复或携带整行标记。 */
+function ownReplyText(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^>\s*(⚠️|🗜️)/.test(line.trim()))
+    .join("\n");
+}
+
+/** 终止标记整行匹配（trim 后 === 标记）：正文回引不构成完成。 */
+function carriesCompletionMarker(text: string): boolean {
+  return text.split("\n").some((line) => line.trim() === LOOP_COMPLETE_MARKER);
+}
+
 /** 循环回合：信封注入 + 依据回复文本产出 DispatchOutcome + 全完成停用联动。 */
 async function dispatchLoopTurn(
   options: AutomationRuntimeDispatchOptions,
@@ -117,15 +131,21 @@ async function dispatchLoopTurn(
   target: TurnTarget,
 ): Promise<DispatchOutcome> {
   beginObservedReply(target.messageId);
-  let replyText = "";
+  let reply: ObservedReply;
   try {
     await sendTurn(options, request, target);
-    replyText = endObservedReply(target.messageId);
+    reply = endObservedReply(target.messageId);
   } catch {
+    // 防御分支：runtime.send 吞异常不 rethrow，此路仅在宿主端口自身抛出时可达；
+    // 回合内失败经 onError 的错误标记在下方判定。
     endObservedReply(target.messageId);
     return { productive: false };
   }
-  if (!replyText.includes(LOOP_COMPLETE_MARKER)) {
+  // 错误标记优先：失败回合即使镜像了告警文本（或先行流出的标记行）也判为
+  // 空转，让步频退避而不是加速。
+  if (reply.errored) return { productive: false };
+  const replyText = ownReplyText(reply.text);
+  if (!carriesCompletionMarker(replyText)) {
     return { productive: replyText.trim().length > 0 };
   }
   try {

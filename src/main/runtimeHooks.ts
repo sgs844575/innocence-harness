@@ -14,7 +14,7 @@ import {
   type PermissionChoice,
 } from "../shared/ipc";
 import * as sessions from "./sessions";
-import { appendObservedReplyDelta } from "./automationReplyObserver";
+import { appendObservedReplyDelta, markObservedReplyError } from "./automationReplyObserver";
 import { getMainWindow } from "./appWindow";
 import { logger } from "./logger";
 
@@ -100,6 +100,10 @@ export function createRuntimeHooks(
       send(IPC.chatDone, { sessionId, messageId, completion: mirrored });
     },
     onError: (sessionId, messageId, error) => {
+      // Automation-injected loop turns record the error so an errored turn is
+      // judged unproductive even when the runtime mirrored warning text into
+      // the collected reply; every other message id is a no-op there.
+      markObservedReplyError(messageId);
       sessions.updateMessage(sessionId, messageId, (m) => {
         m.streaming = false;
       });
