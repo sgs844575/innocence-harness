@@ -1,0 +1,24 @@
+{
+  "name": "@innocenceharness/plugin-hooks",
+  "version": "0.1.0",
+  "description": "InnocenceHarness 钩子插件：声明式会话钩子的配置解析与命令执行器",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@innocenceharness/kernel": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/plugin-hooks"
+  }
+}
