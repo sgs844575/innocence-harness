@@ -86,6 +86,13 @@ export interface SessionCompositionOptions {
    * transcripts on the main route).
    */
   isContinuationSession?: (sessionId: string) => boolean;
+  /**
+   * Reports whether the host process is on its quit path (batch 5 fix 1):
+   * feeds the hooks factory's stop-face bypass getter. Absent means the
+   * composing host has no shutdown handshake and the sessionStop face
+   * always runs at session unwind.
+   */
+  isHostShuttingDown?: () => boolean;
 }
 
 /** Identity of the route session a composePlugins call assembles for. */
@@ -243,7 +250,11 @@ function factoryPlugin(
         isContinuationSession?: () => boolean;
       }
     | { getUserRoot: () => string; getProjectRoot: () => string }
-    | { getHooksConfig: () => Promise<unknown>; getWorkspaceRoot: () => string }
+    | {
+        getHooksConfig: () => Promise<unknown>;
+        getWorkspaceRoot: () => string;
+        isHostShuttingDown?: () => boolean;
+      }
     | { sendToTeammate: SendToTeammatePort },
 ): ObjectPlugin {
     return {
@@ -320,10 +331,11 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // (getUserRoot/getProjectRoot), likewise not from group config. "hooks" reads the
 // merged top-level "hooks" declarations (project layer over user layer,
 // from the same resolveBuiltinSet pass) plus the per-composition workspace
-// root through getters — never from group config. "team" receives the
-// teammate delivery port bound to the composing route session's identity
-// (createTeammatePort + composePlugins' session identity) — never from
-// group config.
+// root through getters — never from group config — and the host shutdown
+// getter (batch 5 fix 1) rides the same channel into its stop face. "team"
+// receives the teammate delivery port bound to the composing route session's
+// identity (createTeammatePort + composePlugins' session identity) — never
+// from group config.
 const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team"]);
 
 async function resolveGroupEntries(
@@ -375,6 +387,7 @@ async function builtinLoaderEntryFor(
   resolveUserPluginRoot: () => string,
   resolvePermissionMode: () => string,
   hooksConfig: unknown,
+  isHostShuttingDown: (() => boolean) | undefined,
   ecosystemPlugin?: ObjectPlugin,
   sessionIdentity?: ComposeSessionIdentity,
   createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort,
@@ -437,10 +450,14 @@ async function builtinLoaderEntryFor(
     // toggle layer and the hook declarations share one layer snapshot) and
     // the per-composition workspace root (every hook command's cwd) thread
     // through getters; no declarations means an empty hook set — the plugin
-    // still mounts and all three faces no-op.
+    // still mounts and all three faces no-op. The host shutdown getter
+    // (batch 5 fix 1) rides the same getter channel: while the host's quit
+    // handshake has started, the stop face skips entirely so an exiting
+    // process never spawns fresh hook children during session unwind.
     plugin = factoryPlugin(boot, "hooks", () => ({
       getHooksConfig: () => Promise.resolve(hooksConfig),
       getWorkspaceRoot: () => workspaceRoot,
+      ...(isHostShuttingDown ? { isHostShuttingDown } : {}),
     }));
   } else if (!entry.disabled && id === "team") {
     // Same factory shape as creation/reminders/memory/hooks: the staged
@@ -667,8 +684,10 @@ export function createSessionComposition(
           resolveUserPluginRoot,
           resolvePermissionMode,
           // 顶层 hooks 声明（项目覆盖用户的合并值，同一次 resolveBuiltinSet
-          // 层快照）——hooks 工厂分支经 getter 注入插件，不进 entry.config。
+          // 层快照）——hooks 工厂分支经 getter 注入插件，不进 entry.config；
+          // 宿主关机旗标 getter（批次 5 修复 1）同经该通道进 stop 面。
           resolved.hooks,
+          options.isHostShuttingDown,
           ecosystemDir !== undefined
             ? createEcosystemAdapterPlugin(
               entry.id,

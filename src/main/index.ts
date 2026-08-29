@@ -32,7 +32,7 @@ import { initSessionStore, getSession } from "./sessions";
 import { buildAppMenu } from "./menu";
 import { watchTheme } from "./theme";
 import { logger } from "./logger";
-import { ShutdownGate } from "./shutdown";
+import { hostShutdownGate } from "./shutdown";
 import { createTerminalIpcService, registerTerminalIpc, type TerminalIpcService } from "./terminalIpc";
 import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import { currentTestOverrides } from "./testOverrides";
@@ -151,8 +151,10 @@ if (!gotLock) {
   // preventDefault'ed — including re-entrant attempts arriving mid-release
   // (e.g. window-all-closed firing app.quit() again), which would otherwise
   // exit the process mid-disposeAllRuntime. Once the gate is released, the
-  // final app.quit() goes through untouched.
-  const shutdown = new ShutdownGate();
+  // final app.quit() goes through untouched. The gate is the process-wide
+  // singleton (shutdown.ts): the harness glue reads its state when composing
+  // sessions, so the hooks stop face skips during the quit path.
+  const shutdown = hostShutdownGate;
   const shutdownWork = createOwnedShutdown({
     blockStartup: appLifecycle.startup.block,
     waitForStartup: () => appLifecycle.startup.completion,

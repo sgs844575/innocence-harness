@@ -520,6 +520,88 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     }
   });
 
+  it("hooks stop face skips execution when the host shutdown gate is flipped", async () => {
+    // 宿主关机旗标穿线探针（批次 5 修复 1）：composition 带 isHostShuttingDown
+    // 端口（伪 gate——布尔翻转，仿 index.ts ShutdownGate 的查询面）→ staged
+    // hooks 工厂收到 getter，apply 返回的 stop 面在关机态整面跳过：sessionStop
+    // 命令零执行（marker 文件不出现、日志无任何 stop command 行），只落 bypass
+    // 行；对照面（旗标未翻）同一装配照常执行命令并写 marker——证明跳过源自
+    // 关机旗标而非缺许可（ctx 恒供 allow 的 permissions 面）。marker 路径经
+    // env 传入（命令 tokenizer 无引号支持，路径不得进命令串）；用户层
+    // cordis.yml 读取纯化同上（临时空 home，覆盖窗口含装配与执行全程）。
+    let shuttingDown = false;
+    const gated = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => path.join(tmpdir(), "ic-compose-no-user-plugins"),
+      isHostShuttingDown: () => shuttingDown,
+      log: () => {},
+    });
+    const home = mkdtempSync(path.join(tmpdir(), "ic-hooks-shutdown-home-"));
+    roots.push(home);
+    const previousProfile = process.env.USERPROFILE;
+    const previousHome = process.env.HOME;
+    const previousMarkerEnv = process.env.IC_STOP_PROBE_MARKER;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      // marker 写入命令：-e 负载 whitespace-free，文件路径经 env 读取；yml
+      // 单引号风格（反斜杠字面量，负载内单引号加倍转义）。
+      const payload = "require('fs').writeFileSync(process.env.IC_STOP_PROBE_MARKER,'x')";
+      const ymlCommand = `'${process.execPath} -e ${payload.replaceAll("'", "''")}'`;
+      const mount = async (): Promise<{ dispose: () => Promise<void>; lines: string[]; ws: string }> => {
+        const ws = await tempWorkspace({
+          ".innocence/plugins.yml": `hooks:\n  - event: sessionStop\n    command: ${ymlCommand}\n`,
+        });
+        const plugins = await gated.composePlugins(ws);
+        const hooks = plugins.find((p) => p.name === "hooks");
+        const factory = hooks && "plugin" in hooks ? hooks.plugin : undefined;
+        const lines: string[] = [];
+        const dispose = (await factory?.apply({
+          session: { registerProcessor: () => {} },
+          tools: { registerMiddleware: () => {} },
+          permissions: {
+            engine: {
+              async resolve() {
+                return { decision: "allow", via: "ask", reason: "fixture" };
+              },
+            },
+          },
+          logger: { log: (_level: unknown, message: string) => lines.push(message) },
+        } as never)) as () => Promise<void>;
+        expect(typeof dispose).toBe("function");
+        return { dispose, lines, ws };
+      };
+
+      // 对照面：旗标未翻，stop 命令照常执行（marker 落盘 + 完成日志行）。
+      const control = await mount();
+      const controlMarker = path.join(control.ws, "stop-ran.marker");
+      process.env.IC_STOP_PROBE_MARKER = controlMarker;
+      await control.dispose();
+      expect(existsSync(controlMarker)).toBe(true);
+      expect(control.lines.some((line) => line.includes('stop command "'))).toBe(true);
+
+      // 探针面：伪 gate 翻转（宿主进入关机态）→ stop 面整面跳过，零执行。
+      const probe = await mount();
+      const probeMarker = path.join(probe.ws, "stop-ran.marker");
+      process.env.IC_STOP_PROBE_MARKER = probeMarker;
+      shuttingDown = true;
+      await probe.dispose();
+      expect(existsSync(probeMarker)).toBe(false);
+      expect(probe.lines.some((line) => line.includes("bypassed because the host is shutting down"))).toBe(
+        true,
+      );
+      expect(probe.lines.some((line) => line.includes('stop command "'))).toBe(false);
+    } finally {
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousMarkerEnv === undefined) delete process.env.IC_STOP_PROBE_MARKER;
+      else process.env.IC_STOP_PROBE_MARKER = previousMarkerEnv;
+    }
+  });
+
   it("team entry mounts the staged factory with the identity-bound teammate port", async () => {
     // 仿 hooks 装配形态的工厂调用探针（批次 4E）：条目名 "team"，内嵌
     // factory:team 插件；应用到最小 ctx（tools.register——4B 教训：供应

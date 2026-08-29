@@ -27,6 +27,18 @@ describe("ShutdownGate (async before-quit handshake)", () => {
     expect(gate.onBeforeQuit()).toBe("release");
   });
 
+  it("reports the shutting-down state once the quit handshake starts and never resets it", () => {
+    // 查询面（批次 5 修复 1）：宿主把该态穿线给 hooks 工厂的 stop 面——首
+    // 次 before-quit 起恒 true（含 release 完成后：进程都已在退出，stop 面
+    // 不得再孵化任何子进程）。
+    const gate = new ShutdownGate();
+    expect(gate.isShuttingDown()).toBe(false);
+    gate.onBeforeQuit();
+    expect(gate.isShuttingDown()).toBe(true);
+    gate.markReleased();
+    expect(gate.isShuttingDown()).toBe(true);
+  });
+
   it("independent gates do not share state", () => {
     const a = new ShutdownGate();
     const b = new ShutdownGate();

@@ -39,6 +39,7 @@ import * as sessions from "./sessions";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
+import { hostShutdownGate } from "./shutdown";
 import { broadcastSessions } from "./sessionEvents";
 import { createCredentialStore } from "./credentialStore";
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
@@ -245,6 +246,11 @@ const sessionComposition = createSessionComposition({
   // transcript 种子的存储侧镜像）。
   getSessionUsage: (sessionId) => summarizeSessionUsage(sessions.listMessages(sessionId)),
   isContinuationSession: (sessionId) => sessionHasFinishedTurn(sessions.listMessages(sessionId)),
+  // 宿主关机旗标（批次 5 修复 1）：before-quit 握手闸的查询面经组合根穿线
+  // 到 hooks 工厂的 stop 面——关机态下 sessionStop 整面跳过，退出进程不再
+  // 孵化钩子子进程（闸为 shutdown.ts 的进程级单例：组合根在 import 期构建，
+  // 早于主入口注册 quit 处理器，getter 逐调用现读闸态）。
+  isHostShuttingDown: () => hostShutdownGate.isShuttingDown(),
   log: (level, msg, data) => logger[level](msg, data),
 });
 

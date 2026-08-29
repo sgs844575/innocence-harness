@@ -13,16 +13,18 @@
 // Output is NOT injected anywhere (the conversation is over by the time
 // this runs); successful commands get one info summary line with a bounded
 // flattened excerpt, and failures get one warn line. The wait for the
-// batch is bounded by the LARGEST single clamped per-command ceiling: past
-// it the teardown moves on and the still-pending commands keep running
-// detached under their own runner deadlines, so session release (and app
-// exit) is never delayed beyond one hook's budget no matter how many stop
-// commands are declared. A session restart builds a new wiring instance,
-// so the same configuration runs its stop hooks again for the new session
-// lifetime — the event is once per session instance, not once per config.
+// batch is bounded by the LARGEST single clamped per-command ceiling plus
+// one settlement grace (a deadline kill settles only after its grace
+// window): past it the teardown moves on and the still-pending commands
+// keep running detached under their own runner deadlines, so session
+// release (and app exit) is never delayed beyond one hook's budget no
+// matter how many stop commands are declared. A session restart builds a
+// new wiring instance, so the same configuration runs its stop hooks again
+// for the new session lifetime — the event is once per session instance,
+// not once per config.
 import type { HookDefinition, ParsedHooks } from "./config";
 import type { HookPermissionGate } from "./gate";
-import { clampHookTimeoutMs, type HookRunInput, type HookRunResult } from "./runner";
+import { clampHookTimeoutMs, HOOK_SETTLEMENT_GRACE_MS, type HookRunInput, type HookRunResult } from "./runner";
 import {
   formatStopHookFailure,
   formatStopHookSummary,
@@ -76,8 +78,9 @@ async function runStopBatch(deps: StopFaceDependencies, stopHooks: readonly Hook
 
 /**
  * Builds the sessionStop disposer for one wiring instance: idempotent
- * (repeat calls join the first run's outcome without replaying it) and
- * fail-soft (never rejects, whatever the hooks or the config do).
+ * (the first call arms a one-way flag; repeat calls return immediately
+ * without re-awaiting or replaying the first run's outcome) and fail-soft
+ * (never rejects, whatever the hooks or the config do).
  */
 export function createStopFace(deps: StopFaceDependencies): () => Promise<void> {
   let done = false;
@@ -92,10 +95,16 @@ export function createStopFace(deps: StopFaceDependencies): () => Promise<void> 
       const parsed = await deps.loadHooks();
       const stopHooks = parsed.hooks.filter((hook) => hook.event === "sessionStop");
       if (stopHooks.length === 0) return;
-      const waitMs = stopHooks.reduce(
-        (ceiling, hook) => Math.max(ceiling, clampHookTimeoutMs(hook.timeoutMs)),
-        0,
-      );
+      // The batch's wait ceiling is the largest clamped per-command deadline
+      // PLUS one settlement grace: a deadline-killed command settles only
+      // after its kill-grace window (runner HOOK_SETTLEMENT_GRACE_MS), so a
+      // bare-deadline race would release on commands the runner is about to
+      // settle on schedule and misreport them as over-budget stragglers.
+      const waitMs =
+        stopHooks.reduce(
+          (ceiling, hook) => Math.max(ceiling, clampHookTimeoutMs(hook.timeoutMs)),
+          0,
+        ) + HOOK_SETTLEMENT_GRACE_MS;
       const batch = runStopBatch(deps, stopHooks);
       // The batch resolves by construction (runGuarded never rejects), but
       // a defensive catch keeps a detached late rejection from surfacing as
