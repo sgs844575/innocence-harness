@@ -14,12 +14,31 @@ export type {
 
 export type { AutomationCandidate } from "@innocenceharness/harness-ai-runtime";
 
+/** Pacing window for loop definitions; omitted bounds fall back to dispatcher defaults. */
+export interface AutomationLoopPacing {
+  minMs?: number;
+  maxMs?: number;
+}
+
+/** Optional loop payload: a checklist-driven turn dispatched on the schedule cadence. */
+export interface AutomationLoopPayload {
+  loopFile: string;
+  pacing?: AutomationLoopPacing;
+}
+
+/** Result of one controlled dispatch; `productive: false` signals an idle turn. */
+export interface DispatchOutcome {
+  productive?: boolean;
+}
+
 export interface AutomationDefinition {
   id: string;
   name: string;
   candidate: AutomationCandidate;
   /** Host session identity supplied when the definition is confirmed. */
   targetSessionId?: string;
+  /** Optional loop payload; absent means plain schedule/idle semantics. */
+  loop?: AutomationLoopPayload;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -43,7 +62,8 @@ export interface AutomationDispatchRequest {
 }
 
 export interface AutomationDispatchPort {
-  dispatch(request: AutomationDispatchRequest): Promise<void>;
+  /** Returning a `DispatchOutcome` enables dispatcher dynamic pacing; `void` keeps intervals fixed. */
+  dispatch(request: AutomationDispatchRequest): Promise<DispatchOutcome | void>;
 }
 
 export interface AutomationServiceOptions {
@@ -74,7 +94,7 @@ export interface AutomationService {
     taskId?: string;
     routeId: string;
     signal?: AbortSignal;
-  }): Promise<void>;
+  }): Promise<DispatchOutcome | void>;
 }
 
 function parseStoredCandidate(raw: unknown): AutomationCandidate | undefined {
@@ -216,8 +236,9 @@ export function createAutomationService(options: AutomationServiceOptions): Auto
       input.signal?.addEventListener("abort", abort, { once: true });
       if (input.signal?.aborted) controller.abort();
       const timer = setTimeout(abort, timeoutMs);
+      let outcome: DispatchOutcome | void;
       try {
-        await options.dispatch.dispatch({
+        outcome = await options.dispatch.dispatch({
           automationId: definition.id,
           candidate,
           trigger: input.trigger,
@@ -233,6 +254,7 @@ export function createAutomationService(options: AutomationServiceOptions): Auto
         if (!controller.signal.aborted) controller.abort();
         running.delete(id);
       }
+      return outcome;
     },
   };
 }

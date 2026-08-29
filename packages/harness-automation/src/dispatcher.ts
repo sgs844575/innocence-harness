@@ -1,4 +1,4 @@
-import type { AutomationDefinition } from "./index";
+import type { AutomationDefinition, AutomationLoopPayload, DispatchOutcome } from "./index";
 
 export interface AutomaticAutomationTriggerInput {
   trigger: "schedule" | "idle";
@@ -9,7 +9,7 @@ export interface AutomaticAutomationTriggerInput {
 
 export interface AutomationDispatcherOptions {
   list(): readonly AutomationDefinition[];
-  trigger(id: string, input: AutomaticAutomationTriggerInput): Promise<void>;
+  trigger(id: string, input: AutomaticAutomationTriggerInput): Promise<DispatchOutcome | void>;
   isIdle(minimumIdleMs: number): boolean;
   setTimer?(callback: () => void, delayMs: number): unknown;
   clearTimer?(timer: unknown): void;
@@ -42,10 +42,40 @@ interface Registration {
   definition: AutomaticDefinition;
   fingerprint: string;
   timer?: unknown;
+  /** Dynamic pacing state; unset until the first outcome adjusts the interval. */
+  intervalMs?: number;
 }
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+const DEFAULT_MIN_LOOP_INTERVAL_MS = 60_000;
+const DEFAULT_MAX_LOOP_INTERVAL_MS = 1_800_000;
+const PRODUCTIVE_INTERVAL_FACTOR = 0.8;
+const UNPRODUCTIVE_INTERVAL_FACTOR = 1.5;
+
+function validLoopPayload(loop: unknown): loop is AutomationLoopPayload {
+  if (!loop || typeof loop !== "object") return false;
+  const loopFile = (loop as { loopFile?: unknown }).loopFile;
+  return typeof loopFile === "string" && loopFile.trim().length > 0;
+}
+
+/** Normalized pacing window for loop definitions that opt into dynamic pacing. */
+function loopPacing(definition: AutomationDefinition): { minMs: number; maxMs: number } | undefined {
+  if (!validLoopPayload(definition.loop)) return undefined;
+  const pacing = definition.loop.pacing;
+  if (!pacing || typeof pacing !== "object") return undefined;
+  const rawMin = (pacing as { minMs?: unknown }).minMs;
+  const rawMax = (pacing as { maxMs?: unknown }).maxMs;
+  const minMs = isPositiveInteger(rawMin) ? rawMin : DEFAULT_MIN_LOOP_INTERVAL_MS;
+  const maxMs = isPositiveInteger(rawMax) ? rawMax : DEFAULT_MAX_LOOP_INTERVAL_MS;
+  return minMs <= maxMs ? { minMs, maxMs } : { minMs: maxMs, maxMs: minMs };
+}
+
+function configuredIntervalMs(definition: AutomaticDefinition): number {
+  const trigger = definition.candidate.trigger;
+  return trigger.kind === "schedule" ? trigger.everyMs : trigger.idleForMs;
 }
 
 function automaticDefinition(definition: AutomationDefinition): AutomaticDefinition | undefined {
@@ -61,11 +91,19 @@ function automaticDefinition(definition: AutomationDefinition): AutomaticDefinit
   return undefined;
 }
 
+function loopFingerprintPart(definition: AutomationDefinition): string {
+  if (!validLoopPayload(definition.loop)) return "";
+  const loopFile = definition.loop.loopFile.trim();
+  const pacing = loopPacing(definition);
+  return pacing ? `:loop:${loopFile}:${pacing.minMs}:${pacing.maxMs}` : `:loop:${loopFile}`;
+}
+
 function fingerprint(definition: AutomaticDefinition): string {
   const trigger = definition.candidate.trigger;
-  return trigger.kind === "schedule"
+  const base = trigger.kind === "schedule"
     ? `${definition.updatedAt}:schedule:${definition.targetSessionId}:${trigger.everyMs}`
     : `${definition.updatedAt}:idle:${definition.targetSessionId}:${trigger.idleForMs}`;
+  return base + loopFingerprintPart(definition);
 }
 
 export function createAutomationDispatcher(options: AutomationDispatcherOptions): AutomationDispatcher {
@@ -87,7 +125,7 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
     if (disposed || active.has(registration.definition.id)) return;
     clearRegistrationTimer(registration);
     const trigger = registration.definition.candidate.trigger;
-    const delayMs = trigger.kind === "schedule" ? trigger.everyMs : trigger.idleForMs;
+    const delayMs = registration.intervalMs ?? configuredIntervalMs(registration.definition);
     registration.timer = setTimer(() => {
       registration.timer = undefined;
       if (trigger.kind === "idle" && !options.isIdle(trigger.idleForMs)) {
@@ -96,6 +134,17 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
       }
       void dispatch(registration);
     }, delayMs);
+  };
+
+  /** Adjusts the dynamic pacing interval from one dispatch outcome; no-op without loop pacing. */
+  const applyPacing = (registration: Registration, outcome: DispatchOutcome | void): void => {
+    const pacing = loopPacing(registration.definition);
+    if (!pacing || !outcome) return;
+    const currentMs = registration.intervalMs ?? configuredIntervalMs(registration.definition);
+    const scaled = outcome.productive !== false
+      ? currentMs * PRODUCTIVE_INTERVAL_FACTOR
+      : currentMs * UNPRODUCTIVE_INTERVAL_FACTOR;
+    registration.intervalMs = Math.round(Math.min(Math.max(scaled, pacing.minMs), pacing.maxMs));
   };
 
   const dispatch = async (registration: Registration): Promise<void> => {
@@ -109,8 +158,9 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
       settled: new Promise<void>((resolve) => { resolveSettled = resolve; }),
     };
     active.set(definition.id, activeDispatch);
+    let outcome: DispatchOutcome | void = undefined;
     try {
-      await options.trigger(definition.id, {
+      outcome = await options.trigger(definition.id, {
         trigger,
         sessionId: definition.targetSessionId,
         routeId: "main",
@@ -123,7 +173,10 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
       if (active.get(definition.id) === activeDispatch) active.delete(definition.id);
       resolveSettled?.();
       const current = registrations.get(definition.id);
-      if (!disposed && current) schedule(current);
+      if (!disposed && current) {
+        applyPacing(current, outcome);
+        schedule(current);
+      }
     }
   };
 

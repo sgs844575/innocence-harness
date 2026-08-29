@@ -29,6 +29,12 @@ const idleDefinition = (overrides: Partial<AutomationDefinition> = {}): Automati
   ...overrides,
 });
 
+const loopDefinition = (overrides: Partial<AutomationDefinition> = {}): AutomationDefinition => ({
+  ...scheduleDefinition({ id: "loop-1", name: "Loop review" }),
+  loop: { loopFile: "loops/main.md", pacing: { minMs: 400, maxMs: 4_000 } },
+  ...overrides,
+});
+
 describe("automation dispatcher", () => {
   afterEach(() => vi.useRealTimers());
 
@@ -242,5 +248,170 @@ describe("automation dispatcher", () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(trigger).toHaveBeenCalledOnce();
+  });
+});
+
+describe("automation dispatcher loop payload and dynamic pacing", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("registers loop definitions on the schedule cadence and re-registers when the loop payload changes", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => {});
+    const dispatcher = createAutomationDispatcher({ list: () => [], trigger, isIdle: () => false });
+
+    dispatcher.sync([loopDefinition()]);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(trigger).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(trigger).toHaveBeenCalledOnce();
+
+    dispatcher.sync([loopDefinition({ loop: { loopFile: "loops/other.md", pacing: { minMs: 400, maxMs: 4_000 } } })]);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(trigger).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(trigger).toHaveBeenCalledTimes(2);
+
+    dispatcher.sync([]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await dispatcher.dispose();
+  });
+
+  it("treats a loop payload change alone as a fingerprint change that restarts the timer", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => {});
+    const dispatcher = createAutomationDispatcher({ list: () => [], trigger, isIdle: () => false });
+
+    dispatcher.sync([loopDefinition()]);
+    await vi.advanceTimersByTimeAsync(500);
+    dispatcher.sync([loopDefinition({ loop: { loopFile: "loops/other.md" } })]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(trigger).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(trigger).toHaveBeenCalledOnce();
+    await dispatcher.dispose();
+  });
+
+  it("shrinks the interval after productive outcomes until clamped at minMs", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => ({ productive: true }));
+    const dispatcher = createAutomationDispatcher({ list: () => [loopDefinition()], trigger, isIdle: () => false });
+
+    dispatcher.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(640);
+    expect(trigger).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(512);
+    expect(trigger).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(410);
+    expect(trigger).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(trigger).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(399);
+    expect(trigger).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(trigger).toHaveBeenCalledTimes(7);
+    await dispatcher.dispose();
+  });
+
+  it("grows the interval after unproductive outcomes until clamped at maxMs", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => ({ productive: false }));
+    const dispatcher = createAutomationDispatcher({ list: () => [loopDefinition()], trigger, isIdle: () => false });
+
+    dispatcher.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2_250);
+    expect(trigger).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(3_375);
+    expect(trigger).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(trigger).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(trigger).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(trigger).toHaveBeenCalledTimes(6);
+    await dispatcher.dispose();
+  });
+
+  it("keeps alternating outcomes bounded inside the pacing window", async () => {
+    vi.useFakeTimers();
+    const outcomes = [true, false, true, false, true];
+    let call = 0;
+    const trigger = vi.fn(async () => ({ productive: outcomes[Math.min(call++, outcomes.length - 1)] }));
+    const dispatcher = createAutomationDispatcher({ list: () => [loopDefinition()], trigger, isIdle: () => false });
+
+    dispatcher.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(trigger).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(960);
+    expect(trigger).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1_440);
+    expect(trigger).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(1_152);
+    expect(trigger).toHaveBeenCalledTimes(6);
+    await dispatcher.dispose();
+  });
+
+  it("keeps the interval unchanged without pacing, without a loop payload, or without an outcome", async () => {
+    vi.useFakeTimers();
+    const outcomeTrigger = vi.fn(async () => ({ productive: false }));
+    const noPacing = createAutomationDispatcher({
+      list: () => [loopDefinition({ loop: { loopFile: "loops/main.md" } })],
+      trigger: outcomeTrigger,
+      isIdle: () => false,
+    });
+    noPacing.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(outcomeTrigger).toHaveBeenCalledTimes(3);
+    await noPacing.dispose();
+
+    const nonLoop = createAutomationDispatcher({ list: () => [scheduleDefinition()], trigger: outcomeTrigger, isIdle: () => false });
+    nonLoop.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(outcomeTrigger).toHaveBeenCalledTimes(5);
+    await nonLoop.dispose();
+
+    const voidTrigger = vi.fn(async () => {});
+    const voidOutcome = createAutomationDispatcher({ list: () => [loopDefinition()], trigger: voidTrigger, isIdle: () => false });
+    voidOutcome.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(voidTrigger).toHaveBeenCalledTimes(2);
+    await voidOutcome.dispose();
+  });
+
+  it("restarts pacing from the configured interval after a fingerprint change", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => ({ productive: true }));
+    const dispatcher = createAutomationDispatcher({ list: () => [], trigger, isIdle: () => false });
+
+    dispatcher.sync([loopDefinition()]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(trigger).toHaveBeenCalledTimes(2);
+
+    dispatcher.sync([loopDefinition({ loop: { loopFile: "loops/main.md", pacing: { minMs: 400, maxMs: 4_000 } }, updatedAt: 2 })]);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(trigger).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(trigger).toHaveBeenCalledTimes(4);
+    await dispatcher.dispose();
   });
 });

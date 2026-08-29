@@ -237,4 +237,24 @@ describe("controlled automation service", () => {
     await expect(service.trigger("automation-timeout", { trigger: "manual", sessionId: "session-1", routeId: "main" })).resolves.toBeUndefined();
     expect(dispatch.mock.calls[0]?.[0].signal.aborted).toBe(true);
   });
+
+  it("propagates dispatch outcomes for dynamic pacing consumers and keeps loop definitions listable", async () => {
+    const saved = store();
+    const dispatch = vi.fn(async (): Promise<{ productive: boolean } | void> => ({ productive: false }));
+    const service = createAutomationService({
+      candidateService: { generate: vi.fn(async () => ({ candidate, metadata: { providerId: "p", modelId: "m" } })) },
+      candidateModel: model,
+      store: saved,
+      dispatch: { dispatch },
+      id: () => "automation-outcome",
+    });
+
+    const definition = await service.confirmCandidate(candidate, "Outcome", "session-1");
+    saved.save({ ...definition, loop: { loopFile: "loops/main.md", pacing: { minMs: 60_000, maxMs: 1_800_000 } } });
+    expect(service.list()[0]?.loop).toEqual({ loopFile: "loops/main.md", pacing: { minMs: 60_000, maxMs: 1_800_000 } });
+
+    await expect(service.trigger("automation-outcome", { trigger: "schedule", sessionId: "session-1", routeId: "main" })).resolves.toEqual({ productive: false });
+    dispatch.mockResolvedValue(undefined);
+    await expect(service.trigger("automation-outcome", { trigger: "schedule", sessionId: "session-1", routeId: "main" })).resolves.toBeUndefined();
+  });
 });
