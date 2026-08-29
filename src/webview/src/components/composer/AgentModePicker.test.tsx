@@ -20,6 +20,10 @@ const t = (key: string) => {
     "agentMode.minimal.desc": "最简执行：只报结论与必要证据，适合小改动",
     "agentMode.learning": "讲解模式",
     "agentMode.learning.desc": "边做边讲解：关键决策给理由，结束总结可复用要点",
+    "agentMode.auto": "自主模式",
+    "agentMode.auto.desc": "授权范围内连续推进任务清单；周期自检、按产出调节奏，里程碑与失败才通报",
+    "agentMode.coordinator": "协同模式",
+    "agentMode.coordinator.desc": "分解目标分派队友与子代理；简报自包含、回复核实后整合，方案经批准才执行",
   };
   return dict[key] ?? key;
 };
@@ -31,30 +35,39 @@ const options: AgentModeOption[] = [
 ];
 
 describe("labelFor", () => {
-  it("内置模式走 i18n 键（default/creation/plan/focus/minimal/learning）", () => {
+  it("内置模式走 i18n 键（default/creation/plan/focus/minimal/learning/auto/coordinator）", () => {
     const keys = (k: string) => k;
     expect(labelFor(keys, "default", options)).toBe("agentMode.default");
     expect(labelFor(keys, "creation", options)).toBe("agentMode.creation");
-    // 四个单模式插件：staging id = 注册模式 id，同走内建 i18n 分支。
+    // 单模式插件：staging id = 注册模式 id，同走内建 i18n 分支（auto 为
+    // B4D 遗后补枚举，coordinator 为 B4E 新增——选择器测试枚举新 id）。
     expect(labelFor(keys, "plan", options)).toBe("agentMode.plan");
     expect(labelFor(keys, "focus", options)).toBe("agentMode.focus");
     expect(labelFor(keys, "minimal", options)).toBe("agentMode.minimal");
     expect(labelFor(keys, "learning", options)).toBe("agentMode.learning");
+    expect(labelFor(keys, "auto", options)).toBe("agentMode.auto");
+    expect(labelFor(keys, "coordinator", options)).toBe("agentMode.coordinator");
   });
   it("内置模式忽略元数据 title，显示翻译文案", () => {
     expect(labelFor(t, "default", options)).toBe("默认模式");
     expect(labelFor(t, "creation", options)).toBe("创造模式");
     expect(labelFor(t, "plan", options)).toBe("规划模式");
   });
-  it("四个单模式插件的描述同样走 i18n 键（与 label 同一内建集合）", () => {
+  it("单模式插件的描述同样走 i18n 键（与 label 同一内建集合）", () => {
     const keys = (k: string) => k;
     expect(descFor(keys, "plan", options)).toBe("agentMode.plan.desc");
     expect(descFor(keys, "focus", options)).toBe("agentMode.focus.desc");
     expect(descFor(keys, "minimal", options)).toBe("agentMode.minimal.desc");
     expect(descFor(keys, "learning", options)).toBe("agentMode.learning.desc");
+    expect(descFor(keys, "auto", options)).toBe("agentMode.auto.desc");
+    expect(descFor(keys, "coordinator", options)).toBe("agentMode.coordinator.desc");
     // 翻译命中：忽略清单投影的英文包描述。
     expect(descFor(t, "plan", [{ id: "plan", title: "Plan", description: "Research-first planning persona" }]))
       .toBe("先调研再规划；计划批准前不动手实现");
+    const coordinatorOption = [{ id: "coordinator", title: "Coordinator", description: "Orchestration persona" }];
+    expect(labelFor(t, "coordinator", coordinatorOption)).toBe("协同模式");
+    expect(descFor(t, "coordinator", coordinatorOption))
+      .toBe("分解目标分派队友与子代理；简报自包含、回复核实后整合，方案经批准才执行");
   });
   it("未知 id 回落目录中的 title", () => {
     expect(labelFor(t, "custom-writer", options)).toBe("写作助手");

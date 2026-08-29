@@ -38,7 +38,8 @@ const LIBS = [
 // 目录投影用）：default 直装载默认导出，creation 默认导出是工厂，由宿主
 // factoryPlugin 装配（见 pluginBoot/sessionComposition）。plan/focus/
 // minimal/learning 为四个单模式插件（B1 模式预设库），auto 为自主模式
-// 插件（B4D 自动化循环批次，同构）：直装载默认导出，各注册一个同名
+// 插件（B4D 自动化循环批次，同构），coordinator 为协同编排模式插件
+// （B4E 多代理协作批次，同构）：直装载默认导出，各注册一个同名
 // 模式 + 一个模式标签人设片段。staging id 必须与
 // 插件内 AgentsService 注册的模式 id 一致——切换器按清单 id 展示并写入设置，
 // 会话侧按注册 id 解析提示词，两侧不一致会导致选中后静默回落基础提示词
@@ -89,6 +90,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "minimal", kind: "agent-mode", dependencies: [] },
   { id: "learning", kind: "agent-mode", dependencies: [] },
   { id: "auto", kind: "agent-mode", dependencies: [] },
+  { id: "coordinator", kind: "agent-mode", dependencies: [] },
   { id: "planflow", dependencies: [] },
   { id: "memory", dependencies: [] },
   { id: "hooks", dependencies: [] },
@@ -120,6 +122,7 @@ const PLUGINS = [
   { dir: "packages/plugin-agent-minimal", id: "minimal" },
   { dir: "packages/plugin-agent-learn", id: "learning" },
   { dir: "packages/plugin-agent-auto", id: "auto" },
+  { dir: "packages/plugin-agent-coordinator", id: "coordinator" },
   { dir: "packages/plugin-planflow", id: "planflow" },
   { dir: "packages/plugin-memory", id: "memory" },
   { dir: "packages/plugin-hooks", id: "hooks" },
