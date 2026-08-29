@@ -207,6 +207,79 @@ describe("createHookRunner", () => {
     expect(missing.exitCode).toBeUndefined();
   });
 
+  it("force-settles after the grace window when the killed child never calls back", async () => {
+    // Finding 2 shape: the child exits its own process but a grandchild
+    // holds the inherited stdout pipe, so the execFile callback never
+    // fires. kill() here simulates exactly that silence.
+    const execFile: HookExecFile = () => ({
+      pid: 4242,
+      kill() {
+        /* silent: the callback never arrives */
+      },
+    });
+    const result = await createHookRunner({ execFile }).runHook(
+      { event: "userPromptSubmit", command: "leaky-hook", timeoutMs: 30 },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+  });
+
+  it("still settles through the normal callback inside the grace window", async () => {
+    const execFile: HookExecFile = (_file, _args, _options, callback) => ({
+      pid: undefined,
+      kill() {
+        setTimeout(() => {
+          callback(Object.assign(new Error("killed"), { killed: true }), "partial stdout", "");
+        }, 60);
+      },
+    });
+    const result = await createHookRunner({ execFile }).runHook(
+      { event: "userPromptSubmit", command: "slow-hook", timeoutMs: 30 },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.output).toContain("partial stdout");
+    expect(result.output).not.toContain("never closed");
+  });
+
+  it("does not spawn at all when the signal is already aborted", async () => {
+    let spawnCount = 0;
+    const execFile: HookExecFile = (_file, _args, _options, callback) => {
+      spawnCount += 1;
+      callback(null, "", "");
+      return { pid: undefined, kill() {} };
+    };
+    const controller = new AbortController();
+    controller.abort();
+    const result = await createHookRunner({ execFile }).runHook(
+      { event: "preToolCall", command: "aborted-guard" },
+      { signal: controller.signal },
+    );
+    expect(spawnCount).toBe(0);
+    expect(result.ok).toBe(false);
+    expect(result.aborted).toBe(true);
+  });
+
+  it("kills and settles when the signal aborts mid-run", async () => {
+    const execFile: HookExecFile = () => ({
+      pid: 4242,
+      kill() {
+        /* silent: the callback never arrives */
+      },
+    });
+    const controller = new AbortController();
+    const pending = createHookRunner({ execFile }).runHook(
+      { event: "preToolCall", command: "stuck-guard", timeoutMs: 10_000 },
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 30);
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.aborted).toBe(true);
+  });
+
   it("passes bounded spawn options without a shell", async () => {
     let observedOptions: HookExecFileOptions | undefined;
     const execFile: HookExecFile = (_file, _args, options, callback) => {

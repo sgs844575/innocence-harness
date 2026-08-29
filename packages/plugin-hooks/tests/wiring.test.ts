@@ -9,6 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context } from "@innocenceharness/kernel";
+import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import type {
   Message,
   MessageProcessor,
@@ -27,6 +28,17 @@ import {
   createHooksPlugin,
   createHooksWiring,
 } from "../src";
+
+/** Always-allowing fake permissions service (the gate's happy path). */
+function allowAllPermissions(): PermissionsService {
+  return {
+    engine: {
+      async resolve() {
+        return { decision: "allow", via: "ask", reason: "fixture" };
+      },
+    },
+  } as unknown as PermissionsService;
+}
 
 type FakeHandler = (
   hook: HookDefinition,
@@ -79,6 +91,7 @@ describe("sessionStart wiring", () => {
         { event: "sessionStart", command: "boot-b" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner((hook) => {
         calls.push(hook.command);
         return { ok: true, output: `${hook.command} context` };
@@ -107,6 +120,7 @@ describe("sessionStart wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "onStop", command: "stopper" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: okRunner,
     });
     const message = await wiring.processor.process(
@@ -122,6 +136,7 @@ describe("sessionStart wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "sessionStart", command: "broken-boot" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: false, output: "exploded at startup" })),
     });
     const message = await wiring.processor.process(
@@ -143,6 +158,7 @@ describe("userPromptSubmit wiring", () => {
         { event: "userPromptSubmit", command: "inject-deploy", match: "deploy" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner((_hook, input) => {
         seen.push(input);
         return { ok: true, output: "review checklist loaded" };
@@ -165,6 +181,7 @@ describe("userPromptSubmit wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "userPromptSubmit", command: "flaky-inject" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: false, output: "cannot read hook state" })),
     });
     await wiring.processor.process(userMessage("first"), processorContext("sess-1"));
@@ -183,6 +200,7 @@ describe("userPromptSubmit wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "userPromptSubmit", command: "child-gate" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => {
         runs += 1;
         return { ok: true, output: "child context" };
@@ -207,6 +225,7 @@ describe("userPromptSubmit wiring", () => {
         return [];
       },
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: okRunner,
     });
     await wiring.processor.process(userMessage("a"), processorContext("sess-1"));
@@ -223,6 +242,7 @@ describe("preToolCall wiring", () => {
         { event: "preToolCall", command: "guard-write", match: "Write" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({
         ok: false,
         exitCode: 3,
@@ -262,6 +282,7 @@ describe("preToolCall wiring", () => {
         { event: "preToolCall", command: "quiet-guard", match: "Bash" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: true, output: "" })),
     });
     const result = await wiring.middleware.execute(
@@ -277,6 +298,7 @@ describe("preToolCall wiring", () => {
         { event: "preToolCall", command: "slow-guard", match: "Bash" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: false, timedOut: true, output: "" })),
     });
     const result = await wiring.middleware.execute(invocation("Bash"), async () => ({
@@ -298,6 +320,7 @@ describe("preToolCall wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "preToolCall", command: "ghost-guard" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: false, output: "spawn ENOENT" })),
     });
     const result = await wiring.middleware.execute(invocation("Read"), async () => ({
@@ -319,6 +342,7 @@ describe("preToolCall wiring", () => {
         { event: "preToolCall", command: "write-only-guard", match: "Write" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => {
         runs += 1;
         return { ok: true, output: "" };
@@ -340,6 +364,7 @@ describe("postToolCall wiring", () => {
         { event: "postToolCall", command: "audit-write", match: "Write" },
       ],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner((_hook, input) => {
         seen.push(input);
         return { ok: true, output: "audit row appended" };
@@ -362,6 +387,7 @@ describe("postToolCall wiring", () => {
     const wiring = createHooksWiring({
       getHooksConfig: async () => [{ event: "postToolCall", command: "broken-audit" }],
       getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
       runner: fakeRunner(() => ({ ok: false, output: "audit store unreachable" })),
     });
     const result = await wiring.middleware.execute(invocation("Write"), async () => ({
@@ -384,6 +410,7 @@ describe("createHooksPlugin", () => {
     const ctx = {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
+      permissions: allowAllPermissions(),
     } as unknown as Context;
     createHooksPlugin({
       getHooksConfig: async () => [],
@@ -402,6 +429,7 @@ describe("createHooksPlugin", () => {
     const ctx = {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (_m: ToolExecutionMiddleware) => {} },
+      permissions: allowAllPermissions(),
     } as unknown as Context;
     createHooksPlugin({
       // The -e payload stays one whitespace-free token: the command

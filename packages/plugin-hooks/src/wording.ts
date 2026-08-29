@@ -51,10 +51,26 @@ export function formatHookFailure(hook: HookDefinition, result: HookRunResult): 
   if (result.timedOut) {
     return `hook "${hook.command}" timed out and contributed nothing`;
   }
+  if (result.aborted) {
+    return `hook "${hook.command}" was aborted before it finished`;
+  }
   const detail = result.output.trim();
   return detail.length > 0
     ? `hook "${hook.command}" failed: ${detail}`
     : `hook "${hook.command}" failed without output`;
+}
+
+/**
+ * One permission-gate skip as a single warning line: the command was never
+ * executed — the user (or the missing authorization surface itself)
+ * declined it. Distinct from an execution failure: there is nothing to
+ * fail because nothing ran.
+ */
+export function formatPermissionSkip(hook: HookDefinition, reason: string): string {
+  const detail = reason.trim();
+  return detail.length > 0
+    ? `hook "${hook.command}" was not run: the permission gate declined it (${detail})`
+    : `hook "${hook.command}" was not run: the permission gate declined it`;
 }
 
 /**

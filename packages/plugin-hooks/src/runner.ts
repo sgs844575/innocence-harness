@@ -3,8 +3,12 @@
 // the parsed tokens and the executable, so there is no string-concatenation
 // injection surface. Combined output is bounded, merged and marked when
 // truncated; a timeout kills the child tree following the shell-tool
-// precedent (tree kill on win32, direct signal elsewhere). Hook output is
-// additional context for the model, never a user instruction.
+// precedent (tree kill on win32, direct signal elsewhere), and every kill
+// (deadline or abort) is followed by a bounded grace window after which
+// the run settles unconditionally — an inherited-pipe grandchild can keep
+// the execFile callback pending forever, and no hook may hang the
+// pipeline. Hook output is additional context for the model, never a
+// user instruction.
 import { execFile as nodeExecFile, spawn } from "node:child_process";
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
@@ -16,8 +20,18 @@ import {
 export const MAX_HOOK_OUTPUT_CHARS = 8192;
 /** Budget for the HOOK_INPUT_PREVIEW environment value. */
 export const MAX_HOOK_PREVIEW_CHARS = 512;
+/**
+ * Grace window after a kill (deadline or abort) before the run settles
+ * without its callback: the execFile callback fires only once the child
+ * exits AND its stdio pipes drain, so a grandchild holding an inherited
+ * pipe outlives the kill and would leave the promise pending forever
+ * (final-review finding) — past this window the run force-settles.
+ */
+export const HOOK_SETTLEMENT_GRACE_MS = 500;
 const OUTPUT_TRUNCATION_MARKER = "[hook output truncated]";
 const PREVIEW_TRUNCATION_MARKER = "[preview truncated]";
+const SETTLEMENT_OUTPUT = "hook process was killed but its output streams never closed";
+const ABORT_BEFORE_START_OUTPUT = "hook run was aborted before it started";
 /** Per-stream capture ceiling for the process layer; the visible budget
  *  above stays authoritative for the merged result. */
 const SPAWN_MAX_BUFFER = 64 * 1024;
@@ -27,6 +41,8 @@ export interface HookRunInput {
   inputPreview?: string;
   /** Working directory for the command — the session's workspace root. */
   cwd?: string;
+  /** Aborts the run: the child tree is killed and the run settles. */
+  signal?: AbortSignal;
 }
 
 export interface HookRunResult {
@@ -39,6 +55,9 @@ export interface HookRunResult {
    * (timeout kill, spawn error), so wiring can deny only on real exits.
    */
   exitCode?: number;
+  /** True when the run was cut short by an abort signal instead of the
+   *  deadline; an infrastructure failure for wiring (fail-open). */
+  aborted?: boolean;
 }
 
 export interface HookExecFileOptions {
@@ -128,19 +147,47 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
       }
       const [file, ...args] = tokens;
       const timeoutMs = clampTimeoutMs(hook.timeoutMs);
+      if (input.signal?.aborted) {
+        return { ok: false, output: ABORT_BEFORE_START_OUTPUT, aborted: true };
+      }
       return new Promise<HookRunResult>((resolve) => {
         let timedOut = false;
+        let aborted = false;
         let settled = false;
+        let forceTimer: ReturnType<typeof setTimeout> | undefined;
+        let child: HookChildProcess | undefined;
         const finish = (result: HookRunResult) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          if (forceTimer !== undefined) clearTimeout(forceTimer);
+          input.signal?.removeEventListener("abort", onAbort);
           resolve(result);
         };
-        let child: HookChildProcess;
+        // Forced settlement (final-review finding): after a kill the
+        // ordinary callback gets one grace window; past it the run settles
+        // as a failed timeout/abort instead of hanging the caller.
+        const armForceSettle = (): void => {
+          if (settled || forceTimer !== undefined) return;
+          forceTimer = setTimeout(() => {
+            finish({
+              ok: false,
+              output: capText(SETTLEMENT_OUTPUT, MAX_HOOK_OUTPUT_CHARS, OUTPUT_TRUNCATION_MARKER),
+              ...(timedOut ? { timedOut: true } : {}),
+              ...(aborted ? { aborted: true } : {}),
+            });
+          }, HOOK_SETTLEMENT_GRACE_MS);
+        };
+        const onAbort = (): void => {
+          if (settled) return;
+          aborted = true;
+          if (child !== undefined) killTree(child);
+          armForceSettle();
+        };
         const timer = setTimeout(() => {
           timedOut = true;
-          killTree(child);
+          if (child !== undefined) killTree(child);
+          armForceSettle();
         }, timeoutMs);
         try {
           child = execFileImpl(
@@ -156,20 +203,22 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
               const parts: string[] = [];
               if (stdout) parts.push(stdout);
               if (stderr) parts.push(stderr);
-              if (error && !timedOut) {
+              if (error && !timedOut && !aborted) {
                 if (typeof error.code === "number") parts.push(`[exit ${error.code}]`);
                 else parts.push(error.message);
               }
               finish({
-                ok: error === null && !timedOut,
+                ok: error === null && !timedOut && !aborted,
                 output: capText(parts.join("\n"), MAX_HOOK_OUTPUT_CHARS, OUTPUT_TRUNCATION_MARKER),
                 ...(timedOut ? { timedOut: true } : {}),
-                ...(error !== null && !timedOut && typeof error.code === "number"
+                ...(aborted ? { aborted: true } : {}),
+                ...(error !== null && !timedOut && !aborted && typeof error.code === "number"
                   ? { exitCode: error.code }
                   : {}),
               });
             },
           );
+          input.signal?.addEventListener("abort", onAbort, { once: true });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           finish({ ok: false, output: capText(message, MAX_HOOK_OUTPUT_CHARS, OUTPUT_TRUNCATION_MARKER) });

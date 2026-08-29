@@ -5,12 +5,14 @@
 // at session start, on user input, and around every tool call, for inherited
 // child sessions too (a hook is session-level policy; see wiring.ts).
 import type { Context } from "@innocenceharness/kernel";
-// The wiring module imports harness-session and harness-tools, which pulls
-// their Context service augmentations (ctx.session, ctx.tools) into this
-// compilation — the same pattern as plugin-memory.
+// The wiring module imports harness-session, harness-tools and
+// harness-permissions, which pulls their Context service augmentations
+// (ctx.session, ctx.tools, ctx.permissions) into this compilation — the
+// same pattern as plugin-memory and plugin-planflow.
 import { createHooksWiring, type HooksWiringOptions } from "./wiring";
 
 export * from "./config";
+export * from "./gate";
 export * from "./runner";
 export * from "./wording";
 export * from "./wiring";
@@ -31,7 +33,14 @@ export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
   return {
     name: "hooks",
     apply(ctx: Context) {
-      const { processor, middleware } = createHooksWiring(options);
+      // ctx.permissions is read through a getter at gate time (ServiceTable
+      // liveness — the member exists only while the permissions fiber is
+      // active; the planflow consumption pattern). Absent service means
+      // fail-closed skips, not ungated execution.
+      const { processor, middleware } = createHooksWiring({
+        ...options,
+        getPermissions: () => ctx.permissions,
+      });
       ctx.session.registerProcessor(processor);
       ctx.tools.registerMiddleware(middleware);
     },

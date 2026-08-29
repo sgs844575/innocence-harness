@@ -12,6 +12,12 @@
 // processor likewise never throws: configuration problems surface as
 // warning lines carried by the session-start block.
 //
+// Authorization semantics (final-review finding 1, fail-CLOSED): every hook
+// command passes the first-encounter permission gate (gate.ts) before the
+// runner is ever touched — a denied or unauthorizable command is skipped
+// with a warning line on the same channels as execution failures, and the
+// absence of the permissions service skips the command outright.
+//
 // Session semantics: the plugin instance is created per composition and its
 // processor/middleware are inherited by child sessions (the spawner passes
 // the pipeline and middleware chain down), which is deliberate — a hook is
@@ -20,6 +26,7 @@
 // block is one-shot per instance: the first session seen owns it (the
 // memory-index precedent), so a child's first turn does not replay startup
 // hooks.
+import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import {
   messageText,
   type Message,
@@ -32,6 +39,10 @@ import type {
   ToolResult,
 } from "@innocenceharness/harness-tools";
 import { parseHookDefinitions, type HookDefinition, type ParsedHooks } from "./config";
+import {
+  createHookPermissionGate,
+  type HookPermissionGate,
+} from "./gate";
 import { createHookRunner, type HookRunner, type HookRunInput, type HookRunResult } from "./runner";
 import {
   appendHookNote,
@@ -53,6 +64,12 @@ export interface HooksWiringOptions {
   readonly getHooksConfig: () => Promise<unknown>;
   /** Resolves the workspace root used as every hook command's cwd. */
   readonly getWorkspaceRoot: () => string;
+  /**
+   * Reads the permissions spine for the first-encounter command gate
+   * (finding 1): undefined while the fiber is absent — commands then
+   * fail closed (skipped with a warning).
+   */
+  readonly getPermissions?: () => PermissionsService | undefined;
   /** Runner seam for tests; defaults to the real process-layer runner. */
   readonly runner?: HookRunner;
 }
@@ -80,6 +97,7 @@ function safePreview(args: Record<string, unknown>): string {
 
 export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
   const runner = options.runner ?? createHookRunner();
+  const gate: HookPermissionGate = createHookPermissionGate(options);
   let cache: ParsedHooks | undefined;
   let firstSessionId: string | undefined;
   let firstTurn = true;
@@ -114,14 +132,19 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
 
   const hasOutput = (result: HookRunResult): boolean => result.output.trim().length > 0;
 
-  const injectSessionStart = async (message: Message): Promise<void> => {
+  const injectSessionStart = async (message: Message, signal?: AbortSignal): Promise<void> => {
     const parsed = await loadHooks();
     const outputs: string[] = [];
     const warnings: string[] = [...parsed.warnings];
     const cwd = options.getWorkspaceRoot();
     for (const hook of parsed.hooks) {
       if (hook.event !== "sessionStart") continue;
-      const result = await runGuarded(hook, { cwd });
+      const skip = await gate.authorize(hook);
+      if (skip !== null) {
+        warnings.push(skip);
+        continue;
+      }
+      const result = await runGuarded(hook, { cwd, ...(signal !== undefined ? { signal } : {}) });
       if (result.ok && hasOutput(result)) outputs.push(result.output);
       else if (!result.ok) warnings.push(formatHookFailure(hook, result));
     }
@@ -129,7 +152,7 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     if (block !== undefined) message.parts.push({ type: "text", text: block });
   };
 
-  const injectPromptContext = async (message: Message): Promise<void> => {
+  const injectPromptContext = async (message: Message, signal?: AbortSignal): Promise<void> => {
     const parsed = await loadHooks();
     // Prefix matching reads the concatenated text: injections from earlier
     // processors are appended after the user's own words, so the original
@@ -155,7 +178,16 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     for (const hook of parsed.hooks) {
       if (hook.event !== "userPromptSubmit") continue;
       if (hook.match !== undefined && !text.startsWith(hook.match)) continue;
-      const result = await runGuarded(hook, { inputPreview: text, cwd });
+      const skip = await gate.authorize(hook);
+      if (skip !== null) {
+        failures.push(skip);
+        continue;
+      }
+      const result = await runGuarded(hook, {
+        inputPreview: text,
+        cwd,
+        ...(signal !== undefined ? { signal } : {}),
+      });
       if (result.ok && hasOutput(result)) blocks.push(renderPromptContextReminder(result.output));
       else if (!result.ok) failures.push(formatHookFailure(hook, result));
     }
@@ -171,10 +203,10 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
       firstSessionId ??= context.scope.sessionId;
       if (firstTurn && context.scope.sessionId === firstSessionId) {
         firstTurn = false;
-        await injectSessionStart(message);
+        await injectSessionStart(message, context.signal);
         return message;
       }
-      await injectPromptContext(message);
+      await injectPromptContext(message, context.signal);
       return message;
     },
   };
@@ -201,12 +233,20 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
       // Pre gate, serial: the first hook with an explicit non-zero exit
       // denies the call (veto result, tool never runs, continuation note
       // armed). Zero exits keep checking; infrastructure failures fail open
-      // and queue a warning for the next user turn.
+      // and queue a warning for the next user turn. A permission-gate skip
+      // is neither — the hook simply never runs, the tool proceeds, and the
+      // skip line rides the same deferred-warning channel.
       for (const hook of preHooks) {
+        const skip = await gate.authorize(hook);
+        if (skip !== null) {
+          pendingWarnings.push(skip);
+          continue;
+        }
         const result = await runGuarded(hook, {
           toolName: invocation.toolName,
           inputPreview,
           cwd,
+          signal: invocation.signal,
         });
         if (result.ok) continue;
         if (typeof result.exitCode === "number") {
@@ -232,10 +272,16 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
       // stay silent here — their warning line reaches the next user turn.
       let content = result.content;
       for (const hook of postHooks) {
+        const skip = await gate.authorize(hook);
+        if (skip !== null) {
+          pendingWarnings.push(skip);
+          continue;
+        }
         const note = await runGuarded(hook, {
           toolName: invocation.toolName,
           inputPreview,
           cwd,
+          signal: invocation.signal,
         });
         if (note.ok && hasOutput(note)) content = appendHookNote(content, note.output);
         else if (!note.ok) pendingWarnings.push(formatHookFailure(hook, note));

@@ -2,8 +2,10 @@
 // hook array parsing — the four-event enum gate, command/match/timeout
 // validation, ceiling clamping with a warning, skip-and-warn degradation
 // for bad entries, duplicate preservation, and the factory plugin skeleton
-// (task 2 wires apply through the session faces).
+// (task 2 wires apply through the session faces; the review round adds the
+// always-allowing fake permissions member the gate consumes).
 import type { Context } from "@innocenceharness/kernel";
+import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 import { describe, expect, it } from "vitest";
@@ -134,9 +136,17 @@ describe("createHooksPlugin", () => {
     expect(typeof plugin.apply).toBe("function");
     const processors: MessageProcessor[] = [];
     const middlewares: ToolExecutionMiddleware[] = [];
+    const allowAll = {
+      engine: {
+        async resolve() {
+          return { decision: "allow", via: "ask", reason: "fixture" };
+        },
+      },
+    } as unknown as PermissionsService;
     plugin.apply({
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
+      permissions: allowAll,
     } as unknown as Context);
     expect(processors).toHaveLength(1);
     expect(middlewares).toHaveLength(1);
