@@ -438,4 +438,21 @@ describe("automation dispatcher loop payload and dynamic pacing", () => {
     await Promise.resolve();
     await dispatcher.dispose();
   });
+
+  it("backs off the interval when the dispatch itself rejects", async () => {
+    vi.useFakeTimers();
+    const trigger = vi.fn(async () => { throw new Error("session gone"); });
+    const dispatcher = createAutomationDispatcher({ list: () => [loopDefinition()], trigger, isIdle: () => false });
+
+    dispatcher.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_499);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2_250);
+    expect(trigger).toHaveBeenCalledTimes(3);
+    await dispatcher.dispose();
+  });
 });

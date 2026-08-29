@@ -198,6 +198,7 @@ export function createAutomationService(options: AutomationServiceOptions): Auto
         name,
         candidate,
         ...(targetSessionId ? { targetSessionId } : {}),
+        ...(current.loop ? { loop: current.loop } : {}),
         enabled,
         createdAt: current.createdAt,
         updatedAt: now(),

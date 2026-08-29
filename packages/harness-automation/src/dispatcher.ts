@@ -168,6 +168,8 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
       });
     } catch {
       options.log?.("automation dispatch failed", { id: definition.id, trigger, error: "dispatch rejected" });
+      // A rejected dispatch is an unproductive turn: reuse the backoff path so loop pacing widens instead of stalling.
+      outcome = { productive: false };
     } finally {
       if (!controller.signal.aborted) controller.abort();
       if (active.get(definition.id) === activeDispatch) active.delete(definition.id);

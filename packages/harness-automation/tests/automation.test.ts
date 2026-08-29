@@ -257,4 +257,25 @@ describe("controlled automation service", () => {
     dispatch.mockResolvedValue(undefined);
     await expect(service.trigger("automation-outcome", { trigger: "schedule", sessionId: "session-1", routeId: "main" })).resolves.toBeUndefined();
   });
+
+  it("preserves the loop payload across definition updates", async () => {
+    const saved = store();
+    const dispatch = vi.fn(async () => {});
+    const service = createAutomationService({
+      candidateService: { generate: vi.fn(async () => ({ candidate, metadata: { providerId: "p", modelId: "m" } })) },
+      candidateModel: model,
+      store: saved,
+      dispatch: { dispatch },
+      id: () => "automation-loop-keep",
+    });
+
+    const definition = await service.confirmCandidate(candidate, "Loop keep", "session-1");
+    const loop = { loopFile: "loops/main.md", pacing: { minMs: 60_000, maxMs: 1_800_000 } };
+    saved.save({ ...definition, loop });
+
+    const updated = await service.updateDefinition("automation-loop-keep", candidate, "Loop keep disabled", "session-1", false);
+    expect(updated.enabled).toBe(false);
+    expect(updated.loop).toEqual(loop);
+    expect(service.list()[0]?.loop).toEqual(loop);
+  });
 });
