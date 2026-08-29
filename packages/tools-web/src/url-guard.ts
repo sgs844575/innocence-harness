@@ -1,11 +1,18 @@
-// SSRF baseline guard for the web fetch tool: URL syntax plus hostname
-// literal screening (fully-qualified trailing-dot forms normalized away —
-// dns.lookup still resolves "localhost." to loopback). v1 scope, disclosed in
-// the tool description: literals and localhost only. A hostname that RESOLVES
-// into a private range passes this screen, and nothing downstream resolves it
-// either — permission rules match hostnames verbatim — so DNS-resolved IP
-// re-validation (rebinding defense) is a later hardening step, not a covered
-// layer.
+// SSRF guard for the web fetch tool, two layers:
+// (1) URL syntax plus hostname literal screening — localhost family and
+//     intranet/loopback/link-local IP literals, with fully-qualified
+//     trailing-dot forms normalized away first (dns.lookup still resolves
+//     "localhost." to loopback, and URL parsing keeps the dot);
+// (2) post-resolution re-screening — a name that passed layer 1 is resolved
+//     (all addresses) and every returned address is held against the same IP
+//     predicates; a private hit, a resolution failure or an expired time
+//     budget all reject (fail closed). IP literals skip layer 2: layer 1
+//     already judged the address itself.
+// The screen resolves independently of the transport, so the rebinding
+// window narrows to the gap between screen and connect — it is reduced by
+// re-screening each followed redirect hop, not eliminated by pinning.
+
+import { lookup as nodeDnsLookup } from "node:dns/promises";
 
 /** Private/loopback/link-local/unspecified IPv4 ranges (octet predicates). */
 function privateIPv4Octets(octets: number[]): boolean {
@@ -21,12 +28,19 @@ function privateIPv4Octets(octets: number[]): boolean {
   );
 }
 
-function isPrivateIPv4Host(host: string): boolean {
+/** Dotted-quad shape test (URL parsing canonicalizes shorthand/hex forms first). */
+function isIPv4Literal(host: string): boolean {
   const parts = host.split(".");
   if (parts.length !== 4) return false;
-  const octets = parts.map(Number);
-  if (octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false;
-  return privateIPv4Octets(octets);
+  return parts.every((part) => {
+    const value = Number(part);
+    return Number.isInteger(value) && value >= 0 && value <= 255;
+  });
+}
+
+function isPrivateIPv4Host(host: string): boolean {
+  if (!isIPv4Literal(host)) return false;
+  return privateIPv4Octets(host.split(".").map(Number));
 }
 
 /** Embedded IPv4 tail of an IPv6 literal → its two 16-bit groups. */
@@ -83,21 +97,40 @@ function isPrivateIPv6Literal(host: string): boolean {
 }
 
 /**
+ * Fully-qualified trailing dots stripped, case normalized — "a.example." and
+ * "A.EXAMPLE" both reduce to the dotless lowercase form (a second trailing
+ * dot is an invalid empty label; stripping it rejects those forms too). Valid
+ * public hosts lose at most their FQDN dot, so no false positives.
+ */
+export function stripTrailingDots(hostname: string): string {
+  let host = hostname.trim().toLowerCase();
+  while (host.endsWith(".")) host = host.slice(0, -1);
+  return host;
+}
+
+/** Bare-IP screening by shape: dotted quad or IPv6 literal, brackets optional. */
+function isPrivateIpLiteral(host: string): boolean {
+  if (host.startsWith("[") && host.endsWith("]")) return isPrivateIPv6Literal(host.slice(1, -1));
+  if (host.includes(":")) return isPrivateIPv6Literal(host);
+  return isPrivateIPv4Host(host);
+}
+
+/** True when the host IS an IP address rather than a name needing resolution. */
+function isIpLiteralHost(host: string): boolean {
+  if (host.startsWith("[") && host.endsWith("]")) return true;
+  if (host.includes(":")) return true;
+  return isIPv4Literal(host);
+}
+
+/**
  * Hostname literal screening: localhost family, private/loopback/link-local
  * IPv4, and non-global IPv6. URL parsing normalizes IPv4 shorthand/hex forms
  * before this runs (e.g. 0x7f.1 → 127.0.0.1), so dotted-quad checks suffice.
  */
 export function isPrivateHost(hostname: string): boolean {
-  let host = hostname.trim().toLowerCase();
-  // Fully-qualified trailing dot(s): "localhost." and "api.localhost." are the
-  // same DNS names as their dotless forms (a second trailing dot is an invalid
-  // empty label — stripping it rejects those forms too). Valid public hosts
-  // lose at most their FQDN dot, so no false positives.
-  while (host.endsWith(".")) host = host.slice(0, -1);
+  const host = stripTrailingDots(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (host.startsWith("[") && host.endsWith("]")) return isPrivateIPv6Literal(host.slice(1, -1));
-  if (host.includes(":")) return isPrivateIPv6Literal(host);
-  return isPrivateIPv4Host(host);
+  return isPrivateIpLiteral(host);
 }
 
 export interface ParsedWebTarget {
@@ -132,4 +165,64 @@ export function parseWebTarget(raw: string): ParsedWebTarget {
     throw new Error(`目标地址不允许：内网/环回地址 ${url.hostname}`);
   }
   return { url, host: url.hostname };
+}
+
+export interface ResolvedAddress {
+  address: string;
+  family: number;
+}
+
+/** Structural match of node:dns/promises lookup(hostname, { all: true }). */
+export type DnsLookupLike = (hostname: string, options: { all: true }) => Promise<ResolvedAddress[]>;
+
+export const DEFAULT_DNS_LOOKUP_TIMEOUT_MS = 3000;
+
+export const defaultDnsLookup: DnsLookupLike = (hostname, options) => nodeDnsLookup(hostname, options);
+
+/** Marker distinguishing the race timer from a lookup-side rejection. */
+class DnsScreenTimeout extends Error {}
+
+/**
+ * Post-resolution re-screen for a hostname that passed the literal layer:
+ * resolve every address and hold each one against the same intranet/loopback
+ * predicates. Fail closed — a private hit, an empty result set, a lookup
+ * error, or an expired time budget all reject. IP literals are skipped
+ * (already judged as literals); a host that normalizes to the empty name is
+ * rejected outright. Error messages echo the hostname only, never the path
+ * or query.
+ */
+export async function screenResolvedHost(
+  hostname: string,
+  lookup: DnsLookupLike = defaultDnsLookup,
+  timeoutMs: number = DEFAULT_DNS_LOOKUP_TIMEOUT_MS,
+): Promise<void> {
+  const host = stripTrailingDots(hostname);
+  if (host === "") throw new Error("目标地址不允许：域名为空");
+  if (isIpLiteralHost(host)) return;
+  const lookupPromise = lookup(host, { all: true });
+  // The race loser must carry its own rejection sink — a lookup that fails
+  // after the budget elapsed would otherwise surface as an unhandled
+  // rejection while the caller already saw the timeout.
+  lookupPromise.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let resolved: ResolvedAddress[];
+  try {
+    resolved = await Promise.race([
+      lookupPromise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new DnsScreenTimeout()), timeoutMs);
+      }),
+    ]);
+  } catch (err) {
+    if (err instanceof DnsScreenTimeout) {
+      throw new Error(`目标地址不允许：域名 ${host} 解析超时（>${Math.round(timeoutMs / 1000)}s）`);
+    }
+    throw new Error(`目标地址不允许：域名 ${host} 解析失败`);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+  if (resolved.length === 0) throw new Error(`目标地址不允许：域名 ${host} 解析失败`);
+  if (resolved.some((entry) => isPrivateIpLiteral(stripTrailingDots(entry.address)))) {
+    throw new Error(`目标地址不允许：域名 ${host} 的解析结果命中内网/环回地址`);
+  }
 }

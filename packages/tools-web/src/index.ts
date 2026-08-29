@@ -18,4 +18,12 @@ export {
   type FetchResponseLike,
   type WebFetchToolDependencies,
 } from "./fetchTool";
-export { isPrivateHost, parseWebTarget, type ParsedWebTarget } from "./url-guard";
+export {
+  isPrivateHost,
+  parseWebTarget,
+  screenResolvedHost,
+  stripTrailingDots,
+  type DnsLookupLike,
+  type ParsedWebTarget,
+  type ResolvedAddress,
+} from "./url-guard";

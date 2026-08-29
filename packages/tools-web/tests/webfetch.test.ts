@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createWebFetchTool, WebPlugin, type FetchLike, type FetchResponseLike } from "../src";
+import {
+  createWebFetchTool,
+  WebPlugin,
+  type DnsLookupLike,
+  type FetchLike,
+  type FetchResponseLike,
+} from "../src";
 
 const ctx = { signal: new AbortController().signal } as never;
 
@@ -50,8 +56,14 @@ function fakeFetch(routes: Record<string, Route>) {
   return { impl, calls };
 }
 
-function tool(fetchImpl: FetchLike): ReturnType<typeof createWebFetchTool> {
-  return createWebFetchTool({ fetchImpl, timeoutMs: 2000 });
+/** Fake resolver: every name resolves to one public address (offline by construction). */
+const publicDns: DnsLookupLike = async () => [{ address: "93.184.216.34", family: 4 }];
+
+function tool(
+  fetchImpl: FetchLike,
+  dnsLookup: DnsLookupLike = publicDns,
+): ReturnType<typeof createWebFetchTool> {
+  return createWebFetchTool({ fetchImpl, dnsLookup, timeoutMs: 2000 });
 }
 
 describe("web_fetch tool", () => {
@@ -287,10 +299,11 @@ describe("web_fetch tool", () => {
 
   it("times out hanging fetches", async () => {
     const { impl } = fakeFetch({ "https://slow.example/": { hang: true } });
-    const res = await createWebFetchTool({ fetchImpl: impl, timeoutMs: 40 }).execute(
-      { url: "https://slow.example/" },
-      ctx,
-    );
+    const res = await createWebFetchTool({
+      fetchImpl: impl,
+      dnsLookup: publicDns,
+      timeoutMs: 40,
+    }).execute({ url: "https://slow.example/" }, ctx);
     expect(res.isError).toBe(true);
     expect(res.content).toContain("超时");
   });
@@ -409,6 +422,11 @@ describe("web_fetch tool", () => {
     expect(t.description).toContain("字面量");
     expect(t.description).toContain("不可信");
     expect(t.description).toContain("跨主机重定向不自动跟随");
+    // Wording sync: the resolved-address layer is disclosed as implemented —
+    // the old "literal-only, no post-resolution check" disclosure is gone.
+    expect(t.description).toContain("解析");
+    expect(t.description).not.toContain("不复核");
+    expect(t.description).not.toContain("v1");
   });
 
   it("registers via the plugin", () => {
@@ -416,5 +434,170 @@ describe("web_fetch tool", () => {
     WebPlugin.apply({ tools: { register: (t: { name: string }) => registered.push(t.name) } } as never);
     expect(registered).toEqual(["web_fetch"]);
     expect(WebPlugin.name).toBe("web");
+  });
+});
+
+describe("trailing-dot host normalization", () => {
+  it("follows same-host redirects between dotless and fully-qualified forms", async () => {
+    // "a.example." and "a.example" are the same DNS name; the redirect follow
+    // compares hostnames with fully-qualified trailing dots normalized away.
+    const routes: Record<string, Route> = {
+      "https://a.example/go": { location: "https://a.example./x" },
+      "https://a.example./x": { body: "landed" },
+    };
+    const { impl, calls } = fakeFetch(routes);
+    const res = await tool(impl).execute({ url: "https://a.example/go" }, ctx);
+    expect(res.isError).toBeFalsy();
+    expect(calls).toEqual(["https://a.example/go", "https://a.example./x"]);
+    expect(res.content).toContain("final=https://a.example./x");
+    expect(res.content).toContain("landed");
+  });
+
+  it("still terminates when a redirect changes the host beyond the trailing dot", async () => {
+    const { impl, calls } = fakeFetch({ "https://a.example/go": { location: "https://b.example./x" } });
+    const res = await tool(impl).execute({ url: "https://a.example/go" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("跨主机");
+    expect(calls).toEqual(["https://a.example/go"]);
+  });
+
+  it("normalizes a fully-qualified entry host in the permission scope", () => {
+    // "https://a.example./go" is a direct call on the dotted form; its scope
+    // must be the dotless form so an "a.example" rule still matches.
+    const t = createWebFetchTool();
+    expect(t.permissionResource({ url: "https://a.example./go" }, ctx)).toEqual({
+      action: "read",
+      kind: "web",
+      scope: "a.example",
+    });
+  });
+});
+
+describe("resolved-address re-screening", () => {
+  it("rejects before transport when any resolved address hits an intranet range", async () => {
+    const privateHits: { address: string; family: number }[][] = [
+      [{ address: "10.0.0.8", family: 4 }],
+      [{ address: "127.0.0.1", family: 4 }],
+      [{ address: "169.254.169.254", family: 4 }],
+      [
+        { address: "93.184.216.34", family: 4 },
+        { address: "192.168.0.9", family: 4 },
+      ],
+      [{ address: "::1", family: 6 }],
+      [{ address: "::ffff:127.0.0.1", family: 6 }],
+      [{ address: "fd12::1", family: 6 }],
+      [{ address: "fe80::1", family: 6 }],
+    ];
+    for (const hits of privateHits) {
+      const { impl, calls } = fakeFetch({ "https://rebind.example/": { body: "leaked" } });
+      const dns: DnsLookupLike = async () => hits;
+      const res = await tool(impl, dns).execute({ url: "https://rebind.example/" }, ctx);
+      expect(res.isError).toBe(true);
+      expect(res.content).toContain("目标地址不允许");
+      expect(calls).toEqual([]); // no transport call may leave the gate
+    }
+  });
+
+  it("passes hosts whose resolutions are all public addresses", async () => {
+    const { impl, calls } = fakeFetch({ "https://ok.example/": { body: "fine" } });
+    const dns: DnsLookupLike = async () => [
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+    ];
+    const res = await tool(impl, dns).execute({ url: "https://ok.example/" }, ctx);
+    expect(res.isError).toBeFalsy();
+    expect(calls).toEqual(["https://ok.example/"]);
+  });
+
+  it("rejects when resolution fails (fail closed)", async () => {
+    const { impl, calls } = fakeFetch({});
+    const dns: DnsLookupLike = async () => {
+      throw new Error("getaddrinfo ENOTFOUND nope.example");
+    };
+    const res = await tool(impl, dns).execute({ url: "https://nope.example/" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("解析失败");
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects when resolution exceeds its time budget", async () => {
+    const { impl, calls } = fakeFetch({});
+    const never: DnsLookupLike = () => new Promise(() => {});
+    const res = await createWebFetchTool({
+      fetchImpl: impl,
+      dnsLookup: never,
+      dnsTimeoutMs: 40,
+      timeoutMs: 2000,
+    }).execute({ url: "https://slow-dns.example/" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("解析超时");
+    expect(calls).toEqual([]);
+  });
+
+  it("does not surface a late lookup rejection after the screen timed out", async () => {
+    // A losing lookup that later fails must not escape as an unhandled
+    // rejection — vitest would fail the run outright.
+    const lateReject: DnsLookupLike = () =>
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error("late ENOTFOUND")), 120);
+      });
+    const { impl } = fakeFetch({});
+    const res = await createWebFetchTool({
+      fetchImpl: impl,
+      dnsLookup: lateReject,
+      dnsTimeoutMs: 40,
+      timeoutMs: 2000,
+    }).execute({ url: "https://late.example/" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("解析超时");
+    await new Promise((resolve) => setTimeout(resolve, 200)); // let the late rejection land
+  });
+
+  it("skips resolution entirely for pure IP literal hosts", async () => {
+    const seen: string[] = [];
+    const dns: DnsLookupLike = async (hostname) => {
+      seen.push(hostname);
+      return [{ address: "93.184.216.34", family: 4 }];
+    };
+    const { impl, calls } = fakeFetch({ "http://8.8.8.8/": { body: "direct" } });
+    const res = await tool(impl, dns).execute({ url: "http://8.8.8.8/" }, ctx);
+    expect(res.isError).toBeFalsy();
+    expect(seen).toEqual([]); // literal hosts were already judged as literals
+    expect(calls).toEqual(["http://8.8.8.8/"]);
+  });
+
+  it("re-screens the resolved addresses of every followed redirect hop", async () => {
+    // Same host across the hop: the entry screening resolves public, the
+    // pre-fetch re-screen of the hop (a rebinding flip) resolves private —
+    // the hop must be rejected before the transport call.
+    let resolutions = 0;
+    const dns: DnsLookupLike = async () => {
+      resolutions += 1;
+      return resolutions === 1
+        ? [{ address: "93.184.216.34", family: 4 }]
+        : [{ address: "10.0.0.8", family: 4 }];
+    };
+    const { impl, calls } = fakeFetch({
+      "https://rebind.example/go": { location: "/x" },
+      "https://rebind.example/x": { body: "must not be fetched" },
+    });
+    const res = await tool(impl, dns).execute({ url: "https://rebind.example/go" }, ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content).toContain("目标地址不允许");
+    expect(calls).toEqual(["https://rebind.example/go"]);
+    expect(resolutions).toBe(2);
+  });
+
+  it("rejects hosts that normalize to the empty name", async () => {
+    // "http://./x" and "http://../x" parse with dot-only hosts; after
+    // trailing-dot stripping there is no name left to vouch for — reject
+    // outright instead of asking a resolver about the empty name.
+    for (const url of ["http://./x", "http://../x"]) {
+      const { impl, calls } = fakeFetch({});
+      const res = await tool(impl).execute({ url }, ctx);
+      expect(res.isError).toBe(true);
+      expect(res.content).toContain("目标地址不允许");
+      expect(calls).toEqual([]);
+    }
   });
 });
