@@ -99,3 +99,49 @@ describe("ContextManager.maybeCompact", () => {
     expect(messages).toHaveLength(2);
   });
 });
+
+describe("compaction disclosure", () => {
+  function longHistory() {
+    return [
+      textMessage("user", "第一个问题，很长很长".repeat(20)),
+      textMessage("assistant", "第一个回答"),
+      textMessage("user", "第二个问题"),
+      textMessage("assistant", "第二个回答"),
+      textMessage("user", "第三个问题"),
+      textMessage("assistant", "第三个回答"),
+    ];
+  }
+
+  it("appends an English completeness disclosure after the summary body", async () => {
+    const cm = new ContextManager({ maxContextTokens: 1, keepRecent: 2 });
+    const messages = longHistory();
+    const changed = await cm.maybeCompact(messages, summarizingProvider());
+    expect(changed).toBe(true);
+    const text = (messages[0].parts[0] as { text: string }).text;
+    expect(text.startsWith("[此前对话已压缩为摘要]\n")).toBe(true);
+    expect(text).toContain("压缩后的摘要");
+    // disclosure anchors: condensed/summary wording + explicit re-verify ask
+    expect(text).toMatch(/condensed|summary/i);
+    expect(text).toMatch(/re-?verify/i);
+    // the disclosure sits after the summary body, not inside the head marker
+    expect(text.indexOf("压缩后的摘要")).toBeLessThan(text.search(/re-?verify/i));
+    // partial-compaction boundary: recent turns are explicitly declared intact
+    expect(text).toMatch(/verbatim|boundary/i);
+  });
+
+  it("leaves messages byte-identical on every uncompressed path", async () => {
+    // under threshold
+    const under = new ContextManager({ maxContextTokens: 1_000_000 });
+    const quiet = longHistory();
+    const quietBefore = JSON.stringify(quiet);
+    await expect(under.maybeCompact(quiet, summarizingProvider())).resolves.toBe(false);
+    expect(JSON.stringify(quiet)).toBe(quietBefore);
+
+    // over threshold but no safe split
+    const noSplit = new ContextManager({ maxContextTokens: 1, keepRecent: 2 });
+    const pair = [textMessage("user", "x".repeat(200)), textMessage("assistant", "y".repeat(200))];
+    const pairBefore = JSON.stringify(pair);
+    await expect(noSplit.maybeCompact(pair, summarizingProvider())).resolves.toBe(false);
+    expect(JSON.stringify(pair)).toBe(pairBefore);
+  });
+});

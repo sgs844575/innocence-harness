@@ -18,6 +18,7 @@ export {
 export type { HarnessEvent, HarnessEventListener } from "./events";
 export {
   ContextManager,
+  COMPACTION_DISCLOSURE,
   DEFAULT_COMPACTION,
   SUMMARIZE_SYSTEM_PROMPT,
   estimateTokens,

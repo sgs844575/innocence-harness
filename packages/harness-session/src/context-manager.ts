@@ -6,6 +6,21 @@ export const SUMMARIZE_SYSTEM_PROMPT =
   "保留：任务目标、已做过的决定、已完成的工具操作及其结果要点、尚未完成的事项。" +
   "直接输出摘要正文，不要任何开场白。";
 
+/**
+ * English disclosure appended to the compacted head message. Three semantics
+ * carried together: the summary is a condensed account rather than the full
+ * transcript (completeness), the turns past the split were kept verbatim
+ * (partial-compaction boundary), and file references quoted from the
+ * condensed portion may be stale and must be re-read before use.
+ */
+export const COMPACTION_DISCLOSURE =
+  "Note: the earlier turns were condensed into this summary. It preserves " +
+  "decisions and conclusions, but specific numbers, file states, and line " +
+  "references may be stale; re-verify them against the files before relying " +
+  "on them, and when quoting pre-compaction material, state that it comes " +
+  "from the summary. Turns kept after the compaction boundary are verbatim " +
+  "and unaffected.";
+
 export interface CompactionOptions {
   /** Token estimate above this triggers compaction. Default 48000. */
   maxContextTokens: number;
@@ -79,7 +94,7 @@ export class ContextManager {
       parts: [
         {
           type: "text",
-          text: `[此前对话已压缩为摘要]\n${summary}`,
+          text: `[此前对话已压缩为摘要]\n${summary}\n\n${COMPACTION_DISCLOSURE}`,
         },
       ],
     };
