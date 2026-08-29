@@ -397,6 +397,8 @@ describe("memory plugin factory", () => {
     expect(plugin.name).toBe("memory");
     const ctx = new Context();
     await ctx.plugin(ToolsPlugin);
+    // 任务 2 起 apply 还注册首轮注入 processor：装配一个假会话服务承接。
+    ctx.provide("session", { registerProcessor: () => {} });
     await ctx.plugin(plugin);
     expect(ctx.tools.get(MEMORY_WRITE_TOOL_NAME)?.name).toBe("memory_write");
     expect(ctx.tools.get(MEMORY_LIST_TOOL_NAME)?.name).toBe("memory_list");
@@ -412,6 +414,7 @@ describe("memory plugin factory", () => {
     const projectRoot = tmpRoot();
     const ctx = new Context();
     await ctx.plugin(ToolsPlugin);
+    ctx.provide("session", { registerProcessor: () => {} });
     await ctx.plugin(
       createMemoryPlugin({ getUserRoot: () => userRoot, getProjectRoot: () => projectRoot }),
     );

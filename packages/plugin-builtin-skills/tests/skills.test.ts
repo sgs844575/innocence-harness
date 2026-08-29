@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers thirteen skills with unique names", () => {
+  it("registers fourteen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(13);
+    expect(new Set(names).size).toBe(14);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -43,6 +43,7 @@ describe("builtin skills", () => {
       "permission-allowlist",
       "harness-configuration",
       "repo-instructions",
+      "memory-upkeep",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -68,7 +69,7 @@ describe("builtin skills", () => {
     }
   });
 
-  it("registers all thirteen on the skills service in order", async () => {
+  it("registers all fourteen on the skills service in order", async () => {
     const ctx = await setup();
     expect(ctx.skills.all().map((s) => s.name)).toEqual(
       builtinSkills.map((s) => s.name),
@@ -79,7 +80,7 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(13);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(14);
   });
 
   it("is English and free of banned tokens", () => {
@@ -89,5 +90,24 @@ describe("builtin skills", () => {
         expect(`${s.name}:${s.description}:${s.body}`).not.toMatch(re);
       }
     }
+  });
+
+  it("memory-upkeep carries the merge, mark-not-delete, index-health and attachment anchors", () => {
+    const skill = builtinSkills.find((s) => s.name === "memory-upkeep");
+    expect(skill).toBeDefined();
+    // 合并重复/相近条目。
+    expect(skill!.body).toMatch(/merge/i);
+    // 过期清理取标注而非删除（无删除工具，历史依据保留）。
+    expect(skill!.body).toMatch(/outdated|superseded/i);
+    // 经工具面操作（读列写三件）。
+    expect(skill!.body).toMatch(/memory_list/);
+    expect(skill!.body).toMatch(/memory_write/);
+    // 索引健康：id 语义化与首行信息密集。
+    expect(skill!.body).toMatch(/first line/i);
+    expect(skill!.body).toMatch(/\bid\b/);
+    // 附件选择启发式：宁少勿滥。
+    expect(skill!.body).toMatch(/fewer|sparing/i);
+    // 建议周期：会话结束/用户要求。
+    expect(skill!.body).toMatch(/session ends|wrap|user asks/i);
   });
 });

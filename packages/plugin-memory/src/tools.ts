@@ -108,8 +108,15 @@ function requireWrite(args: Record<string, unknown>): {
   };
 }
 
-/** One index row: `id [scope] #tag1 #tag2 — first-line` (preview capped). */
-function formatRow(entry: { id: string; scope: MemoryScope; tags: readonly string[]; firstLine: string }): string {
+/** One index row: `id [scope] #tag1 #tag2 — first-line` (preview capped).
+ *  Exported because the first-turn injection renders the same row shape —
+ *  one surface, one formatter. */
+export function formatIndexRow(entry: {
+  id: string;
+  scope: MemoryScope;
+  tags: readonly string[];
+  firstLine: string;
+}): string {
   const tags = entry.tags.length > 0 ? ` ${entry.tags.map((tag) => `#${tag}`).join(" ")}` : "";
   return `${entry.id} [${entry.scope}]${tags} — ${entry.firstLine.slice(0, FIRST_LINE_CAP)}`;
 }
@@ -204,7 +211,7 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
     },
     async execute() {
       const { entries, warnings } = await listEntries(shadowRoots());
-      const rows = entries.length > 0 ? entries.map(formatRow).join("\n") : MEMORY_LIST_EMPTY;
+      const rows = entries.length > 0 ? entries.map(formatIndexRow).join("\n") : MEMORY_LIST_EMPTY;
       // 告警尾注只含文件名与原因（store 契约），不携带条目内容。
       return { content: warnings.length > 0 ? `${rows}\nNotes: ${warnings.join("; ")}` : rows };
     },
