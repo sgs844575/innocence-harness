@@ -52,6 +52,9 @@ const LIBS = [
 // 对象（name 同 id），向 tools 服务注册只读工具 read_reference——四个
 // 英文参考条目的目录固定，参考资料不常驻提示词，模型按需逐条拉取
 // （缓存纪律：稳定前缀不被参考内容扰动）。
+// planflow 为计划提交流插件（B4A 规划工具链）：默认导出即插件对象
+// （name 同 id），静态形态走通用装载链——注册 plan_submit 工具、监听
+// 权限决议事件（ask 级 allow 即计划批准）、在消息侧注入批准/拒绝提醒。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -70,6 +73,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "focus", kind: "agent-mode", dependencies: [] },
   { id: "minimal", kind: "agent-mode", dependencies: [] },
   { id: "learning", kind: "agent-mode", dependencies: [] },
+  { id: "planflow", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -96,6 +100,7 @@ const PLUGINS = [
   { dir: "packages/plugin-agent-focus", id: "focus" },
   { dir: "packages/plugin-agent-minimal", id: "minimal" },
   { dir: "packages/plugin-agent-learn", id: "learning" },
+  { dir: "packages/plugin-planflow", id: "planflow" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

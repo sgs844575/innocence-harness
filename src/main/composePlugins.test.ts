@@ -58,10 +58,14 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // settings 通道的许可档 getter（仿 creation 的映射与计数同步）。
 // reference 为按需参考资料工具插件：默认导出即插件对象（name 同 id），
 // 向 tools 服务注册只读 read_reference（四个内置参考条目的固定目录）。
+// planflow 为计划提交流插件（批次 4A）：默认导出即插件对象（name 同
+// id），静态插件形态——注册 plan_submit 工具 + 权限事件监听 + 批准/拒绝
+// 提醒处理器，走通用装载链（无宿主工厂入参）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning",
+  "planflow",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -109,6 +113,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       focus: "focus",
       minimal: "minimal",
       learning: "learning",
+      planflow: "planflow",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -176,6 +181,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(remindersEntry?.core ?? false, '"reminders" 必须非 core（可开关）').toBe(false);
     expect(remindersEntry?.kind).toBeUndefined();
     expect(remindersEntry?.title, '"reminders" 缺 title').toMatch(/\S/);
+    // 计划提交流插件（批次 4A）：静态能力插件（非 core、无依赖、无 kind），
+    // 默认导出即插件对象——通用装载链直装载，name 与 staging id 同名。
+    const planflowEntry = byId.get("planflow");
+    expect(planflowEntry, 'manifest 缺少 "planflow" 条目').toBeDefined();
+    expect(planflowEntry).toMatchObject({ dependencies: [] });
+    expect(planflowEntry?.core ?? false, '"planflow" 必须非 core（可开关）').toBe(false);
+    expect(planflowEntry?.kind).toBeUndefined();
+    expect(planflowEntry?.title, '"planflow" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
