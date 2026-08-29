@@ -174,7 +174,8 @@ export function createAutomationDispatcher(options: AutomationDispatcherOptions)
       resolveSettled?.();
       const current = registrations.get(definition.id);
       if (!disposed && current) {
-        applyPacing(current, outcome);
+        // Only the dispatch's own registration may consume its outcome; a rebuilt one restarts from the configured interval.
+        if (current === registration) applyPacing(current, outcome);
         schedule(current);
       }
     }

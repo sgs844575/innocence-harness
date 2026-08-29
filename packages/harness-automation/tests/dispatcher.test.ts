@@ -414,4 +414,28 @@ describe("automation dispatcher loop payload and dynamic pacing", () => {
     expect(trigger).toHaveBeenCalledTimes(4);
     await dispatcher.dispose();
   });
+
+  it("ignores a stale outcome from an in-flight dispatch after sync rebuilds the registration", async () => {
+    vi.useFakeTimers();
+    let finish: ((outcome: { productive: boolean }) => void) | undefined;
+    const trigger = vi.fn(() => new Promise<{ productive: boolean }>((resolve) => { finish = resolve; }));
+    const dispatcher = createAutomationDispatcher({ list: () => [], trigger, isIdle: () => false });
+
+    dispatcher.sync([loopDefinition({ updatedAt: 1 })]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(trigger).toHaveBeenCalledOnce();
+
+    dispatcher.sync([loopDefinition({ updatedAt: 2 })]);
+    finish?.({ productive: true });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(800);
+    expect(trigger).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    finish?.({ productive: true });
+    await Promise.resolve();
+    await dispatcher.dispose();
+  });
 });
