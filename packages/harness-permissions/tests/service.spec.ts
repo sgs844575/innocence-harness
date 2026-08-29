@@ -92,6 +92,28 @@ describe("policy rule registration", () => {
   });
 });
 
+describe("plan approval delegation", () => {
+  it("exposes approvePlan() delegating to the engine (plan write: planMode deny -> regular ask)", async () => {
+    const service = createPermissionsService({ mode: "plan", decider: denyDecider });
+    const writeReq = {
+      toolName: "Edit",
+      resource: { action: "write", kind: "path", scope: "src/a.ts" } as const,
+      args: {},
+    };
+    const before = await service.engine.resolve(writeReq, { readOnly: false, sideEffect: "paths" });
+    expect(before).toEqual({
+      decision: "deny",
+      via: "planMode",
+      reason: "计划模式下只允许只读操作，请先给出计划再切换模式执行",
+    });
+    service.approvePlan();
+    const after = await service.engine.resolve(writeReq, { readOnly: false, sideEffect: "paths" });
+    // denyDecider 拒绝，但决议出自常规 ask 管线而非 plan 短路。
+    expect(after.decision).toBe("deny");
+    expect(after.via).toBe("ask");
+  });
+});
+
 describe("permissions service lifecycle on the kernel", () => {
   it("carries the spine plugin name \"harness-permissions\"", () => {
     const plugin = createPermissionsPlugin(

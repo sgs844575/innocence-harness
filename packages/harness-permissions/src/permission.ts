@@ -66,7 +66,9 @@ export function resourceGrantKey(toolName: string, resource: PermissionResource)
  *   1. full mode             -> ALLOW（完全访问：短路在 deny 规则之前，
  *                                full 模式下 deny 规则不生效，仅跳过询问）
  *   2. any deny rule         -> DENY（仅非 full 模式会执行到这一步）
- *   3. plan mode             -> readOnly ? ALLOW : DENY
+ *   3. plan mode (未批准)    -> readOnly ? ALLOW : DENY
+ *                                （approvePlan() 后跳过本短路，
+ *                                  写操作落回 4-7 常规管线）
  *   4. any allow rule        -> ALLOW
  *   5. auto mode             -> ALLOW
  *   6. session grant (resource key) -> ALLOW
@@ -77,6 +79,8 @@ export class PermissionEngine {
   private rules: PolicyRule[] = [];
   private sessionGrants = new Set<string>();
   private mode: PermissionMode;
+  /** 计划批准态：置位后 plan 档不再短路，写操作回归常规管线。 */
+  private planApproved = false;
   private readonly decider: PermissionDecider;
   private readonly workspaceRoot?: string;
   private readonly validateResource?: ResourceValidator;
@@ -96,6 +100,19 @@ export class PermissionEngine {
 
   setMode(mode: PermissionMode): void {
     this.mode = mode;
+    // 任何档位切换都复位计划批准态：离开再回 plan 档需重新提交批准。
+    this.planApproved = false;
+  }
+
+  /**
+   * 批准当前计划：仅 plan 档置位，置位后写操作不再被 plan 短路硬拒，
+   * 而是落回 allow 规则→auto→sessionGrant→ask 常规管线。
+   * 其他档位调用为无操作，防止跨档误解锁（先在别的档调用再切回 plan
+   * 不会携带批准态；任何 setMode 也会复位）。
+   */
+  approvePlan(): void {
+    if (this.mode !== "plan") return;
+    this.planApproved = true;
   }
 
   addRules(rules: readonly PolicyRule[]): void {
@@ -164,8 +181,9 @@ export class PermissionEngine {
       }
     }
 
-    if (this.mode === "plan") {
-      // 计划模式 = 只读探索自由、写操作硬拒（deny 规则仍优先于本短路）。
+    if (this.mode === "plan" && !this.planApproved) {
+      // 计划模式（未批准）= 只读探索自由、写操作硬拒（deny 规则仍优先于本短路）。
+      // 批准后（planApproved）不短路：落回 allow 规则→auto→sessionGrant→ask 常规管线。
       if (toolMeta.readOnly) {
         return {
           decision: "allow",

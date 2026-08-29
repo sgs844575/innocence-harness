@@ -275,6 +275,69 @@ describe("PermissionEngine pipeline", () => {
   });
 });
 
+describe("PermissionEngine plan approval (approvePlan)", () => {
+  it("unapproved plan mode: writes denied via planMode, readOnly allowed via planReadOnly", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("deny");
+    expect(w.via).toBe("planMode");
+    const r = await engine.resolve(readReq, read);
+    expect(r.decision).toBe("allow");
+    expect(r.via).toBe("planReadOnly");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("approvePlan() sends writes back through the regular pipeline to ask", async () => {
+    const { decider, requests } = recordingDecider("allow");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    expect((await engine.resolve(editReq, write)).via).toBe("planMode"); // 未批准先硬拒
+    engine.approvePlan();
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("allow");
+    expect(w.via).toBe("ask"); // 不再 deny planMode，落回常规管线末端的 ask
+    expect(requests).toHaveLength(1);
+  });
+
+  it("approved plan mode resumes the regular pipeline at allow rules", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    engine.addRules([
+      { name: "allow:Edit", match: (c) => (c.toolName === "Edit" ? "allow" : "skip") },
+    ]);
+    engine.approvePlan();
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("allow");
+    expect(w.via).toBe("allowRule"); // 常规管线从 allow 规则处恢复，未到 ask
+    expect(requests).toHaveLength(0);
+  });
+
+  it("setMode() resets planApproved — re-entering plan re-arms the write deny", async () => {
+    const { decider, requests } = recordingDecider("allow");
+    const engine = new PermissionEngine({ mode: "plan", decider });
+    engine.approvePlan();
+    const approved = await engine.resolve(editReq, write);
+    expect(approved.via).toBe("ask"); // 批准后走 ask
+    engine.setMode("ask");
+    engine.setMode("plan");
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("deny");
+    expect(w.via).toBe("planMode"); // 批准态已复位，写操作重新硬拒
+    expect(requests).toHaveLength(1); // 第二次未再到达 ask
+  });
+
+  it("approvePlan() outside plan mode is a no-op (cannot pre-arm a cross-mode unlock)", async () => {
+    const { decider, requests } = recordingDecider("allow");
+    const engine = new PermissionEngine({ mode: "ask", decider });
+    engine.approvePlan(); // ask 档调用：无操作，不置位
+    engine.setMode("plan");
+    const w = await engine.resolve(editReq, write);
+    expect(w.decision).toBe("deny");
+    expect(w.via).toBe("planMode");
+    expect(requests).toHaveLength(0);
+  });
+});
+
 describe("PermissionEngine path normalization", () => {
   it("absolute paths under the root become relative for rule matching", async () => {
     const { decider } = recordingDecider("deny");

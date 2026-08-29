@@ -18,12 +18,19 @@ declare module "@innocenceharness/kernel" {
  * (built with the original engine constructor options, or a shared engine
  * injected by a parent session) so consumers keep the exact engine face
  * AgentSession exposes today — `resolve`, `addRules`, `grantSession`,
- * `setMode`, audit and validateResource are all reachable unchanged
- * through `service.engine`.
+ * `setMode`, `approvePlan`, audit and validateResource are all reachable
+ * unchanged through `service.engine`.
  */
 export interface PermissionsService {
   /** The engine this service owns or wraps; consume it directly. */
   readonly engine: PermissionEngine;
+  /**
+   * Approves the current plan: while the engine stays in plan mode, write
+   * operations return to the regular pipeline (allow rules → auto →
+   * sessionGrant → ask) instead of the plan short-circuit deny. No-op
+   * outside plan mode; any `setMode` re-arms the approval requirement.
+   */
+  approvePlan(): void;
   /**
    * Registers one policy rule. Registration order is preserved (push
    * semantics, registry registerPolicyRule) and the rule is applied to the
@@ -56,6 +63,9 @@ export function createPermissionsService(
     registerPolicyRule(rule) {
       registered.push(rule);
       engine.addRules([rule]);
+    },
+    approvePlan() {
+      engine.approvePlan();
     },
     policyRules: () => registered,
   };
