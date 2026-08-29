@@ -193,13 +193,14 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders" | "memory",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks",
   options: () =>
     | { dirs: string[] }
     | { servers: Record<string, unknown> }
     | { userRoot: string }
     | { getPermissionMode: () => string }
-    | { getUserRoot: () => string; getProjectRoot: () => string },
+    | { getUserRoot: () => string; getProjectRoot: () => string }
+    | { getHooksConfig: () => Promise<unknown>; getWorkspaceRoot: () => string },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -270,10 +271,13 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // group child would bypass that assembly and bare-load the factory function,
 // so declaring them inside a group is rejected here. "reminders" reads the
 // current permission mode through the settings channel threaded from
-// composePlugins (getPermissionMode), not from group config. "memory" reads
-// the two memory roots through getters threaded from composePlugins
-// (getUserRoot/getProjectRoot), likewise not from group config.
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory"]);
+// composePlugins (getPermissionMode), not from group config. "memory" reads the
+// two memory roots through getters threaded from composePlugins
+// (getUserRoot/getProjectRoot), likewise not from group config. "hooks" reads
+// the merged top-level "hooks" declarations (project layer over user layer,
+// from the same resolveBuiltinSet pass) plus the per-composition workspace
+// root through getters — never from group config.
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks"]);
 
 async function resolveGroupEntries(
   boot: PluginBoot,
@@ -323,6 +327,7 @@ async function builtinLoaderEntryFor(
   workspaceRoot: string,
   resolveUserPluginRoot: () => string,
   resolvePermissionMode: () => string,
+  hooksConfig: unknown,
   ecosystemPlugin?: ObjectPlugin,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
@@ -361,6 +366,19 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "memory", () => ({
       getUserRoot: () => path.join(os.homedir(), ".innocence"),
       getProjectRoot: () => path.join(workspaceRoot, ".innocence"),
+    }));
+  } else if (!entry.disabled && id === "hooks") {
+    // Same factory shape as creation/reminders/memory: the staged default
+    // export is the hooks plugin factory. The merged top-level "hooks"
+    // declarations (project yml over user cordis.yml, atomic key override —
+    // from the same resolveBuiltinSet pass that produced this entry, so the
+    // toggle layer and the hook declarations share one layer snapshot) and
+    // the per-composition workspace root (every hook command's cwd) thread
+    // through getters; no declarations means an empty hook set — the plugin
+    // still mounts and all three faces no-op.
+    plugin = factoryPlugin(boot, "hooks", () => ({
+      getHooksConfig: () => Promise.resolve(hooksConfig),
+      getWorkspaceRoot: () => workspaceRoot,
     }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
@@ -547,6 +565,9 @@ export function createSessionComposition(
           workspaceRoot,
           resolveUserPluginRoot,
           resolvePermissionMode,
+          // 顶层 hooks 声明（项目覆盖用户的合并值，同一次 resolveBuiltinSet
+          // 层快照）——hooks 工厂分支经 getter 注入插件，不进 entry.config。
+          resolved.hooks,
           ecosystemDir !== undefined
             ? createEcosystemAdapterPlugin(
               entry.id,

@@ -174,6 +174,64 @@ describe("mergeConfigLayers (project overrides user)", () => {
       groups: {},
     });
   });
+
+  it("hooks 声明按键原子覆盖：项目覆盖用户（不合并数组）", () => {
+    const userHooks = [{ event: "sessionStart", command: "user-boot" }];
+    const projectHooks = [{ event: "sessionStart", command: "project-boot" }];
+    expect(
+      mergeConfigLayers(
+        { toggles: {}, configs: {}, groups: {}, hooks: userHooks },
+        { toggles: {}, configs: {}, groups: {}, hooks: projectHooks },
+      ).hooks,
+    ).toEqual(projectHooks);
+    // 单侧存在时另一侧回落：用户独有/项目独有分别胜出。
+    expect(
+      mergeConfigLayers({ toggles: {}, configs: {}, groups: {}, hooks: userHooks }, undefined).hooks,
+    ).toEqual(userHooks);
+    expect(
+      mergeConfigLayers({ toggles: {}, configs: {}, groups: {} }, { toggles: {}, configs: {}, groups: {}, hooks: projectHooks }).hooks,
+    ).toEqual(projectHooks);
+  });
+});
+
+describe("parsePluginConfigLayer (top-level hooks declarations)", () => {
+  it("passes the top-level hooks array through verbatim", () => {
+    const declarations = [
+      { event: "sessionStart", command: "boot-hook" },
+      { event: "preToolCall", command: "guard-hook", match: "Write", timeoutMs: 5000 },
+    ];
+    const parsed = parsePluginConfigLayer(
+      { hooks: declarations },
+      { knownKeys: KNOWN },
+    );
+    expect(parsed.hooks).toEqual(declarations);
+    expect(parsed.toggles).toEqual({});
+    expect(parsed.configs).toEqual({});
+  });
+
+  it("keeps hooks absent when the key is missing; non-array shapes still pass through", () => {
+    expect(parsePluginConfigLayer({}, { knownKeys: KNOWN }).hooks).toBeUndefined();
+    expect(parsePluginConfigLayer({ plugins: { mcp: false } }, { knownKeys: KNOWN }).hooks).toBeUndefined();
+    // 形状校验归插件侧解析面（坏形状在会话启动块告警），此处透传不告警。
+    const warnings: string[] = [];
+    const parsed = parsePluginConfigLayer(
+      { hooks: "not-an-array" },
+      { knownKeys: KNOWN, where: "<f>", onWarning: (m) => warnings.push(m) },
+    );
+    expect(parsed.hooks).toBe("not-an-array");
+    expect(warnings).toEqual([]);
+  });
+
+  it("hooks 键与 plugins.hooks 开关是两个面：对象条目仍走 toggles/configs", () => {
+    // 顶层 hooks: 声明数组（执行面配置）；plugins.hooks 是插件开关（清单 id）。
+    const parsed = parsePluginConfigLayer(
+      { hooks: [{ event: "sessionStart", command: "boot" }], plugins: { hooks: { enabled: false, config: { x: 1 } } } },
+      { knownKeys: [...KNOWN, "hooks"] },
+    );
+    expect(parsed.hooks).toEqual([{ event: "sessionStart", command: "boot" }]);
+    expect(parsed.toggles).toEqual({ hooks: false });
+    expect(parsed.configs).toEqual({ hooks: { x: 1 } });
+  });
 });
 
 describe("layer file readers", () => {
@@ -220,5 +278,27 @@ describe("layer file readers", () => {
     expect(await loadProjectConfigLayer(root, (_level, msg) => warnings.push(msg), KNOWN)).toBeUndefined();
     expect(warnings).toHaveLength(2);
     expect(warnings[1]).toContain(file);
+  });
+
+  it("both carriers read the top-level hooks declarations", async () => {
+    const home = tempDir();
+    mkdirSync(path.join(home, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(home, ".innocence", "cordis.yml"),
+      "hooks:\n  - event: sessionStart\n    command: user-boot\n",
+      "utf8",
+    );
+    const userLayer = await loadUserConfigLayer(home, () => {}, KNOWN);
+    expect(userLayer?.hooks).toEqual([{ event: "sessionStart", command: "user-boot" }]);
+
+    const root = tempDir();
+    mkdirSync(path.join(root, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(root, ".innocence", "plugins.yml"),
+      "hooks:\n  - event: preToolCall\n    command: project-guard\n",
+      "utf8",
+    );
+    const projectLayer = await loadProjectConfigLayer(root, () => {}, KNOWN);
+    expect(projectLayer?.hooks).toEqual([{ event: "preToolCall", command: "project-guard" }]);
   });
 });

@@ -59,6 +59,11 @@ const LIBS = [
 // creation/reminders 形态），由宿主 factoryPlugin 装配并传入用户/项目两
 // 个记忆根 getter——注册写列读三工具，条目落 <root>/memory/<id>.md，
 // 用户根在前影子覆盖项目根同 id 条目。
+// hooks 为声明式会话钩子插件（B4C 钩子批次）：默认导出是工厂（同
+// creation/reminders/memory 形态），由宿主 factoryPlugin 装配并传入合并后
+// 顶层 hooks 声明（项目 plugins.yml 覆盖用户 cordis.yml 同键）+ 会话工作
+// 区根两个 getter——注册消息处理器（order -450，会话启动/用户输入两面）
+// 与工具执行中间件（pre 拦截/post 附注），命令执行无 shell、限时限量。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -79,6 +84,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "learning", kind: "agent-mode", dependencies: [] },
   { id: "planflow", dependencies: [] },
   { id: "memory", dependencies: [] },
+  { id: "hooks", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -107,6 +113,7 @@ const PLUGINS = [
   { dir: "packages/plugin-agent-learn", id: "learning" },
   { dir: "packages/plugin-planflow", id: "planflow" },
   { dir: "packages/plugin-memory", id: "memory" },
+  { dir: "packages/plugin-hooks", id: "hooks" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

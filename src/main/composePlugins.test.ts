@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, AgentSession } from "@innocenceharness/harness-electron";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
 import { createSessionComposition } from "./pluginBoot";
 import { stagingBootPaths } from "./staging-paths";
 
@@ -64,12 +65,18 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // memory 为双根记忆存储插件（批次 4B）：默认导出是工厂（同 creation/
 // reminders 形态），由宿主 factoryPlugin 装配并传入用户/项目记忆根 getter
 // ——注册 memory_write/memory_list/memory_read 三工具。
+// hooks 为声明式会话钩子插件（批次 4C）：默认导出是工厂（同 creation/
+// reminders/memory 形态），由宿主 factoryPlugin 装配并传入合并后 hooks 声明
+// getter（项目 yml 顶层 hooks: 覆盖用户 cordis.yml 同键）+ 会话工作区根
+// getter——注册消息处理器（name "hooks"，order -450）与工具执行中间件
+// （name "hooks"，pre 拦截/post 附注）两面。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning",
   "planflow",
   "memory",
+  "hooks",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -119,6 +126,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       learning: "learning",
       planflow: "planflow",
       memory: "memory",
+      hooks: "hooks",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -202,6 +210,15 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(memoryEntry?.core ?? false, '"memory" 必须非 core（可开关）').toBe(false);
     expect(memoryEntry?.kind).toBeUndefined();
     expect(memoryEntry?.title, '"memory" 缺 title').toMatch(/\S/);
+    // 声明式会话钩子插件（批次 4C）：工厂型能力插件（非 core、无依赖、无
+    // kind），由宿主 factoryPlugin 装配（顶层 hooks: 声明 + 工作区根经
+    // getter 注入——插件不读宿主配置面）。
+    const hooksEntry = byId.get("hooks");
+    expect(hooksEntry, 'manifest 缺少 "hooks" 条目').toBeDefined();
+    expect(hooksEntry).toMatchObject({ dependencies: [] });
+    expect(hooksEntry?.core ?? false, '"hooks" 必须非 core（可开关）').toBe(false);
+    expect(hooksEntry?.kind).toBeUndefined();
+    expect(hooksEntry?.title, '"hooks" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
@@ -287,6 +304,118 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       // 纯化自证：tmp home 用户根为空，合并索引只见 project 行——真实
       // 用户根有条目时不再泄漏进探针输出。
       expect(listed.content).not.toMatch(/\[user\]/);
+    } finally {
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+
+  it("hooks entry mounts the staged factory with both session and tool faces", async () => {
+    // 仿 memory 装配形态的工厂调用探针（批次 4C）：条目名 "hooks"，内嵌
+    // factory:hooks 插件；最小 ctx 必须同时供应 session.registerProcessor 与
+    // tools.registerMiddleware（4B 教训：缺供应面即假绿），断言处理器形状
+    // （name "hooks"、order -450——memory-index -500 之后）与中间件注册。
+    // 配置流通断言不经进程面：项目 yml 顶层 hooks: 声明带未知事件名 →
+    // 插件侧解析告警落首轮 session-start 块，证明 yml 值流入工厂。
+    // 用户根纯化：cordis.yml 用户层读取走 os.homedir()，USERPROFILE/HOME
+    // 覆盖为临时空 home（覆盖窗口含装配与执行全程）。
+    const home = mkdtempSync(path.join(tmpdir(), "ic-hooks-probe-home-"));
+    roots.push(home);
+    const previousProfile = process.env.USERPROFILE;
+    const previousHome = process.env.HOME;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      const ws = await tempWorkspace({
+        ".innocence/plugins.yml": 'hooks:\n  - event: probe-bogus-event\n    command: probe-hook-cmd\n',
+      });
+      const plugins = await composition.composePlugins(ws);
+      const hooks = plugins.find((p) => p.name === "hooks");
+      expect(hooks, '条目 "hooks" 未装配').toBeTruthy();
+      expect(hooks && "plugin" in hooks && hooks.plugin?.name).toBe("factory:hooks");
+
+      const processors: MessageProcessor[] = [];
+      const middlewares: ToolExecutionMiddleware[] = [];
+      const factory = hooks && "plugin" in hooks ? hooks.plugin : undefined;
+      await factory?.apply({
+        session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+        tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
+      } as never);
+      expect(processors).toHaveLength(1);
+      expect(processors[0]).toMatchObject({ name: "hooks", order: -450 });
+      expect(middlewares).toHaveLength(1);
+      expect(middlewares[0]).toMatchObject({ name: "hooks" });
+      expect(typeof middlewares[0].execute).toBe("function");
+
+      const first = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+      await processors[0].process(first as never, { scope: { sessionId: "hooks-probe" } } as never);
+      const firstText = first.parts.map((p) => (p as { text: string }).text).join("\n");
+      expect(firstText).toContain("[hook warning]");
+      expect(firstText).toContain('unknown event "probe-bogus-event"');
+
+      // 无声明 → 空钩子集：插件照常挂载，三面无操作（首轮无任何 hook 块）。
+      const bare = await tempWorkspace({});
+      const barePlugins = await composition.composePlugins(bare);
+      const bareHooks = barePlugins.find((p) => p.name === "hooks");
+      expect(bareHooks, '无配置时条目 "hooks" 仍装配').toBeTruthy();
+      const bareProcessors: MessageProcessor[] = [];
+      const bareFactory = bareHooks && "plugin" in bareHooks ? bareHooks.plugin : undefined;
+      await bareFactory?.apply({
+        session: { registerProcessor: (p: MessageProcessor) => bareProcessors.push(p) },
+        tools: { registerMiddleware: () => {} },
+      } as never);
+      const quiet = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+      await bareProcessors[0].process(quiet as never, { scope: { sessionId: "hooks-quiet" } } as never);
+      expect(quiet.parts.map((p) => (p as { text: string }).text).join("\n")).not.toContain("[hook");
+    } finally {
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+
+  it("hooks declarations resolve project over user through the composition", async () => {
+    // 同键合并策略端到端：项目层顶层 hooks: 覆盖用户层（原子覆盖，不并
+    // 数组）；项目缺席时回落用户层。用户层经 cordis.yml（os.homedir() 读
+    // 取——同上纯化，覆盖窗口含两次装配与执行）。
+    const home = mkdtempSync(path.join(tmpdir(), "ic-hooks-merge-home-"));
+    roots.push(home);
+    mkdirSync(path.join(home, ".innocence"), { recursive: true });
+    writeFileSync(
+      path.join(home, ".innocence", "cordis.yml"),
+      'hooks:\n  - event: user-bogus-event\n    command: user-hook\n',
+      "utf8",
+    );
+    const previousProfile = process.env.USERPROFILE;
+    const previousHome = process.env.HOME;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      const runFirstTurn = async (ws: string): Promise<string> => {
+        const plugins = await composition.composePlugins(ws);
+        const hooks = plugins.find((p) => p.name === "hooks");
+        const factory = hooks && "plugin" in hooks ? hooks.plugin : undefined;
+        const processors: MessageProcessor[] = [];
+        await factory?.apply({
+          session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+          tools: { registerMiddleware: () => {} },
+        } as never);
+        const message = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+        await processors[0].process(message as never, { scope: { sessionId: "hooks-merge" } } as never);
+        return message.parts.map((p) => (p as { text: string }).text).join("\n");
+      };
+      // 项目无 hooks 声明 → 用户层回落（user-bogus-event 到达工厂）。
+      const fallback = await runFirstTurn(await tempWorkspace({}));
+      expect(fallback).toContain('unknown event "user-bogus-event"');
+      // 项目声明同键 → 项目覆盖用户（只见表象 project 事件，不见 user 事件）。
+      const overridden = await runFirstTurn(await tempWorkspace({
+        ".innocence/plugins.yml": 'hooks:\n  - event: project-bogus-event\n    command: project-hook\n',
+      }));
+      expect(overridden).toContain('unknown event "project-bogus-event"');
+      expect(overridden).not.toContain("user-bogus-event");
     } finally {
       if (previousProfile === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = previousProfile;

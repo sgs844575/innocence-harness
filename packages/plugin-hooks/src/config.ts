@@ -6,6 +6,11 @@
 // multiple events). Commands are plain whitespace-separated tokens —
 // quoting forms are not supported because the runner hands the token
 // array straight to the process layer with no shell in between.
+// Windows constraint (tracked obligation from the batch review): the runner
+// spawns via execFile WITHOUT a shell, so .cmd/.bat scripts and bare "npm"
+// invocations cannot be resolved that way (EINVAL/ENOENT) — hook commands
+// must name a real executable (for example the node binary) and carry the
+// script arguments explicitly.
 
 export const HOOK_EVENTS = [
   "userPromptSubmit",

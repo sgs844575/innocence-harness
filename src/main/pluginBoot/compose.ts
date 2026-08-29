@@ -27,6 +27,14 @@ import { createHostHmrWatcher, type HostHmrWatcher } from "./hmrWatcher";
 type KernelContext = KernelModule.Context;
 type KernelScope = KernelModule.ScopeHandle;
 
+/**
+ * resolveBuiltinSet 的返回形状：条目集（ResolvedEntries）+ 同一层对合并出的
+ * 顶层 hooks 声明（项目层覆盖用户层，原子覆盖——批次 4C 钩子面）。hooks
+ * 不是条目投影（不进 loader），由宿主 sessionComposition 的 hooks 工厂
+ * 分支消费；无声明时缺省。
+ */
+export type BuiltinSetResolution = ResolvedEntries & { hooks?: unknown };
+
 /** One booted plugin host: the root context, loader and resolution helpers. */
 export interface PluginBoot {
   /** The loaded kernel module (single instance; Context/createScope/... symbols). */
@@ -56,7 +64,7 @@ export interface PluginBoot {
     knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
     extraDescriptors?: readonly PluginDescriptor[];
-  }): Promise<ResolvedEntries>;
+  }): Promise<BuiltinSetResolution>;
   /**
    * Manifest projection for the settings inventory (IPC plugins:list):
    * boot-time descriptor metadata + a FRESH resolveBuiltinSet run per call —
@@ -389,7 +397,7 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
     knownGroupNames?: readonly string[];
     logger?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
     extraDescriptors?: readonly PluginDescriptor[];
-  }): Promise<ResolvedEntries> => {
+  }): Promise<BuiltinSetResolution> => {
     const log: ConfigLogger = (level, msg, data) =>
       (logger ?? (() => {}))(level, msg, data);
     // 扫描描述符并入（manifest 优先去重）：与清单条目走同一解析与键空间。
@@ -405,7 +413,10 @@ export async function createPluginBoot(options: PluginBootOptions): Promise<Plug
       knownKeys,
       knownGroupNames ?? options.allowedGroupNames,
     );
-    return resolveEntries(merged, user, project, builtinConfigSpecs);
+    // 顶层 hooks 声明随同一次读取面合并（项目覆盖用户），与 toggles 同一
+    // 层快照——不二次读盘，避免解析间隙的撕裂视图。
+    const hooks = project?.hooks ?? user.hooks;
+    return { ...resolveEntries(merged, user, project, builtinConfigSpecs), ...(hooks !== undefined ? { hooks } : {}) };
   };
 
   return {

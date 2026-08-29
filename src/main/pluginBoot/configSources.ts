@@ -1,9 +1,10 @@
 // 声明式配置源（T2）：两级配置的读取与归一——用户级 ~/.innocence/cordis.yml
 // （新文件，可不存在）与项目级 <root>/.innocence/plugins.yml（在原布尔开关
 // 语义上扩展对象条目）。两种条目格式在此归一为 ConfigLayer（toggles +
-// configs）；层合成（项目覆盖用户，按键 `projectValue ?? userValue`）与
-// resolvePluginSet 的语义逐字对齐。纯函数面（parse/merge）零 IO；读取面
-// 损坏回落 undefined 并经 logger 告警，不炸调用方。
+// configs + groups + 顶层 hooks 声明透传）；层合成（项目覆盖用户，按键
+// `projectValue ?? userValue`；hooks 同键原子覆盖）与 resolvePluginSet 的
+// 语义逐字对齐。纯函数面（parse/merge）零 IO；读取面损坏回落 undefined
+// 并经 logger 告警，不炸调用方。
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -31,6 +32,12 @@ export interface ConfigLayer {
   configs: Record<string, unknown>;
   /** Declarative loader groups keyed by their stable group name. */
   groups: Record<string, GroupConfig>;
+  /**
+   * 顶层 `hooks:` 声明（批次 4C 钩子面）：原样透传——形状校验归
+   * plugin-hooks 的解析面（坏形状在会话启动块告警降级，不在此重复）。
+   * 与 `plugins.hooks` 开关（清单 id 的启停面）是两个不同的键。
+   */
+  hooks?: unknown;
 }
 
 const emptyLayer: () => ConfigLayer = () => ({ toggles: {}, configs: {}, groups: {} });
@@ -137,10 +144,14 @@ export function parsePluginConfigLayer(
     }
   }
   parseGroups(raw.groups, layer, { knownGroups: options.knownGroups, where, onWarning: options.onWarning });
+  // 顶层 hooks: 声明透传（缺省不设键）。与 plugins.hooks 开关互不相干：
+  // 前者是钩子执行面配置（数组），后者是清单 id 的启停开关。
+  if (raw.hooks !== undefined) layer.hooks = raw.hooks;
   return layer;
 }
 
-/** 层合成：项目覆盖用户；groups 按组名原子覆盖，避免半合并有序子项。 */
+/** 层合成：项目覆盖用户；groups 按组名原子覆盖，避免半合并有序子项；
+ *  顶层 hooks 声明同键原子覆盖（项目值整体替换用户值，不合并数组）。 */
 export function mergeConfigLayers(
   user: ConfigLayer | undefined,
   project: ConfigLayer | undefined,
@@ -153,6 +164,7 @@ export function mergeConfigLayers(
     for (const [key, value] of Object.entries(source.groups ?? {})) {
       merged.groups![key] = { entries: value.entries.map((entry) => ({ ...entry })) };
     }
+    if (source.hooks !== undefined) merged.hooks = source.hooks;
   }
   return merged;
 }
@@ -246,6 +258,8 @@ export async function loadConfigLayerPair(
       toggles: { ...(userFile?.toggles ?? {}), ...(settingsToggles ?? {}) },
       configs: userFile?.configs ?? {},
       groups: userFile?.groups ?? {},
+      // 顶层 hooks 声明随用户文件层透传（settings 开关面不覆盖声明面）。
+      hooks: userFile?.hooks,
     },
     project: projectLayer,
   };
