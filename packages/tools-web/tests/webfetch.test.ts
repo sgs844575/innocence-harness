@@ -70,6 +70,12 @@ describe("web_fetch tool", () => {
       "http://localhost/",
       "http://LOCALHOST:8080/",
       "http://api.localhost/",
+      // Fully-qualified trailing-dot forms: the URL parser keeps the dot on
+      // "localhost." and dns.lookup still resolves it to loopback on Windows.
+      "http://localhost.:8080/",
+      "http://api.localhost./",
+      "http://localhost../",
+      "http://127.0.0.1./",
     ];
     for (const url of banned) {
       expect(() => t.validateArgs!({ url })).toThrow(/目标地址不允许/);
@@ -245,6 +251,65 @@ describe("web_fetch tool", () => {
     expect(res.isError).toBe(true);
     expect(res.content).toContain("status=404");
     expect(res.content).toContain("gone");
+  });
+
+  it("streams complete small bodies without buffering through text()", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from("hi", "utf8"));
+        controller.close();
+      },
+    });
+    const impl: FetchLike = () =>
+      Promise.resolve({
+        status: 200,
+        headers: { get: () => "text/plain" },
+        body: stream,
+        text: () =>
+          new Promise<never>((_resolve, reject) => {
+            setTimeout(() => reject(new Error("text() must not back the streaming path")), 4000);
+          }),
+      });
+    const res = await tool(impl).execute({ url: "https://example.com/stream" }, ctx);
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toBe("[web_fetch text/plain 2 bytes]\n\nhi");
+    expect(res.content).not.toContain("[content truncated]");
+  });
+
+  it("cancels oversized streams at the byte budget instead of buffering them", async () => {
+    // An endless text stream: only the budget cancel can end this read — a
+    // text()-based implementation would hang to its own timeout, and the tool
+    // must not buffer more than budget + one chunk.
+    let cancelled = false;
+    const chunk = "x".repeat(1024);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from(chunk, "utf8"));
+      },
+      pull(controller) {
+        controller.enqueue(Buffer.from(chunk, "utf8"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const impl: FetchLike = () =>
+      Promise.resolve({
+        status: 200,
+        headers: { get: () => "text/plain" },
+        body: stream,
+        text: () =>
+          new Promise<never>((_resolve, reject) => {
+            setTimeout(() => reject(new Error("text() must not back the streaming path")), 4000);
+          }),
+      });
+    const res = await tool(impl).execute({ url: "https://example.com/stream" }, ctx);
+    expect(res.isError).toBeFalsy();
+    expect(cancelled).toBe(true);
+    expect(res.content).toContain("[content truncated]");
+    expect(res.content).toContain("9216 bytes"); // 9 chunks received, then cancel
+    const returned = res.content.split("\n\n").slice(1).join("\n\n");
+    expect(returned.length).toBe(8192);
   });
 
   it("is read-only with network side effects and a hostname-scoped resource", () => {

@@ -1,8 +1,11 @@
 // SSRF baseline guard for the web fetch tool: URL syntax plus hostname
-// literal screening. v1 scope (documented in the tool description): literals
-// and localhost only — DNS-resolved IP re-validation (rebinding defense) is a
-// later hardening step, so a hostname that RESOLVES into a private range is
-// out of scope here and must be covered by the network permission layer.
+// literal screening (fully-qualified trailing-dot forms normalized away —
+// dns.lookup still resolves "localhost." to loopback). v1 scope, disclosed in
+// the tool description: literals and localhost only. A hostname that RESOLVES
+// into a private range passes this screen, and nothing downstream resolves it
+// either — permission rules match hostnames verbatim — so DNS-resolved IP
+// re-validation (rebinding defense) is a later hardening step, not a covered
+// layer.
 
 /** Private/loopback/link-local/unspecified IPv4 ranges (octet predicates). */
 function privateIPv4Octets(octets: number[]): boolean {
@@ -85,7 +88,12 @@ function isPrivateIPv6Literal(host: string): boolean {
  * before this runs (e.g. 0x7f.1 → 127.0.0.1), so dotted-quad checks suffice.
  */
 export function isPrivateHost(hostname: string): boolean {
-  const host = hostname.trim().toLowerCase();
+  let host = hostname.trim().toLowerCase();
+  // Fully-qualified trailing dot(s): "localhost." and "api.localhost." are the
+  // same DNS names as their dotless forms (a second trailing dot is an invalid
+  // empty label — stripping it rejects those forms too). Valid public hosts
+  // lose at most their FQDN dot, so no false positives.
+  while (host.endsWith(".")) host = host.slice(0, -1);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (host.startsWith("[") && host.endsWith("]")) return isPrivateIPv6Literal(host.slice(1, -1));
   if (host.includes(":")) return isPrivateIPv6Literal(host);

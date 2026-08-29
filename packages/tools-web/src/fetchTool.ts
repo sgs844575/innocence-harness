@@ -7,6 +7,8 @@ import { parseWebTarget } from "./url-guard";
 export interface FetchResponseLike {
   readonly status: number;
   readonly headers: { get(name: string): string | null };
+  /** Streaming body — preferred: reads stop at the byte budget and cancel. */
+  readonly body?: ReadableStream<Uint8Array> | null;
   text(): Promise<string>;
 }
 
@@ -85,13 +87,53 @@ function createEnvAwareFetch(env: NodeJS.ProcessEnv = process.env): FetchLike {
   };
 }
 
-/** Byte-budget truncation that never splits a multibyte UTF-8 sequence. */
-function truncateUtf8(text: string, maxBytes: number): { text: string; bytes: number } {
-  const buffer = Buffer.from(text, "utf8");
-  if (buffer.byteLength <= maxBytes) return { text, bytes: buffer.byteLength };
+/** Decode the first maxBytes of a UTF-8 buffer without splitting a sequence. */
+function sliceUtf8(buffer: Buffer, maxBytes: number): string {
   let end = maxBytes;
   while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1;
-  return { text: buffer.subarray(0, end).toString("utf8"), bytes: buffer.byteLength };
+  return buffer.subarray(0, end).toString("utf8");
+}
+
+export interface BodyRead {
+  text: string;
+  /** Bytes that actually flowed (complete bodies: the full length). */
+  bytes: number;
+  truncated: boolean;
+}
+
+/**
+ * Stream-first body read with a hard memory ceiling: chunks accumulate only
+ * until the byte budget is crossed, then the stream is cancelled — a huge
+ * text response can no longer buffer to completion inside the time limit.
+ * Responses without a body stream (test doubles, real empty bodies) fall
+ * back to text() and truncate afterwards.
+ */
+async function readBodyWithinBudget(response: FetchResponseLike, maxBytes: number): Promise<BodyRead> {
+  const stream = response.body;
+  if (!stream) {
+    const buffer = Buffer.from(await response.text(), "utf8");
+    if (buffer.byteLength <= maxBytes) {
+      return { text: buffer.toString("utf8"), bytes: buffer.byteLength, truncated: false };
+    }
+    return { text: sliceUtf8(buffer, maxBytes), bytes: buffer.byteLength, truncated: true };
+  }
+  const reader = stream.getReader();
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    // Zero-copy view of the chunk; concat happens once, bounded by budget+chunk.
+    const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    chunks.push(chunk);
+    bytes += chunk.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel();
+      return { text: sliceUtf8(Buffer.concat(chunks), maxBytes), bytes, truncated: true };
+    }
+  }
+  const buffer = Buffer.concat(chunks);
+  return { text: buffer.toString("utf8"), bytes, truncated: false };
 }
 
 function normalizeUrl(args: Record<string, unknown>): string {
@@ -101,8 +143,9 @@ function normalizeUrl(args: Record<string, unknown>): string {
 /**
  * web_fetch: read-only public page fetch with an SSRF baseline guard.
  * Manual redirect following re-validates protocol + intranet on every hop;
- * only text-like responses are returned, truncated at the byte budget with
- * an explicit marker; one AbortController enforces the total time limit and
+ * only text-like responses are returned, streamed up to the byte budget (the
+ * stream is cancelled there — oversized bodies never buffer whole) and marked
+ * when truncated; one AbortController enforces the total time limit and
  * honors the run's cancellation signal.
  */
 export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
@@ -190,9 +233,7 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
             isError: true,
           };
         }
-        const fullText = await response.text();
-        const { text: body, bytes } = truncateUtf8(fullText, maxBodyBytes);
-        const truncated = bytes > maxBodyBytes;
+        const { text: body, bytes, truncated } = await readBodyWithinBudget(response, maxBodyBytes);
         const bits: string[] = [];
         if (current.toString() !== start.toString()) bits.push(`final=${current.toString()}`);
         bits.push(mediaType, `${bytes} bytes`);
