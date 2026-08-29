@@ -6,6 +6,10 @@
 // output is additional context inside a system-reminder envelope, never a
 // user instruction; a pre-tool refusal names the command, the exit status
 // and the bounded detail; failures degrade to short warning lines.
+// The stop-face section (batch 5) is deliberately outside that envelope
+// discipline: the session is over when it fires, so its lines are host log
+// copy only — command output is summarized to the log and never injected
+// anywhere.
 import type { HookDefinition } from "./config";
 import type { HookRunResult } from "./runner";
 
@@ -117,4 +121,73 @@ export function renderContinuationReminder(
 export function appendHookNote(content: string, output: string): string {
   const note = `[hook note]\n${output.trimEnd()}`;
   return content.length > 0 ? `${content}\n${note}` : note;
+}
+
+// ---------------------------------------------------------------------------
+// Stop face (batch 5): the sessionStop event has no conversation left to
+// address — the session is being torn down, command output is discarded
+// rather than injected, and every line below is host LOG copy, never a
+// model-facing block. The budget for one excerpt of a finished stop
+// command's output.
+const STOP_LOG_EXCERPT_CHARS = 200;
+
+/** Collapses one output excerpt to a single bounded log-friendly line. */
+function stopExcerpt(output: string): string {
+  const flat = output.trim().replace(/\s+/g, " ");
+  if (flat.length <= STOP_LOG_EXCERPT_CHARS) return flat;
+  return `${flat.slice(0, STOP_LOG_EXCERPT_CHARS)}...`;
+}
+
+/**
+ * Info line for one finished stop command: names the command and carries a
+ * flattened excerpt of its output so operators can see what a teardown
+ * sweep printed without the conversation ever receiving it.
+ */
+export function formatStopHookSummary(command: string, output: string): string {
+  const excerpt = stopExcerpt(output);
+  return excerpt.length > 0
+    ? `stop command "${command}" completed; output excerpt: ${excerpt}`
+    : `stop command "${command}" completed without output`;
+}
+
+/**
+ * Warn line for one stop command that did not finish cleanly. A non-zero
+ * exit names the status (an explicit refusal has no conversation to block,
+ * so it is only reported); a deadline kill or spawn failure names that
+ * instead. Teardown is never delayed or failed by any of these.
+ */
+export function formatStopHookFailure(command: string, result: HookRunResult): string {
+  if (result.timedOut) {
+    return `stop command "${command}" was killed at its deadline`;
+  }
+  if (result.aborted) {
+    return `stop command "${command}" was aborted mid-run`;
+  }
+  const excerpt = stopExcerpt(result.output);
+  if (typeof result.exitCode === "number") {
+    return excerpt.length > 0
+      ? `stop command "${command}" exited ${result.exitCode}: ${excerpt}`
+      : `stop command "${command}" exited ${result.exitCode} without output`;
+  }
+  return excerpt.length > 0
+    ? `stop command "${command}" could not start: ${excerpt}`
+    : `stop command "${command}" could not start`;
+}
+
+/**
+ * Warn line when the teardown wait gave up while stop commands were still
+ * pending: session release continues, the detached commands keep running
+ * under their own per-command deadlines, and whatever they print is lost.
+ */
+export function formatStopWaitReleased(waitMs: number): string {
+  return `session teardown waited ${waitMs}ms for stop commands and moved on; any still-pending commands continue detached`;
+}
+
+/**
+ * Info line when the whole stop face is bypassed because the host is on
+ * its quit path: no teardown commands are started for a shutdown, so the
+ * exiting process never spawns fresh children.
+ */
+export function formatStopSkippedForShutdown(): string {
+  return "stop commands were bypassed because the host is shutting down";
 }

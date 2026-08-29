@@ -117,7 +117,10 @@ function killTree(child: HookChildProcess): void {
   }
 }
 
-function clampTimeoutMs(timeoutMs: number | undefined): number {
+/** Clamps a configured per-hook ceiling: unset defaults, values are
+ *  rounded and bounded to [1, MAX_HOOK_TIMEOUT_MS]. Shared by the run
+ *  path and the stop face's teardown-wait budget. */
+export function clampHookTimeoutMs(timeoutMs: number | undefined): number {
   if (timeoutMs === undefined) return DEFAULT_HOOK_TIMEOUT_MS;
   return Math.min(Math.max(Math.round(timeoutMs), 1), MAX_HOOK_TIMEOUT_MS);
 }
@@ -146,7 +149,7 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
         return { ok: false, output: "hook command is empty" };
       }
       const [file, ...args] = tokens;
-      const timeoutMs = clampTimeoutMs(hook.timeoutMs);
+      const timeoutMs = clampHookTimeoutMs(hook.timeoutMs);
       if (input.signal?.aborted) {
         return { ok: false, output: ABORT_BEFORE_START_OUTPUT, aborted: true };
       }

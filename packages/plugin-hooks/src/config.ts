@@ -1,11 +1,16 @@
-// Declarative session hook configuration (batch 4C task 1): parses the
-// user/project "hooks:" array into validated definitions. Entries with an
-// unknown event, a blank command, or wrong field types are skipped with a
-// warning so one bad line never disables the whole hook set; duplicate
-// commands are intentionally preserved (the same command may legally serve
-// multiple events). Commands are plain whitespace-separated tokens —
-// quoting forms are not supported because the runner hands the token
-// array straight to the process layer with no shell in between.
+// Declarative session hook configuration (batch 4C task 1, batch 5 stop
+// event extension): parses the user/project "hooks:" array into validated
+// definitions. Entries with an unknown event, a blank command, or wrong
+// field types are skipped with a warning so one bad line never disables
+// the whole hook set; duplicate commands are intentionally preserved (the
+// same command may legally serve multiple events). Commands are plain
+// whitespace-separated tokens — quoting forms are not supported because
+// the runner hands the token array straight to the process layer with no
+// shell in between.
+// The sessionStop event fires once per plugin instance at the session
+// teardown point (see wiring.ts): a restarted session with the same
+// configuration runs its stop hooks again, because the new instance is a
+// new session lifetime.
 // Windows constraint (tracked obligation from the batch review): the runner
 // spawns via execFile WITHOUT a shell, so .cmd/.bat scripts and bare "npm"
 // invocations cannot be resolved that way (EINVAL/ENOENT) — hook commands
@@ -17,6 +22,7 @@ export const HOOK_EVENTS = [
   "preToolCall",
   "postToolCall",
   "sessionStart",
+  "sessionStop",
 ] as const;
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];

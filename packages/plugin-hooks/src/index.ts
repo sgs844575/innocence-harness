@@ -1,9 +1,13 @@
-// Hooks plugin (batch 4C): declarative session hooks. Task 1 landed the
-// configuration parsing and the bounded command runner; this factory composes
-// them into the session — one prompt processor plus one tool middleware
-// registered through the spine faces (ctx.session / ctx.tools), so hooks fire
-// at session start, on user input, and around every tool call, for inherited
-// child sessions too (a hook is session-level policy; see wiring.ts).
+// Hooks plugin (batch 4C, stop face in batch 5): declarative session
+// hooks. Task 1 landed the configuration parsing and the bounded command
+// runner; this factory composes them into the session — one prompt
+// processor plus one tool middleware registered through the spine faces
+// (ctx.session / ctx.tools), so hooks fire at session start, on user
+// input, and around every tool call, for inherited child sessions too (a
+// hook is session-level policy; see wiring.ts). The apply ALSO returns the
+// wiring's teardown disposer as its startup result: the kernel fiber
+// registers it and runs it while the session unwinds, which is the
+// sessionStop execution point — fail-soft, log-only, bounded (wiring.ts).
 import type { Context } from "@innocenceharness/kernel";
 // The wiring module imports harness-session, harness-tools and
 // harness-permissions, which pulls their Context service augmentations
@@ -11,9 +15,21 @@ import type { Context } from "@innocenceharness/kernel";
 // same pattern as plugin-memory and plugin-planflow.
 import { createHooksWiring, type HooksWiringOptions } from "./wiring";
 
+// Type-only visibility for ctx.logger: kernel-logger ships no Context
+// augmentation of its own, so this declares the same member the session
+// composition side declares (harness-electron/session-kernel), with an
+// identical member type — a legal in-program merge that keeps this
+// package free of any host adapter dependency (the plugin-mcp pattern).
+declare module "@innocenceharness/kernel" {
+  interface Context {
+    logger: import("@innocenceharness/kernel-logger").LoggerService;
+  }
+}
+
 export * from "./config";
 export * from "./gate";
 export * from "./runner";
+export * from "./stop";
 export * from "./wording";
 export * from "./wiring";
 
@@ -21,13 +37,18 @@ export type HooksPluginOptions = HooksWiringOptions;
 
 export interface HooksPlugin {
   readonly name: "hooks";
-  apply(ctx: Context): void;
+  /** Registers the two live faces and returns the sessionStop disposer. */
+  apply(ctx: Context): () => Promise<void>;
 }
 
 /**
  * Creates the hooks plugin for one session composition: apply registers the
  * processor and the middleware bound to the option getters, so the hooks
- * config and the workspace root resolve per composition without rebuilding.
+ * config and the workspace root resolve per composition without rebuilding,
+ * and returns the teardown disposer (the sessionStop face). The returned
+ * function travels through the host factory wrapper unchanged (it returns
+ * plugin.apply(ctx) verbatim), lands on the plugin fiber as its startup
+ * disposer, and fires exactly once when the session's kernel unwinds.
  */
 export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
   return {
@@ -36,13 +57,18 @@ export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
       // ctx.permissions is read through a getter at gate time (ServiceTable
       // liveness — the member exists only while the permissions fiber is
       // active; the planflow consumption pattern). Absent service means
-      // fail-closed skips, not ungated execution.
-      const { processor, middleware } = createHooksWiring({
+      // fail-closed skips, not ungated execution. ctx.logger feeds the
+      // stop-face log sink the same way (the service outlives this fiber
+      // in the unwind order: the logger plugin mounts first, so it
+      // disposes last).
+      const { processor, middleware, dispose } = createHooksWiring({
         ...options,
         getPermissions: () => ctx.permissions,
+        log: (level, message) => ctx.logger.log(level, `[hooks] ${message}`),
       });
       ctx.session.registerProcessor(processor);
       ctx.tools.registerMiddleware(middleware);
+      return dispose;
     },
   };
 }

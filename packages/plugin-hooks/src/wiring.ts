@@ -1,9 +1,11 @@
-// Hook wiring (batch 4C task 2): composes the parsed hook definitions and
-// the bounded runner into the session's two extension surfaces — one
-// message processor ("hooks", order -450: after the memory index pass at
-// -500, before the conventionally-numbered host processors and reminders
-// at 900) and one tool middleware (the pre-call gate plus the post-call
-// note around every tool invocation).
+// Hook wiring (batch 4C task 2, batch 5 stop face): composes the parsed
+// hook definitions and the bounded runner into the session's extension
+// surfaces — one message processor ("hooks", order -450: after the memory
+// index pass at -500, before the conventionally-numbered host processors
+// and reminders at 900), one tool middleware (the pre-call gate plus the
+// post-call note around every tool invocation), and one teardown disposer
+// (the sessionStop face — built by stop.ts from this wiring's shared
+// pieces, returned to the plugin's apply as its startup disposer).
 //
 // Interception semantics (fail-open discipline): a pre-tool hook denies the
 // call ONLY through its own explicit non-zero exit. Infrastructure failures
@@ -44,6 +46,7 @@ import {
   type HookPermissionGate,
 } from "./gate";
 import { createHookRunner, type HookRunner, type HookRunInput, type HookRunResult } from "./runner";
+import { createStopFace, type HookLogSink } from "./stop";
 import {
   appendHookNote,
   formatHookFailure,
@@ -72,11 +75,30 @@ export interface HooksWiringOptions {
   readonly getPermissions?: () => PermissionsService | undefined;
   /** Runner seam for tests; defaults to the real process-layer runner. */
   readonly runner?: HookRunner;
+  /**
+   * Stop-face log sink (batch 5): receives the summary and warning lines
+   * for teardown-time commands. The plugin factory wires this to the
+   * session's logger service; without a sink the stop face runs silently.
+   */
+  readonly log?: HookLogSink;
+  /**
+   * Quit-path bypass (batch 5): when the host reports it is shutting
+   * down, the stop face is skipped entirely — an exiting process must not
+   * spawn fresh hook children during teardown.
+   */
+  readonly isHostShuttingDown?: () => boolean;
 }
 
 export interface HooksWiring {
   readonly processor: MessageProcessor;
   readonly middleware: ToolExecutionMiddleware;
+  /**
+   * The session teardown point (batch 5): runs sessionStop hooks once per
+   * wiring instance, fail-soft, with a bounded wait (see createHooksWiring).
+   * The plugin's apply returns this as its startup disposer, so the kernel
+   * fiber invokes it while the session unwinds.
+   */
+  readonly dispose: () => Promise<void>;
 }
 
 /** Data behind the one-time continuation note after a veto. */
@@ -131,6 +153,20 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
   };
 
   const hasOutput = (result: HookRunResult): boolean => result.output.trim().length > 0;
+
+  // Stop face (batch 5): the teardown disposer is built from this wiring's
+  // shared pieces (config cache, gate, guarded runner) — see stop.ts for
+  // the fail-soft and bounded-wait contract.
+  const dispose = createStopFace({
+    gate,
+    loadHooks,
+    runGuarded,
+    getWorkspaceRoot: options.getWorkspaceRoot,
+    ...(options.log !== undefined ? { log: options.log } : {}),
+    ...(options.isHostShuttingDown !== undefined
+      ? { isHostShuttingDown: options.isHostShuttingDown }
+      : {}),
+  });
 
   const injectSessionStart = async (message: Message, signal?: AbortSignal): Promise<void> => {
     const parsed = await loadHooks();
@@ -290,5 +326,5 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     },
   };
 
-  return { processor, middleware };
+  return { processor, middleware, dispose };
 }

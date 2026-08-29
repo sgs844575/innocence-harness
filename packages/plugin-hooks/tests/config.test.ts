@@ -1,9 +1,10 @@
-// plugin-hooks config tests (batch 4C task 1 + task 2 trim fix): declarative
-// hook array parsing — the four-event enum gate, command/match/timeout
-// validation, ceiling clamping with a warning, skip-and-warn degradation
-// for bad entries, duplicate preservation, and the factory plugin skeleton
-// (task 2 wires apply through the session faces; the review round adds the
-// always-allowing fake permissions member the gate consumes).
+// plugin-hooks config tests (batch 4C task 1 + task 2 trim fix, batch 5
+// stop-face enum extension): declarative hook array parsing — the five-event
+// enum gate, command/match/timeout validation, ceiling clamping with a
+// warning, skip-and-warn degradation for bad entries, duplicate
+// preservation, and the factory plugin skeleton (task 2 wires apply through
+// the session faces; the review round adds the always-allowing fake
+// permissions member the gate consumes).
 import type { Context } from "@innocenceharness/kernel";
 import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
@@ -18,15 +19,16 @@ import { createHooksPlugin } from "../src";
 import hooksDefault from "../src";
 
 describe("parseHookDefinitions", () => {
-  it("parses a valid array covering all four events", () => {
+  it("parses a valid array covering all five events", () => {
     const parsed = parseHookDefinitions([
       { event: "userPromptSubmit", command: "inject-hook" },
       { event: "preToolCall", command: "guard-hook --mode strict", match: "Bash" },
       { event: "postToolCall", command: "after-hook", match: "Write", timeoutMs: 5000 },
       { event: "sessionStart", command: "boot-hook", timeoutMs: 30000 },
+      { event: "sessionStop", command: "teardown-hook", timeoutMs: 5000 },
     ]);
     expect(parsed.warnings).toEqual([]);
-    expect(parsed.hooks).toHaveLength(4);
+    expect(parsed.hooks).toHaveLength(5);
     expect(parsed.hooks[0]).toEqual({
       event: "userPromptSubmit",
       command: "inject-hook",
@@ -38,6 +40,7 @@ describe("parseHookDefinitions", () => {
     });
     expect(parsed.hooks[2]).toMatchObject({ timeoutMs: 5000 });
     expect(parsed.hooks[3]).toMatchObject({ event: "sessionStart", timeoutMs: 30000 });
+    expect(parsed.hooks[4]).toMatchObject({ event: "sessionStop", command: "teardown-hook" });
   });
 
   it("keeps valid siblings while skipping entries with an unknown event", () => {

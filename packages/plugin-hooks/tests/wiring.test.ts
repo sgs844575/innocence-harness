@@ -5,6 +5,10 @@
 // infrastructure failures, result-tail notes) — plus the one-time
 // continuation note after a denial, child-session inheritance, and one
 // real-process smoke through the factory (node -e over the default runner).
+// Batch 5 adds the sessionStop face: the wiring-level dispose point runs
+// stop hooks exactly once, fail-soft (failures and slow commands never
+// break teardown), with output going to the log sink instead of the
+// conversation, plus the host-shutdown bypass seam.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -403,6 +407,168 @@ describe("postToolCall wiring", () => {
   });
 });
 
+describe("sessionStop wiring", () => {
+  interface LogLine {
+    level: "info" | "warn";
+    message: string;
+  }
+
+  function logSink(): { lines: LogLine[]; log: (level: "info" | "warn", message: string) => void } {
+    const lines: LogLine[] = [];
+    return { lines, log: (level, message) => lines.push({ level, message }) };
+  }
+
+  it("runs stop hooks exactly once at the dispose point, serially, never on turns", async () => {
+    const calls: string[] = [];
+    const seen: HookRunInput[] = [];
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "sessionStop", command: "teardown-a" },
+        { event: "sessionStop", command: "teardown-b" },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner((hook, input) => {
+        calls.push(hook.command);
+        seen.push(input);
+        return { ok: true, output: `${hook.command} sweep done` };
+      }),
+      log: sink.log,
+    });
+    await wiring.processor.process(userMessage("first"), processorContext("sess-1"));
+    expect(calls).toEqual([]);
+    await wiring.dispose();
+    await wiring.dispose();
+    expect(calls).toEqual(["teardown-a", "teardown-b"]);
+    expect(seen[0].cwd).toBe("D:/ws/root");
+    expect(sink.lines.some((line) => line.level === "info" && line.message.includes("teardown-a"))).toBe(
+      true,
+    );
+  });
+
+  it("keeps a failed stop hook fail-soft: dispose resolves and the failure only logs", async () => {
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "sessionStop", command: "broken-teardown", timeoutMs: 5000 },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => ({ ok: false, exitCode: 2, output: "sweep store unreachable" })),
+      log: sink.log,
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    const warn = sink.lines.filter((line) => line.level === "warn");
+    expect(warn.some((line) => line.message.includes("broken-teardown"))).toBe(true);
+    expect(warn.some((line) => line.message.includes("2"))).toBe(true);
+  });
+
+  it("treats a timing-out stop hook the same way: warn log, dispose unaffected", async () => {
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "sessionStop", command: "slow-teardown" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => ({ ok: false, timedOut: true, output: "" })),
+      log: sink.log,
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    expect(sink.lines.some((line) => line.level === "warn" && line.message.includes("slow-teardown"))).toBe(
+      true,
+    );
+  });
+
+  it("releases the teardown wait at the bounded ceiling while a hook is still pending", async () => {
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "sessionStop", command: "hanging-teardown", timeoutMs: 25 },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      // Never settles: the dispose wait must give up at its own ceiling.
+      runner: { runHook: () => new Promise<HookRunResult>(() => {}) },
+      log: sink.log,
+    });
+    const started = performance.now();
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(sink.lines.some((line) => line.level === "warn" && line.message.includes("25"))).toBe(true);
+  });
+
+  it("does nothing at dispose when no stop hooks are declared", async () => {
+    let runs = 0;
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "sessionStart", command: "boot-hook" },
+        { event: "userPromptSubmit", command: "inject-hook" },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => {
+        runs += 1;
+        return { ok: true, output: "" };
+      }),
+      log: sink.log,
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    expect(runs).toBe(0);
+    expect(sink.lines).toEqual([]);
+  });
+
+  it("skips the stop face entirely when the host is shutting down", async () => {
+    let runs = 0;
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "sessionStop", command: "teardown-hook" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => {
+        runs += 1;
+        return { ok: true, output: "" };
+      }),
+      log: sink.log,
+      isHostShuttingDown: () => true,
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    expect(runs).toBe(0);
+    expect(sink.lines.some((line) => line.level === "info" && line.message.includes("shutting down"))).toBe(
+      true,
+    );
+  });
+
+  it("logs a permission-gate skip instead of running a denied stop command", async () => {
+    let runs = 0;
+    const sink = logSink();
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "sessionStop", command: "denied-teardown" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      runner: fakeRunner(() => {
+        runs += 1;
+        return { ok: true, output: "" };
+      }),
+      log: sink.log,
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+    expect(runs).toBe(0);
+    expect(sink.lines.some((line) => line.level === "warn" && line.message.includes("denied-teardown"))).toBe(
+      true,
+    );
+  });
+
+  it("tolerates an absent log sink without breaking dispose", async () => {
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "sessionStop", command: "quiet-teardown" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => ({ ok: false, output: "silent failure" })),
+    });
+    await expect(wiring.dispose()).resolves.toBeUndefined();
+  });
+});
+
 describe("createHooksPlugin", () => {
   it("registers the processor and the middleware through the spine faces", () => {
     const processors: MessageProcessor[] = [];
@@ -449,5 +615,28 @@ describe("createHooksPlugin", () => {
     const text = textOf(message);
     expect(text).toContain("[hook context (session start)]");
     expect(text).toContain(`cwd=${root}`);
+  });
+
+  it("returns a stop disposer from apply and routes stop-face logs through ctx.logger", async () => {
+    const processors: MessageProcessor[] = [];
+    const entries: { level: string; message: string }[] = [];
+    const ctx = {
+      session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+      tools: { registerMiddleware: (_m: ToolExecutionMiddleware) => {} },
+      permissions: allowAllPermissions(),
+      logger: {
+        log: (level: string, message: string) => entries.push({ level, message }),
+      },
+    } as unknown as Context;
+    const plugin = createHooksPlugin({
+      getHooksConfig: async () => [{ event: "sessionStop", command: "teardown-hook" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      runner: fakeRunner(() => ({ ok: true, output: "final sweep complete" })),
+    });
+    const dispose = plugin.apply(ctx);
+    expect(typeof dispose).toBe("function");
+    await dispose();
+    expect(entries.some((entry) => entry.level === "info" && entry.message.includes("[hooks]"))).toBe(true);
+    expect(entries.some((entry) => entry.message.includes("teardown-hook"))).toBe(true);
   });
 });
