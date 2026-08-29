@@ -89,7 +89,7 @@ export function createSendMessageTool(options: SendMessageToolOptions): Tool {
     name: SEND_MESSAGE_TOOL_NAME,
     description:
       "向具名队友会话发送消息并取回其回复；队友为持久路由会话，跨回合保持上下文（区别于一次性子代理）。" +
-      "teammate 是当前任务下的具名路由（队友名即路由名，投递前先用列表确认可用队友）；" +
+      "teammate 是当前任务下的具名路由（队友名即路由名；队友名错误时错误信息会列出可用队友）；" +
       "message 是完整消息正文（自包含的目标与上下文，队友回复作为本工具结果返回）。",
     readOnly: false,
     // 副作用发生在队友路由会话内、由其自行审计——父级不重复记账（同 Task 先例）。

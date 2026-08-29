@@ -6,15 +6,18 @@
 // reply through the automation reply observer — runtime.send awaits the
 // whole turn but returns no text, while the runtime hooks mirror every
 // delta of the minted message id (the same collection pattern the
-// automation loop dispatch uses). Busy guard: the runtime runs one turn per
+// automation loop dispatch uses); host-mirrored notice rows (compaction /
+// non-fatal warnings) are stripped from the collected text — they are not
+// the teammate's own words (ownReplyText, shared with that dispatch). Busy
+// guard: the runtime runs one turn per
 // route at a time; a route whose turn is already running is refused
 // fail-fast instead of corrupting it with a second concurrent run (a route
 // mid-turn awaiting a teammate reply is exactly the mutual-send deadlock —
 // the envelope teaches teammates to answer as turn text instead).
 // Electron-free by construction; harnessGlue injects the runtime and the
 // task-bridge route lister.
-import { buildTeammateTurn, type SendToTeammatePort, type TeamSendResult } from "@innocenceharness/plugin-team";
-import { beginObservedReply, endObservedReply } from "./automationReplyObserver";
+import { buildTeammateTurn, TEAMMATE_EMPTY_REPLY, type SendToTeammatePort, type TeamSendResult } from "@innocenceharness/plugin-team";
+import { beginObservedReply, endObservedReply, ownReplyText } from "./automationReplyObserver";
 
 /** The runtime faces the port needs (structurally satisfied by HarnessRuntime). */
 export interface TeammateRuntimePort {
@@ -110,6 +113,10 @@ export function createSendToTeammate(
     }
     // 错误标记优先：失败回合即使镜像了文本也判为投递失败。
     if (reply.errored) return { ok: false, error: TURN_FAILED_ERROR };
-    return { ok: true, reply: reply.text };
+    // 剥离宿主镜像的通知行（runtime-events 把压缩/非致命错误以
+    // "> 🗜️/⚠️" 合成 delta 送进 onDelta——它们不是队友自述文本）；
+    // 剥离后为空（无正文但触发压缩的回合）回落占位符。
+    const own = ownReplyText(reply.text).trim();
+    return { ok: true, reply: own.length > 0 ? own : TEAMMATE_EMPTY_REPLY };
   };
 }

@@ -6,7 +6,7 @@
 // the runtime hooks do), and the fail-fast refusals: no task, unknown
 // teammate, self-address, busy route, errored turn.
 import { describe, expect, it } from "vitest";
-import { buildTeammateTurn, TEAMMATE_MESSAGE_ENVELOPE } from "@innocenceharness/plugin-team";
+import { buildTeammateTurn, TEAMMATE_EMPTY_REPLY, TEAMMATE_MESSAGE_ENVELOPE } from "@innocenceharness/plugin-team";
 import { appendObservedReplyDelta, markObservedReplyError } from "./automationReplyObserver";
 import { createSendToTeammate, type TeammateRuntimePort } from "./teammatePort";
 
@@ -88,6 +88,29 @@ describe("teammate port: resolution and delivery", () => {
     await port("worker-1", "two");
     const ids = delivered.map((turn) => turn.messageId);
     expect(new Set(ids).size).toBe(2);
+  });
+
+  it("host-mirrored pseudo rows never count as the reply: pseudo-only falls back to the placeholder", async () => {
+    // runtime-events 把压缩/非致命错误以 "> 🗜️ 已压缩…" / "> ⚠️ …" 合成
+    // delta 镜像进 onDelta——无正文但触发压缩的队友回合不得把宿主伪行当
+    // 回复；剥离后为空回落 TEAMMATE_EMPTY_REPLY 占位。
+    const { port } = makePort(
+      ["main", "worker-1"],
+      { reply: "\n\n> 🗜️ 已压缩较早的对话历史\n\n> ⚠️ transient provider hiccup\n" },
+      { taskId: "task-9" },
+    );
+    const result = await port("worker-1", "hi");
+    expect(result).toEqual({ ok: true, reply: TEAMMATE_EMPTY_REPLY });
+  });
+
+  it("body text plus pseudo rows returns only the body", async () => {
+    const { port } = makePort(
+      ["main", "worker-1"],
+      { reply: "\n\n> 🗜️ 已压缩较早的对话历史\nthe actual teammate answer\n\n> ⚠️ retried once\n" },
+      { taskId: "task-9" },
+    );
+    const result = await port("worker-1", "hi");
+    expect(result).toEqual({ ok: true, reply: "the actual teammate answer" });
   });
 });
 

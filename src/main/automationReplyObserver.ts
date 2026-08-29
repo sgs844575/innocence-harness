@@ -38,3 +38,14 @@ export function endObservedReply(messageId: string): ObservedReply {
   observedReplies.delete(messageId);
   return reply;
 }
+
+/** 剥离宿主镜像的通知行（runtime-events 的告警/压缩提示）：它们不是 agent
+ * 的自述文本，不得伪造非空回复或携带整行标记。行锚定匹配（trim 后以
+ * "> ⚠️"/"> 🗜️" 开头的行整行移除），正文行原样保留——自动化循环派发与
+ * 队友投递端口共用的同一定义。 */
+export function ownReplyText(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^>\s*(⚠️|🗜️)/.test(line.trim()))
+    .join("\n");
+}

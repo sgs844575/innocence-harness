@@ -3,7 +3,12 @@ import type {
   AutomationDispatchRequest,
   DispatchOutcome,
 } from "@innocenceharness/harness-automation";
-import { beginObservedReply, endObservedReply, type ObservedReply } from "./automationReplyObserver";
+import {
+  beginObservedReply,
+  endObservedReply,
+  ownReplyText,
+  type ObservedReply,
+} from "./automationReplyObserver";
 
 export interface AutomationRuntimePort {
   send(input: {
@@ -107,15 +112,6 @@ function deliverNotifications(
   for (const command of commands) {
     options.notify.send({ title, text: command }).catch((error: unknown) => options.onNotifyError?.(error));
   }
-}
-
-/** 剥离宿主镜像的通知行（runtime-events 的告警/压缩提示）：它们不是 agent
- * 的自述文本，不得伪造非空回复或携带整行标记。 */
-function ownReplyText(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => !/^>\s*(⚠️|🗜️)/.test(line.trim()))
-    .join("\n");
 }
 
 /** 终止标记整行匹配（trim 后 === 标记）：正文回引不构成完成。 */
