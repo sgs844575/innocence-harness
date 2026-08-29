@@ -54,6 +54,10 @@ const LIBS = [
 // 对象（name 同 id），向 tools 服务注册只读工具 read_reference——四个
 // 英文参考条目的目录固定，参考资料不常驻提示词，模型按需逐条拉取
 // （缓存纪律：稳定前缀不被参考内容扰动）。
+// web 为网页抓取工具插件（B4F 尾部批次）：默认导出即插件对象（name 同
+// id），向 tools 服务注册只读工具 web_fetch——公网正文抓取（环境代理
+// 感知传输，同构自模型请求侧形态），SSRF 基线内网/环回字面量拒绝 +
+// 重定向每跳重验 + 文本类响应 8KB 截断 + 20s 总时限。
 // planflow 为计划提交流插件（B4A 规划工具链）：默认导出即插件对象
 // （name 同 id），静态形态走通用装载链——注册 plan_submit 工具、监听
 // 权限决议事件（ask 级 allow 即计划批准）、在消息侧注入批准/拒绝提醒。
@@ -81,6 +85,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "archive", dependencies: ["fs"] },
   { id: "todo", dependencies: [] },
   { id: "reference", dependencies: [] },
+  { id: "web", dependencies: [] },
   { id: "builtin-skills", dependencies: [] },
   { id: "reminders", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
@@ -103,6 +108,7 @@ const PLUGINS = [
   { dir: "packages/tools-shell", id: "shell" },
   { dir: "packages/tools-todo", id: "todo" },
   { dir: "packages/tools-reference", id: "reference" },
+  { dir: "packages/tools-web", id: "web" },
   { dir: "packages/plugin-skills", id: "skills" },
   { dir: "packages/plugin-mcp", id: "mcp" },
   { dir: "packages/tools-ssh", id: "ssh" },

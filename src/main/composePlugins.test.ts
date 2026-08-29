@@ -75,9 +75,12 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // team 为具名队友协作插件（批次 4E）：默认导出是工厂（同 hooks 形态），
 // 由宿主 factoryPlugin 装配并传入绑定路由会话身份的 sendToTeammate 端口
 // ——注册 send_message 工具（对等权威信封投递 + 回复取回）。
+// web 为网页抓取工具插件（批次 4F）：默认导出即插件对象（name 同 id），
+// 静态形态走通用装载链——向 tools 服务注册只读 web_fetch（SSRF 基线：
+// 内网/环回字面量拒绝 + 重定向每跳重验 + 文本类响应截断）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "reference", "builtin-skills", "reminders",
+  "reference", "web", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning", "auto", "coordinator",
   "planflow",
   "memory",
@@ -122,6 +125,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       archive: "archive",
       todo: "todo",
       reference: "reference",
+      web: "web",
       "builtin-skills": "builtin-skills",
       reminders: "reminders",
       default: "default",
@@ -236,6 +240,15 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(teamEntry?.core ?? false, '"team" 必须非 core（可开关）').toBe(false);
     expect(teamEntry?.kind).toBeUndefined();
     expect(teamEntry?.title, '"team" 缺 title').toMatch(/\S/);
+    // 网页抓取工具插件（批次 4F）：静态能力插件（非 core、无依赖、无
+    // kind），默认导出即插件对象——通用装载链直装载，name 与 staging
+    // id 同名。
+    const webEntry = byId.get("web");
+    expect(webEntry, 'manifest 缺少 "web" 条目').toBeDefined();
+    expect(webEntry).toMatchObject({ dependencies: [] });
+    expect(webEntry?.core ?? false, '"web" 必须非 core（可开关）').toBe(false);
+    expect(webEntry?.kind).toBeUndefined();
+    expect(webEntry?.title, '"web" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
@@ -510,6 +523,48 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     const result = await registered[0].execute({ teammate: "anyone", message: "hi" }, { signal: new AbortController().signal } as never);
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/no named teammates/i);
+  });
+
+  it("web entry mounts the staged plugin with the guarded web_fetch tool", async () => {
+    // 静态装载探针（批次 4F）：条目名 "web"（无 plugin 字段——通用装载
+    // 链经双根 resolver 装 staging dist）；staged 默认导出应用到最小 ctx
+    // （4B 教训：供应插件需要的 tools.register 面）后 web_fetch 落地。
+    // 断言全离线：只读 + network 副作用类 + 域名 scope 权限资源 + 内网
+    // 字面量拒绝——探针不发任何真实网络请求。
+    const ws = await tempWorkspace({});
+    const web = (await composePlugins(ws)).find((p) => p.name === "web");
+    expect(web, '条目 "web" 未装配').toBeTruthy();
+    expect(web && ("plugin" in web ? web.plugin : undefined)).toBeUndefined(); // resolver 路径（非工厂携带）
+
+    const boot = await composition.ensureBoot();
+    const plugin = (await boot.importPlugin("web")) as {
+      name: string;
+      apply(ctx: unknown): void | Promise<void>;
+    };
+    expect(plugin.name).toBe("web");
+    const registered: Array<{
+      name: string;
+      readOnly: boolean;
+      sideEffect?: string;
+      validateArgs?: (args: Record<string, unknown>) => void;
+      permissionResource: (args: Record<string, unknown>, ctx: unknown) => { action: string; kind: string; scope: string };
+      persistArgs: (args: Record<string, unknown>) => Record<string, unknown>;
+    }> = [];
+    await plugin.apply({ tools: { register: (t: unknown) => registered.push(t as never) } });
+    expect(registered.map((t) => t.name)).toEqual(["web_fetch"]);
+
+    const tool = registered[0];
+    expect(tool.readOnly).toBe(true);
+    expect(tool.sideEffect).toBe("network");
+    expect(tool.validateArgs!({ url: "https://example.com/page" })).toBeUndefined();
+    expect(() => tool.validateArgs!({ url: "http://127.0.0.1/admin" })).toThrow(/目标地址不允许/);
+    const ctxProbe = { signal: new AbortController().signal } as never;
+    expect(tool.permissionResource({ url: "https://Example.COM/a" }, ctxProbe)).toEqual({
+      action: "read",
+      kind: "web",
+      scope: "example.com",
+    });
+    expect(tool.persistArgs({ url: "https://example.com/a" })).toEqual({ url: "https://example.com/a" });
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
