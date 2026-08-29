@@ -63,6 +63,15 @@ function automationFile(): string {
 let automationService: AutomationService | undefined;
 let automationLifecycle: AutomationLifecycle | undefined;
 
+/** Loop 载荷解析：服务未建/查无定义/载荷无效都返回 undefined，回合回退非 loop 路径。 */
+function automationLoopTargetOf(id: string): { name: string; loopFile: string } | undefined {
+  const service = automationService ?? getAutomationService();
+  const definition = service.list().find((item) => item.id === id);
+  const loopFile = definition?.loop?.loopFile?.trim();
+  if (!definition || !loopFile) return undefined;
+  return { name: definition.name, loopFile };
+}
+
 function getAutomationService(): AutomationService {
   if (automationService) return automationService;
   const store = createAutomationStore(automationFile());
@@ -81,6 +90,21 @@ function getAutomationService(): AutomationService {
       taskRouteFor: (sessionId) => sessionTaskRoutes.get(sessionId),
       notify: createLazyNotifySink(),
       onNotifyError: (error) => logger.warn("automation notify failed", error),
+      loop: {
+        definitionFor: automationLoopTargetOf,
+        // 全完成停用走 lifecycle.update（而非直接 updateDefinition），
+        // 让步频 dispatcher 立即同步、移除注册并停掉定时器。宿主已停机
+        // （lifecycle 已释放）时跳过：重建 lifecycle 会复活定时器；定义
+        // 保持 enabled，重启后下一轮 [loop-complete] 会再次触发停用。
+        disable: async (id) => {
+          const lifecycle = automationLifecycle;
+          if (!lifecycle) return;
+          const definition = (automationService ?? getAutomationService()).list().find((item) => item.id === id);
+          if (!definition) throw new Error("automation not found");
+          await lifecycle.update(id, definition.candidate, definition.name, definition.targetSessionId, false);
+        },
+        onDisableError: (error) => logger.warn("automation loop disable failed", error),
+      },
     }),
   });
   return automationService;

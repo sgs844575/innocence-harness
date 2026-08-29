@@ -14,6 +14,7 @@ import {
   type PermissionChoice,
 } from "../shared/ipc";
 import * as sessions from "./sessions";
+import { appendObservedReplyDelta } from "./automationReplyObserver";
 import { getMainWindow } from "./appWindow";
 import { logger } from "./logger";
 
@@ -47,6 +48,9 @@ export function createRuntimeHooks(
 ): RuntimeHooks {
   return {
     onDelta: (sessionId, messageId, delta) => {
+      // Automation-injected loop turns report their reply text through the
+      // observer; every other message id is a no-op there.
+      appendObservedReplyDelta(messageId, delta);
       sessions.updateMessage(sessionId, messageId, (m) => {
         m.parts = appendText(m.parts, delta);
       });
