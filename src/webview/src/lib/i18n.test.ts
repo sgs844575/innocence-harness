@@ -22,6 +22,22 @@ describe("i18n dictionaries", () => {
     expect(keys.map((key) => enUS[key])).toEqual(["Open menu", "Application menu", "File", "Edit", "View", "Help"]);
   });
 
+  it("agent 模式键成对存在：每个内建模式 id 的 label 与 desc 键在 zh/en 都非空", () => {
+    // 批次 4D 任务 3：auto 模式插件的 i18n 键存在性（label+desc zh/en 成对）；
+    // 顺带锁定全部七个内建模式 id，缺一即红（模式插件登记与切换器投影的契约）。
+    for (const id of ["default", "creation", "plan", "focus", "minimal", "learning", "auto"]) {
+      for (const suffix of ["", ".desc"]) {
+        const key = `agentMode.${id}${suffix}`;
+        expect(typeof zhCN[key], `zh 缺键 ${key}`).toBe("string");
+        expect(zhCN[key].length, `zh 空值 ${key}`).toBeGreaterThan(0);
+        expect(typeof enUS[key], `en 缺键 ${key}`).toBe("string");
+        expect(enUS[key].length, `en 空值 ${key}`).toBeGreaterThan(0);
+      }
+    }
+    expect(enUS["agentMode.auto"]).toBe("Auto");
+    expect(enUS["agentMode.auto.desc"]).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
   it("provides complete English workbench copy without Chinese fallbacks", () => {
     const keys = [
       "workbench.tab.home",

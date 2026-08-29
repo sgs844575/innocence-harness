@@ -52,7 +52,8 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // 是工厂、由宿主 factoryPlugin 装配）+ example（渲染层示例插件：仅清单/
 // 投影面，无会话实例化分支）。provider/task 等由组合层另行装配不进清单。
 // 模式插件的 staging id 必须等于其注册的 agent 模式 id（default/creation
-// 与单模式插件 plan/focus/minimal/learning——learn 包注册 id 是 "learning"）。
+// 与单模式插件 plan/focus/minimal/learning/auto——learn 包注册 id 是
+// "learning"，auto 为 B4D 自主模式插件）。
 // builtin-skills 为内置技能内容包：默认导出即插件对象（name 同 id），
 // 向 skills 脊柱服务注册六个常驻技能。reminders 为消息侧提醒注入插件：
 // 默认导出是工厂（同 creation 形态），由宿主 factoryPlugin 装配并传入
@@ -73,7 +74,7 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "builtin-skills", "reminders",
-  "default", "creation", "plan", "focus", "minimal", "learning",
+  "default", "creation", "plan", "focus", "minimal", "learning", "auto",
   "planflow",
   "memory",
   "hooks",
@@ -124,6 +125,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       focus: "focus",
       minimal: "minimal",
       learning: "learning",
+      auto: "auto",
       planflow: "planflow",
       memory: "memory",
       hooks: "hooks",
@@ -162,9 +164,9 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     ) as { plugins: Array<{ id: string; kind?: string; core?: boolean; dependencies?: string[]; title?: string }> };
     const byId = new Map(manifest.plugins.map((entry) => [entry.id, entry]));
     // staging id 必须等于注册的 agent 模式 id（default/creation 与
-    // plan/focus/minimal/learning）——切换器按清单 id 写设置、会话按注册 id
-    // 解析提示词，此处锁死两侧的一致性命名。
-    for (const id of ["default", "creation", "plan", "focus", "minimal", "learning"]) {
+    // plan/focus/minimal/learning/auto）——切换器按清单 id 写设置、会话按
+    // 注册 id 解析提示词，此处锁死两侧的一致性命名。
+    for (const id of ["default", "creation", "plan", "focus", "minimal", "learning", "auto"]) {
       const entry = byId.get(id);
       expect(entry, `manifest 缺少 "${id}" 条目`).toBeDefined();
       expect(entry).toMatchObject({ kind: "agent-mode", dependencies: [] });

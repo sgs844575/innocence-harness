@@ -4,7 +4,7 @@ import { Popover } from "../ui/Popover";
 export interface AgentModeOption { id: string; title: string; description?: string; }
 
 /** 内建模式 id（staging 清单的 agent-mode 条目）：label 与 desc 均走 i18n。 */
-const BUILTIN_MODE_IDS = new Set(["default", "creation", "plan", "focus", "minimal", "learning"]);
+const BUILTIN_MODE_IDS = new Set(["default", "creation", "plan", "focus", "minimal", "learning", "auto"]);
 
 /** 内置模式用 i18n 显示；用户自建模式显示元数据 title。 */
 export function labelFor(t: (k: string) => string, id: string, options: AgentModeOption[]): string {
