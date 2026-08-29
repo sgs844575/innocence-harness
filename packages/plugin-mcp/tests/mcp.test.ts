@@ -5,6 +5,7 @@ import { Context } from "@innocenceharness/kernel";
 import { LoggerPlugin } from "@innocenceharness/kernel-logger";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import { createExecutionScope, sha256Hex, type ToolContext } from "@innocenceharness/harness-tools";
+import { createSessionPlugin, textMessage } from "@innocenceharness/harness-session";
 import { StdioJsonRpcClient, createMcpPlugin, type StdioServerOptions } from "../src";
 
 const fixture = path.join(
@@ -13,12 +14,19 @@ const fixture = path.join(
   "echo-server.mjs",
 );
 
-/** Mounts the plugin on a bare kernel context (logger + tools spine); the
- *  plugin fiber's unwind (ctx.fiber.dispose) replaces the old registry dispose. */
+/** Mounts the plugin on a bare kernel context (logger + tools + session
+ *  spines); the plugin fiber's unwind (ctx.fiber.dispose) replaces the old
+ *  registry dispose. */
 async function mountMcp(servers: Record<string, StdioServerOptions>): Promise<Context> {
   const ctx = new Context();
   await ctx.plugin(LoggerPlugin);
   await ctx.plugin(ToolsPlugin);
+  await ctx.plugin(
+    createSessionPlugin({
+      provider: { id: "bare", async *chat(): AsyncIterable<never> {} },
+      sessionId: "sess-bare",
+    }),
+  );
   await ctx.plugin(createMcpPlugin({ servers }));
   return ctx;
 }
@@ -252,4 +260,103 @@ describe("createMcpPlugin", () => {
     await ctx.fiber.dispose();
     await waitGone(pids); // both servers AND their spawned children are gone
   }, 25_000);
+});
+
+describe("failed-connection note", () => {
+  it("appends a first-turn note listing failed servers with reasons", async () => {
+    const ctx = await mountMcp({
+      missing: { command: "definitely-not-a-real-command-xyz", args: [] },
+    });
+    const processor = ctx.session.processors().find((p) => p.name === "mcp-connection-status");
+    expect(processor).toBeDefined();
+    const first = await ctx.session.processUserInput(textMessage("user", "hello"));
+    const firstText = first.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text: string }).text)
+      .join("\n");
+    expect(firstText).toContain("hello"); // 原文不改写，仅追加
+    expect(firstText).toMatch(/<system-reminder>/);
+    expect(firstText).toContain("missing");
+    expect(firstText).toMatch(/connection|connect/i);
+    // 英文注记、无第三方名
+    const note = firstText.slice(firstText.indexOf("<system-reminder>"));
+    expect(note).not.toMatch(/[\u4e00-\u9fff]/);
+    for (const re of [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i]) {
+      expect(note).not.toMatch(re);
+    }
+    const second = await ctx.session.processUserInput(textMessage("user", "again"));
+    const secondText = second.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text: string }).text)
+      .join("\n");
+    expect(secondText).not.toMatch(/<system-reminder>/); // 首轮一次
+    await ctx.fiber.dispose();
+  });
+
+  it("registers no note processor when every server connected", async () => {
+    const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
+    expect(
+      ctx.session.processors().find((p) => p.name === "mcp-connection-status"),
+    ).toBeUndefined();
+    await ctx.fiber.dispose();
+  });
+
+  it("mounts without a session spine (tool-registry-only host)", async () => {
+    const ctx = new Context();
+    await ctx.plugin(LoggerPlugin);
+    await ctx.plugin(ToolsPlugin);
+    await ctx.plugin(
+      createMcpPlugin({
+        servers: { missing: { command: "definitely-not-a-real-command-xyz", args: [] } },
+      }),
+    );
+    expect(ctx.tools.specs().map((s) => s.name)).toEqual([]);
+    await ctx.fiber.dispose();
+  });
+});
+
+describe("tool output notes", () => {
+  it("replaces empty tool text with an English no-content note", async () => {
+    const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
+    const tool = ctx.tools.get("mcp__echo__empty")!;
+    const result = await tool.execute({}, ctxToolContext());
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/\[.*no content/i);
+    expect(result.content).not.toMatch(/[\u4e00-\u9fff]/);
+    await ctx.fiber.dispose();
+  });
+
+  it("caps oversized tool output with a truncation note", async () => {
+    const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
+    const tool = ctx.tools.get("mcp__echo__big")!;
+    const result = await tool.execute({ size: 20_000 }, ctxToolContext());
+    expect(result.isError).toBeFalsy();
+    expect(result.content.length).toBeLessThan(20_000);
+    expect(result.content).toMatch(/\[.*cut|truncated/i);
+    expect(result.content).not.toMatch(/[\u4e00-\u9fff]/);
+    await ctx.fiber.dispose();
+  });
+
+  it("output at exactly the cap is not truncated", async () => {
+    const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
+    const tool = ctx.tools.get("mcp__echo__big")!;
+    const result = await tool.execute({ size: 16_000 }, ctxToolContext());
+    expect(result.content).toHaveLength(16_000);
+    expect(result.content).not.toMatch(/truncated|cut at/i);
+    await ctx.fiber.dispose();
+  });
+
+  it("truncation never splits a surrogate pair", async () => {
+    const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
+    const tool = ctx.tools.get("mcp__echo__big")!;
+    // 15999 x's + one 2-unit emoji = 16001 units: the naive cut at 16000
+    // would split the pair; the guarded cut backs off to 15999.
+    const result = await tool.execute({ size: 15_999, emoji: 1 }, ctxToolContext());
+    expect(result.content.slice(0, 15_999)).toMatch(/^x+$/);
+    expect(result.content).toMatch(/truncated|cut at/i);
+    // The character right before the note's newline is the last kept 'x' —
+    // a lone high surrogate would land there on an unguarded cut.
+    expect(result.content.charCodeAt(result.content.indexOf("\n") - 1)).toBe(0x78);
+    await ctx.fiber.dispose();
+  });
 });

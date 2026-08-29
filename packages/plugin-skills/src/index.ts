@@ -83,31 +83,95 @@ interface SkillsLookup {
  */
 const SKILL_EXPANSION_ORDER = -1000;
 
-/** Expands "/skillname ..." input by loading the skill body as context. */
-async function expandUserText(text: string, skills: SkillsLookup): Promise<string> {
-  const match = /^\/([a-zA-Z0-9_-]+)\s*([\s\S]*)$/.exec(text.trim());
-  if (!match) return text;
-  const skill = skills.get(match[1]);
-  if (!skill) return text;
-  const body = await skill.loadBody();
-  return `[已加载技能 ${skill.name}]\n${body}\n\n[用户输入]\n${match[2]}`;
+/** Invocation prefix: "/skillname" optionally followed by the turn text. */
+const SKILL_INVOCATION_RE = /^\/([a-zA-Z0-9_-]+)\s*([\s\S]*)$/;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * Runs skill expansion over one message. Only the targeted text parts
- * change; every other part is kept as-is, in order.
+ * True when the text mentions a recorded skill name as a word but does not
+ * open with its invocation form. Word boundaries keep longer derived words
+ * from triggering; the invocation exclusion is case-insensitive so a miscased
+ * "/Name" (which the case-sensitive expansion does not catch) still counts as
+ * intent to invoke rather than as a prose mention.
  */
-async function expandUserMessage(message: Message, skills: SkillsLookup): Promise<Message> {
-  if (skills.all().length === 0) return message;
-  const parts: MessagePart[] = [];
-  for (const part of message.parts) {
-    if (part.type === "text") {
-      parts.push({ type: "text", text: await expandUserText(part.text, skills) });
-    } else {
-      parts.push(part);
-    }
+function mentionsSkill(text: string, name: string): boolean {
+  if (new RegExp(`^\\/${escapeRegExp(name)}`, "i").test(text.trim())) return false;
+  return new RegExp(`(?<![a-zA-Z0-9_-])${escapeRegExp(name)}(?![a-zA-Z0-9_-])`, "i").test(text);
+}
+
+/**
+ * Wraps one injected note body in the shared reminder envelope (same shape
+ * as the reminders plugin's; kept local so the two plugins stay
+ * independent).
+ */
+function envelope(body: string): string {
+  return `<system-reminder>\n${body}\n</system-reminder>`;
+}
+
+/**
+ * The re-mention note body (source: system-reminder-previously-invoked-skills.md,
+ * adapted to the mention-not-invocation case): the named skills were already
+ * expanded earlier in this session, a prose mention is not a request to
+ * reload, and one-time setup must not repeat.
+ */
+function mentionNoteBody(names: readonly string[]): string {
+  const slashForms = names.map((name) => `/${name}`).join(" or ");
+  return (
+    `Skill ${names.join(", ")} was expanded earlier in this session; a plain mention is not ` +
+    "a fresh invocation. Rely on the guidance already in effect, cite the skill body where " +
+    `it is still present in context, and run the explicit ${slashForms} command again only ` +
+    "when the full text is needed. Do not repeat one-time setup steps the skill performed " +
+    "on its first load."
+  );
+}
+
+/**
+ * Runs skill expansion over one message and collects prose mentions of
+ * previously expanded skills. Only the targeted text parts change; every
+ * other part is kept as-is, in order. Mention detection reads the ORIGINAL
+ * text of non-expanding parts (expanded bodies routinely contain their own
+ * skill name).
+ */
+async function expandUserMessage(
+  message: Message,
+  skills: SkillsLookup,
+  expandedNames: Set<string>,
+): Promise<{ message: Message; mentions: string[] }> {
+  if (skills.all().length === 0 && expandedNames.size === 0) {
+    return { message, mentions: [] };
   }
-  return { role: message.role, parts };
+  const parts: MessagePart[] = [];
+  const mentions = new Set<string>();
+  let changed = false;
+  for (const part of message.parts) {
+    if (part.type !== "text") {
+      parts.push(part);
+      continue;
+    }
+    const invocation = SKILL_INVOCATION_RE.exec(part.text.trim());
+    const skill = invocation ? skills.get(invocation[1]) : undefined;
+    if (skill) {
+      changed = true;
+      expandedNames.add(skill.name);
+      const body = await skill.loadBody();
+      parts.push({
+        type: "text",
+        text: `[已加载技能 ${skill.name}]\n${body}\n\n[用户输入]\n${invocation![2]}`,
+      });
+      continue;
+    }
+    for (const name of expandedNames) {
+      if (mentionsSkill(part.text, name)) mentions.add(name);
+    }
+    parts.push(part);
+  }
+  return {
+    message: changed ? { role: message.role, parts } : message,
+    mentions: [...mentions],
+  };
 }
 
 /** Kernel-native skills plugin (name "skills"). */
@@ -157,10 +221,31 @@ export function createSkillsPlugin(options: SkillsPluginOptions): SkillsPlugin {
       // expands here against this session's skill table. Accepted semantic:
       // non-destructive and narrowly triggered (normal subagent prompts do
       // not start with "/"); isolation would require a protocol change.
+      //
+      // The expanded-name set lives in this apply closure (session
+      // composition scope): the expansion pass records every skill it
+      // expanded, and a later prose turn that mentions one of those names —
+      // without opening with its /name invocation form — gets a one-line
+      // note appended to the message tail (mention, not invocation).
+      const expandedNames = new Set<string>();
       ctx.session.registerProcessor({
         name: "skill-expansion",
         order: SKILL_EXPANSION_ORDER,
-        process: (message) => expandUserMessage(message, ctx.skills),
+        process: async (message) => {
+          const { message: expanded, mentions } = await expandUserMessage(
+            message,
+            ctx.skills,
+            expandedNames,
+          );
+          if (mentions.length === 0) return expanded;
+          return {
+            role: expanded.role,
+            parts: [
+              ...expanded.parts,
+              { type: "text" as const, text: envelope(mentionNoteBody(mentions)) },
+            ],
+          };
+        },
       });
     },
   };

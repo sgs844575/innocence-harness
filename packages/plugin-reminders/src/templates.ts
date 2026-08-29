@@ -4,6 +4,20 @@
 // zero — verified programmatically per batch). Templates return the body
 // only; the injector wraps it in the shared <system-reminder> envelope.
 
+/**
+ * Cumulative token usage of the session at the moment the usage-level
+ * reminder fires. Structural subset of the provider-neutral usage metadata
+ * (identical optional number fields), so hosts pass their accumulated
+ * metadata straight through without this package depending on the provider
+ * package.
+ */
+export interface UsageSummary {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+}
+
 /** Per-turn facts a template decides and renders against. */
 export interface ReminderState {
   /** Identity of the provider serving the current request. */
@@ -29,6 +43,19 @@ export interface ReminderState {
    * stay valid without knowing about list tracking.
    */
   todoStale?: boolean;
+  /**
+   * Present only on turns where the usage-level reminder fires: the
+   * session's cumulative usage at or beyond the crossing level (first
+   * threshold, then each +50% step). Absent on every other turn and in
+   * compositions that supply no usage getter.
+   */
+  usageLevel?: UsageSummary;
+  /**
+   * True when the host reports this session continues from previously
+   * stored history (rebuilt session seeded from its transcript). Absent
+   * when the composition supplies no continuation getter.
+   */
+  continuation?: boolean;
 }
 
 export interface ReminderTemplate {
@@ -100,9 +127,44 @@ const todoFreshnessTemplate: ReminderTemplate = {
     "untouched. Re-check the list against where the work actually stands: entries whose " +
     "work has wrapped up should be marked completed, and newly started work should be " +
     "entered promptly rather than held in memory alone. When the list stops matching the " +
-    "effort at hand — the work finished or the plan changed — clear it instead of letting " +
-    "it drift. Multi-step work should be tracked with the list tool from start to finish, " +
+    "effort at hand — the work finished or the plan changed — clear it instead of letting it " +
+    "drift. Multi-step work should be tracked with the list tool from start to finish, " +
     "kept as a live record rather than a one-time snapshot.",
+};
+
+// Token usage level (source: system-reminder-token-usage.md). The state
+// carries the cumulative counts only on crossing turns — a first threshold
+// (100k total tokens), then each further 50% growth step — computed against
+// the closure watermark in index.ts. Owner-session gated there, so inherited
+// child sessions neither see the reminder nor consume the watermark.
+const usageLevelTemplate: ReminderTemplate = {
+  id: "usage-level",
+  when: (state) => state.usageLevel !== undefined,
+  render: (state) => {
+    const usage = state.usageLevel!;
+    const count = (value: number | undefined): number => value ?? 0;
+    return (
+      `Session token usage has reached ${count(usage.totalTokens)} tokens in total ` +
+      `(${count(usage.inputTokens)} input, ${count(usage.outputTokens)} output, ` +
+      `${count(usage.cachedInputTokens)} cached). Keep further large reads and broad ` +
+      "searches targeted so the remaining context is not spent on wide passes."
+    );
+  },
+};
+
+// Session continuation (source: system-reminder-session-continuation.md).
+// First turn of a rebuilt session whose history was seeded from the stored
+// transcript: prior conclusions may predate changes on disk, so they are
+// re-verified rather than trusted, and the restored turns are not restated.
+const sessionContinuationTemplate: ReminderTemplate = {
+  id: "session-continuation",
+  when: (state) => state.firstTurn && state.ownerSession && state.continuation === true,
+  render: () =>
+    "This conversation was resumed from a previously stored session record: the earlier " +
+    "turns above were restored from saved history. Conditions may have moved since that " +
+    "record was written, so re-check the current state of the files involved and re-validate " +
+    "earlier conclusions before building on them. Continue from where the work stands " +
+    "instead of restating the restored history.",
 };
 
 /** Registered reminder templates, in injection order. */
@@ -111,4 +173,6 @@ export const reminderTemplates: readonly ReminderTemplate[] = [
   externalTrustBoundaryTemplate,
   planPermissionActiveTemplate,
   todoFreshnessTemplate,
+  usageLevelTemplate,
+  sessionContinuationTemplate,
 ];

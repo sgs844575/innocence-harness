@@ -13,12 +13,14 @@ import {
 } from "@innocenceharness/harness-permissions";
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
+import type { UsageMetadata } from "@innocenceharness/harness-providers";
 import {
   unavailableTeammatePort,
   type SendToTeammatePort,
 } from "@innocenceharness/plugin-team";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_ROUTE_ID,
   MOCK_GREETING,
   resolveActive,
   type HarnessPlugin,
@@ -70,6 +72,20 @@ export interface SessionCompositionOptions {
    * every send_message call answers the no-teammates error.
    */
   createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort;
+  /**
+   * Reads one session's cumulative token usage from the host session store
+   * (batch 4F): feeds the reminders factory's usage-level getter. Absent
+   * means the composition has no usage source and the reminder stays
+   * unarmed.
+   */
+  getSessionUsage?: (sessionId: string) => UsageMetadata | undefined;
+  /**
+   * Reports whether a session continues from previously stored history
+   * (batch 4F): feeds the reminders factory's continuation getter. The
+   * composition binds it to main-route sessions only (the runtime seeds
+   * transcripts on the main route).
+   */
+  isContinuationSession?: (sessionId: string) => boolean;
 }
 
 /** Identity of the route session a composePlugins call assembles for. */
@@ -221,7 +237,11 @@ function factoryPlugin(
     | { dirs: string[] }
     | { servers: Record<string, unknown> }
     | { userRoot: string }
-    | { getPermissionMode: () => string }
+    | {
+        getPermissionMode: () => string;
+        getSessionUsage?: () => UsageMetadata | undefined;
+        isContinuationSession?: () => boolean;
+      }
     | { getUserRoot: () => string; getProjectRoot: () => string }
     | { getHooksConfig: () => Promise<unknown>; getWorkspaceRoot: () => string }
     | { sendToTeammate: SendToTeammatePort },
@@ -358,6 +378,10 @@ async function builtinLoaderEntryFor(
   ecosystemPlugin?: ObjectPlugin,
   sessionIdentity?: ComposeSessionIdentity,
   createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort,
+  reminderState?: {
+    getSessionUsage?: () => UsageMetadata | undefined;
+    isContinuationSession?: () => boolean;
+  },
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -384,7 +408,16 @@ async function builtinLoaderEntryFor(
     // reminders factory, and the permission-mode getter comes from the
     // settings snapshot composePlugins received for this session build
     // (absent settings fall back to "auto" — no reminders gated on plan).
-    plugin = factoryPlugin(boot, "reminders", () => ({ getPermissionMode: () => resolvePermissionMode() }));
+    // The session-state getters (batch 4F) arrive session-bound from the
+    // same pass: cumulative usage for any route, continuation only on the
+    // main route (where the runtime re-seeds stored transcripts).
+    plugin = factoryPlugin(boot, "reminders", () => ({
+      getPermissionMode: () => resolvePermissionMode(),
+      ...(reminderState?.getSessionUsage ? { getSessionUsage: reminderState.getSessionUsage } : {}),
+      ...(reminderState?.isContinuationSession
+        ? { isContinuationSession: reminderState.isContinuationSession }
+        : {}),
+    }));
   } else if (!entry.disabled && id === "memory") {
     // Same factory shape as creation/reminders: the staged default export is
     // the memory plugin factory, and the two memory roots resolve per call —
@@ -557,6 +590,31 @@ export function createSessionComposition(
       // plan 档提醒）。快照语义与 provider 组装一致：会话中途改档下一会话
       // 生效。
       const resolvePermissionMode = (): string => settings?.permissionMode ?? "auto";
+      // reminders 工厂的会话状态 getter（批次 4F）：usage 对任意路由的会话身份
+      // 绑定（按会话累计，与路由无关）；continuation 仅 main 路由（transcript
+      // 种子只在 main 路由回灌——runtime-session 重建路径，非 main 路由首轮
+      // 历史恒空，误报会误导核对行为）。无 sessionIdentity（无身份组装面）或
+      // 宿主未供端口时 getter 缺省，两个提醒保持未武装。
+      let reminderState:
+        | {
+            getSessionUsage?: () => UsageMetadata | undefined;
+            isContinuationSession?: () => boolean;
+          }
+        | undefined;
+      if (sessionIdentity) {
+        const boundSessionId = sessionIdentity.sessionId;
+        reminderState = {
+          ...(options.getSessionUsage
+            ? { getSessionUsage: () => options.getSessionUsage!(boundSessionId) }
+            : {}),
+          ...(options.isContinuationSession && sessionIdentity.routeId === DEFAULT_ROUTE_ID
+            ? { isContinuationSession: () => options.isContinuationSession!(boundSessionId) }
+            : {}),
+        };
+        if (!reminderState.getSessionUsage && !reminderState.isContinuationSession) {
+          reminderState = undefined;
+        }
+      }
       // 用户根扫描现算（不缓存，与项目配置读取并行）；解析依赖扫描结果，
       // 故 resolveBuiltinSet 在其后串行。
       const [config, scanned] = await Promise.all([
@@ -620,6 +678,7 @@ export function createSessionComposition(
             : undefined,
           sessionIdentity,
           options.createTeammatePort,
+          reminderState,
         ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。

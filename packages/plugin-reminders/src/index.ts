@@ -11,14 +11,27 @@ import type {
   MessageProcessorContext,
   ToolCallPart,
 } from "@innocenceharness/harness-session";
-import { reminderTemplates, type ReminderState } from "./templates";
+import { reminderTemplates, type ReminderState, type UsageSummary } from "./templates";
 
-export type { ReminderState, ReminderTemplate } from "./templates";
+export type { ReminderState, ReminderTemplate, UsageSummary } from "./templates";
 export { reminderTemplates } from "./templates";
 
 export interface RemindersPluginOptions {
   /** Reads the current permission mode; called once per processed turn. */
   getPermissionMode: () => string;
+  /**
+   * Reads the session's cumulative token usage (host-maintained accumulator
+   * or store derivation); absent means the composition has no usage source
+   * and the usage-level reminder stays unarmed. Called once per processed
+   * owner-session turn.
+   */
+  getSessionUsage?: () => UsageSummary | undefined;
+  /**
+   * True when this session continues from previously stored history (the
+   * host rebuilt the session with a transcript seed); absent means no
+   * continuation signal and the reminder stays unarmed.
+   */
+  isContinuationSession?: () => boolean;
 }
 
 export interface RemindersPlugin {
@@ -33,6 +46,14 @@ export interface RemindersPlugin {
  * rewrite.
  */
 const REMINDERS_PROCESSOR_ORDER = 900;
+
+/**
+ * Usage-level crossing rule: the reminder fires the first time cumulative
+ * total tokens reach the threshold, then again each time the cumulative
+ * total grows by half over the last injected level.
+ */
+const USAGE_FIRST_THRESHOLD_TOKENS = 100_000;
+const USAGE_GROWTH_FACTOR = 1.5;
 
 /** Wraps one rendered template body in the shared reminder envelope. */
 function envelope(body: string): string {
@@ -111,20 +132,38 @@ export function createRemindersPlugin(options: RemindersPluginOptions): Reminder
     apply(ctx) {
       let firstTurn = true;
       let firstSessionId: string | undefined;
+      // Cumulative-total level the usage reminder last fired at; undefined
+      // until the first threshold crossing. Lives in this closure (session
+      // composition scope) and only owner-session turns read or advance it,
+      // so inherited child sessions neither see the reminder nor consume
+      // the watermark.
+      let usageWatermark: number | undefined;
       ctx.session.registerProcessor({
         name: "reminders",
         order: REMINDERS_PROCESSOR_ORDER,
         async process(message: Message, context: MessageProcessorContext): Promise<Message> {
           firstSessionId ??= context.scope.sessionId;
+          const ownerSession = context.scope.sessionId === firstSessionId;
+          const usage = ownerSession ? options.getSessionUsage?.() : undefined;
+          const totalTokens = usage?.totalTokens ?? 0;
+          const usageCrossed =
+            usage !== undefined &&
+            totalTokens > 0 &&
+            (usageWatermark === undefined
+              ? totalTokens >= USAGE_FIRST_THRESHOLD_TOKENS
+              : totalTokens >= usageWatermark * USAGE_GROWTH_FACTOR);
+          if (usageCrossed) usageWatermark = totalTokens;
           const state: ReminderState = {
             provider: { id: context.provider?.id ?? "unknown" },
             permissionMode: options.getPermissionMode(),
             firstTurn,
-            ownerSession: context.scope.sessionId === firstSessionId,
+            ownerSession,
             // History is an optional context member: hosts and fakes that
             // supply no accessor simply leave the list reminder unarmed
             // (undefined → template off, and no read is attempted).
             todoStale: context.history ? todoListStale(context.history()) : undefined,
+            ...(usageCrossed ? { usageLevel: usage } : {}),
+            ...(ownerSession && options.isContinuationSession?.() ? { continuation: true } : {}),
           };
           firstTurn = false;
           for (const template of reminderTemplates) {

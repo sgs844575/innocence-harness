@@ -92,7 +92,14 @@ describe("reminder processor", () => {
 
   it("templates are English and banned-token free", () => {
     for (const t of reminderTemplates) {
-      const text = t.render({ provider, permissionMode: "plan", firstTurn: true, ownerSession: true });
+      const text = t.render({
+        provider,
+        permissionMode: "plan",
+        firstTurn: true,
+        ownerSession: true,
+        usageLevel: { inputTokens: 96000, outputTokens: 24000, cachedInputTokens: 5000, totalTokens: 120000 },
+        continuation: true,
+      });
       expect(text).not.toMatch(/[\u4e00-\u9fff]/);
       for (const re of [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i]) {
         expect(text).not.toMatch(re);
@@ -160,5 +167,178 @@ describe("todo freshness reminder", () => {
 
   it("does not inject and does not throw when the context carries no history accessor", async () => {
     await expect(runWith()).resolves.not.toMatch(/task list/i);
+  });
+});
+
+describe("usage-level reminder", () => {
+  const usage = (totalTokens: number, cachedInputTokens = 0) => ({
+    inputTokens: Math.floor(totalTokens * 0.8),
+    outputTokens: totalTokens - Math.floor(totalTokens * 0.8),
+    cachedInputTokens,
+    totalTokens,
+  });
+
+  async function runTurns(
+    getSessionUsage: () => unknown | undefined,
+    turns: number,
+    sessionId = "s",
+  ): Promise<string[]> {
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      getSessionUsage: getSessionUsage as () => never,
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const texts: string[] = [];
+    for (let i = 0; i < turns; i++) {
+      const message = makeMessage("go");
+      await processors[0].process(message, makeContext(sessionId));
+      texts.push(textOf(message));
+    }
+    return texts;
+  }
+
+  it("stays silent below the first threshold of 100k total tokens", async () => {
+    const [turn] = await runTurns(() => usage(99_999), 1);
+    expect(turn).not.toMatch(/token usage|usage has reached/i);
+  });
+
+  it("injects once when cumulative total tokens reach 100k, with the counts", async () => {
+    const [turn] = await runTurns(() => usage(120_000, 5_000), 1);
+    expect(turn).toMatch(/usage/i);
+    expect(turn).toContain("120000");
+    expect(turn).toContain("96000"); // input share
+    expect(turn).toContain("24000"); // output share
+    expect(turn).toContain("5000"); // cached share
+  });
+
+  it("does not re-inject before usage grows by half over the injected level", async () => {
+    let total = 120_000;
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      getSessionUsage: () => usage(total),
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const first = makeMessage("go");
+    await processors[0].process(first, makeContext());
+    expect(textOf(first)).toMatch(/usage/i);
+    total = 179_999; // below 120000 * 1.5
+    const near = makeMessage("more");
+    await processors[0].process(near, makeContext());
+    expect(textOf(near)).not.toMatch(/usage/i);
+  });
+
+  it("re-injects once usage reaches 150% of the last injected level", async () => {
+    let total = 120_000;
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      getSessionUsage: () => usage(total),
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const first = makeMessage("go");
+    await processors[0].process(first, makeContext());
+    expect(textOf(first)).toMatch(/usage/i);
+    const growth = makeMessage("more");
+    await processors[0].process(growth, makeContext());
+    expect(textOf(growth)).not.toMatch(/usage/i);
+    total = 180_000;
+    const crossed = makeMessage("even more");
+    await processors[0].process(crossed, makeContext());
+    expect(textOf(crossed)).toMatch(/usage/i);
+    expect(textOf(crossed)).toContain("180000");
+  });
+
+  it("never injects when no usage getter is supplied", async () => {
+    const plugin = createRemindersPlugin({ getPermissionMode: () => "auto" });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const message = makeMessage("go");
+    await processors[0].process(message, makeContext());
+    expect(textOf(message)).not.toMatch(/usage/i);
+  });
+
+  it("child sessions never see the usage reminder nor consume the watermark", async () => {
+    // The parent crosses the threshold; a later child turn (inherited
+    // processor instance, parent ran first as in production) must stay
+    // silent, and the parent's watermark must survive the child turn.
+    let total = 120_000;
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      getSessionUsage: () => usage(total),
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const parent = makeMessage("go");
+    await processors[0].process(parent, makeContext("parent"));
+    expect(textOf(parent)).toMatch(/usage/i);
+    const child = makeMessage("findings please");
+    await processors[0].process(child, makeContext("child"));
+    expect(textOf(child)).not.toMatch(/token usage/i);
+    total = 150_000; // below 120000 * 1.5 — watermark untouched by the child turn
+    const parentAgain = makeMessage("more");
+    await processors[0].process(parentAgain, makeContext("parent"));
+    expect(textOf(parentAgain)).not.toMatch(/token usage/i);
+  });
+});
+
+describe("session-continuation reminder", () => {
+  async function runFirstTurn(
+    isContinuationSession: (() => boolean) | undefined,
+    sessionId = "s",
+  ): Promise<string> {
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      ...(isContinuationSession ? { isContinuationSession } : {}),
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const message = makeMessage("continue");
+    await processors[0].process(message, makeContext(sessionId));
+    return textOf(message);
+  }
+
+  it("injects on the first turn of a continued session", async () => {
+    const text = await runFirstTurn(() => true);
+    expect(text).toMatch(/resumed|continued/i);
+    expect(text).toMatch(/re-check|re-validate|recheck/i);
+  });
+
+  it("injects only once — the second turn stays silent", async () => {
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      isContinuationSession: () => true,
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const first = makeMessage("continue");
+    await processors[0].process(first, makeContext());
+    expect(textOf(first)).toMatch(/resumed|continued/i);
+    const second = makeMessage("again");
+    await processors[0].process(second, makeContext());
+    expect(textOf(second)).not.toMatch(/resumed|continued/i);
+  });
+
+  it("does not inject for fresh sessions or when no getter is supplied", async () => {
+    expect(await runFirstTurn(() => false)).not.toMatch(/resumed|continued/i);
+    expect(await runFirstTurn(undefined)).not.toMatch(/resumed|continued/i);
+  });
+
+  it("does not inject in inherited child sessions", async () => {
+    // The parent consumed the first turn; the child session's own first turn
+    // (inherited processor instance) must not see the continuation note.
+    const plugin = createRemindersPlugin({
+      getPermissionMode: () => "auto",
+      isContinuationSession: () => true,
+    });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    const parent = makeMessage("go");
+    await processors[0].process(parent, makeContext("parent"));
+    expect(textOf(parent)).toMatch(/resumed|continued/i);
+    const child = makeMessage("findings please");
+    await processors[0].process(child, makeContext("child"));
+    expect(textOf(child)).not.toMatch(/resumed|continued/i);
   });
 });

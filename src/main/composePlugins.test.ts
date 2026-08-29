@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS, AgentSession } from "@innocenceharness/harness-electron";
+import { DEFAULT_SETTINGS, DEFAULT_ROUTE_ID, AgentSession } from "@innocenceharness/harness-electron";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
@@ -290,6 +290,72 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       scope: { sessionId: "s" },
     } as never);
     expect(auto.parts.map((p) => (p as { text: string }).text).join("\n")).not.toMatch(/planning permission/i);
+  });
+
+  it("reminders entry threads host usage and continuation getters per session identity", async () => {
+    // 批次 4F 宿主接线探针：composition 带 getSessionUsage/isContinuationSession
+    // 端口 + 会话身份组装 → staged reminders 工厂收到会话绑定 getter——
+    // usage 越过首轮阈值注入一行；continuation 在 main 路由首轮注入一次；
+    // 非 main 路由身份不注入 continuation（transcript 种子只在 main 路由）；
+    // 无端口/无身份的组装面两个提醒保持未武装。
+    const usage = { inputTokens: 90_000, outputTokens: 25_000, cachedInputTokens: 5_000, totalTokens: 115_000 };
+    const wired = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => undefined,
+      getUserPluginRoot: () => path.join(tmpdir(), "ic-compose-no-user-plugins"),
+      getSessionUsage: () => usage,
+      isContinuationSession: () => true,
+      log: () => {},
+    });
+    const ws = await tempWorkspace({});
+    const mount = async (identity?: { sessionId: string; routeId: string }) => {
+      const plugins = await wired.composePlugins(ws, undefined, undefined, identity);
+      const reminders = plugins.find((p) => p.name === "reminders");
+      const factory = reminders && "plugin" in reminders ? reminders.plugin : undefined;
+      const processors: MessageProcessor[] = [];
+      await factory?.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+      return processors[0];
+    };
+    const textOf = (m: { parts: Array<{ type: string; text?: string }> }) =>
+      m.parts.map((p) => (p as { text: string }).text).join("\n");
+
+    const main = await mount({ sessionId: "sess-4f", routeId: DEFAULT_ROUTE_ID });
+    const first = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+    await main.process(first as never, {
+      provider: { id: "probe" },
+      signal: new AbortController().signal,
+      scope: { sessionId: "sess-4f" },
+    } as never);
+    const firstText = textOf(first);
+    expect(firstText).toMatch(/token usage/i);
+    expect(firstText).toContain("115000");
+    expect(firstText).toMatch(/resumed|continued/i);
+
+    const taskRoute = await mount({ sessionId: "sess-4f", routeId: "route-b" });
+    const routeFirst = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+    await taskRoute.process(routeFirst as never, {
+      provider: { id: "probe" },
+      signal: new AbortController().signal,
+      scope: { sessionId: "sess-4f" },
+    } as never);
+    const routeText = textOf(routeFirst);
+    expect(routeText).toMatch(/token usage/i); // usage 按会话，任意路由可注入
+    expect(routeText).not.toMatch(/resumed|continued/i); // continuation 仅 main 路由
+
+    const unwired = await composition.composePlugins(ws);
+    const unwiredReminders = unwired.find((p) => p.name === "reminders");
+    const unwiredFactory = unwiredReminders && "plugin" in unwiredReminders ? unwiredReminders.plugin : undefined;
+    const unwiredProcessors: MessageProcessor[] = [];
+    await unwiredFactory?.apply({ session: { registerProcessor: (p: MessageProcessor) => unwiredProcessors.push(p) } } as never);
+    const noPort = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
+    await unwiredProcessors[0].process(noPort as never, {
+      provider: { id: "probe" },
+      signal: new AbortController().signal,
+      scope: { sessionId: "sess-4f" },
+    } as never);
+    const noPortText = textOf(noPort);
+    expect(noPortText).not.toMatch(/token usage/i); // 无端口：未武装
+    expect(noPortText).not.toMatch(/resumed|continued/i);
   });
 
   it("memory entry mounts the staged factory with host-threaded roots", async () => {

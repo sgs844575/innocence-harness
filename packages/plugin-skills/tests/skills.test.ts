@@ -175,3 +175,71 @@ describe("skill-expansion processor", () => {
     expect(out).toEqual(textMessage("user", "/review x"));
   });
 });
+
+describe("skill re-mention note", () => {
+  const noteText = (m: { parts: Array<{ type: string; text?: string }> }) =>
+    m.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
+
+  it("appends one note when a prose turn mentions a skill expanded earlier", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 请检查"));
+    const mention = await ctx.session.processUserInput(
+      textMessage("user", "沿用 review 里约定的流程继续"),
+    );
+    const texts = noteText(mention);
+    expect(texts).toContain("沿用 review 里约定的流程继续"); // 原文不改写
+    expect(texts).toMatch(/<system-reminder>/);
+    expect(texts).toMatch(/review/i);
+    expect(texts).toMatch(/\/review/); // 提示以 /名称 重新调用
+  });
+
+  it("treats a fresh /name invocation as expansion, not a mention", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 第一次"));
+    const again = await ctx.session.processUserInput(textMessage("user", "/review 再来"));
+    const texts = noteText(again);
+    expect(texts).toContain("审查正文：先看测试再看实现。"); // 展开仍然发生
+    expect(texts).not.toMatch(/<system-reminder>/);
+  });
+
+  it("stays silent when no recorded skill name appears in the turn", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 请检查"));
+    const other = await ctx.session.processUserInput(textMessage("user", "换个话题"));
+    expect(noteText(other)).not.toMatch(/<system-reminder>/);
+  });
+
+  it("stays silent before any skill has been expanded", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    const early = await ctx.session.processUserInput(
+      textMessage("user", "聊聊 review 这个词"),
+    );
+    expect(noteText(early)).not.toMatch(/<system-reminder>/);
+  });
+
+  it("word boundaries: longer words containing the name do not trigger", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 请检查"));
+    const derived = await ctx.session.processUserInput(
+      textMessage("user", "我 reviewed 了一遍，需要再 review 一轮"),
+    );
+    expect(noteText(derived)).toMatch(/<system-reminder>/); // 第二处是真提及
+    const onlyDerived = await ctx.session.processUserInput(
+      textMessage("user", "已经 reviewed 完毕"),
+    );
+    expect(noteText(onlyDerived)).not.toMatch(/<system-reminder>/);
+  });
+
+  it("the note is English and banned-token free", async () => {
+    const ctx = await mountSkills([skillsDir]);
+    await ctx.session.processUserInput(textMessage("user", "/review 请检查"));
+    const mention = await ctx.session.processUserInput(textMessage("user", "按 review 办"));
+    const note = noteText(mention).split("\n").find((line) => line.includes("system-reminder")) ?? "";
+    const body = noteText(mention).slice(noteText(mention).indexOf("<system-reminder>"));
+    expect(body).not.toMatch(/[\u4e00-\u9fff]/);
+    for (const re of [/Claude/i, /Anthropic/i, /OpenAI/i, /ChatGPT/i, /Codex/i, /Gemini/i]) {
+      expect(body).not.toMatch(re);
+    }
+    void note;
+  });
+});

@@ -34,6 +34,7 @@ import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTrai
 import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
 import { createSendToTeammate } from "./teammatePort";
+import { sessionHasFinishedTurn, summarizeSessionUsage } from "./sessionUsage";
 import * as sessions from "./sessions";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
@@ -236,6 +237,14 @@ const sessionComposition = createSessionComposition({
     const win = getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send(IPC.pluginsChanged);
   },
+  // reminders 工厂的会话状态端口（批次 4F）：两者都从会话存储现算（最小面
+  // ——不另维护累计 Map）：runtimeHooks onCompleted 已把每轮 completion.usage
+  // 写进消息，listMessages 惰性水合同一 transcript，读写同源。usage 逐轮求和
+  // （每条助手消息的 usage 即该轮各步之和——loop 在发 done 前累加）；
+  // continuation 以"已存在带 completion 的助手轮"判定（重建会话首轮恰为
+  // transcript 种子的存储侧镜像）。
+  getSessionUsage: (sessionId) => summarizeSessionUsage(sessions.listMessages(sessionId)),
+  isContinuationSession: (sessionId) => sessionHasFinishedTurn(sessions.listMessages(sessionId)),
   log: (level, msg, data) => logger[level](msg, data),
 });
 

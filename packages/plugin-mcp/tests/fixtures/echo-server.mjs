@@ -85,6 +85,19 @@ rl.on("line", (line) => {
               description: "回显调用参数的错误响应（验证客户端对不可信错误文本的截断清理）",
               inputSchema: { type: "object" },
             },
+            {
+              name: "empty",
+              description: "返回无文本内容的成功响应（空内容注记用例）",
+              inputSchema: { type: "object" },
+            },
+            {
+              name: "big",
+              description: "按 size 返回定长文本，emoji=1 时附加代理对字符（截断用例）",
+              inputSchema: {
+                type: "object",
+                properties: { size: { type: "number" }, emoji: { type: "number" } },
+              },
+            },
           ],
         },
       });
@@ -137,6 +150,16 @@ rl.on("line", (line) => {
           id: msg.id,
           error: { code: -32000, message: `boom: \u0000\u001f${token}` },
         });
+        return;
+      }
+      if (name === "empty") {
+        send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text" }] } });
+        return;
+      }
+      if (name === "big") {
+        const size = Number(msg.params?.arguments?.size ?? 0);
+        const text = "x".repeat(size) + (msg.params?.arguments?.emoji ? "\u{1F600}" : "");
+        send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }] } });
         return;
       }
       send({
