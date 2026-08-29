@@ -43,6 +43,9 @@ export interface TranscriptRoute {
   routeId: string;
   parentTurnId: string | null;
   turnIds: readonly string[];
+  /** The route's own decoded messages (v2 rows feed "main"): what a
+   * route-scoped session seeds its agent history from. */
+  messages: readonly DecodedMessage[];
 }
 
 /** Raw shape of a legacy full-history snapshot row (decoding only). */

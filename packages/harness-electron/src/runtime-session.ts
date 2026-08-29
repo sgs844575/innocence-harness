@@ -5,6 +5,7 @@ import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createExecutionScope } from "@innocenceharness/harness-tools";
 import { AgentSession } from "./session";
 import { decodeTranscript } from "./transcript";
+import { routeTranscriptFile } from "./turn-persistence";
 import { BUILTIN_FALLBACK_PROMPT } from "./agents";
 import { RouteSessionCache, sessionDisposedError } from "./route-cache";
 import {
@@ -132,6 +133,25 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
           host.options.hooks.log("warn", "history seed failed", String(err));
+        }
+      }
+    } else if (host.options.persistDir) {
+      // Route seeding (text layer — same recovery contract as the main route
+      // above): a non-main route replays its own `{sessionId}_{routeId}.jsonl`.
+      // routeTranscriptFile is single-sourced with the write path; an unsafe
+      // route id has no file to seed from (the writer skipped it too).
+      const file = routeTranscriptFile(host.options.persistDir, sessionId, routeId);
+      if (file) {
+        try {
+          const raw = await fs.readFile(file, "utf8");
+          const prior = decodeTranscript(raw).routes.get(routeId)?.messages ?? [];
+          if (prior.length > 0) {
+            session.history.push(...prior.map((m) => ({ role: m.role, parts: [...m.parts] })));
+          }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+            host.options.hooks.log("warn", "history seed failed", String(err));
+          }
         }
       }
     }

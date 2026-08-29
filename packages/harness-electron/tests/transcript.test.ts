@@ -133,6 +133,20 @@ describe("turn-v3 route-aware decoding", () => {
     expect(decoded.history.map(text)).toEqual(["问1", "答1", "问2", "答2"]);
   });
 
+  it("exposes each route's own messages so a route session can seed from its file", () => {
+    const raw =
+      v3({ at: "t1", eventId: "e1", turnId: "c-1", routeId: "child", messages: pair("子问1", "子答1") }) +
+      v3({ at: "t2", eventId: "e2", turnId: "c-2", routeId: "child", parentTurnId: "c-1", messages: pair("子问2", "子答2") }) +
+      v3({ at: "t3", eventId: "e3", turnId: "other-1", routeId: "child2", messages: pair("另问", "另答") });
+    const decoded = decodeTranscript(raw);
+    expect(decoded.routes.get("child")?.messages.map(text)).toEqual([
+      "子问1", "子答1", "子问2", "子答2",
+    ]);
+    expect(decoded.routes.get("child2")?.messages.map(text)).toEqual(["另问", "另答"]);
+    // Route messages never leak into the main history.
+    expect(decoded.history).toEqual([]);
+  });
+
   it("restores multi-level ancestry through the parentTurnId chain", () => {
     const raw =
       v3({ at: "t1", eventId: "e1", turnId: "t-main-2", routeId: "main" }) +

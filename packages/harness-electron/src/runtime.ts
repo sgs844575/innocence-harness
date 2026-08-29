@@ -105,7 +105,6 @@ export class HarnessRuntime {
           sessionId: request.sessionId,
           turnId: request.messageId,
           routeId,
-          taskId: request.taskId,
           messages: agent.history.slice(historyStart),
           completion,
         },

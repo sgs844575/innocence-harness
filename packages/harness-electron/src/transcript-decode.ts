@@ -200,16 +200,16 @@ interface RouteEntry {
   routeId: string;
   parentTurnId: string | null;
   turnIds: string[];
+  messages: DecodedMessage[];
 }
 
 function routeOf(routes: Map<string, RouteEntry>, routeId: string, parentTurnId: string | null): RouteEntry {
-  const existing = routes.get(routeId);
-  if (existing === undefined) {
-    const route: RouteEntry = { routeId, parentTurnId, turnIds: [] };
-    routes.set(routeId, route);
-    return route;
+  let entry = routes.get(routeId);
+  if (entry === undefined) {
+    entry = { routeId, parentTurnId, turnIds: [], messages: [] };
+    routes.set(routeId, entry);
   }
-  return existing;
+  return entry;
 }
 
 function isTurnRecordV3Shape(record: Record<string, unknown>): boolean {
@@ -268,8 +268,11 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       validRecords += 1;
       if (seenTurnIds.has(record.turnId)) continue;
       seenTurnIds.add(record.turnId);
-      routeOf(routes, MAIN_ROUTE, null).turnIds.push(record.turnId);
-      history.push(...attachCompletion(canonicalizeHistory(record.messages), sanitizeCompletion(record.completion)));
+      const main = routeOf(routes, MAIN_ROUTE, null);
+      main.turnIds.push(record.turnId);
+      const canonical = attachCompletion(canonicalizeHistory(record.messages), sanitizeCompletion(record.completion));
+      main.messages.push(...canonical);
+      history.push(...canonical);
       continue;
     }
 
@@ -280,9 +283,12 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       validRecords += 1;
       if (seenTurnIds.has(v3Record.turnId)) continue;
       seenTurnIds.add(v3Record.turnId);
-      routeOf(routes, v3Record.routeId, v3Record.parentTurnId).turnIds.push(v3Record.turnId);
+      const route = routeOf(routes, v3Record.routeId, v3Record.parentTurnId);
+      route.turnIds.push(v3Record.turnId);
+      const canonical = attachCompletion(canonicalizeHistory(v3Record.messages), sanitizeCompletion(v3Record.completion));
+      route.messages.push(...canonical);
       if (v3Record.routeId === MAIN_ROUTE) {
-        history.push(...attachCompletion(canonicalizeHistory(v3Record.messages), sanitizeCompletion(v3Record.completion)));
+        history.push(...canonical);
       }
       continue;
     }

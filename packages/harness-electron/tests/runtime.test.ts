@@ -931,61 +931,118 @@ describe("HarnessRuntime route cache", () => {
     expect(recorded.errors).toHaveLength(1);
   });
 
-  it("persists non-main route turns as turn-v3 rows that never re-enter the main history", async () => {
+  it("persists non-main route turns to a per-route file; restart seeds each route from its own file", async () => {
     const recorded: Recorded = emptyRecorded();
     const seenRequests: string[][] = [];
+    const provider = () =>
+      createMockProvider({
+        turns: [{ text: "答" }],
+        onChat: (req) =>
+          seenRequests.push(
+            req.messages.map((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join("")).filter(Boolean),
+          ),
+      });
     const runtime = new HarnessRuntime({
       ...runtimeOptions([], { workspaceRoot: workspace }, recorded),
-      providerFactory: () =>
-        createMockProvider({
-          turns: [{ text: "答" }],
-          onChat: (req) =>
-            seenRequests.push(
-              req.messages.map((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join("")).filter(Boolean),
-            ),
-        },
-      ),
+      providerFactory: provider,
     });
 
     await runtime.send({ sessionId: "routes-1", routeId: "main", taskId: "", text: "主轮问题", messageId: "turn-main" });
     await runtime.send({ sessionId: "routes-1", routeId: "child", taskId: "", text: "子轮问题", messageId: "turn-child" });
+    await runtime.send({ sessionId: "routes-1", routeId: "child2", taskId: "", text: "子轮问题二", messageId: "turn-child-2" });
 
-    const raw = await fs.readFile(path.join(persistDir, "routes-1.jsonl"), "utf8");
-    const rows = raw.trim().split("\n").map((line) => JSON.parse(line));
-    expect(rows.map((r) => r.type)).toEqual(["turn-v2", "turn-v3"]);
-    expect(rows[1].routeId).toBe("child");
-    expect(rows[1].turnId).toBe("turn-child");
-    // decodeTranscript keeps the child route out of the main history...
-    const decoded = decodeTranscript(raw);
-    expect(
-      decoded.history.some((m) => m.parts.some((p) => p.type === "text" && p.text.includes("子轮"))),
-    ).toBe(false);
-    expect(decoded.routes.get("child")?.turnIds).toEqual(["turn-child"]);
+    // Main transcript carries ONLY the main route's turn-v2 row — byte-level
+    // zero-regression for the main file.
+    const mainRaw = await fs.readFile(path.join(persistDir, "routes-1.jsonl"), "utf8");
+    const mainRows = mainRaw.trim().split("\n").map((line) => JSON.parse(line));
+    expect(mainRows.map((r) => r.type)).toEqual(["turn-v2"]);
+    expect(mainRows[0].turnId).toBe("turn-main");
 
-    // ...so a restart seeds only the main route's agent with the main history.
+    // Each non-main route gets its own file; routes never cross-write.
+    const childRaw = await fs.readFile(path.join(persistDir, "routes-1_child.jsonl"), "utf8");
+    const childRow = JSON.parse(childRaw.trim());
+    expect(childRow.type).toBe("turn-v3");
+    expect(childRow.routeId).toBe("child");
+    expect(childRow.turnId).toBe("turn-child");
+    expect(childRow.checkpointId).toBe(""); // text layer: no checkpoint backs it
+    const child2Raw = await fs.readFile(path.join(persistDir, "routes-1_child2.jsonl"), "utf8");
+    expect(JSON.parse(child2Raw.trim()).turnId).toBe("turn-child-2");
+    expect(childRaw.trim().split("\n")).toHaveLength(1);
+
+    // decodeTranscript keeps the child routes out of the main history...
+    const decoded = decodeTranscript(mainRaw);
+    expect(decoded.routes.get("child")).toBeUndefined();
+
+    // ...and a restart seeds every route from its own file.
     const restarted = new HarnessRuntime({
       ...runtimeOptions([], { workspaceRoot: workspace }, recorded),
-      providerFactory: () =>
-        createMockProvider({
-          turns: [{ text: "再答" }],
-          onChat: (req) =>
-            seenRequests.push(
-              req.messages.map((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join("")).filter(Boolean),
-            ),
-        }),
+      providerFactory: provider,
     });
     await runtime.disposeAll();
-    await restarted.send({ sessionId: "routes-1", routeId: "main", taskId: "", text: "重启后", messageId: "turn-restart" });
-    expect(seenRequests.at(-1)).toEqual(["主轮问题", "答", "重启后"]);
+    await restarted.send({ sessionId: "routes-1", routeId: "child", taskId: "", text: "重启子轮", messageId: "turn-restart-child" });
+    expect(seenRequests.at(-1)).toEqual(["子轮问题", "答", "重启子轮"]);
+    await restarted.send({ sessionId: "routes-1", routeId: "main", taskId: "", text: "重启主轮", messageId: "turn-restart-main" });
+    expect(seenRequests.at(-1)).toEqual(["主轮问题", "答", "重启主轮"]);
   });
 
-  it("skips runtime-side persistence for task-scoped turns (the task commit flow owns them)", async () => {
+  it("persists task-scoped turns as route text (task/automation/teammate turns survive restart)", async () => {
     const recorded: Recorded = emptyRecorded();
     const runtime = makeRuntime([{ text: "答" }], { workspaceRoot: workspace }, recorded);
 
+    // Automation and teammate turns all arrive through runtime.send with a
+    // non-empty taskId on a non-main route.
     await runtime.send({ sessionId: "task-1", routeId: "child", taskId: "t9", text: "任务轮", messageId: "turn-task" });
 
+    const row = JSON.parse((await fs.readFile(path.join(persistDir, "task-1_child.jsonl"), "utf8")).trim());
+    expect(row.type).toBe("turn-v3");
+    expect(row.routeId).toBe("child");
+    expect(row.turnId).toBe("turn-task");
+    // Text layer: checkpoint/apply/hunk semantics stay with the task system —
+    // nothing here claims a checkpoint.
+    expect(row.checkpointId).toBe("");
+    // The session's main transcript stays untouched by the task route turn.
     await expect(fs.access(path.join(persistDir, "task-1.jsonl"))).rejects.toThrow();
+  });
+
+  it("persists task-bound MAIN-route turns into the main transcript as turn-v2 (UI hydration reads it)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const runtime = makeRuntime([{ text: "答" }], { workspaceRoot: workspace }, recorded);
+
+    // A task starts on route "main" until a fork moves it (the task bridge
+    // defaults the route id to "main"); sends then carry a taskId + "main".
+    await runtime.send({ sessionId: "task-main-1", routeId: "main", taskId: "t8", text: "主路由任务轮", messageId: "turn-task-main" });
+
+    const file = path.join(persistDir, "task-main-1.jsonl");
+    const lines = (await fs.readFile(file, "utf8")).trim().split("\n");
+    expect(lines).toHaveLength(1);
+    const record = JSON.parse(lines[0]);
+    expect(record.type).toBe("turn-v2");
+    expect(record.turnId).toBe("turn-task-main");
+    expect(record.messages.map((m: { role: string }) => m.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("skips persistence with a warning for an unsafe route id (no file escapes the transcripts dir)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const warns: string[] = [];
+    const base = makeHooks(recorded);
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "答" }], { workspaceRoot: workspace }, recorded),
+      hooks: {
+        ...base,
+        log: (level, msg, data) => {
+          if (level === "warn") warns.push(`${msg} ${String(data)}`);
+        },
+      },
+    });
+
+    await runtime.send({ sessionId: "unsafe-1", routeId: "../escape", taskId: "", text: "问题", messageId: "turn-unsafe" });
+
+    // Best-effort layer: the turn itself still completes.
+    expect(recorded.completed).toBe(1);
+    expect(recorded.errors).toEqual([]);
+    // No transcript anywhere — neither the main file nor an escaped path.
+    await expect(fs.access(path.join(persistDir, "unsafe-1.jsonl"))).rejects.toThrow();
+    expect(warns.some((m) => m.includes("route transcript"))).toBe(true);
   });
 
   it("hands task identity to the plugin factory and stamps it on tool invocation scopes", async () => {
