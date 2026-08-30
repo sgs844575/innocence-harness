@@ -16,6 +16,7 @@ export const IPC = {
   sessionCreate: "session:create",
   sessionDelete: "session:delete",
   sessionFork: "session:fork",
+  backgroundStart: "background:start",
   sessionsChanged: "sessions:changed",
   messagesList: "messages:list",
   chatSend: "chat:send",
@@ -389,6 +390,12 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   deleteSession(id: string): Promise<void>;
   /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。 */
   forkSession(sessionId: string, options?: { upToMessageId?: string }): Promise<Session | null>;
+  /** S1 后台作业：新建后台会话并机器身份触发一次自含运行；即回工作态。
+   *  workspaceRoot 绑定作业会话的项目根（缺省回落全局设置根）。 */
+  startBackgroundJob(
+    prompt: string,
+    options?: { workspaceRoot?: string },
+  ): Promise<{ jobId: string; sessionId: string; status: "working" }>;
   /** Fired after every session-store mutation (create/delete/append/retitle). */
   onSessionsChanged(cb: (list: Session[]) => void): () => void;
   listMessages(sessionId: string): Promise<ChatMessage[]>;

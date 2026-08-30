@@ -41,6 +41,8 @@ const api: InnocenceCodeApi = {
   deleteSession: (id) => ipcRenderer.invoke(IPC.sessionDelete, id),
   forkSession: (id, options?: { upToMessageId?: string }) =>
     ipcRenderer.invoke(IPC.sessionFork, id, options),
+  startBackgroundJob: (prompt: string, options?: { workspaceRoot?: string }) =>
+    ipcRenderer.invoke(IPC.backgroundStart, prompt, options),
   onSessionsChanged: (cb) => subscribe(IPC.sessionsChanged, cb as never),
   getSidebarState: () => ipcRenderer.invoke(IPC.sidebarGet),
   archiveSession: (id, archived) => ipcRenderer.invoke(IPC.sidebarArchive, id, archived),

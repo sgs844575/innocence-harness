@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Plus, Square, ArrowUp, Files } from "lucide-react";
+import { Plus, Square, ArrowUp, Files, Play } from "lucide-react";
 import {
   MOCK_MODEL,
   MOCK_PROFILE_ID,
@@ -28,6 +28,8 @@ interface Props {
   onSettingsChange: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** S1 后台运行入口：同段输入改走后台作业；缺省不渲染按钮。 */
+  onBackgroundRun?: (text: string) => void;
   /** 引用通道注入文本：并入输入框后立即回调 onConsumed 清掉 draft。 */
   initialText?: string;
   onConsumed?: () => void;
@@ -50,6 +52,7 @@ export function Composer({
   onSettingsChange,
   onSend,
   onStop,
+  onBackgroundRun,
   initialText,
   onConsumed,
   header,
@@ -74,6 +77,15 @@ export function Composer({
     requestAnimationFrame(() => ref.current?.focus());
   };
 
+  // S1 后台运行：同一段输入走后台作业（新会话 + 机器身份触发 + 状态通知）。
+  const submitBackground = (): void => {
+    const text = value.trim();
+    if (!text || streaming || !onBackgroundRun) return;
+    onBackgroundRun(text);
+    setValue("");
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -82,7 +94,6 @@ export function Composer({
   };
 
   const canSend = value.trim().length > 0 && !streaming;
-
   // Mock 是虚拟厂家（不在 settings.profiles 中）——组装层注入伪 profile，
   // 保持旧 select 的能力：chip 显示「本地 Mock」，且可从面板切回 mock。
   const pickerSettings: HarnessSettings | null = settings
@@ -171,6 +182,19 @@ export function Composer({
                 value={settings?.reasoningEffort ?? ""}
                 onChange={(effort) => onSettingsChange({ reasoningEffort: effort })}
               />
+            )}
+
+            {!streaming && onBackgroundRun && (
+              <button
+                type="button"
+                onClick={submitBackground}
+                disabled={!canSend}
+                aria-label={t("chat.backgroundRun")}
+                title={t("chat.backgroundRun")}
+                className="grid size-8 shrink-0 place-items-center rounded-full bg-(--color-app-bubble) transition-transform active:scale-95 disabled:opacity-30"
+              >
+                <Play size={13} />
+              </button>
             )}
 
             {streaming ? (

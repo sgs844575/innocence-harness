@@ -42,6 +42,8 @@ interface Props {
   onForkMessage?: (command: ForkMessageCommand) => void;
   /** M1 会话 fork 入口（非任务会话的用户消息动作）；缺省不渲染按钮。 */
   onForkSession?: (messageId: string) => void;
+  /** S1 后台运行入口（现有会话输入框动作）；缺省不渲染按钮。 */
+  onBackgroundRun?: (text: string) => void;
   /** Opens the existing typed Review panel from the header action. */
   onOpenReview?: () => void;
   /** Existing domain/runtime state projected for the right activity capsule. */
@@ -69,6 +71,7 @@ export function ChatView({
   onOpenTaskReview,
   onForkMessage,
   onForkSession,
+  onBackgroundRun,
   onOpenReview,
   taskTitle,
   projectName,
@@ -249,6 +252,7 @@ export function ChatView({
         onSettingsChange={onSettingsChange}
         onSend={onSend}
         onStop={onStop}
+        onBackgroundRun={onBackgroundRun}
         initialText={quoteDraft}
         onConsumed={() => setQuoteDraft("")}
       />

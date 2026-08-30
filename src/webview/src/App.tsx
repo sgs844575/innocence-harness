@@ -203,6 +203,25 @@ export function App(): React.JSX.Element {
     [sessions, showError, t],
   );
 
+  // S1 后台作业：输入框"后台运行"——新建后台会话机器身份触发一次自含
+  // 运行；不切换会话（保持当前焦点），落定后走状态驱动通知。作业会话绑定
+  // 当前会话的项目根（回调内现取——声明序在 activeSession 之前；无则回落
+  // 全局设置根，与会话创建同语义）。
+  const handleBackgroundRun = useCallback(
+    async (text: string) => {
+      const currentRoot =
+        sessions.sessions.find((s) => s.id === sessions.activeId)?.workspaceRoot?.trim() || "";
+      const workspaceRoot = currentRoot || sessions.pendingProject?.trim() || undefined;
+      try {
+        await api.startBackgroundJob(text, workspaceRoot ? { workspaceRoot } : undefined);
+        showError(t("chat.backgroundStarted"));
+      } catch {
+        showError(t("chat.backgroundFailed"));
+      }
+    },
+    [sessions, showError, t],
+  );
+
   const chat = useChatStream({
     activeId: sessions.activeId,
     ensureSession: sessions.ensureSessionForSend,
@@ -347,6 +366,7 @@ export function App(): React.JSX.Element {
             onOpenReview={openReviewPanel}
             onForkMessage={task ? handleForkMessage : undefined}
             onForkSession={task ? undefined : (messageId) => void handleForkSession(messageId)}
+            onBackgroundRun={(text) => void handleBackgroundRun(text)}
           />
         }
         settings={settingsView}

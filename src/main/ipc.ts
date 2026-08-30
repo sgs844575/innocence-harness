@@ -29,6 +29,7 @@ import {
   stopChatTurn,
   updateProviderApiKey,
   disposeSession,
+  getBackgroundJobs,
 } from "./harnessGlue";
 import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { popupMenu } from "./menu";
@@ -117,6 +118,11 @@ export function registerIpcHandlers(): void {
     }
     return session ?? null;
   });
+  ipcMain.handle(
+    IPC.backgroundStart,
+    (_e, prompt: string, options?: { workspaceRoot?: string }) =>
+      getBackgroundJobs().start(prompt, options),
+  );
   ipcMain.handle(IPC.sessionDelete, async (_e, id: string) => {
     // Stop first, then AWAIT resource release before unlinking the session
     // index/transcript: MCP child processes are gone when the delete

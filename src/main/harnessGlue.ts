@@ -42,8 +42,9 @@ import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
 import { hostShutdownGate } from "./shutdown";
-import { broadcastSessions } from "./sessionEvents";
+import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { createCredentialStore } from "./credentialStore";
+import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
 import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
 import { createSettingsMutationGate } from "./settingsMutationGate";
@@ -128,6 +129,56 @@ function getAutomationLifecycle(): AutomationLifecycle {
     log: (message, data) => logger.warn(message, data),
   });
   return automationLifecycle;
+}
+
+// S1 后台作业（懒建）：会话走会话存储（blocked 后用户可选中继续对话），
+// 暂存目录在 userData/background/<jobId>，通知复用 notify 汇，回复观察复用
+// 4D 同一基础设施（增量镜像 + 错误旗标）。
+let backgroundJobsFacade: BackgroundJobsFacade | undefined;
+const backgroundNotifySink = createLazyNotifySink();
+
+/** 生产装配的后台作业面（IPC background:start 消费）。 */
+export function getBackgroundJobs(): BackgroundJobsFacade {
+  backgroundJobsFacade ??= createBackgroundJobs({
+    runtime,
+    createSession: (title, workspaceRoot) => {
+      const session = sessions.createSession({ title, workspaceRoot });
+      broadcastSessions();
+      broadcastSidebar();
+      return session;
+    },
+    // 与 chat:send / sendChatTurn 同形的落账（含广播），令钩子更新与侧边
+    // 排序对后台回合同样生效。
+    appendUserMessage: (sessionId, text) => {
+      sessions.appendMessage(sessionId, {
+        id: messageId(),
+        role: "user",
+        parts: [{ type: "text", text }],
+        createdAt: Date.now(),
+      });
+      broadcastSessions();
+      broadcastSidebar();
+    },
+    appendAssistantPlaceholder: (sessionId, assistantMessageId) => {
+      sessions.appendMessage(sessionId, {
+        id: assistantMessageId,
+        role: "assistant",
+        parts: [],
+        createdAt: Date.now(),
+        streaming: true,
+      });
+      broadcastSessions();
+    },
+    scratchRoot: () => path.join(app.getPath("userData"), "background"),
+    // 退出窗口不通知：关机中止的运行会被判失败，此时免打扰。
+    notify: (message) =>
+      hostShutdownGate.isShuttingDown()
+        ? Promise.resolve()
+        : backgroundNotifySink.send(message),
+    onNotifyError: (error) => logger.warn("background job notify failed", error),
+    log: (level, msg, data) => logger[level](msg, data),
+  });
+  return backgroundJobsFacade;
 }
 
 /** Restores valid confirmed automatic definitions after host session initialization. */
