@@ -87,6 +87,7 @@ describe("mergeSettings", () => {
       activeAgentMode: "code-review",
       externalSkillDiscovery: true,
       externalEditorCommand: "code --wait",
+      permissionClassifier: false,
     };
     expect(mergeSettings(input)).toEqual(input);
   });
@@ -387,5 +388,17 @@ describe("provider protocol and credential compatibility", () => {
       activeProfileId: "legacy", activeModel: "model",
     });
     expect(settings.profiles[0]).toMatchObject({ apiKey: "old-key", apiKeyRef: "keys/key-1" });
+  });
+});
+
+describe("permissionClassifier flag (S3)", () => {
+  it("defaults off and normalizes non-true values to false", () => {
+    expect(DEFAULT_SETTINGS.permissionClassifier).toBe(false);
+    expect(mergeSettings({}).permissionClassifier).toBe(false);
+    expect(mergeSettings({ permissionClassifier: "yes" }).permissionClassifier).toBe(false);
+  });
+
+  it("survives normalization when explicitly enabled", () => {
+    expect(mergeSettings({ permissionClassifier: true }).permissionClassifier).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import type { Context } from "@innocenceharness/kernel";
-import type { PermissionAuditor, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocenceharness/harness-permissions";
+import type { PermissionAuditor, PermissionClassifier, PermissionDecider, PermissionEngine, PermissionMode, ProjectPermissionConfig, ResourceValidator } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
 import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { Logger, SessionPlugin } from "./registry";
@@ -38,6 +38,8 @@ export interface AgentSessionOptions {
     engine?: PermissionEngine;
     validateResource?: ResourceValidator;
     audit?: PermissionAuditor;
+    /** Ask-boundary evaluation round (S3); absent = unchanged ask behavior. */
+    classifier?: PermissionClassifier;
   };
   compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
   maxTurns?: number;

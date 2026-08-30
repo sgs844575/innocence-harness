@@ -66,6 +66,9 @@ export interface HarnessSettings {
   pluginToggles?: PluginToggleSource;
   /** 外部技能目录发现开关；缺失/非法值默认开启。 */
   externalSkillDiscovery?: boolean;
+  /** ask 边界 LLM 分类器开关（S3 权限分类器）：true 时静态管线落 ask 前先经
+   *  副模型评估（失败/无意见回落用户询问）；默认关闭以省调用费用。 */
+  permissionClassifier?: boolean;
   /** 外部编辑器启动命令（Task 11 工作台入口）；"" = 未配置（入口禁用）。
    *  首个 token 可加引号（含空格的路径）；多余 token 作为前置参数透传。 */
   externalEditorCommand?: string;
@@ -144,6 +147,7 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   reasoningEffort: "",
   activeAgentMode: "default",
   externalSkillDiscovery: true,
+  permissionClassifier: false,
   externalEditorCommand: "",
 };
 
@@ -330,6 +334,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
       activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
       externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
+      permissionClassifier: src.permissionClassifier === true,
       pluginToggles: normalizePluginToggles(src.pluginToggles),
       externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand) };
   }
@@ -352,6 +357,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
     activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
+    permissionClassifier: src.permissionClassifier === true,
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
   };

@@ -60,6 +60,9 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
     },
   };
 
+  // S3 权限分类器：宿主工厂按当次 settings 快照决定是否武装 ask 边界评估轮。
+  const permissionClassifier = host.options.permissionClassifierFor?.(settings);
+
   const toolIndex = createSessionToolIndex();
   const scope = host.options.sessionScope ? await host.options.sessionScope() : undefined;
   const spine = host.options.sessionSpine ? await host.options.sessionSpine() : undefined;
@@ -96,6 +99,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         permission: {
           mode: settings.permissionMode,
           decider,
+          ...(permissionClassifier ? { classifier: permissionClassifier } : {}),
           audit: (entry) => {
             host.options.hooks.log("info", "permission", {
               mode: entry.mode,

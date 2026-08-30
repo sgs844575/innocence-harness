@@ -150,6 +150,7 @@ export async function mountSessionKernel(init: SessionKernelInit): Promise<Sessi
           workspaceRoot: init.workspaceRoot,
           validateResource: init.permission.validateResource,
           audit: init.permission.audit,
+          ...(init.permission.classifier ? { classifier: init.permission.classifier } : {}),
         });
     await ctx.plugin(spine.permissions.createPermissionsPlugin(permissions));
     await ctx.plugin(spine.providers.ProvidersPlugin);

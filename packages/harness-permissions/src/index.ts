@@ -10,8 +10,15 @@ export type {
   ToolSideEffect,
 } from "./policy";
 export { globToRegExp, matchGlob } from "./glob";
+export type {
+  PermissionClassification,
+  PermissionClassificationInput,
+  PermissionClassifier,
+  PermissionDenialNote,
+} from "./classifier";
 export {
   PermissionEngine,
+  RECENT_DENIALS_LIMIT,
   resourceGrantKey,
   type PermissionAuditEntry,
   type PermissionAuditor,

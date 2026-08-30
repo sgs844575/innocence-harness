@@ -28,6 +28,16 @@ export {
   type StructuredOutputResult,
 } from "./structured-output";
 export {
+  PERMISSION_VERDICT_SYSTEM,
+  PermissionVerdictSchema,
+  createPermissionVerdictService,
+  type PermissionVerdict,
+  type PermissionVerdictRequest,
+  type PermissionVerdictResult,
+  type PermissionVerdictService,
+  type PermissionVerdictSubject,
+} from "./permission-verdict";
+export {
   createTraceAdapter,
   type TraceAdapter,
   type TraceCompletionHandle,

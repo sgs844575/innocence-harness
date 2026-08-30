@@ -7,6 +7,14 @@ import type {
   ToolCallInfo,
   ToolSideEffect,
 } from "./policy";
+import type {
+  PermissionClassification,
+  PermissionClassifier,
+  PermissionDenialNote,
+} from "./classifier";
+
+/** 拒绝环上限：分类器可见的最近拒绝条数（FIFO，防无界增长）。 */
+export const RECENT_DENIALS_LIMIT = 8;
 
 export interface PermissionResolution {
   decision: "allow" | "deny";
@@ -19,6 +27,7 @@ export interface PermissionResolution {
     | "allowRule"
     | "autoMode"
     | "sessionGrant"
+    | "classifier"
     | "ask"
     | "validateResource";
   reason: string;
@@ -50,6 +59,12 @@ export interface PermissionEngineOptions {
   validateResource?: ResourceValidator;
   /** Audit sink; invoked once per resolution with the persisted request. */
   audit?: PermissionAuditor;
+  /**
+   * Optional ask-boundary evaluation round (S3). Runs only when the static
+   * pipeline would ask; see {@link PermissionClassifier} for the contract.
+   * Absent = unchanged behavior (every boundary ask goes to the human).
+   */
+  classifier?: PermissionClassifier;
 }
 
 /**
@@ -86,6 +101,9 @@ export class PermissionEngine {
   private readonly workspaceRoot?: string;
   private readonly validateResource?: ResourceValidator;
   private readonly audit?: PermissionAuditor;
+  private readonly classifier?: PermissionClassifier;
+  /** 最近拒绝环（S3 规避检测上下文）：持久化安全字段，FIFO 有界。 */
+  private recentDenials: PermissionDenialNote[] = [];
 
   constructor(opts: PermissionEngineOptions) {
     this.mode = opts.mode;
@@ -93,6 +111,7 @@ export class PermissionEngine {
     this.workspaceRoot = opts.workspaceRoot;
     this.validateResource = opts.validateResource;
     this.audit = opts.audit;
+    this.classifier = opts.classifier;
   }
 
   getMode(): PermissionMode {
@@ -149,6 +168,7 @@ export class PermissionEngine {
         },
         tool: { readOnly: toolMeta.readOnly, sideEffect: toolMeta.sideEffect ?? "unknown" },
       });
+      this.noteDenial(request, "validateResource", err instanceof Error ? err.message : String(err));
       throw err;
     }
 
@@ -159,12 +179,31 @@ export class PermissionEngine {
       resolution,
       tool: { readOnly: toolMeta.readOnly, sideEffect: toolMeta.sideEffect ?? "unknown" },
     });
+    if (resolution.decision === "deny") {
+      this.noteDenial(request, resolution.via, resolution.reason);
+    }
     return resolution;
+  }
+
+  private noteDenial(
+    request: PermissionRequest,
+    via: PermissionResolution["via"],
+    reason: string,
+  ): void {
+    this.recentDenials.push({
+      toolName: request.toolName,
+      resource: request.resource,
+      via,
+      reason,
+    });
+    if (this.recentDenials.length > RECENT_DENIALS_LIMIT) {
+      this.recentDenials.splice(0, this.recentDenials.length - RECENT_DENIALS_LIMIT);
+    }
   }
 
   private async decide(
     request: PermissionRequest,
-    toolMeta: { readOnly: boolean },
+    toolMeta: { readOnly: boolean; sideEffect?: ToolSideEffect },
   ): Promise<PermissionResolution> {
     const normalized = this.normalize({
       toolName: request.toolName,
@@ -220,6 +259,27 @@ export class PermissionEngine {
     const key = resourceGrantKey(request.toolName, request.resource);
     if (this.sessionGrants.has(key)) {
       return { decision: "allow", via: "sessionGrant", reason: `会话内已允许 ${key.split("\u0000")[3]}` };
+    }
+
+    // S3 评估轮：仅在 ask 边界、静态规则与会话授权之后；分类器抛错/无意见
+    // 一律回落用户询问（fail-closed，绝不因分类器故障而放行）。
+    if (this.classifier) {
+      let classification: PermissionClassification | undefined;
+      try {
+        classification = await this.classifier.classify({
+          request,
+          tool: { readOnly: toolMeta.readOnly, sideEffect: toolMeta.sideEffect ?? "unknown" },
+          recentDenials: [...this.recentDenials],
+        });
+      } catch {
+        classification = undefined;
+      }
+      if (classification?.decision === "allow") {
+        return { decision: "allow", via: "classifier", reason: classification.reason };
+      }
+      if (classification?.decision === "deny") {
+        return { decision: "deny", via: "classifier", reason: classification.reason };
+      }
     }
 
     const answer = await this.decider.ask(request);

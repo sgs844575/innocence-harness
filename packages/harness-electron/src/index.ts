@@ -39,6 +39,11 @@ export {
   type TraceAdapter,
 } from "@innocenceharness/harness-ai-runtime";
 export { modelFromPreset, resolvePresetMeta, type PresetModelMeta } from "./modelPresets";
+// S3 权限分类器宿主适配器（ask 边界评估轮：超时/签名缓存/fail-closed）。
+export {
+  createPermissionClassifier,
+  type PermissionClassifierOptions,
+} from "./permission-classifier";
 export {
   canonicalizeHistory,
   decodeTranscript,

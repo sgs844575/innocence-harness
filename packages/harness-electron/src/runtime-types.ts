@@ -2,7 +2,7 @@
 // surfaces of the harness runtime (split from runtime.ts by responsibility —
 // see route-cache.ts for the cache mechanics, turn-persistence.ts and
 // runtime-events.ts for the remaining collaborators).
-import type { PermissionRequest } from "@innocenceharness/harness-permissions";
+import type { PermissionClassifier, PermissionRequest } from "@innocenceharness/harness-permissions";
 import type { Message, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { Provider, TurnCompletion } from "@innocenceharness/harness-providers";
@@ -170,6 +170,15 @@ export interface RuntimeOptions {
   forkRoute?(input: RuntimeForkRouteInput): Promise<Route & { prompt: string }>;
   /** Directory for JSONL session transcripts; omitted = no persistence. */
   persistDir?: string;
+  /**
+   * Ask-boundary classifier factory (S3 权限分类器): consulted once per
+   * session build with the build-time settings snapshot. Returning a
+   * classifier arms the engine's pre-ask evaluation round; undefined keeps
+   * the unchanged behavior (every boundary ask goes straight to the human).
+   */
+  permissionClassifierFor?: (
+    settings: HarnessSettings,
+  ) => PermissionClassifier | undefined;
   /** Optional allow-listed observability port owned by the host composition root. */
   telemetry?: TraceAdapter;
   /**

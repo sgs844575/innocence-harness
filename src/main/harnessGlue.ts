@@ -22,6 +22,7 @@ import {
   DEFAULT_ROUTE_ID,
   HarnessRuntime,
   DEFAULT_SETTINGS,
+  createPermissionClassifier,
   listModels,
   mergeSettings,
   type HarnessSettings as PkgSettings,
@@ -305,6 +306,23 @@ const runtime = new HarnessRuntime({
       fallbackRoot: settings.workspaceRoot,
     }),
   forkRoute: (input) => taskBridge.forkRoute(input),
+  // S3 权限分类器：设置开关开启时武装 ask 边界评估轮（副模型结构化判定，
+  // 失败/超时/无意见回落用户询问）。模型走当次 settings 快照的活跃供应商，
+  // 与 automation candidateModel 同一惰性解析路径；关闭时恒 undefined，
+  // 权限行为与既有完全一致。
+  permissionClassifierFor: (snapshot) =>
+    snapshot.permissionClassifier
+      ? createPermissionClassifier({
+          model: async (): Promise<ProviderModel> => {
+            const provider = await buildProviderFromSettings(await ensureBoot(), snapshot);
+            if (!("model" in provider)) {
+              throw new Error("configured provider does not expose a model");
+            }
+            return provider.model;
+          },
+          log: (level, msg, data) => logger[level](msg, data),
+        })
+      : undefined,
   // Project traits for the session's effective workspace: reads the root
   // package.json + directory listing + lockfiles, then derives the trait set
   // (pure detection lives in pluginBoot/projectTraits). Every read degrades

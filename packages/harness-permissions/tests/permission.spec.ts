@@ -4,6 +4,8 @@ import {
   resourceGrantKey,
   type AskResponse,
   type PermissionAuditEntry,
+  type PermissionClassificationInput,
+  type PermissionClassifier,
   type PermissionRequest,
   type PolicyRule,
 } from "@innocenceharness/harness-permissions";
@@ -418,5 +420,144 @@ describe("PermissionEngine path normalization", () => {
     );
     expect(r.decision).toBe("allow");
     expect(r.via).toBe("allowRule");
+  });
+});
+
+describe("PermissionEngine ask-boundary classifier (S3)", () => {
+  it("classifier allow resolves without surfacing the ask; via classifier with its reason", async () => {
+    const { decider } = recordingDecider("allow");
+    const seen: PermissionClassificationInput[] = [];
+    const classifier: PermissionClassifier = {
+      classify: async (input) => {
+        seen.push(input);
+        return { decision: "allow", reason: "clearly safe read" };
+      },
+    };
+    const engine = new PermissionEngine({ mode: "ask", decider, classifier });
+    const r = await engine.resolve(readReq, read);
+    expect(r).toMatchObject({ decision: "allow", via: "classifier", reason: "clearly safe read" });
+    expect(seen).toHaveLength(1);
+    // 分类器看到的就是持久化面：与审计/规则同一份请求（无原始参数）。
+    expect(seen[0].request).toEqual(readReq);
+  });
+
+  it("deny verdict denies; ask/undefined verdicts escalate to the human", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({
+      mode: "ask",
+      decider,
+      classifier: { classify: async () => ({ decision: "deny", reason: "destructive" }) },
+    });
+    const denied = await engine.resolve(editReq, write);
+    expect(denied).toMatchObject({ decision: "deny", via: "classifier", reason: "destructive" });
+    expect(requests).toHaveLength(0);
+
+    const escalatedEngine = new PermissionEngine({
+      mode: "ask",
+      decider: recordingDecider("deny").decider,
+      classifier: { classify: async () => ({ decision: "ask", reason: "borderline" }) },
+    });
+    expect(await escalatedEngine.resolve(editReq, write)).toMatchObject({ decision: "deny", via: "ask" });
+
+    const noOpinionEngine = new PermissionEngine({
+      mode: "ask",
+      decider: recordingDecider("allow").decider,
+      classifier: { classify: async () => undefined },
+    });
+    expect(await noOpinionEngine.resolve(editReq, write)).toMatchObject({ decision: "allow", via: "ask" });
+  });
+
+  it("classifier failure is swallowed and escalates to the human (fail-closed)", async () => {
+    const { decider, requests } = recordingDecider("deny");
+    const engine = new PermissionEngine({
+      mode: "ask",
+      decider,
+      classifier: {
+        classify: async () => {
+          throw new Error("provider down");
+        },
+      },
+    });
+    const r = await engine.resolve(editReq, write);
+    expect(r).toMatchObject({ decision: "deny", via: "ask" });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("static rules keep priority: deny rules, allow rules and auto mode never reach the classifier", async () => {
+    let calls = 0;
+    const classifier: PermissionClassifier = {
+      classify: async () => {
+        calls += 1;
+        return { decision: "allow", reason: "should not matter" };
+      },
+    };
+    const engine = new PermissionEngine({ mode: "auto", decider: recordingDecider("deny").decider, classifier });
+    engine.addRules([
+      { name: "deny:Edit(src/**)", match: (c) => (c.toolName === "Edit" ? "deny" : "skip") },
+    ]);
+    expect(await engine.resolve(editReq, write)).toMatchObject({ decision: "deny", via: "denyRule" });
+    expect(await engine.resolve(readReq, read)).toMatchObject({ decision: "allow", via: "autoMode" });
+    expect(calls).toBe(0);
+  });
+
+  it("recent deny resolutions are surfaced to the classifier, bounded to the ring limit", async () => {
+    const seen: PermissionClassificationInput[] = [];
+    const classifier: PermissionClassifier = {
+      classify: async (input) => {
+        seen.push(input);
+        return undefined;
+      },
+    };
+    const engine = new PermissionEngine({ mode: "ask", decider: recordingDecider("deny").decider, classifier });
+    engine.addRules([{ name: "deny:Bash", match: (c) => (c.toolName === "Bash" ? "deny" : "skip") }]);
+    for (let i = 0; i < 10; i += 1) {
+      await engine.resolve(request("Bash", "execute", `cmd${i}`, "command", { command: `cmd${i}` }), write);
+    }
+    await engine.resolve(editReq, write);
+    expect(seen).toHaveLength(1);
+    const ring = seen[0].recentDenials;
+    expect(ring).toHaveLength(8);
+    expect(ring[0].resource.scope).toBe("cmd2");
+    expect(ring[7].resource.scope).toBe("cmd9");
+    expect(ring[7]).toMatchObject({ toolName: "Bash", via: "denyRule" });
+  });
+
+  it("classifier denials and user denials both feed the denial ring", async () => {
+    const seen: PermissionClassificationInput[] = [];
+    const classifier: PermissionClassifier = {
+      classify: async (input) => {
+        seen.push(input);
+        return { decision: "deny", reason: "circumvention attempt" };
+      },
+    };
+    const engine = new PermissionEngine({ mode: "ask", decider: recordingDecider("deny").decider, classifier });
+    await engine.resolve(editReq, write);
+    await engine.resolve(readReq, read);
+    expect(seen).toHaveLength(2);
+    expect(seen[1].recentDenials[0]).toMatchObject({ via: "classifier", reason: "circumvention attempt" });
+  });
+
+  it("validateResource rejections feed the denial ring too", async () => {
+    const seen: PermissionClassificationInput[] = [];
+    const classifier: PermissionClassifier = {
+      classify: async (input) => {
+        seen.push(input);
+        return undefined;
+      },
+    };
+    const engine = new PermissionEngine({
+      mode: "ask",
+      decider: recordingDecider("allow").decider,
+      classifier,
+      validateResource: (resource) => {
+        if (resource.kind === "url") throw new Error("blocked host");
+      },
+    });
+    await expect(
+      engine.resolve(request("WebFetch", "navigate", "https://blocked", "url", {}), read),
+    ).rejects.toThrow("blocked host");
+    await engine.resolve(editReq, write);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].recentDenials[0]).toMatchObject({ toolName: "WebFetch", via: "validateResource" });
   });
 });
