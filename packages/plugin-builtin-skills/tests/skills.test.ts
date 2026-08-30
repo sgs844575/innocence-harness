@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers sixteen skills with unique names", () => {
+  it("registers seventeen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(16);
+    expect(new Set(names).size).toBe(17);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -46,6 +46,7 @@ describe("builtin skills", () => {
       "memory-upkeep",
       "autonomous-loop",
       "session-to-skill",
+      "hooks-configuration",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -82,7 +83,7 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(16);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(17);
   });
 
   it("is English and free of banned tokens", () => {
