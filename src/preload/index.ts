@@ -120,6 +120,9 @@ const codeApi: CodeIpcApi = {
   listFiles: (req) => ipcRenderer.invoke(CodeIpcChannels.codeListFiles, req),
   search: (req) => ipcRenderer.invoke(CodeIpcChannels.codeSearch, req),
   openExternalEditor: (req) => ipcRenderer.invoke(CodeIpcChannels.codeOpenExternalEditor, req),
+  notifyFocus: (notice) => {
+    ipcRenderer.send(CodeIpcChannels.codeFocusChanged, notice);
+  },
 };
 
 /** Route-bound terminal API — create/write/resize/dispose + output/exit push. */

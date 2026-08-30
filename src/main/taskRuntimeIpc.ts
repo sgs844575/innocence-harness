@@ -42,6 +42,8 @@ export interface TaskRuntimeIpcDeps {
   onSessionTaskRoute?(sessionId: string, taskId: string, routeId: string): void;
   /** User-configured external editor command ("" = not configured). */
   getEditorCommand(): string;
+  /** S4 工作台焦点上报宿主回调（任务 → 会话绑定解析；缺省丢弃通知）。 */
+  onWorkbenchFocusNotice?(notice: { taskId: string; relativePath: string; line?: number }): void;
   /** Renderer push port (webContents.send wrapper for the main window). */
   send(channel: string, payload: unknown): void;
   log?: (level: "info" | "warn" | "error", msg: string, data?: unknown) => void;
@@ -129,7 +131,8 @@ export async function wireTaskRuntimeIpc(deps: TaskRuntimeIpcDeps): Promise<void
       return command === "" ? undefined : command;
     },
   });
-  await registerCodeReaderIpc(codeReader);
+  // S4 工作台焦点上报：任务 → 会话绑定解析在 harnessGlue（宿主回调）。
+  await registerCodeReaderIpc(codeReader, deps.onWorkbenchFocusNotice);
   await registerCodeSearchIpc(codeSearch);
   await registerExternalEditorIpc(externalEditor);
 

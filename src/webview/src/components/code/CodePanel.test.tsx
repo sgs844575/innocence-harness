@@ -78,6 +78,7 @@ function makeApi(overrides?: { search?: CodeSearchResponse }) {
         },
     ),
     openExternalEditor: vi.fn(async () => ({ launched: true })),
+    notifyFocus: vi.fn(),
   } satisfies CodeIpcApi;
 }
 

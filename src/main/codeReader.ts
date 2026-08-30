@@ -180,8 +180,22 @@ export function createCodeReader(deps: CodeReaderDeps): CodeReaderService {
  * Node (vitest) — only the Electron host calls this function (composition
  * lands with the task-context wiring task, same as registerTaskIpcHandlers).
  */
-export async function registerCodeReaderIpc(service: CodeReaderService): Promise<void> {
+export async function registerCodeReaderIpc(
+  service: CodeReaderService,
+  onFocusNotice?: (notice: { taskId: string; relativePath: string; line?: number }) => void,
+): Promise<void> {
   const { ipcMain } = await import("electron");
   ipcMain.handle(CodeIpcChannels.codeReadFile, (_e, req) => service.readFile(req));
   ipcMain.handle(CodeIpcChannels.codeListFiles, (_e, req) => service.listFiles(req));
+  // S4 工作台焦点上报（单向通知，防御性解析）：任务 → 会话绑定由宿主回调解析。
+  ipcMain.on(CodeIpcChannels.codeFocusChanged, (_e, notice: unknown) => {
+    if (!onFocusNotice || !notice || typeof notice !== "object") return;
+    const n = notice as { taskId?: unknown; relativePath?: unknown; line?: unknown };
+    if (typeof n.taskId !== "string" || typeof n.relativePath !== "string") return;
+    onFocusNotice({
+      taskId: n.taskId,
+      relativePath: n.relativePath,
+      ...(typeof n.line === "number" ? { line: n.line } : {}),
+    });
+  });
 }

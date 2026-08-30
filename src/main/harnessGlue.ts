@@ -45,6 +45,24 @@ import { hostShutdownGate } from "./shutdown";
 import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { createCredentialStore } from "./credentialStore";
 import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
+import { getWorkbenchFocus, setWorkbenchFocus } from "./workbenchFocus";
+
+/** S4：渲染层工作台焦点上报入口（ipc.ts 的 code:focus-changed 消费）。 */
+export function handleWorkbenchFocusNotice(notice: {
+  taskId: string;
+  relativePath: string;
+  line?: number;
+}): void {
+  const binding = getTaskHandle(notice.taskId);
+  if (!binding || typeof notice.relativePath !== "string" || !notice.relativePath.trim()) {
+    return;
+  }
+  setWorkbenchFocus({
+    sessionId: binding.sessionId,
+    file: notice.relativePath,
+    ...(typeof notice.line === "number" && notice.line > 0 ? { line: notice.line } : {}),
+  });
+}
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
 import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
 import { createSettingsMutationGate } from "./settingsMutationGate";
@@ -436,7 +454,10 @@ const runtime = new HarnessRuntime({
         routeId: context.routeId,
         ...(context.taskId ? { taskId: context.taskId } : {}),
       },
-      { isolatedWorktree: isTaskWorktreeSession(taskBridge, context) },
+      {
+        isolatedWorktree: isTaskWorktreeSession(taskBridge, context),
+        workbenchFocus: () => getWorkbenchFocus(),
+      },
     )),
     // Route-scoped task sessions get the change-capture middleware bound to
     // the live task's port; plain chat contexts contribute nothing.
@@ -601,6 +622,12 @@ const sessionTaskRoutes = new Map<string, { taskId: string; routeId: string }>()
 /** Host-side binding port the task command service calls on task activation. */
 export function bindSessionTaskRoute(sessionId: string, taskId: string, routeId: string): void {
   sessionTaskRoutes.set(sessionId, { taskId, routeId });
+}
+
+/** S4：按任务查句柄（taskId → sessionId 绑定，供工作台焦点上报解析会话）。 */
+export function getTaskHandle(taskId: string): { sessionId: string } | undefined {
+  const handle = taskBridge.get(taskId);
+  return handle ? { sessionId: handle.sessionId } : undefined;
 }
 
 /** Starts an agent turn; returns the assistant message id immediately. Plain

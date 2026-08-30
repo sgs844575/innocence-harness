@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider, worktreeIsolationPlugin } from "./sessionComposition";
+import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
 
@@ -226,5 +226,70 @@ describe("worktree isolation notes (S2a)", () => {
     expect(text).toContain("coherent commit");
     expect(text).toContain("Never rewrite history");
     expect(text).toContain("re-read a file before editing");
+  });
+});
+
+describe("workbench focus notes (S4)", () => {
+  type Invocation = {
+    toolName: string;
+    persistedArgs: Record<string, unknown>;
+    scope: { sessionId?: string };
+  };
+
+  async function runMiddleware(
+    plugin: ReturnType<typeof workbenchFocusPlugin>,
+    invocation: Invocation,
+  ): Promise<{ content: string; isError?: boolean }> {
+    const registered: Array<{ name: string; execute: (i: never, next: () => Promise<{ content: string; isError?: boolean }>) => Promise<{ content: string; isError?: boolean }> }> = [];
+    const ctx = {
+      tools: { registerMiddleware: (m: { name: string; execute: unknown }) => registered.push(m as never) },
+    };
+    plugin.apply(ctx as never);
+    expect(registered).toHaveLength(1);
+    return registered[0]!.execute(invocation as never, async () => ({ content: "BODY" }));
+  }
+
+  it("appends the focus note when the Read hits the focused file of the same session", async () => {
+    let focus: import("./sessionComposition").WorkbenchFocusInput | undefined = {
+      sessionId: "s1",
+      file: "src/a.ts",
+      line: 12,
+    };
+    const plugin = workbenchFocusPlugin(() => focus);
+    const result = await runMiddleware(plugin, {
+      toolName: "Read",
+      persistedArgs: { path: "D:/repo/src/a.ts" },
+      scope: { sessionId: "s1" },
+    });
+    expect(result.content).toContain("BODY");
+    expect(result.content).toContain("工作台焦点注记");
+    expect(result.content).toContain("第 12 行");
+
+    // 会话不匹配：焦点属于别的会话，不附注。
+    const other = await runMiddleware(plugin, {
+      toolName: "Read",
+      persistedArgs: { path: "src/a.ts" },
+      scope: { sessionId: "s2" },
+    });
+    expect(other.content).toBe("BODY");
+
+    // 焦点消失：零行为。
+    focus = undefined;
+    const none = await runMiddleware(plugin, {
+      toolName: "Read",
+      persistedArgs: { path: "src/a.ts" },
+      scope: { sessionId: "s1" },
+    });
+    expect(none.content).toBe("BODY");
+  });
+
+  it("non-Read tools and error results never carry the note", async () => {
+    const plugin = workbenchFocusPlugin(() => ({ sessionId: "s1", file: "src/a.ts" }));
+    const grep = await runMiddleware(plugin, {
+      toolName: "Grep",
+      persistedArgs: { pattern: "a" },
+      scope: { sessionId: "s1" },
+    });
+    expect(grep.content).toBe("BODY");
   });
 });

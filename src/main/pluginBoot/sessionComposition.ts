@@ -128,7 +128,10 @@ export interface SessionComposition {
     userToggles?: PluginToggleSource,
     settings?: HarnessSettings,
     sessionIdentity?: ComposeSessionIdentity,
-    sessionSurface?: { isolatedWorktree?: boolean },
+    sessionSurface?: {
+      isolatedWorktree?: boolean;
+      workbenchFocus?: () => WorkbenchFocusInput | undefined;
+    },
   ): Promise<SessionPlugin[]>;
   /**
    * Agent 模式目录（IPC agents:modes）：staging manifest（readManifest，
@@ -160,6 +163,59 @@ export function worktreeIsolationPlugin(active: boolean): ObjectPlugin {
     apply(ctx: Context) {
       if (!active) return;
       ctx.systemPrompt.registerFragment(WORKTREE_ISOLATION_FRAGMENT);
+    },
+  };
+}
+
+/** S4 工作台焦点（IDE 双件内部适配）：面板当前查看文件 + 可选焦点行。 */
+export interface WorkbenchFocusInput {
+  sessionId: string;
+  file: string;
+  line?: number;
+}
+
+function normalizeForFocusMatch(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+}
+
+/**
+ * 工作台焦点注记插件：Read 命中"当前会话正在面板中查看的文件"时，结果
+ * 尾部附事实注记（文件已打开 + 可选焦点行）——用户注意力所在这条信号对
+ * 代理有价值（源件 file-opened-in-ide / lines-selected-in-ide 语义的
+ * 面板适配）。匹配按正斜杠归一的后缀比较（Read 的 path 可能是绝对路径）。
+ */
+export function workbenchFocusPlugin(
+  getFocus: () => WorkbenchFocusInput | undefined,
+): ObjectPlugin {
+  return {
+    name: "workbench-focus-notes",
+    apply(ctx: Context) {
+      ctx.tools.registerMiddleware({
+        name: "workbench-focus",
+        async execute(invocation, next) {
+          const result = await next();
+          if (invocation.toolName !== "Read" || result.isError) return result;
+          const focus = getFocus();
+          if (!focus || invocation.scope.sessionId !== focus.sessionId) return result;
+          const readPath = normalizeForFocusMatch(
+            String(invocation.persistedArgs.path ?? ""),
+          );
+          const focusFile = normalizeForFocusMatch(focus.file);
+          if (!readPath || !focusFile) return result;
+          const hit =
+            readPath === focusFile ||
+            readPath.endsWith("/" + focusFile) ||
+            readPath.endsWith(focusFile);
+          if (!hit) return result;
+          const line = typeof focus.line === "number" && focus.line > 0
+            ? `（当前焦点行：第 ${focus.line} 行）`
+            : "";
+          return {
+            ...result,
+            content: `${result.content}\n[工作台焦点注记：用户当前已在工作台代码面板打开此文件${line}]`,
+          };
+        },
+      });
     },
   };
 }
@@ -610,7 +666,10 @@ export function createSessionComposition(
       userToggles?: PluginToggleSource,
       settings?: HarnessSettings,
       sessionIdentity?: ComposeSessionIdentity,
-      sessionSurface?: { isolatedWorktree?: boolean },
+      sessionSurface?: {
+        isolatedWorktree?: boolean;
+        workbenchFocus?: () => WorkbenchFocusInput | undefined;
+      },
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
       // creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
@@ -721,6 +780,8 @@ export function createSessionComposition(
       plugins.push(projectRulesPlugin(config.permissions));
       // S2a 工作树会话感知面：有效根为任务工作树的会话附加隔离纪律片段。
       plugins.push(worktreeIsolationPlugin(sessionSurface?.isolatedWorktree === true));
+      // S4 工作台焦点注记（恒挂载；无焦点/会话不匹配时中间件零行为）。
+      plugins.push(workbenchFocusPlugin(sessionSurface?.workbenchFocus ?? (() => undefined)));
       // Provider assembly per session remains a host concern outside the builtin
       // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(await buildProviderFromSettings(boot, settings ?? DEFAULT_SETTINGS)));

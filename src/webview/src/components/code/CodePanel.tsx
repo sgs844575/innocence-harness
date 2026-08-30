@@ -20,7 +20,7 @@ export interface CodePanelProps {
   files: readonly string[];
   /** 受控选中路径；缺省时面板自管。 */
   activePath?: string | null;
-  api: Pick<CodeIpcApi, "readFile" | "search" | "openExternalEditor">;
+  api: Pick<CodeIpcApi, "readFile" | "search" | "openExternalEditor" | "notifyFocus">;
   t?: (key: string) => string;
   onSelectFile?: (path: string) => void;
 }
@@ -63,11 +63,17 @@ export function CodePanel({
   }, [activePath, loadFile]);
 
   const handleSelect = useCallback(
-    (path: string) => {
+    (path: string, jump?: { line: number; column: number }) => {
       onSelectFile?.(path);
-      if (path !== selected) void loadFile(path);
+      // S4 焦点上报：面板当前查看文件 + 可选焦点行（搜索命中/跳转行）。
+      api.notifyFocus({
+        taskId,
+        relativePath: path,
+        ...(jump && jump.line > 0 ? { line: jump.line } : {}),
+      });
+      if (path !== selected) void loadFile(path, jump);
     },
-    [onSelectFile, loadFile, selected],
+    [onSelectFile, api, taskId, loadFile, selected],
   );
 
   const runSearch = useCallback(async () => {

@@ -9,6 +9,7 @@ import {
 } from "./protocol";
 import {
   bindSessionTaskRoute,
+  handleWorkbenchFocusNotice,
   bootPaths,
   getHarnessSettings,
   getTaskBridge,
@@ -112,6 +113,7 @@ if (!gotLock) {
         },
         onSessionTaskRoute: bindSessionTaskRoute,
         getEditorCommand: () => getHarnessSettings().externalEditorCommand ?? "",
+        onWorkbenchFocusNotice: handleWorkbenchFocusNotice,
         send: broadcast,
         log: (level: "info" | "warn" | "error", msg: string, data?: unknown) =>
           logger[level](msg, data),

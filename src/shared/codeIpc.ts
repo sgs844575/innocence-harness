@@ -17,6 +17,7 @@ export const CodeIpcChannels = {
   codeListFiles: "code:list-files",
   codeSearch: "code:search",
   codeOpenExternalEditor: "code:open-external-editor",
+  codeFocusChanged: "code:focus-changed",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -92,4 +93,16 @@ export interface CodeIpcApi {
   listFiles(request: CodeListFilesRequest): Promise<CodeListFilesResponse>;
   search(request: CodeSearchRequest): Promise<CodeSearchResponse>;
   openExternalEditor(request: ExternalEditorOpenRequest): Promise<ExternalEditorOpenResponse>;
+  /** S4 工作台焦点上报（fire-and-forget）：面板当前查看的文件与可选焦点行。
+   *  主进程绑定到任务所属会话，Read 命中焦点文件时经中间件附注。 */
+  notifyFocus(notice: CodeFocusNotice): void;
+}
+
+/** 一次工作台焦点变化（渲染层 → 主进程，单向通知）。 */
+export interface CodeFocusNotice {
+  taskId: string;
+  /** Route-relative "/"-separated path. */
+  relativePath: string;
+  /** 可选焦点行（1 起；来自搜索命中/跳转）。 */
+  line?: number;
 }
