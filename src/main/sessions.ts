@@ -17,6 +17,12 @@ import {
 } from "./sessionIndexStore";
 import { hydrateSessionMessages } from "./sessionHydration";
 import { appendSessionMessage, updateSessionMessage } from "./sessionMessages";
+import {
+  forkMessagePrefix,
+  forkSessionRecord,
+  writeForkTranscript,
+  type SessionForkOptions,
+} from "./sessionFork";
 import { createSidebarIndexStore, type SidebarIndexStore, type SidebarState } from "./sidebarIndexStore";
 import type { SidebarContainer } from "../shared/sidebarIpc";
 import type { ChatMessage, Session } from "../shared/ipc";
@@ -103,6 +109,32 @@ export function deleteSession(id: string): void {
       // Transcript removal is best-effort; the session itself is gone.
     }
   }
+}
+
+/**
+ * M1 会话 fork（存储编排半边）：按用户消息切口把父会话的已水合历史分叉成
+ * 新会话——种子转录走既有 hydration/运行时播种路径，索引记录 forkedFrom
+ * 血缘。无效切口（未知 id / 非用户消息）或父会话不存在返回 undefined。
+ * 工作树隔离语义属 S2，此处不涉及。
+ */
+export function forkSession(parentId: string, options?: SessionForkOptions): Session | undefined {
+  const parent = sessions.get(parentId);
+  if (!parent) return undefined;
+  if (!parent.messagesLoaded) hydrate(parent);
+  const prefix = forkMessagePrefix(parent.messages, options?.upToMessageId);
+  if (prefix === undefined) return undefined;
+  const id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  writeForkTranscript(storeDir, id, prefix);
+  const record = forkSessionRecord(parent, prefix, {
+    id,
+    now: Date.now(),
+    upToMessageId: options?.upToMessageId,
+  });
+  sessions.set(id, record);
+  order.unshift(id);
+  persistIndex();
+  syncSidebar();
+  return publicSessionView(record);
 }
 
 export function getSession(id: string): SessionRecord | undefined {

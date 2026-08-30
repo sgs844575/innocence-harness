@@ -108,6 +108,15 @@ export function registerIpcHandlers(): void {
     broadcastSidebar();
     return session;
   });
+  ipcMain.handle(IPC.sessionFork, (_e, id: string, options?: { upToMessageId?: string }) => {
+    // M1 会话 fork：无效切口/父会话缺失返回 null，由渲染层提示。
+    const session = sessions.forkSession(id, options);
+    if (session) {
+      broadcastSessions();
+      broadcastSidebar();
+    }
+    return session ?? null;
+  });
   ipcMain.handle(IPC.sessionDelete, async (_e, id: string) => {
     // Stop first, then AWAIT resource release before unlinking the session
     // index/transcript: MCP child processes are gone when the delete

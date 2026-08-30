@@ -194,6 +194,34 @@ describe("ChatView review wiring (C3)", () => {
     );
     expect(screen.queryByRole("button", { name: "编辑并创建路线" })).toBeNull();
     expect(screen.queryByRole("button", { name: "重试并创建路线" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "从这里分叉会话" })).toBeNull();
+  });
+
+  it("renders the session-fork affordance on user messages through onForkSession", () => {
+    const onForkSession = vi.fn();
+    render(
+      <ChatView
+        t={t}
+        appName="InnocenceHarness"
+        messages={messages}
+        streaming={false}
+        settings={null}
+        permission={null}
+        onSettingsChange={() => {}}
+        onPermissionRespond={() => {}}
+        onSend={() => {}}
+        onStop={() => {}}
+        landing={false}
+        pendingProject=""
+        onPickProject={() => {}}
+        recentProjects={[]}
+        onOpenProjectDir={() => {}}
+        onForkSession={onForkSession}
+      />,
+    );
+    // 只在用户消息上出现，携带该消息 id（切口=用户消息）。
+    fireEvent.click(screen.getByRole("button", { name: "从这里分叉会话" }));
+    expect(onForkSession).toHaveBeenCalledWith("msg_user_1");
   });
 });
 

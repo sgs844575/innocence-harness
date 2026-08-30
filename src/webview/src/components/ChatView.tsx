@@ -40,6 +40,8 @@ interface Props {
   onOpenTaskReview?: (messageId: string) => void;
   /** 消息级分叉入口（编辑并创建路线 / 重试并创建路线）；缺省不渲染按钮。 */
   onForkMessage?: (command: ForkMessageCommand) => void;
+  /** M1 会话 fork 入口（非任务会话的用户消息动作）；缺省不渲染按钮。 */
+  onForkSession?: (messageId: string) => void;
   /** Opens the existing typed Review panel from the header action. */
   onOpenReview?: () => void;
   /** Existing domain/runtime state projected for the right activity capsule. */
@@ -66,6 +68,7 @@ export function ChatView({
   taskChanges,
   onOpenTaskReview,
   onForkMessage,
+  onForkSession,
   onOpenReview,
   taskTitle,
   projectName,
@@ -203,6 +206,7 @@ export function ChatView({
                     isLatest={m.id === messages[messages.length - 1]?.id}
                     onQuote={setQuoteDraft}
                     onForkMessage={onForkMessage}
+                    onForkSession={onForkSession}
                     taskChange={taskChanges?.[m.id]}
                     onOpenTaskReview={onOpenTaskReview ? () => onOpenTaskReview(m.id) : undefined}
                   />

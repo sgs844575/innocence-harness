@@ -22,6 +22,8 @@ export interface SessionIndexEntry {
   messageCount: number;
   /** 会话绑定的项目根；旧索引缺省为空串。 */
   workspaceRoot?: string;
+  /** M1 会话 fork 血缘：父会话与切口消息（信息性，不参与装载逻辑）。 */
+  forkedFrom?: { sessionId: string; messageId?: string };
 }
 
 /** <storeDir>/sessions.json; null while the store has no directory. */
@@ -49,6 +51,7 @@ export function sessionIndexEntryOf(record: SessionRecord): SessionIndexEntry {
     updatedAt: record.updatedAt,
     messageCount: record.messageCount,
     workspaceRoot: record.workspaceRoot,
+    ...(record.forkedFrom ? { forkedFrom: { ...record.forkedFrom } } : {}),
   };
 }
 
@@ -90,6 +93,7 @@ export function loadSessionIndex(file: string | null): SessionIndexEntry[] {
 
 /** Fresh, not-yet-hydrated record for one index entry (defensive field mapping). */
 export function sessionRecordFromEntry(e: SessionIndexEntry): SessionRecord {
+  const forked = e.forkedFrom;
   return {
     id: e.id,
     title: typeof e.title === "string" ? e.title : "新会话",
@@ -97,6 +101,14 @@ export function sessionRecordFromEntry(e: SessionIndexEntry): SessionRecord {
     updatedAt: typeof e.updatedAt === "number" ? e.updatedAt : Date.now(),
     messageCount: typeof e.messageCount === "number" ? e.messageCount : 0,
     workspaceRoot: typeof e.workspaceRoot === "string" ? e.workspaceRoot : "",
+    ...(forked && typeof forked === "object" && typeof forked.sessionId === "string"
+      ? {
+          forkedFrom: {
+            sessionId: forked.sessionId,
+            ...(typeof forked.messageId === "string" ? { messageId: forked.messageId } : {}),
+          },
+        }
+      : {}),
     messages: [],
     messagesLoaded: false,
   };

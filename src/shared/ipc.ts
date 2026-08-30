@@ -15,6 +15,7 @@ export const IPC = {
   sessionsList: "sessions:list",
   sessionCreate: "session:create",
   sessionDelete: "session:delete",
+  sessionFork: "session:fork",
   sessionsChanged: "sessions:changed",
   messagesList: "messages:list",
   chatSend: "chat:send",
@@ -131,6 +132,8 @@ export interface Session {
   messageCount: number;
   /** 会话绑定的项目根目录；空串 = 不在项目中。侧边栏按它分组。 */
   workspaceRoot?: string;
+  /** M1 会话 fork 血缘：父会话与切口消息（信息性；旧索引缺省）。 */
+  forkedFrom?: { sessionId: string; messageId?: string };
 }
 
 export interface ChatDeltaEvent {
@@ -384,6 +387,8 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   listSessions(): Promise<Session[]>;
   createSession(options?: { title?: string; workspaceRoot?: string }): Promise<Session>;
   deleteSession(id: string): Promise<void>;
+  /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。 */
+  forkSession(sessionId: string, options?: { upToMessageId?: string }): Promise<Session | null>;
   /** Fired after every session-store mutation (create/delete/append/retitle). */
   onSessionsChanged(cb: (list: Session[]) => void): () => void;
   listMessages(sessionId: string): Promise<ChatMessage[]>;

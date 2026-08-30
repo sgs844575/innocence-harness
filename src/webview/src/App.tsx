@@ -183,6 +183,26 @@ export function App(): React.JSX.Element {
     [task, workbench.state.activeRouteId],
   );
 
+  // M1 会话 fork（非任务会话）：按用户消息切口分叉出新会话并切换过去；
+  // 任务会话不挂此入口（已有路线分叉 + 工作树语义，避免双分叉口径）。
+  const handleForkSession = useCallback(
+    async (messageId: string) => {
+      const activeId = sessions.activeId;
+      if (!activeId) return;
+      try {
+        const forked = await api.forkSession(activeId, { upToMessageId: messageId });
+        if (forked) {
+          sessions.selectSession(forked.id);
+        } else {
+          showError(t("chat.forkFailed"));
+        }
+      } catch {
+        showError(t("chat.forkFailed"));
+      }
+    },
+    [sessions, showError, t],
+  );
+
   const chat = useChatStream({
     activeId: sessions.activeId,
     ensureSession: sessions.ensureSessionForSend,
@@ -325,7 +345,8 @@ export function App(): React.JSX.Element {
             taskChanges={workspacePresentation.taskChanges}
             onOpenTaskReview={openReviewPanel}
             onOpenReview={openReviewPanel}
-            onForkMessage={handleForkMessage}
+            onForkMessage={task ? handleForkMessage : undefined}
+            onForkSession={task ? undefined : (messageId) => void handleForkSession(messageId)}
           />
         }
         settings={settingsView}
