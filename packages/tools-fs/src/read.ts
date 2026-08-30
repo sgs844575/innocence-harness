@@ -6,6 +6,7 @@ import {
   type ReadFileRegistry,
   type ReadFileSignature,
 } from "./read-state";
+import { isPdfFile, probePdf, readPdfPage, renderPdfResult } from "./read-pdf";
 import type { Tool, ToolContext, ToolResult } from "@innocenceharness/harness-tools";
 
 const MAX_LINES = 2000;
@@ -31,11 +32,15 @@ export function createReadTool(registry: ReadFileRegistry): Tool {
         path: { type: "string", description: "工作区相对路径或绝对路径" },
         offset: { type: "integer", description: "起始行（1 起），可选" },
         limit: { type: "integer", description: "读取行数，可选" },
+        page: { type: "integer", description: "PDF 页码（1 起，一次一页；PDF 文件专用）" },
       },
       required: ["path"],
     },
     async validateArgs(args) {
       requireString(args, "path");
+      if (args.page !== undefined && (typeof args.page !== "number" || !Number.isInteger(args.page) || args.page < 1)) {
+        throw new Error("page 必须是 ≥1 的整数（PDF 页码）");
+      }
     },
     permissionResource(args, ctx: ToolContext) {
       return {
@@ -44,16 +49,26 @@ export function createReadTool(registry: ReadFileRegistry): Tool {
         scope: workspaceScope(ctx.workspaceRoot, requireString(args, "path")),
       };
     },
-    // 读取参数不含机密值；路径/分页原样持久化以供规则匹配与后续对话理解。
+    // 读取参数不含机密值；路径/分页（含 PDF 页码）原样持久化以供规则匹配与后续对话理解。
     persistArgs(args) {
-      return { path: args.path, offset: args.offset, limit: args.limit };
+      return { path: args.path, offset: args.offset, limit: args.limit, page: args.page };
     },
     async execute(args, ctx: ToolContext) {
       const target = resolveWithin(ctx.workspaceRoot, requireString(args, "path"));
       const stat = await fs.stat(target);
       if (stat.isDirectory()) throw new Error(`是目录不是文件：${target}`);
-      const raw = await fs.readFile(target, "utf8");
       const signature: ReadFileSignature = { mtimeMs: stat.mtimeMs, size: stat.size };
+      // S4-PDF：魔数探测命中即走 PDF 面（页数探测 / 按页文本），不进文本行读取。
+      if (await isPdfFile(target)) {
+        const page = Number(args.page);
+        if (Number.isInteger(page) && page >= 1) {
+          const outcome = await readPdfPage(target, page);
+          return renderPdfResult({ ...outcome, text: outcome.text }, signature);
+        }
+        const { pageCount } = await probePdf(target);
+        return renderPdfResult({ pageCount }, signature);
+      }
+      const raw = await fs.readFile(target, "utf8");
       const contextKey = readContextKey(ctx.scope);
       // 登记本次读取并按需附“重复读取/磁盘变更”注记；越界早退不登记（什么都没读到）。
       const finalize = (body: string, notes: string[], full: boolean): ToolResult => {
