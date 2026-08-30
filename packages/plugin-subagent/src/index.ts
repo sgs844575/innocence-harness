@@ -94,6 +94,11 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         },
         description: { type: "string", description: "一句话任务摘要" },
         prompt: { type: "string", description: "自包含的任务描述（目标、范围、期望产出）" },
+        inheritContext: {
+          type: "boolean",
+          description:
+            "继承父会话最近对话上下文（近 50 条消息种子进子代理并附继承简报；适合延续父任务的工作树/同工作区协作。默认 false = 全新上下文，prompt 需自包含）",
+        },
       },
       required: ["agentType", "prompt"],
     },
@@ -119,9 +124,11 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
     persistArgs(args) {
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       // 保存预设类型和 prompt 哈希；prompt/description 原文不持久化。
+      // inheritContext 为布尔开关，非机密值，原样持久化。
       return {
         agentType: pickAgentType(args.agentType),
         promptSha256: sha256Hex(prompt),
+        ...(args.inheritContext === true ? { inheritContext: true } : {}),
       };
     },
     async execute(args, ctx: ToolContext) {
@@ -146,6 +153,8 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         prompt,
         description: typeof description === "string" ? description : undefined,
         signal: ctx.signal,
+        // S2b 上下文继承请求：由 loop 绑定的 spawner 兑现（无绑定时降级全新上下文）。
+        ...(args.inheritContext === true ? { inheritContext: true } : {}),
       });
       const isError = result.completion?.finishReason === "error";
       return {

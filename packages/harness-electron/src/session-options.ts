@@ -41,6 +41,11 @@ export interface AgentSessionOptions {
     /** Ask-boundary evaluation round (S3); absent = unchanged ask behavior. */
     classifier?: PermissionClassifier;
   };
+  /**
+   * S2a：会话运行在任务管理的工作树中。驱动子代理工厂为派生会话注册
+   * 隔离纪律片段（父会话自身的片段由组合根按同一判定注册）。
+   */
+  isolatedWorktree?: boolean;
   compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
   maxTurns?: number;
   toolTimeoutMs?: number;

@@ -387,8 +387,7 @@ describe("taskTool persistence policy", () => {
   });
 });
 
-describe("thread notes (M3)", () => {
-  const fakeCtx = (run: unknown) => ({
+describe("thread notes (M3)", () => {  const fakeCtx = (run: unknown) => ({
     workspaceRoot: "D:/tmp",
     signal: new AbortController().signal,
     log: () => {},
@@ -432,6 +431,94 @@ describe("thread notes (M3)", () => {
     const combined = withThreadNotes(persona);
     expect(combined.startsWith(persona)).toBe(true);
     expect(combined).toContain("\n\nThread notes:\n");
+  });
+});
+
+describe("context inheritance (S2b)", () => {
+  const fakeCtx = (run: unknown) => ({
+    workspaceRoot: "D:/tmp",
+    signal: new AbortController().signal,
+    log: () => {},
+    scope: createExecutionScope("Task"),
+    subagent: { run },
+  });
+
+  it("forwards the inheritContext flag into the spawner run input", async () => {
+    const run = vi.fn(async () => ({ finalText: "done", turns: 1 }));
+    await taskTool.execute(
+      { agentType: "explore", prompt: "延续父任务", inheritContext: true },
+      fakeCtx(run) as never,
+    );
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ inheritContext: true }));
+    const withoutFlag = vi.fn(async (_options: unknown) => ({ finalText: "done", turns: 1 }));
+    await taskTool.execute(
+      { agentType: "explore", prompt: "全新任务" },
+      fakeCtx(withoutFlag) as never,
+    );
+    expect(withoutFlag.mock.calls[0]?.[0]).not.toHaveProperty("inheritContext");
+  });
+
+  it("persists the inheritContext boolean alongside the prompt hash", () => {
+    expect(taskTool.persistArgs({ agentType: "explore", prompt: "x", inheritContext: true })).toEqual({
+      agentType: "explore",
+      promptSha256: sha256Hex("x"),
+      inheritContext: true,
+    });
+    expect(
+      taskTool.persistArgs({ agentType: "explore", prompt: "x", inheritContext: "junk" }),
+    ).not.toHaveProperty("inheritContext");
+  });
+
+  it("end to end: the child session's first request carries seeded history and the briefing", async () => {
+    let parentTurn = 0;
+    const childRequests: Array<{ system: string; messages: unknown[] }> = [];
+    const provider: Provider = {
+      id: "dual",
+      async *chat(req): AsyncIterable<Delta> {
+        const isChild = req.system.includes(EXPLORE_MARKER);
+        if (isChild) {
+          childRequests.push({ system: req.system, messages: [...req.messages] });
+          yield { type: "text", text: "子代理延续结论" };
+          return;
+        }
+        parentTurn += 1;
+        if (parentTurn === 1) {
+          yield { type: "text", text: "父级先说一句背景" };
+        } else if (parentTurn === 2) {
+          yield {
+            type: "toolCall",
+            id: "p1",
+            toolName: "Task",
+            args: { agentType: "explore", prompt: "延续下去", inheritContext: true },
+          };
+        } else {
+          yield { type: "text", text: "父级最终答案" };
+        }
+      },
+    };
+    const session = await createTestSession({
+      plugins: [SubagentPlugin],
+      provider,
+      workspaceRoot: "D:/tmp",
+      permission: { mode: "auto", decider: { ask: async () => "deny" } },
+    });
+    await session.run("第一轮：建立上下文");
+    const result = await session.run("第二轮：派生继承子代理");
+    expect(result.finalText).toBe("父级最终答案");
+    expect(childRequests).toHaveLength(1);
+    const messages = childRequests[0]!.messages as Array<{
+      role: string;
+      parts: Array<{ type: string; text?: string }>;
+    }>;
+    // 种子历史先于简报+任务 prompt：首条是父会话早前轮次，末条含继承简报。
+    expect(messages[0]!.parts[0]!.text).toContain("第一轮");
+    const lastText = messages[messages.length - 1]!.parts
+      .filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+    expect(lastText).toContain("[Inherited context]");
+    expect(lastText).toContain("延续下去");
+    expect(childRequests[0]!.system).toContain("Thread notes:");
   });
 });
 

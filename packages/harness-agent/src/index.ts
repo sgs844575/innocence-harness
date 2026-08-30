@@ -9,7 +9,13 @@ export type {
   SubagentSpawner,
   SubagentStatus,
 } from "./subagent";
-export { bindSubagentSpawner } from "./subagent";
+export {
+  bindSubagentSpawner,
+  INHERIT_HISTORY_LIMIT,
+  INHERITED_CONTEXT_BRIEFING,
+  inheritHistoryTail,
+  sanitizeInheritedHistory,
+} from "./subagent";
 export { AgentsPlugin, type AgentDef, type AgentsService } from "./agents";
 export {
   SUBAGENT_CONCURRENCY,

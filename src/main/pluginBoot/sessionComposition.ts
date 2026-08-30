@@ -14,6 +14,7 @@ import {
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { UsageMetadata } from "@innocenceharness/harness-providers";
+import { WORKTREE_ISOLATION_FRAGMENT } from "@innocenceharness/harness-electron";
 import {
   unavailableTeammatePort,
   type SendToTeammatePort,
@@ -29,7 +30,7 @@ import {
   type SessionLoaderPlugin,
 } from "@innocenceharness/harness-electron";
 import type { Provider } from "@innocenceharness/harness-providers";
-import type { ObjectPlugin } from "@innocenceharness/kernel";
+import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
 import {
   createPluginBoot,
   defaultUserPluginRoot,
@@ -127,6 +128,7 @@ export interface SessionComposition {
     userToggles?: PluginToggleSource,
     settings?: HarnessSettings,
     sessionIdentity?: ComposeSessionIdentity,
+    sessionSurface?: { isolatedWorktree?: boolean },
   ): Promise<SessionPlugin[]>;
   /**
    * Agent 模式目录（IPC agents:modes）：staging manifest（readManifest，
@@ -144,6 +146,20 @@ function projectRulesPlugin(config: ProjectPermissionConfig | undefined): Harnes
     activate(ctx) {
       if (!config) return;
       for (const rule of rulesFromConfig(config)) ctx.registerPolicyRule(rule);
+    },
+  };
+}
+
+/**
+ * 工作树会话隔离纪律片段（S2a）：内容常量在 harness-electron（组合根与
+ * 子代理工厂两面共用一个来源）。仅对工作树会话注册（共享桶，全模式生效）。
+ */
+export function worktreeIsolationPlugin(active: boolean): ObjectPlugin {
+  return {
+    name: "worktree-isolation-notes",
+    apply(ctx: Context) {
+      if (!active) return;
+      ctx.systemPrompt.registerFragment(WORKTREE_ISOLATION_FRAGMENT);
     },
   };
 }
@@ -594,6 +610,7 @@ export function createSessionComposition(
       userToggles?: PluginToggleSource,
       settings?: HarnessSettings,
       sessionIdentity?: ComposeSessionIdentity,
+      sessionSurface?: { isolatedWorktree?: boolean },
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
       // creation 工厂入参与用户根扫描共用同一路径解析：宿主钩子优先，
@@ -702,6 +719,8 @@ export function createSessionComposition(
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
       plugins.push(projectRulesPlugin(config.permissions));
+      // S2a 工作树会话感知面：有效根为任务工作树的会话附加隔离纪律片段。
+      plugins.push(worktreeIsolationPlugin(sessionSurface?.isolatedWorktree === true));
       // Provider assembly per session remains a host concern outside the builtin
       // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(await buildProviderFromSettings(boot, settings ?? DEFAULT_SETTINGS)));

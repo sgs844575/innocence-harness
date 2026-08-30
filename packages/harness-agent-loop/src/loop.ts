@@ -374,7 +374,11 @@ export async function runLoop(
         const invocationCtx: ToolContext = {
           ...baseToolCtx,
           scope,
-          subagent: opts.spawner ? bindSubagentSpawner(opts.spawner, scope) : undefined,
+          // 绑定历史访问器（S2b）：Task 的 inheritContext 请求由此兑现为
+          // 有界父会话尾部；快照拷贝保持账本只读语义。
+          subagent: opts.spawner
+            ? bindSubagentSpawner(opts.spawner, scope, () => [...history])
+            : undefined,
         };
         try {
           await tool.validateArgs?.(part.args);

@@ -145,12 +145,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
       expect(names, `descriptor "${id}" 未实例化`).toContain(nameById[id]);
     }
-    // +2 = project-permission-rules（关系模型外，恒定注入）与 provider（设置
-    // 驱动的 provider 插件，每 session 组装）；多余的实例化分支（无对应
-    // 描述符）同样会让计数失衡变红。
+    // +3 = project-permission-rules（关系模型外，恒定注入）、provider（设置
+    // 驱动的 provider 插件，每 session 组装）与 worktree-isolation-notes
+    // （S2a 工作树会话感知片段，恒定挂载、非工作树会话 no-op）；多余的
+    // 实例化分支（无对应描述符）同样会让计数失衡变红。
     expect(names).toContain("project-permission-rules");
     expect(names).toContain("provider");
-    expect(names).toHaveLength(MANIFEST_IDS.length + 2);
+    expect(names).toContain("worktree-isolation-notes");
+    expect(names).toHaveLength(MANIFEST_IDS.length + 3);
   });
 
   it("equivalence: composePlugins names mirror resolveBuiltinSet active entries", async () => {

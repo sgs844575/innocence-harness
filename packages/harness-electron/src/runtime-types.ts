@@ -159,6 +159,12 @@ export interface RuntimeOptions {
     context: RouteWorkspaceContext,
   ): string | undefined | Promise<string | undefined>;
   /**
+   * S2a 工作树会话判定钩子：与 workspaceRootFor 同上下文、在其后调用；
+   * true 时该会话（及其派生子代理）获得隔离纪律片段。缺省/undefined =
+   * 非工作树会话。
+   */
+  isolatedWorktreeFor?(context: RouteWorkspaceContext): boolean | Promise<boolean>;
+  /**
    * Host port that detects project traits for the session's effective
    * workspace root (package manager, language, framework...): the result feeds
    * the conditional system-prompt fragments. Consulted once per session build;

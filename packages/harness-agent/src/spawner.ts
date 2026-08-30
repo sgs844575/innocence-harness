@@ -1,6 +1,6 @@
 import type { PermissionEngine } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
-import type { MessageProcessor } from "@innocenceharness/harness-session";
+import type { Message, MessageProcessor } from "@innocenceharness/harness-session";
 import type {
   ExecutionScope,
   ExecutionScopeIdentity,
@@ -14,6 +14,7 @@ import type {
   SubagentLifecyclePort,
   SubagentResult,
 } from "./subagent";
+import { INHERITED_CONTEXT_BRIEFING, sanitizeInheritedHistory } from "./subagent";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while the
@@ -82,6 +83,13 @@ export interface SpawnerSessionInput {
    * invocation id. Hosts calling the service directly may omit it.
    */
   parentScope?: ExecutionScope;
+  /**
+   * S2b 上下文继承：inheritContext 请求由 loop 绑定的 spawner 兑现为
+   * inheritHistory（有界尾部）；直接调用方也可显式供给 inheritHistory。
+   * 两者皆备时以 inheritHistory 为准并前置继承简报。
+   */
+  inheritContext?: boolean;
+  inheritHistory?: readonly Message[];
 }
 
 /** {@link SpawnerSessionInput} plus the spawning session fallback identity. */
@@ -107,6 +115,8 @@ export interface SpawnerChildMaterials {
   maxTurns: number;
   logger: SpawnerLogger;
   signal?: AbortSignal;
+  /** S2b：种子历史（有界父会话尾部），子会话建后、首跑前压入其账本。 */
+  seedHistory?: readonly Message[];
 }
 
 /** Child session handle the spawner drives and disposes. */
@@ -208,6 +218,11 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
         // Same registration set as the parent: identical processor and
         // middleware objects, in the parent's registration order.
         let childPromise: Promise<SpawnerChildSession>;
+        // S2b：先净化（去窗口头部孤儿结果轮/尾部未答调用轮），空结果 =
+        // 无种子亦无简报（全新上下文）。
+        const seedHistory = input.inheritHistory?.length
+          ? sanitizeInheritedHistory(input.inheritHistory)
+          : undefined;
         try {
           childPromise = Promise.resolve(deps.sessionFactory({
             tools: selected,
@@ -219,6 +234,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
             maxTurns: input.maxTurns ?? 20,
             logger,
             signal: input.signal,
+            ...(seedHistory?.length ? { seedHistory } : {}),
           }));
         } catch (error) {
           emit({ status: input.signal?.aborted ? "cancelled" : "failed", error: error instanceof Error ? error.message : String(error) });
@@ -249,7 +265,12 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
               emit({ status: "failed", error: event.error });
             }
           };
-          const result = await child.run(input.prompt, input.signal, {
+          // S2b：种子历史存在时任务 prompt 前置继承简报（历史已在子账本中，
+          // 简报声明其来源与陈旧纪律）。
+          const effectivePrompt = seedHistory?.length
+            ? `${INHERITED_CONTEXT_BRIEFING}\n\n${input.prompt}`
+            : input.prompt;
+          const result = await child.run(effectivePrompt, input.signal, {
             sessionId: parent?.sessionId ?? input.sessionId,
             taskId: parent?.taskId,
             routeId: parent?.routeId,

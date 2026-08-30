@@ -49,6 +49,15 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
     messageId,
   });
   const workspaceRoot = routeRoot || settingsRoot;
+  // S2a 工作树会话判定：驱动子代理工厂为派生会话注册隔离纪律片段
+  //（父会话自身的片段由组合根按宿主同一判定注册）。
+  const isolatedWorktree =
+    (await host.options.isolatedWorktreeFor?.({
+      sessionId,
+      routeId,
+      taskId: taskId || undefined,
+      messageId,
+    })) ?? false;
   // Project traits for the session's effective workspace (route-resolved):
   // feeds the conditional prompt fragments; no hook = empty traits.
   const traits = (await host.options.projectTraitsFor?.(workspaceRoot)) ?? {};
@@ -96,6 +105,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         systemPrompt: BUILTIN_FALLBACK_PROMPT,
         agentMode: settings.activeAgentMode ?? "default",
         traits,
+        ...(isolatedWorktree ? { isolatedWorktree: true } : {}),
         permission: {
           mode: settings.permissionMode,
           decider,

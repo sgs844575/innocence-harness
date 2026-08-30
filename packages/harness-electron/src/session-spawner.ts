@@ -7,9 +7,19 @@ import type { SpawnerService } from "@innocenceharness/harness-agent";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import type { HarnessEvent } from "@innocenceharness/harness-session";
 import type { ToolExecutionMiddleware } from "@innocenceharness/harness-tools";
+import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
 import { AgentSession } from "./session";
 import type { AgentSessionOptions } from "./session";
 import type { SessionRegistryView } from "./session-registry-view";
+import { WORKTREE_ISOLATION_FRAGMENT } from "./worktree-fragment";
+
+/** S2a：父会话运行在工作树时，子代理同享隔离纪律片段的内核插件。 */
+const worktreeNotesChildPlugin: ObjectPlugin = {
+  name: "worktree-isolation-notes",
+  apply(ctx: Context) {
+    ctx.systemPrompt.registerFragment(WORKTREE_ISOLATION_FRAGMENT);
+  },
+};
 
 function abortError(): Error {
   const error = new Error("子代理已取消");
@@ -96,6 +106,9 @@ export function createSpawnerChildSession(
           for (const middleware of materials.middlewares) ctx.registerToolMiddleware(middleware);
         },
       },
+      // S2a：父会话运行在工作树时，同工作区的子代理同享隔离纪律片段
+      //（general 子代理有写/执行面，正是片段约束的受众）。
+      ...(parentOptions.isolatedWorktree ? [worktreeNotesChildPlugin] : []),
     ],
     provider: materials.provider,
     workspaceRoot: parentOptions.workspaceRoot,
@@ -111,18 +124,27 @@ export function createSpawnerChildSession(
     lifecycle: parentOptions.lifecycle,
   }),
     materials.signal,
-  ).then((child) => ({
-    run: (prompt, signal, identity, onEvent?: SubagentChildEventListener) => {
-      const unsubscribe = child.on((event: HarnessEvent) => {
-        if (event.type === "token") onEvent?.({ type: "text", text: event.text });
-        else if (event.type === "error" && event.fatal) onEvent?.({ type: "error", error: event.message });
-      });
-      return child.run(prompt, signal, identity).then((result) => ({
-        finalText: result.finalText,
-        turns: result.turns,
-        completion: result.completion,
-      })).finally(unsubscribe);
-    },
-    dispose: () => child.dispose(),
-  }));
+  ).then((child) => {
+    // S2b 上下文继承：种子历史压入子账本（浅拷贝 parts，沿用 buildSession
+    // 的播种惯用法）——先于首跑，继承简报随任务 prompt 其后到达。
+    if (materials.seedHistory?.length) {
+      child.history.push(
+        ...materials.seedHistory.map((m) => ({ role: m.role, parts: [...m.parts] })),
+      );
+    }
+    return {
+      run: (prompt, signal, identity, onEvent?: SubagentChildEventListener) => {
+        const unsubscribe = child.on((event: HarnessEvent) => {
+          if (event.type === "token") onEvent?.({ type: "text", text: event.text });
+          else if (event.type === "error" && event.fatal) onEvent?.({ type: "error", error: event.message });
+        });
+        return child.run(prompt, signal, identity).then((result) => ({
+          finalText: result.finalText,
+          turns: result.turns,
+          completion: result.completion,
+        })).finally(unsubscribe);
+      },
+      dispose: () => child.dispose(),
+    };
+  });
 }

@@ -44,6 +44,8 @@ export {
   createPermissionClassifier,
   type PermissionClassifierOptions,
 } from "./permission-classifier";
+// S2a 工作树会话隔离纪律片段（组合根与子代理工厂共用一个来源）。
+export { WORKTREE_ISOLATION_FRAGMENT } from "./worktree-fragment";
 export {
   canonicalizeHistory,
   decodeTranscript,

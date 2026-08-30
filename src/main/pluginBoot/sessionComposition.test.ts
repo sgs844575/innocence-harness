@@ -4,8 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
-import { DEFAULT_SETTINGS, mergeSettings, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider } from "./sessionComposition";
+import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
+import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider, worktreeIsolationPlugin } from "./sessionComposition";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
 
@@ -204,5 +204,27 @@ maybeDescribeStaging("staged model provider resolution", () => {
     } finally {
       await composition.disposePluginBoot();
     }
+  });
+});
+
+describe("worktree isolation notes (S2a)", () => {
+  it("registers the fragment only when the session surface is a task worktree", async () => {
+    const registered: unknown[] = [];
+    const ctx = { systemPrompt: { registerFragment: (fragment: unknown) => registered.push(fragment) } };
+    await worktreeIsolationPlugin(true).apply(ctx as never);
+    expect(registered).toHaveLength(1);
+    registered.length = 0;
+    await worktreeIsolationPlugin(false).apply(ctx as never);
+    expect(registered).toHaveLength(0);
+  });
+
+  it("fragment carries the isolation cores: boundary, finish commit, history safety, staleness", () => {
+    expect(WORKTREE_ISOLATION_FRAGMENT.id).toBe("shared.worktree.isolation");
+    const text = WORKTREE_ISOLATION_FRAGMENT.render({ activeMode: "default", traits: {} });
+    expect(text).toContain("isolated worktree");
+    expect(text).toContain("out of bounds");
+    expect(text).toContain("coherent commit");
+    expect(text).toContain("Never rewrite history");
+    expect(text).toContain("re-read a file before editing");
   });
 });

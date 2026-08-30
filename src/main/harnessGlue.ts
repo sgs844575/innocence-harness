@@ -30,6 +30,7 @@ import {
 import { IPC, type AgentModeInfo, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
+import { isWorktreeSession } from "./taskWorktreePredicate";
 import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTraits";
 import { createHostTelemetry } from "./telemetry";
@@ -284,6 +285,19 @@ export function getTaskStorageDir(): string {
   return taskStorageDir;
 }
 
+/** S2a：任务路由会话是否运行在宿主管理的工作树中（纯判定见
+ *  taskWorktreePredicate——isolated 模式或有效根位于工作树存储目录下）。 */
+function isTaskWorktreeSession(
+  bridge: TaskRuntimeBridge,
+  context: { taskId?: string; routeId: string },
+): boolean {
+  if (!context.taskId) return false;
+  return isWorktreeSession(
+    bridge.getRoute(context.taskId, context.routeId),
+    path.join(getTaskStorageDir(), "worktrees"),
+  );
+}
+
 const runtime = new HarnessRuntime({
   settings: () => settings,
   persistDir: transcriptsDir(),
@@ -306,6 +320,13 @@ const runtime = new HarnessRuntime({
       fallbackRoot: settings.workspaceRoot,
     }),
   forkRoute: (input) => taskBridge.forkRoute(input),
+  // S2a 工作树会话判定：与 workspaceRootFor 同一谓词（isolated 模式或有效
+  // 根位于任务工作树存储目录下），供 buildSession 驱动子代理片段注册。
+  isolatedWorktreeFor: (context) =>
+    isTaskWorktreeSession(taskBridge, {
+      taskId: context.taskId || undefined,
+      routeId: context.routeId,
+    }),
   // S3 权限分类器：设置开关开启时武装 ask 边界评估轮（副模型结构化判定，
   // 失败/超时/无意见回落用户询问）。模型走当次 settings 快照的活跃供应商，
   // 与 automation candidateModel 同一惰性解析路径；关闭时恒 undefined，
@@ -352,6 +373,8 @@ const runtime = new HarnessRuntime({
     });
   },
   pluginsForSession: async (context) => [
+    // S2a 工作树会话判定：任务路由的有效根 ≠ 用户根 = 工作树会话（隔离主
+    // 路由与分叉路由皆命中；baseline 主路由两根相等不命中）。
     ...(await sessionComposition.composePlugins(
       context.workspaceRoot,
       settings.pluginToggles,
@@ -362,6 +385,7 @@ const runtime = new HarnessRuntime({
         routeId: context.routeId,
         ...(context.taskId ? { taskId: context.taskId } : {}),
       },
+      { isolatedWorktree: isTaskWorktreeSession(taskBridge, context) },
     )),
     // Route-scoped task sessions get the change-capture middleware bound to
     // the live task's port; plain chat contexts contribute nothing.

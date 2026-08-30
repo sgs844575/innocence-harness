@@ -1,5 +1,7 @@
 import {
+  bindSubagentSpawner,
   createSpawnerPlugin,
+  INHERIT_HISTORY_LIMIT,
   SUBAGENT_CONCURRENCY,
   type SpawnerChildMaterials,
   type SpawnerChildSession,
@@ -10,6 +12,7 @@ import {
   type SpawnerSessionFactory,
   type SubagentChildEvent,
   type SubagentResult,
+  type SubagentSpawner,
 } from "@innocenceharness/harness-agent";
 import { Context } from "@innocenceharness/kernel";
 import { PermissionEngine } from "@innocenceharness/harness-permissions";
@@ -431,6 +434,137 @@ describe("spawner concurrency cap", () => {
     await vi.waitFor(() => expect(gates).toHaveLength(2));
     gates[1]!();
     await expect(second).rejects.toThrow("run-boom");
+  });
+});
+
+describe("context inheritance (S2b)", () => {
+  it("bindSubagentSpawner fulfills inheritContext into a bounded history tail", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const inner: SubagentSpawner = {
+      run: async (options) => {
+        calls.push(options as unknown as Record<string, unknown>);
+        return { finalText: "ok", turns: 1 };
+      },
+    };
+    const history: import("@innocenceharness/harness-session").Message[] = Array.from(
+      { length: 80 },
+      (_, i) => ({ role: "user" as const, parts: [{ type: "text" as const, text: `m${i}` }] }),
+    );
+    const bound = bindSubagentSpawner(
+      inner,
+      createExecutionScope("Task"),
+      () => [...history],
+    );
+    await bound.run({
+      systemPrompt: "s",
+      tools: "all",
+      prompt: "p",
+      inheritContext: true,
+    });
+    const inherited = calls[0]!.inheritHistory as unknown[];
+    expect(inherited).toHaveLength(INHERIT_HISTORY_LIMIT);
+    // 近因优先：尾部保序，首条是裁剪后的最早消息。
+    expect((inherited[0] as { parts: Array<{ text: string }> }).parts[0]!.text).toBe(
+      `m${history.length - INHERIT_HISTORY_LIMIT}`,
+    );
+  });
+
+  it("inheritContext without a bound history accessor degrades to a fresh context", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const inner: SubagentSpawner = {
+      run: async (options) => {
+        calls.push(options as unknown as Record<string, unknown>);
+        return { finalText: "ok", turns: 1 };
+      },
+    };
+    const bound = bindSubagentSpawner(inner, createExecutionScope("Task"));
+    await bound.run({ systemPrompt: "s", tools: "all", prompt: "p", inheritContext: true });
+    expect(calls[0]!.inheritHistory).toBeUndefined();
+    expect(calls[0]!.inheritContext).toBe(true);
+  });
+
+  it("service passes seedHistory into materials and prefixes the briefing to the prompt", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+    const seedHistory: import("@innocenceharness/harness-session").Message[] = [
+      { role: "user", parts: [{ type: "text", text: "父会话消息" }] },
+    ];
+    await runOne(ctx, gates, {
+      ...baseInput,
+      inheritHistory: seedHistory,
+    });
+    expect(children[0]!.materials.seedHistory).toEqual(seedHistory);
+    expect(children[0]!.runs[0]!.prompt.startsWith("[Inherited context]")).toBe(true);
+    expect(children[0]!.runs[0]!.prompt).toContain("去查");
+  });
+
+  it("service omits seedHistory and the briefing when nothing is inherited", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+    await runOne(ctx, gates);
+    expect(children[0]!.materials.seedHistory).toBeUndefined();
+    expect(children[0]!.runs[0]!.prompt).toBe("去查");
+  });
+
+  it("sanitizes the seed: window-head orphan result turns and trailing unanswered call turns are dropped", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+    await runOne(ctx, gates, {
+      ...baseInput,
+      inheritHistory: [
+        // 窗口头部孤儿：结果轮的调用在窗口外（toSdkMessages 会抛
+        // "Tool result has no matching call"）。
+        { role: "user", parts: [{ type: "toolResult", toolCallId: "outside", content: "r", isError: false }] },
+        { role: "user", parts: [{ type: "text", text: "完好用户轮" }] },
+        { role: "assistant", parts: [{ type: "text", text: "完好答复" }] },
+        // 尾部悬空：派生调用本身——其结果在快照后才落地（原生协议 400）。
+        { role: "assistant", parts: [{ type: "toolCall", id: "task-1", toolName: "Task", args: {} }] },
+      ],
+    });
+    expect(children[0]!.materials.seedHistory).toEqual([
+      { role: "user", parts: [{ type: "text", text: "完好用户轮" }] },
+      { role: "assistant", parts: [{ type: "text", text: "完好答复" }] },
+    ]);
+  });
+
+  it("sanitized seeds keep every tool result paired with a preceding in-window call (provider-valid first request)", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+    await runOne(ctx, gates, {
+      ...baseInput,
+      inheritHistory: [
+        { role: "assistant", parts: [{ type: "toolCall", id: "c1", toolName: "Read", args: {} }] },
+        { role: "user", parts: [{ type: "toolResult", toolCallId: "c1", content: "内容", isError: false }] },
+        { role: "assistant", parts: [{ type: "text", text: "结论" }] },
+        { role: "assistant", parts: [{ type: "toolCall", id: "task-9", toolName: "Task", args: {} }] },
+      ],
+    });
+    const seed = children[0]!.materials.seedHistory!;
+    const callIds = new Set<string>();
+    for (const message of seed) {
+      for (const part of message.parts) {
+        if (part.type === "toolCall") callIds.add(part.id);
+        if (part.type === "toolResult") {
+          // 不变量即 toSdkMessages 的配对要求：结果必须命中窗口内先前调用。
+          expect(callIds.has(part.toolCallId)).toBe(true);
+        }
+      }
+    }
+    const last = seed[seed.length - 1]!;
+    expect(last.role === "assistant" && last.parts.some((p) => p.type === "toolCall")).toBe(false);
+  });
+
+  it("a seed that sanitizes to nothing plants no history and no briefing", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+    await runOne(ctx, gates, {
+      ...baseInput,
+      inheritHistory: [
+        { role: "assistant", parts: [{ type: "toolCall", id: "task-1", toolName: "Task", args: {} }] },
+      ],
+    });
+    expect(children[0]!.materials.seedHistory).toBeUndefined();
+    expect(children[0]!.runs[0]!.prompt).toBe("去查");
   });
 });
 
