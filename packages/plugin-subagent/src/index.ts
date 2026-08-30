@@ -5,6 +5,9 @@ import {
   type ToolContext,
 } from "@innocenceharness/harness-tools";
 import { adaptedPresets } from "@innocenceharness/agent-presets";
+import { withThreadNotes } from "./thread-notes";
+
+export { SUBAGENT_THREAD_NOTES, withThreadNotes } from "./thread-notes";
 
 /** A subagent persona preset consumed by the Task tool. */
 export interface SubagentPreset {
@@ -137,7 +140,8 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
       }
       const header = typeof description === "string" && description ? `【${description}】\n` : "";
       const result = await ctx.subagent.run({
-        systemPrompt: preset.systemPrompt,
+        // 人设 + 线程注记（M3）：注记是系统级线程纪律，逐线程附加，不入预设。
+        systemPrompt: withThreadNotes(preset.systemPrompt),
         tools: preset.tools,
         prompt,
         description: typeof description === "string" ? description : undefined,

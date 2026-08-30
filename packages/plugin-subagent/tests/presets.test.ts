@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_PRESETS, createSubagentPlugin, createTaskTool, SubagentPlugin } from "../src";
+import { BUILTIN_PRESETS, createSubagentPlugin, createTaskTool, SubagentPlugin, withThreadNotes } from "../src";
 
 describe("subagent presets", () => {
   it("built-in presets are English read-only/all pairs with unique ids", () => {
@@ -44,7 +44,10 @@ describe("subagent presets", () => {
     };
     await tool.execute({ agentType: "explore", prompt: "research x" }, ctx as never);
     await tool.execute({ agentType: "general", prompt: "do x" }, ctx as never);
-    expect(seen[0].systemPrompt).toBe(BUILTIN_PRESETS.find((p) => p.id === "explore")?.systemPrompt);
+    // M3：子代理系统提示词 = 预设人设 + 线程注记块。
+    expect(seen[0].systemPrompt).toBe(
+      withThreadNotes(BUILTIN_PRESETS.find((p) => p.id === "explore")?.systemPrompt ?? ""),
+    );
     expect(seen[0].tools).toBe("readOnly");
     expect(seen[1].tools).toBe("all");
   });

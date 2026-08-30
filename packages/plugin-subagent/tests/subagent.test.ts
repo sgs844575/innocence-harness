@@ -12,7 +12,8 @@ import {
 } from "@innocenceharness/harness-tools";
 import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import type { HarnessEvent, Message } from "@innocenceharness/harness-session";
-import { BUILTIN_PRESETS, SubagentPlugin, createTaskTool } from "../src";
+import { BUILTIN_PRESETS, SubagentPlugin, createTaskTool, SUBAGENT_THREAD_NOTES, withThreadNotes } from "../src";
+import { adaptedPresets } from "@innocenceharness/agent-presets";
 
 // The preset-driven Task tool replaces the former hard-coded taskTool export.
 const taskTool = createTaskTool(BUILTIN_PRESETS);
@@ -25,6 +26,7 @@ describe("Task tool via session spawner", () => {
     let childPeeked = 0;
     let parentTurn = 0;
     let childTurn = 0;
+    let childSystem = "";
 
     // One provider for both sessions; the child's explore system prompt
     // distinguishes whose conversation each request belongs to.
@@ -33,6 +35,7 @@ describe("Task tool via session spawner", () => {
       async *chat(req): AsyncIterable<Delta> {
         const isChild = req.system.includes(EXPLORE_MARKER);
         if (isChild) {
+          childSystem = req.system;
           childTurn += 1;
           if (childTurn === 1) {
             yield { type: "toolCall", id: "c1", toolName: "Peek", args: {} };
@@ -89,6 +92,10 @@ describe("Task tool via session spawner", () => {
 
     expect(result.finalText).toBe("父级最终答案");
     expect(childPeeked).toBe(1);
+    // M3 全栈锚定：线程注记真实到达子会话的 provider 系统提示词
+    // （Task → spawner → 子会话 → buildSystemPrompt 全路径）。
+    expect(childSystem).toContain("Thread notes:");
+    expect(childSystem).toContain("never a bare filename");
     // The child report became the Task tool result inside the parent history.
     const taskResult = session.history
       .flatMap((m) => m.parts)
@@ -377,6 +384,54 @@ describe("taskTool persistence policy", () => {
     await expect(taskTool.validateArgs?.({ agentType: "explore", prompt: " " })).rejects.toThrow(
       "prompt",
     );
+  });
+});
+
+describe("thread notes (M3)", () => {
+  const fakeCtx = (run: unknown) => ({
+    workspaceRoot: "D:/tmp",
+    signal: new AbortController().signal,
+    log: () => {},
+    scope: createExecutionScope("Task"),
+    subagent: { run },
+  });
+
+  it("appends the thread-notes block after the persona for every catalog preset", async () => {
+    // 与默认插件同一合并语义：内建 + 适配预设按 id 去重（extra 覆盖），
+    // "每个子代理线程都带注记"是默认目录的属性而非两预设切片。
+    const catalog = [...new Map([...BUILTIN_PRESETS, ...adaptedPresets].map((p) => [p.id, p])).values()];
+    const catalogTool = createTaskTool(catalog);
+    const run = vi.fn(async (_options: { systemPrompt: string }) => ({ finalText: "done", turns: 1 }));
+    for (const preset of catalog) {
+      await catalogTool.execute({ agentType: preset.id, prompt: "做" }, fakeCtx(run) as never);
+    }
+    expect(run).toHaveBeenCalledTimes(catalog.length);
+    expect(catalog.length).toBeGreaterThanOrEqual(8);
+    for (const call of run.mock.calls) {
+      const systemPrompt = call[0]?.systemPrompt ?? "";
+      const personaAt = systemPrompt.indexOf("You are");
+      const notesAt = systemPrompt.indexOf("Thread notes:");
+      expect(personaAt).toBeGreaterThanOrEqual(0);
+      expect(notesAt).toBeGreaterThan(personaAt);
+    }
+  });
+
+  it("carries the subagent-specific disciplines: root-resolved paths, load-bearing quotes only, no report files", () => {
+    expect(SUBAGENT_THREAD_NOTES).toContain("workspace root");
+    expect(SUBAGENT_THREAD_NOTES).toContain("load-bearing");
+    // 禁写报告文件语义：父级只读最终消息文本，不读子代理创建的文件。
+    expect(SUBAGENT_THREAD_NOTES).toContain("report");
+    expect(SUBAGENT_THREAD_NOTES).toContain("final message text");
+    // 子代理不继承共享文风片段：朴素文风（无 emoji、工具调用前用句号）在线程注记补位。
+    expect(SUBAGENT_THREAD_NOTES).toContain("no emojis");
+    expect(SUBAGENT_THREAD_NOTES).toContain("period");
+  });
+
+  it("withThreadNotes keeps the persona intact and separates the block", () => {
+    const persona = "PERSONA-BODY";
+    const combined = withThreadNotes(persona);
+    expect(combined.startsWith(persona)).toBe(true);
+    expect(combined).toContain("\n\nThread notes:\n");
   });
 });
 
