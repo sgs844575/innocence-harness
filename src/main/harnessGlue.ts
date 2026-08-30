@@ -154,6 +154,9 @@ function getAutomationLifecycle(): AutomationLifecycle {
 // 4D 同一基础设施（增量镜像 + 错误旗标）。
 let backgroundJobsFacade: BackgroundJobsFacade | undefined;
 const backgroundNotifySink = createLazyNotifySink();
+// A:58：后台作业会话登记（写隔离武装集）。会话 id 全局唯一，陈旧条目对新
+// 会话惰性无害（id 不复用）；体积为字符串集，接受常驻。
+const backgroundIsolatedSessions = new Set<string>();
 
 /** 生产装配的后台作业面（IPC background:start 消费）。 */
 export function getBackgroundJobs(): BackgroundJobsFacade {
@@ -161,6 +164,7 @@ export function getBackgroundJobs(): BackgroundJobsFacade {
     runtime,
     createSession: (title, workspaceRoot) => {
       const session = sessions.createSession({ title, workspaceRoot });
+      backgroundIsolatedSessions.add(session.id);
       broadcastSessions();
       broadcastSidebar();
       return session;
@@ -457,6 +461,8 @@ const runtime = new HarnessRuntime({
       {
         isolatedWorktree: isTaskWorktreeSession(taskBridge, context),
         workbenchFocus: () => getWorkbenchFocus(),
+        backgroundIsolation:
+          !context.taskId && backgroundIsolatedSessions.has(context.sessionId),
       },
     )),
     // Route-scoped task sessions get the change-capture middleware bound to

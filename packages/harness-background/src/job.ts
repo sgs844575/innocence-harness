@@ -31,6 +31,7 @@ export function buildBackgroundJobTurn(input: BackgroundJobTurnInput): string {
     `- Scratch space: put every temporary artifact (scripts, query files, intermediate outputs) under ${input.scratchDir}. Parallel jobs run with separate scratch locations and must not write into each other's; anything worth keeping belongs in the workspace itself, not in scratch.`,
     "- Narrate briefly: one line on the approach before acting, and after each chunk of work say what happened and what comes next.",
     "- Restate outcomes in your own message text even when a tool already printed them - the job tracker reads only your message text, never tool output.",
+    "- File changes are fenced in this job: call the EnterWorktree tool once to create your isolated worktree before the first file edit, then write only inside it; reads and scratch are never fenced. If that tool is unavailable or fails, keep going without editing files.",
     "",
     "Finish with a report the reader can use directly: what was done, where to find it (a path, or the answer in your own text), plus the next command when one would help. Then mark the outcome with exactly one standalone status line at the very end:",
     '- "result:" followed by a one-line, self-contained headline, once the ask is delivered - verify before claiming it (run a test or build, or read the request again) and name what you checked. Deliverable answers count; work that must still settle before it counts as delivered stays narration rather than a result.',

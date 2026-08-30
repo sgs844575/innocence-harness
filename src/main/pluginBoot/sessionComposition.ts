@@ -31,6 +31,7 @@ import {
 } from "@innocenceharness/harness-electron";
 import type { Provider } from "@innocenceharness/harness-providers";
 import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
+import { createWorktreeFencePlugin } from "@innocenceharness/tools-worktree";
 import {
   createPluginBoot,
   defaultUserPluginRoot,
@@ -131,6 +132,8 @@ export interface SessionComposition {
     sessionSurface?: {
       isolatedWorktree?: boolean;
       workbenchFocus?: () => WorkbenchFocusInput | undefined;
+      /** A:58：武装会话（后台作业）的写隔离面（EnterWorktree + 围栏）。 */
+      backgroundIsolation?: boolean;
     },
   ): Promise<SessionPlugin[]>;
   /**
@@ -669,6 +672,7 @@ export function createSessionComposition(
       sessionSurface?: {
         isolatedWorktree?: boolean;
         workbenchFocus?: () => WorkbenchFocusInput | undefined;
+        backgroundIsolation?: boolean;
       },
     ): Promise<SessionPlugin[]> {
       const boot = await ensureBoot();
@@ -782,6 +786,10 @@ export function createSessionComposition(
       plugins.push(worktreeIsolationPlugin(sessionSurface?.isolatedWorktree === true));
       // S4 工作台焦点注记（恒挂载；无焦点/会话不匹配时中间件零行为）。
       plugins.push(workbenchFocusPlugin(sessionSurface?.workbenchFocus ?? (() => undefined)));
+      // A:58 EnterWorktree 半边：仅武装会话（后台作业）注入写隔离面。
+      if (sessionSurface?.backgroundIsolation === true) {
+        plugins.push(createWorktreeFencePlugin());
+      }
       // Provider assembly per session remains a host concern outside the builtin
       // manifest; it is still mounted through the native/session chokepoint.
       plugins.push(createProviderPlugin(await buildProviderFromSettings(boot, settings ?? DEFAULT_SETTINGS)));
