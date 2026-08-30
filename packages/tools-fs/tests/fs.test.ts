@@ -6,11 +6,15 @@ import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import { createExecutionScope, sha256Hex, type ToolContext } from "@innocenceharness/harness-tools";
 import { editTool } from "../src/edit";
-import { readTool } from "../src/read";
+import { createReadTool } from "../src/read";
+import { createReadFileRegistry } from "../src/read-state";
 import { globTool, grepTool } from "../src/search";
 import { writeTool } from "../src/write";
 import { resolveWithin } from "../src/paths";
 import { FsPlugin } from "../src/index";
+
+// M2 文件状态跟踪：直接单测用独立注册表实例，避免跨用例读取串扰。
+const readTool = createReadTool(createReadFileRegistry());
 
 /** Mounts the plugin on a bare kernel context (tools spine service only). */
 async function mountFs(): Promise<Context> {
@@ -249,5 +253,122 @@ describe("persistence policy (permissionResource / persistArgs)", () => {
     expect(() =>
       writeTool.permissionResource({ path: "../outside.txt", content: "x" }, ctx("Write")),
     ).toThrow("越出工作区");
+  });
+});
+
+describe("Read file-state tracking (M2)", () => {
+  // root 由文件级 beforeAll 赋值，stateRoot 必须惰性到本 describe 的 beforeAll。
+  let stateRoot: string;
+  const ctxWithScope = (scope: ReturnType<typeof createExecutionScope>): ToolContext => ({
+    workspaceRoot: root,
+    signal: new AbortController().signal,
+    log: () => {},
+    scope,
+  });
+
+  beforeAll(async () => {
+    stateRoot = path.join(root, "state");
+    await fs.mkdir(stateRoot, { recursive: true });
+  });
+
+  it("first read carries no state note; unchanged re-read discloses repeat", async () => {
+    await fs.writeFile(path.join(stateRoot, "u.txt"), "u1\nu2\n", "utf8");
+    const read = createReadTool(createReadFileRegistry());
+    const first = await read.execute({ path: "state/u.txt" }, ctx());
+    expect(first.content).not.toContain("重复读取注记");
+    expect(first.content).not.toContain("文件变更注记");
+    const second = await read.execute({ path: "state/u.txt" }, ctx());
+    expect(second.content).toContain("重复读取注记");
+    expect(second.content).toContain("未变更");
+    expect(second.content).not.toContain("文件变更注记");
+  });
+
+  it("disk change between reads swaps to the change note", async () => {
+    await fs.writeFile(path.join(stateRoot, "c.txt"), "c1\n", "utf8");
+    const read = createReadTool(createReadFileRegistry());
+    await read.execute({ path: "state/c.txt" }, ctx());
+    await fs.writeFile(path.join(stateRoot, "c.txt"), "c1\nchanged-line-added\n", "utf8");
+    const again = await read.execute({ path: "state/c.txt" }, ctx());
+    expect(again.content).toContain("文件变更注记");
+    expect(again.content).toContain("以本次");
+    expect(again.content).not.toContain("重复读取注记");
+  });
+
+  it("partial previous read is disclosed, then upgraded to the full-read wording", async () => {
+    await fs.writeFile(
+      path.join(stateRoot, "p.txt"),
+      Array.from({ length: 10 }, (_, i) => `p${i + 1}`).join("\n") + "\n",
+      "utf8",
+    );
+    const read = createReadTool(createReadFileRegistry());
+    await read.execute({ path: "state/p.txt", limit: 3 }, ctx());
+    const full = await read.execute({ path: "state/p.txt" }, ctx());
+    expect(full.content).toContain("重复读取注记");
+    expect(full.content).toContain("部分");
+    const third = await read.execute({ path: "state/p.txt" }, ctx());
+    expect(third.content).toContain("重复读取注记");
+    expect(third.content).toContain("完整读过");
+  });
+
+  it("offset-overflow reads return without being recorded", async () => {
+    await fs.writeFile(path.join(stateRoot, "o.txt"), "o1\n", "utf8");
+    const read = createReadTool(createReadFileRegistry());
+    await read.execute({ path: "state/o.txt", offset: 9 }, ctx());
+    const again = await read.execute({ path: "state/o.txt", offset: 9 }, ctx());
+    expect(again.content).toContain("越界");
+    expect(again.content).not.toContain("重复读取注记");
+  });
+
+  it("subagent runs track independently of the parent and of each other", async () => {
+    await fs.writeFile(path.join(stateRoot, "s.txt"), "s1\n", "utf8");
+    const read = createReadTool(createReadFileRegistry());
+    const parent = () =>
+      ctxWithScope(createExecutionScope("Read", undefined, { sessionId: "sess-m2" }));
+    const child = (inv: string) =>
+      ctxWithScope(
+        createExecutionScope("Read", undefined, { sessionId: "sess-m2", parentInvocationId: inv }),
+      );
+    await read.execute({ path: "state/s.txt" }, parent());
+    // 子代理上下文里没有父会话的读取记录——不得误报“已读过”。
+    const fromChildA = await read.execute({ path: "state/s.txt" }, child("inv-a"));
+    expect(fromChildA.content).not.toContain("重复读取注记");
+    const childAgain = await read.execute({ path: "state/s.txt" }, child("inv-a"));
+    expect(childAgain.content).toContain("重复读取注记");
+    // 兄弟子代理运行彼此独立。
+    const fromChildB = await read.execute({ path: "state/s.txt" }, child("inv-b"));
+    expect(fromChildB.content).not.toContain("重复读取注记");
+  });
+
+  it("newline-terminated file read to its exact limit still counts as full", async () => {
+    await fs.writeFile(path.join(stateRoot, "e.txt"), "x1\nx2\n", "utf8");
+    const read = createReadTool(createReadFileRegistry());
+    await read.execute({ path: "state/e.txt", limit: 2 }, ctx());
+    const again = await read.execute({ path: "state/e.txt" }, ctx());
+    expect(again.content).toContain("完整读过");
+    expect(again.content).not.toContain("部分读取");
+  });
+
+  it("state note appends after the truncation note", async () => {
+    const read = createReadTool(createReadFileRegistry());
+    await read.execute({ path: "big/large.txt", limit: 50 }, ctx());
+    const again = await read.execute({ path: "big/large.txt", limit: 50 }, ctx());
+    const truncationAt = again.content.indexOf("[已截断");
+    expect(truncationAt).toBeGreaterThanOrEqual(0);
+    expect(again.content.indexOf("[重复读取注记")).toBeGreaterThan(truncationAt);
+  });
+
+  it("FsPlugin mounts a fresh registry per session composition", async () => {
+    await fs.writeFile(path.join(stateRoot, "m.txt"), "m1\n", "utf8");
+    const ctxA = await mountFs();
+    const ctxB = await mountFs();
+    const toolA = ctxA.tools.get("Read");
+    const toolB = ctxB.tools.get("Read");
+    expect(toolA).toBeDefined();
+    expect(toolB).toBeDefined();
+    await toolA!.execute({ path: "state/m.txt" }, ctx());
+    const viaB = await toolB!.execute({ path: "state/m.txt" }, ctx());
+    expect(viaB.content).not.toContain("重复读取注记");
+    const viaBAgain = await toolB!.execute({ path: "state/m.txt" }, ctx());
+    expect(viaBAgain.content).toContain("重复读取注记");
   });
 });
