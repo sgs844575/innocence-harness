@@ -66,6 +66,8 @@ export function useAppNavigation({
           activeId={sessions.activeId}
           sidebar={sidebarState}
           sessionStatuses={sessionStatuses}
+          sidebarOpen={nav.sidebarOpen}
+          onToggleSidebar={nav.toggleSidebar}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}
           onNew={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
           onNewInGroup={(groupId) => { nav.closeDrawerOnNavigate(); sessions.newSession(groupId); }}

@@ -10,15 +10,15 @@ export interface TodoPanelProps {
 }
 
 /** 进程清单（参考稿 wave 列表语言）：当前步 → 实心箭头，待办 → 空心圆环，
- * 完成 → 对勾划线；无底色行 + 13px 文本。 */
+ * 完成 → 对勾划线；无底色行 + 13px/19px 行高，行距 14px。 */
 export function TodoPanel({ todos, completed, total, pending, onOpen }: TodoPanelProps): React.JSX.Element {
   return (
-    <div className="px-4 pb-3 text-[13px] text-(--color-app-muted)">
-      <div className="flex items-center gap-9 pt-1">
+    <div className="px-[18px] pb-[14px] text-[13px] text-(--color-app-muted)">
+      <div className="flex h-[26px] items-center gap-[38px] pt-[8px]">
         <span>进程</span>
         <b className="font-normal text-(--color-app-text)">{completed}/{total}</b>
       </div>
-      <div className="mt-2.5 flex flex-col gap-2">
+      <div className="mt-[8px] flex flex-col gap-[14px]">
         {todos?.map((todo, index) => (
           <div key={`${todo.status}-${todo.content}-${index}`} className="flex items-start gap-[11px] leading-[19px] text-(--color-app-text)">
             <span className="mt-[3px] flex w-[13px] shrink-0 justify-center">
@@ -34,7 +34,7 @@ export function TodoPanel({ todos, completed, total, pending, onOpen }: TodoPane
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-[14px] flex h-[26px] items-center justify-between">
         <span>待处理 {pending} 项</span>
         <button type="button" disabled={!onOpen} onClick={onOpen} className="capsule-action">打开进程</button>
       </div>

@@ -1,16 +1,14 @@
-// 主区顶栏（48px，参考稿胶囊簇）：侧栏开关、应用菜单弹出、任务标题 +
-// 项目/路线/Git 胶囊、外部编辑器芯片、面板/终端开关与自绘窗口控制。
+// 主区顶栏（48px，参考稿 titlebar）：任务标题 → 项目/路线/Git 胶囊 →
+// 更多菜单 → 右侧簇（编辑器芯片/终端/面板/分隔线/自绘窗口控制）。
+// 侧栏开关与前后导航在侧栏顶部（Sidebar side-top），不在这里。
 // 整条为拖拽区（无边框窗口），交互控件逐个 no-drag。纯 props-in/events-out。
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Code,
   FolderGit2,
   GitBranch,
   MoreHorizontal,
-  PanelLeft,
   PanelRight,
   SquareTerminal,
 } from "lucide-react";
@@ -20,9 +18,7 @@ import type { MenuId } from "../../../shared/ipc";
 import { TitleBarWindowControls } from "./TitleBarWindowControls";
 
 interface Props {
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
-  /** 当前任务/会话标题（参考稿 t-title，15px 加粗；缺省隐藏）。 */
+  /** 当前任务/会话标题（t-title，15px 加粗；空串隐藏）。 */
   title?: string;
   /** Workbench view model; omitted cluster entirely when absent. */
   workbench?: {
@@ -50,13 +46,11 @@ const MENUS: { id: MenuId; labelKey: string; fallback: string }[] = [
   { id: "help", labelKey: "titlebar.menu.help", fallback: "帮助" },
 ];
 
-/** 参考稿 t-pill：28px 圆角胶囊，沉底面 + 图标 + 文本。 */
+/** 参考稿 t-pill：28px 圆角胶囊，沉底面 + 图标 + 文本，胶囊间 14px 间距。 */
 const pill =
-  "flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-app-sunken) px-3.5 text-[13px] whitespace-nowrap text-(--color-app-text)";
+  "app-no-drag ml-3.5 flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-app-sunken) px-3.5 text-[13px] whitespace-nowrap text-(--color-app-text)";
 
 export function TitleBar({
-  sidebarOpen,
-  onToggleSidebar,
   title,
   workbench,
   onOpenExternalEditor,
@@ -96,18 +90,39 @@ export function TitleBar({
   const terminalAction = terminalOpen ? onTogglePanel : onToggleTerminal;
 
   return (
-    <header className="titlebar app-drag relative z-30 flex h-12 shrink-0 items-center gap-1 pl-3 text-(--color-app-muted)">
-      <button
-        type="button"
-        onClick={onToggleSidebar}
-        aria-label={sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}
-        aria-pressed={sidebarOpen}
-        className={iconButton}
-      >
-        <PanelLeft size={15} />
-      </button>
+    <header className="titlebar app-drag relative z-30 flex h-12 shrink-0 items-center pl-4 text-(--color-app-muted)">
+      {/* 任务标题（t-title）+ 状态胶囊：项目 → 路线 → Git 分支。 */}
+      {title !== undefined && title !== "" && (
+        <span className="min-w-0 max-w-[40%] truncate text-[15px] font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
+          {title}
+        </span>
+      )}
+      {workbench && (
+        <div className="app-no-drag min-[861px]:contents max-[860px]:hidden min-w-0">
+          {workbench.project !== "" && (
+            <span className={`${pill} min-w-0`} title={`${t("titlebar.project")} ${workbench.project}`}>
+              <FolderGit2 size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+              <span className="max-w-[180px] truncate">{workbench.project}</span>
+            </span>
+          )}
+          {workbench.routeId !== null && (
+            <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
+              <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+              <span className="font-mono text-[12px]">{workbench.routeId}</span>
+              <ChevronDown size={12} className="text-(--color-app-faint)" />
+            </span>
+          )}
+          {workbench.gitBranch !== null && (
+            <span className={pill} title={workbench.gitBranch}>
+              <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+              <span className="max-w-[140px] truncate font-mono text-[12px]">{workbench.gitBranch}</span>
+              <ChevronDown size={12} className="text-(--color-app-faint)" />
+            </span>
+          )}
+        </div>
+      )}
 
-      <div ref={menuRef} className="app-no-drag relative">
+      <div ref={menuRef} className="app-no-drag relative ml-4 shrink-0">
         <button
           type="button"
           aria-label={t("titlebar.menu.open")}
@@ -117,7 +132,7 @@ export function TitleBar({
           onClick={() => setMenuOpen((value) => !value)}
           className={iconButton}
         >
-          <MoreHorizontal size={15} />
+          <MoreHorizontal size={16} />
         </button>
         {menuOpen && (
           <div
@@ -141,73 +156,20 @@ export function TitleBar({
         )}
       </div>
 
-      {/* Back/forward are stubs: this single-page app has no navigable
-          history, so they stay visually present but disabled rather than
-          faking a feature that does not exist. Hidden on narrow windows. */}
-      <button type="button" disabled aria-label="后退" className={`${iconButton} max-[860px]:hidden`}>
-        <ChevronLeft size={15} />
-      </button>
-      <button type="button" disabled aria-label="前进" className={`${iconButton} max-[860px]:hidden`}>
-        <ChevronRight size={15} />
-      </button>
-
-      {/* 任务标题 + 状态簇：标题（加粗）→ 项目胶囊 → 路线/Git 胶囊。 */}
-      {title !== undefined && title !== "" && (
-        <span className="ml-2 min-w-0 truncate text-[15px] font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
-          {title}
-        </span>
-      )}
-      {workbench && (
-        <div className="app-no-drag ml-2 hidden min-w-0 items-center gap-2 md:flex">
-          {workbench.project !== "" && (
-            <span className={`${pill} min-w-0`} title={`${t("titlebar.project")} ${workbench.project}`}>
-              <FolderGit2 size={13} className="shrink-0 text-(--color-app-muted)" />
-              <span className="max-w-[180px] truncate">{workbench.project}</span>
-            </span>
-          )}
-          {workbench.routeId !== null && (
-            <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
-              <GitBranch size={13} className="shrink-0 text-(--color-app-muted)" />
-              <span className="font-mono text-[12px]">{workbench.routeId}</span>
-              <ChevronDown size={11} className="text-(--color-app-faint)" />
-            </span>
-          )}
-          {workbench.gitBranch !== null && (
-            <span className={pill} title={workbench.gitBranch}>
-              <GitBranch size={13} className="shrink-0 text-(--color-app-muted)" />
-              <span className="max-w-[140px] truncate font-mono text-[12px]">{workbench.gitBranch}</span>
-              <ChevronDown size={11} className="text-(--color-app-faint)" />
-            </span>
-          )}
-        </div>
-      )}
-
       <div className="flex-1" />
 
-      {/* 外部编辑器入口（芯片形，宿主未接线时禁用）+ 面板/终端开关。 */}
+      {/* 右侧簇：编辑器芯片 → 终端 → 面板 → 分隔线 → 窗口控制。 */}
       <button
         type="button"
         aria-label={t("titlebar.externalEditor")}
         title={t("titlebar.externalEditor")}
         disabled={onOpenExternalEditor === undefined}
         onClick={onOpenExternalEditor}
-        className="app-no-drag flex h-8 shrink-0 items-center gap-1 rounded-lg bg-(--color-app-sunken) px-2.5 text-(--color-app-text) hover:bg-(--color-app-hover) disabled:opacity-40"
+        className="app-no-drag mr-[2px] flex h-8 shrink-0 items-center gap-1 rounded-lg bg-(--color-app-sunken) px-2.5 text-(--color-app-text) hover:bg-(--color-app-hover) disabled:opacity-40"
       >
-        <Code size={14} strokeWidth={1.5} />
-        <ChevronDown size={11} className="text-(--color-app-faint)" />
+        <Code size={15} strokeWidth={1.5} />
+        <ChevronDown size={12} className="text-(--color-app-muted)" />
       </button>
-      {onTogglePanel && (
-        <button
-          type="button"
-          aria-label={t("titlebar.togglePanel")}
-          title={t("titlebar.togglePanel")}
-          aria-pressed={panelOpen}
-          onClick={onTogglePanel}
-          className={iconButton}
-        >
-          <PanelRight size={15} />
-        </button>
-      )}
       {terminalAction && (
         <button
           type="button"
@@ -215,13 +177,25 @@ export function TitleBar({
           title={terminalLabel}
           aria-pressed={terminalOpen}
           onClick={terminalAction}
-          className={iconButton}
+          className={`${iconButton} ml-1`}
         >
-          <SquareTerminal size={15} />
+          <SquareTerminal size={16} strokeWidth={1.3} />
+        </button>
+      )}
+      {onTogglePanel && (
+        <button
+          type="button"
+          aria-label={t("titlebar.togglePanel")}
+          title={t("titlebar.togglePanel")}
+          aria-pressed={panelOpen}
+          onClick={onTogglePanel}
+          className={`${iconButton} ml-1`}
+        >
+          <PanelRight size={16} strokeWidth={1.3} />
         </button>
       )}
 
-      <span className="mx-1 h-6 w-px shrink-0 bg-(--color-app-hairline)" />
+      <span className="mx-1.5 h-6 w-px shrink-0 bg-(--color-app-hairline)" />
       <TitleBarWindowControls />
     </header>
   );

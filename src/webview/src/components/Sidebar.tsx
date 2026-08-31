@@ -9,14 +9,16 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeft,
+  ArrowRight,
   Asterisk,
-  Bell,
   ChevronRight,
   CircleAlert,
   CirclePlus,
   Filter,
   GripVertical,
   LayoutGrid,
+  PanelLeft,
   Pin,
   Search,
   Settings,
@@ -54,6 +56,9 @@ interface Props {
   collapsedProjectIds?: readonly string[];
   onViewChange?: (view: SidebarView) => void;
   onToggleProject?: (projectId: string) => void;
+  /** 侧栏开合语义（参考稿 side-top：logo + 导航箭头 + 收缩钮都在侧栏上）。 */
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const NAV_ITEMS: readonly {
@@ -68,7 +73,7 @@ const NAV_ITEMS: readonly {
   { icon: LayoutGrid, key: "sidebar.nav.plugins", action: "plugins" },
 ];
 
-export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
+export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject, sidebarOpen, onToggleSidebar }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [uncontrolledView, setUncontrolledView] = useState<SidebarView>("projects");
   const view = controlledView ?? uncontrolledView;
@@ -113,13 +118,21 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden">
-      {/* side-top：logo 芯片（页面底色挖孔感）+ 通知 */}
-      <div className="flex h-12 shrink-0 items-center gap-3 pl-3 pr-4">
+      {/* side-top：logo 芯片（页面底色挖孔感）+ 导航箭头（无历史，存根禁用）
+          + 侧栏收缩钮（收起态由 NavRail 的展开钮承接） */}
+      <div className="flex h-12 shrink-0 items-center gap-4 pl-3 pr-2.5">
         <div className="grid size-[23px] shrink-0 place-items-center rounded-md bg-(--color-app-bg)">
           <img src={logoUrl} alt={`${appName} Logo`} className="size-[15px] rounded-[3px]" />
         </div>
-        <div className="flex-1" />
-        <button type="button" aria-label={t("sidebar.noNotifications")} className="grid size-7 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><Bell size={15} /></button>
+        <div className="flex items-center gap-[18px]">
+          <button type="button" disabled aria-label="后退" title="后退" className="text-(--color-app-muted) disabled:opacity-60"><ArrowLeft size={15} strokeWidth={1.3} /></button>
+          <button type="button" disabled aria-label="前进" title="前进" className="text-(--color-app-faint)"><ArrowRight size={15} strokeWidth={1.3} /></button>
+        </div>
+        {onToggleSidebar && (
+          <div className="ml-auto">
+            <button type="button" onClick={onToggleSidebar} aria-label={sidebarOpen ? "折叠侧边栏" : "展开侧栏"} aria-pressed={sidebarOpen} title={sidebarOpen ? "折叠侧边栏" : "展开侧栏"} className="grid size-7 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><PanelLeft size={15} /></button>
+          </div>
+        )}
       </div>
 
       {/* 菜单块 */}

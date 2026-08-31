@@ -305,8 +305,6 @@ export function App(): React.JSX.Element {
         }}
         titleBar={(nav) => (
           <TitleBar
-            sidebarOpen={nav.sidebarOpen}
-            onToggleSidebar={nav.toggleSidebar}
             title={activeSession?.title ?? ""}
             workbench={{
               project: projectName,

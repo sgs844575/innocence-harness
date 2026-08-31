@@ -18,8 +18,6 @@ describe("TitleBar workbench controls", () => {
   it("localizes the editor/panel/terminal controls through the injected t", () => {
     render(
       <TitleBar
-        sidebarOpen
-        onToggleSidebar={() => undefined}
         workbench={{ project: "demo", routeId: null, gitBranch: null }}
         onOpenExternalEditor={() => undefined}
         onTogglePanel={() => undefined}
@@ -36,8 +34,6 @@ describe("TitleBar workbench controls", () => {
   it("carries aria-pressed state on the panel and terminal toggles", () => {
     render(
       <TitleBar
-        sidebarOpen
-        onToggleSidebar={() => undefined}
         panelOpen
         terminalOpen={false}
         onTogglePanel={() => undefined}
@@ -49,7 +45,7 @@ describe("TitleBar workbench controls", () => {
   });
 
   it("replaces text menus with an ArrowDown panel and dispatches the selected menu", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} />);
+    render(<TitleBar />);
     expect(screen.queryByRole("button", { name: "文件" })).toBeNull();
     const trigger = screen.getByRole("button", { name: "打开菜单" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
@@ -69,8 +65,6 @@ describe("TitleBar workbench controls", () => {
   it("uses titlebar menu copy and labels from the injected translator", () => {
     render(
       <TitleBar
-        sidebarOpen
-        onToggleSidebar={() => undefined}
         t={(key) => ({
           "titlebar.menu.open": "Open menu",
           "titlebar.menu.label": "Application menu",
@@ -89,7 +83,7 @@ describe("TitleBar workbench controls", () => {
   });
 
   it("closes the menu with Escape and an outside pointer event", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} />);
+    render(<TitleBar />);
     const trigger = screen.getByRole("button", { name: "打开菜单" });
     fireEvent.click(trigger);
     fireEvent.keyDown(document, { key: "Escape" });
@@ -104,7 +98,7 @@ describe("TitleBar workbench controls", () => {
     const closePanel = vi.fn();
     const openTerminal = vi.fn();
     const { rerender } = render(
-      <TitleBar sidebarOpen onToggleSidebar={() => undefined} terminalOpen onTogglePanel={closePanel} onToggleTerminal={openTerminal} />,
+      <TitleBar terminalOpen onTogglePanel={closePanel} onToggleTerminal={openTerminal} />,
     );
     const openTerminalButton = screen.getByRole("button", { name: "关闭终端" });
     expect(openTerminalButton.getAttribute("aria-pressed")).toBe("true");
@@ -113,33 +107,33 @@ describe("TitleBar workbench controls", () => {
     expect(openTerminal).not.toHaveBeenCalled();
 
     rerender(
-      <TitleBar sidebarOpen onToggleSidebar={() => undefined} terminalOpen={false} onTogglePanel={closePanel} onToggleTerminal={openTerminal} />,
+      <TitleBar terminalOpen={false} onTogglePanel={closePanel} onToggleTerminal={openTerminal} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "打开终端" }));
     expect(openTerminal).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the sidebar toggle semantics next to the menu trigger", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} />);
-    const sidebar = screen.getByRole("button", { name: "折叠侧边栏" });
-    expect(sidebar.getAttribute("aria-pressed")).toBe("true");
-    expect(sidebar.className).toContain("app-no-drag");
+  it("keeps the sidebar toggle out of the title bar (it lives on the sidebar top)", () => {
+    render(<TitleBar />);
+    expect(screen.queryByRole("button", { name: "折叠侧边栏" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "后退" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "前进" })).toBeNull();
   });
 
   it("hides the git branch chip while the branch is unknown (no wrong 非 Git)", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} workbench={{ project: "demo", routeId: null, gitBranch: null }} />);
+    render(<TitleBar workbench={{ project: "demo", routeId: null, gitBranch: null }} />);
     expect(screen.queryByText("非 Git")).toBeNull();
     expect(screen.getByText("demo")).toBeTruthy();
   });
 
   it("shows the branch chip when a branch is known", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} workbench={{ project: "demo", routeId: "route_x", gitBranch: "main" }} />);
+    render(<TitleBar workbench={{ project: "demo", routeId: "route_x", gitBranch: "main" }} />);
     expect(screen.getByText("main")).toBeTruthy();
     expect(screen.getByText("route_x")).toBeTruthy();
   });
 
   it("disables the external editor entry when no handler is wired", () => {
-    render(<TitleBar sidebarOpen onToggleSidebar={() => undefined} />);
+    render(<TitleBar />);
     const editor = screen.getByRole("button", { name: "在外部编辑器打开" }) as HTMLButtonElement;
     expect(editor.disabled).toBe(true);
   });

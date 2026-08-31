@@ -44,13 +44,13 @@ const sectionLabel: Record<CapsuleSection, string> = {
   agent: "智能体",
 };
 
-/** 参考稿 gp-row：26px 行、13px 文本、15px 图标、右侧簇。 */
-const gpRow = "flex w-full items-center gap-[11px] py-[5px] text-left text-[13px] whitespace-nowrap text-(--color-app-text)";
+/** 参考稿 gp-row：26px 行、13px 文本、15px 图标、右侧簇；行距 11px。 */
+const gpRow = "flex h-[26px] w-full items-center gap-[11px] text-left text-[13px] whitespace-nowrap text-(--color-app-text)";
 
 function SectionButton({ section, expanded, detail, ...buttonProps }: { section: CapsuleSection; expanded: boolean; detail?: string } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const Icon = section === "environment" ? GitBranch : section === "process" ? ListChecks : section === "terminal" ? SquareTerminal : Bot;
   return (
-    <button {...buttonProps} type="button" aria-expanded={expanded} className={`${gpRow} pr-3 text-(--color-app-muted) hover:text-(--color-app-text)`}>
+    <button {...buttonProps} type="button" aria-expanded={expanded} className={`${gpRow} mt-[11px] pr-1 text-(--color-app-muted) hover:text-(--color-app-text)`}>
       <Icon size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
       <span className="font-bold">{sectionLabel[section]}</span>
       {detail && <span className="truncate text-[12px] font-normal">{detail}</span>}
@@ -94,7 +94,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
 
   return (
     <aside className={className} aria-label="Agent 活动胶囊">
-      <div className="flex h-[22px] items-center px-4 pt-3 pb-2 text-[13px] font-bold text-(--color-app-text)">
+      <div className="flex h-[22px] items-center px-[18px] pt-[14px] text-[13px] font-bold text-(--color-app-text)">
         <span>活动上下文</span>
         <span className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
           <button type="button" aria-label="折叠活动胶囊" onClick={onToggleOpen} className="grid size-5 place-items-center rounded hover:text-(--color-app-text)">
@@ -102,7 +102,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
           </button>
         </span>
       </div>
-      <div className="flex flex-col px-4">
+      <div className="flex flex-col px-[18px] pb-[14px]">
         {sections.map((section) => {
           const isExpanded = expanded(section);
           return (
@@ -119,22 +119,22 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                 }
               >
               {section === "environment" && environment && (
-                <div className="pb-2 text-[13px] text-(--color-app-text)">
-                  <div className={gpRow}>
+                <div className="pt-[6px] text-[13px] text-(--color-app-text)">
+                  <div className={`${gpRow} mt-[5px]`}>
                     <FilePlus2 size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>更改</span>
-                    <span className="ml-auto flex items-center gap-2">
+                    <span className="ml-auto flex items-center gap-2.5">
                       {environment.changedFiles > 0 && <span className="text-[12px] text-(--color-app-muted)">{environment.changedFiles} 文件</span>}
                       <span className="text-[12.5px] text-(--color-diff-add)">+{environment.additions}</span>
                       <span className="text-[12.5px] text-(--color-diff-del)">−{environment.deletions}</span>
                     </span>
                   </div>
-                  <div className={gpRow}>
+                  <div className={`${gpRow} mt-[11px]`}>
                     <GitBranch size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>分支</span>
-                    <span className="ml-auto truncate text-[12.5px] text-(--color-app-muted)">{environment.branch ?? "未检测"}</span>
+                    <span className="ml-auto min-w-0 truncate text-[12.5px] text-(--color-app-muted)">{environment.branch ?? "未检测"}</span>
                   </div>
-                  <div className={gpRow}>
+                  <div className={`${gpRow} mt-[11px]`}>
                     <GitCommitHorizontal size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>提交或推送</span>
                     <span className="ml-auto flex items-center gap-2">
@@ -143,8 +143,8 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                       {environment.onCompare && <button type="button" onClick={environment.onCompare} className="capsule-action">比较</button>}
                     </span>
                   </div>
-                  <div className="mt-1 h-px bg-(--color-app-hairline)" />
-                  <div className="flex items-center gap-3 pt-1 text-[12px] text-(--color-app-muted)">
+                  <div className="mt-[13px] h-px bg-(--color-app-hairline)" />
+                  <div className="flex h-[26px] items-center gap-[38px] pt-[2px] text-[13px] text-(--color-app-muted)">
                     <span>工作区</span>
                     <span>{environment.workspaceKind}</span>
                   </div>
@@ -152,13 +152,13 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               )}
               {section === "process" && process && <TodoPanel {...process} />}
               {section === "terminal" && terminal && (
-                <div className="flex items-center justify-between px-1 pb-3 text-[12px] text-(--color-app-muted)">
+                <div className="flex h-[26px] items-center justify-between pt-[2px] text-[12px] text-(--color-app-muted)">
                   <span>{terminalLabel}</span>
                   <button type="button" disabled={!terminal.onOpen} onClick={terminal.onOpen} className="capsule-action">打开终端</button>
                 </div>
               )}
               {section === "agent" && (
-                <div className="flex flex-col gap-1.5 pb-3 text-[13px] text-(--color-app-muted)">
+                <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-[13px] text-(--color-app-muted)">
                   <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{statusLabel(agent.status)}</span></div>
                   {childAgents.map((child) => (
                     <button
