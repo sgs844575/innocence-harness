@@ -3,6 +3,17 @@
 @import "./tokens/palette.css";
 @import "./tokens/semantic.css";
 @import "./tokens/product.css";
+@import "./motion.css";
+
+/* 全局等宽字体标识：界面、代码、芯片共用一套 mono 栈（CJK 落到雅黑）。 */
+@theme {
+  --font-sans:
+    "Maple Mono", "Maple Mono SC", "Cascadia Code", "Cascadia Mono", Consolas,
+    "Microsoft YaHei", monospace;
+  --font-mono:
+    "Maple Mono", "Maple Mono SC", "Cascadia Code", "Cascadia Mono", Consolas,
+    "Microsoft YaHei", monospace;
+}
 
 @layer base {
   html,
@@ -10,9 +21,9 @@
     height: 100%;
     background: var(--color-app-bg);
     color: var(--color-app-text);
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
-      "PingFang SC", sans-serif;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -30,10 +41,10 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Flat grouped card: solid panel fill + hairline border + a whisper of
-     shadow. Used for settings groups, message cards, suggestion cards. */
+  /* 浮起卡片：画布（panel）之上的 raised 表面 + 强一档描边——
+     设置分组、消息卡、建议卡。 */
   .card {
-    background: var(--color-app-panel);
+    background: var(--color-app-raised);
     border: 1px solid var(--color-app-border);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
@@ -42,9 +53,9 @@
   /* Overlay surfaces only (drawers, toasts) — same fill, deeper shadow so
      they read as floating above the shell. */
   .card-strong {
-    background: var(--color-app-panel);
+    background: var(--color-app-raised);
     border: 1px solid var(--color-app-border);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-pop);
     box-shadow: var(--shadow-pop);
   }
 
@@ -323,6 +334,8 @@
     .drawer-right,
     .fade-in,
     .toast-in,
+    .pop-in,
+    .rise-in,
     .shimmer {
       animation: none;
     }
@@ -331,6 +344,18 @@
       animation: none;
     }
     .tool-sweep::before {
+      animation: none;
+      opacity: 0;
+    }
+    .orbs i,
+    .burst-spin {
+      animation: none;
+    }
+    .orbs i {
+      transform: none;
+      opacity: 0.8;
+    }
+    .beam::after {
       animation: none;
       opacity: 0;
     }

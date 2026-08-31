@@ -1,11 +1,15 @@
-/* 原始色板：语义层从这里取值。当前沿用既有 hex（迁移自 v2 单文件）。 */
+/* 原始色板：语义层从这里取值。橙色为主强调（操作/模式色），
+   绿/红仅作 diff 与工具成败的产品色。 */
 @layer theme {
   :root {
-    --palette-teal-500: #0d9488;
-    --palette-teal-400: #2dd4bf;
-    --palette-teal-ink: #04211d;
-    --palette-green-500: #34d399;
-    --palette-red-500: #f87171;
-    --palette-amber-500: #fbbf24;
+    --palette-orange-600: #d96c14;
+    --palette-orange-500: #f0872f;
+    --palette-orange-400: #f8a05c;
+    --palette-orange-ink: #160b02;
+    --palette-green-500: #2f9e52;
+    --palette-green-400: #6fbf73;
+    --palette-red-500: #cc3f3a;
+    --palette-red-400: #e0524e;
+    --palette-amber-500: #d9a03c;
   }
 }
