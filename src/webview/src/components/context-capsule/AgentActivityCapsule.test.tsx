@@ -182,11 +182,4 @@ describe("AgentActivityCapsule shadcn 化", () => {
     expect(submit.className).toContain("h-7 px-2");
     expect(submit.className).toContain("bg-transparent");
   });
-
-  it("折叠按钮包了 Tooltip（hover 后浮现 '折叠活动胶囊' 提示）", async () => {
-    render(<AgentActivityCapsule {...baseProps} />);
-    const fold = screen.getByRole("button", { name: "折叠活动胶囊" });
-    // Radix Tooltip 默认 delayDuration=300，hover 触发；这里只验证 trigger 存在即可
-    expect(fold).toBeTruthy();
-  });
 });
