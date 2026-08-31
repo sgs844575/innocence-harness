@@ -8,6 +8,8 @@ export interface WorkbenchFocus {
   file: string;
   /** 可选焦点行（1 起）。 */
   line?: number;
+  /** S4-LSP：焦点刷新时发现的诊断（仅新指纹；Read 命中时注记）。 */
+  diagnostics?: readonly { code: number; line: number; column: number; message: string }[];
 }
 
 let current: WorkbenchFocus | undefined;

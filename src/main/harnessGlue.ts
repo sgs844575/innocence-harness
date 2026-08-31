@@ -46,6 +46,7 @@ import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { createCredentialStore } from "./credentialStore";
 import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
 import { getWorkbenchFocus, setWorkbenchFocus } from "./workbenchFocus";
+import { diagnoseFocusedFile, diagnosticFingerprint } from "@innocenceharness/harness-diagnostics";
 
 /** S4：渲染层工作台焦点上报入口（ipc.ts 的 code:focus-changed 消费）。 */
 export function handleWorkbenchFocusNotice(notice: {
@@ -57,10 +58,20 @@ export function handleWorkbenchFocusNotice(notice: {
   if (!binding || typeof notice.relativePath !== "string" || !notice.relativePath.trim()) {
     return;
   }
+  const workspaceRoot = taskBridge.get(notice.taskId)?.workspaceRoot;
+  const current = getWorkbenchFocus();
+  const notes = workspaceRoot ? diagnoseFocusedFile(workspaceRoot, notice.relativePath) : [];
+  // Only newly seen fingerprints are forwarded; a repeated focus change does
+  // not keep re-announcing the same compiler errors on every Read.
+  const previous = current?.sessionId === binding.sessionId && current.file === notice.relativePath
+    ? new Set((current.diagnostics ?? []).map(diagnosticFingerprint))
+    : new Set<string>();
+  const diagnostics = notes.filter((note) => !previous.has(diagnosticFingerprint(note)));
   setWorkbenchFocus({
     sessionId: binding.sessionId,
     file: notice.relativePath,
     ...(typeof notice.line === "number" && notice.line > 0 ? { line: notice.line } : {}),
+    ...(diagnostics.length ? { diagnostics } : {}),
   });
 }
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";

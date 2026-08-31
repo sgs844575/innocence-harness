@@ -265,6 +265,19 @@ describe("workbench focus notes (S4)", () => {
     expect(result.content).toContain("工作台焦点注记");
     expect(result.content).toContain("第 12 行");
 
+    focus = {
+      sessionId: "s1",
+      file: "src/a.ts",
+      diagnostics: [{ code: 2322, line: 8, column: 3, message: "Type mismatch" }],
+    };
+    const diagnosed = await runMiddleware(plugin, {
+      toolName: "Read",
+      persistedArgs: { path: "src/a.ts" },
+      scope: { sessionId: "s1" },
+    });
+    expect(diagnosed.content).toContain("新诊断注记");
+    expect(diagnosed.content).toContain("TS2322 第 8:3 行");
+
     // 会话不匹配：焦点属于别的会话，不附注。
     const other = await runMiddleware(plugin, {
       toolName: "Read",

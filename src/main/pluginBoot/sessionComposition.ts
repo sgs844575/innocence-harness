@@ -175,6 +175,7 @@ export interface WorkbenchFocusInput {
   sessionId: string;
   file: string;
   line?: number;
+  diagnostics?: readonly { code: number; line: number; column: number; message: string }[];
 }
 
 function normalizeForFocusMatch(value: string): string {
@@ -213,9 +214,12 @@ export function workbenchFocusPlugin(
           const line = typeof focus.line === "number" && focus.line > 0
             ? `（当前焦点行：第 ${focus.line} 行）`
             : "";
+          const diagnostic = focus.diagnostics?.length
+            ? `\n[新诊断注记：${focus.diagnostics.slice(0, 3).map((d) => `TS${d.code} 第 ${d.line}:${d.column} 行：${d.message}`).join("；")}]`
+            : "";
           return {
             ...result,
-            content: `${result.content}\n[工作台焦点注记：用户当前已在工作台代码面板打开此文件${line}]`,
+            content: `${result.content}\n[工作台焦点注记：用户当前已在工作台代码面板打开此文件${line}]${diagnostic}`,
           };
         },
       });
