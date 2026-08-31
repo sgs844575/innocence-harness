@@ -1,3 +1,5 @@
+// 助手消息帧（参考稿语言）：无头部——正文/思考行/工具时间线直接铺开，
+// 复制/引用收进右上角悬停操作。msg 段 = 14px 半粗正文。
 import { useState } from "react";
 import { Copy, Quote } from "lucide-react";
 import { messageText, type MessagePart } from "../../../../shared/ipc";
@@ -6,7 +8,6 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { TurnCollapse } from "./TurnCollapse";
 import { WorkingRow, workingStateOf } from "./WorkingRow";
 import { coalesceToolSegments, segmentParts } from "./segmentParts";
-import logoUrl from "../../../../../logo.svg";
 
 interface Props {
   parts: MessagePart[];
@@ -24,21 +25,18 @@ export function MessageFrame({ parts, streaming, isLatest, t, onQuote }: Props):
       setTimeout(() => setCopied(false), 1500);
     });
   };
-  // 流式期间逐段渲染（贴近执行过程）；整轮完成后工具段归并成单个组行。
+  // 流式期间逐段渲染（贴近执行过程）；整轮完成后工具段归并成连续时间线。
   const segments = streaming ? segmentParts(parts) : coalesceToolSegments(segmentParts(parts));
   return (
-    <div className="group/msg">
-      <div className="mb-1 flex items-center gap-2">
-        <img src={logoUrl} alt="" className="size-5 rounded-md" />
-        <span className="text-xs font-medium text-(--color-app-muted)">InnocenceHarness</span>
-        <div className={`ml-auto flex items-center gap-3 text-[11px] text-(--color-app-muted) transition-opacity duration-150 ${isLatest ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"}`}>
-          <button type="button" onClick={copy} className="flex items-center gap-1 hover:text-(--color-app-text)">
-            <Copy size={12} />{copied ? t("chat.copied") : t("chat.copy")}
-          </button>
-          <button type="button" onClick={() => onQuote(messageText(parts))} className="flex items-center gap-1 hover:text-(--color-app-text)">
-            <Quote size={12} />{t("chat.quote")}
-          </button>
-        </div>
+    <div className="group/msg relative">
+      {/* 悬停操作：复制 / 引用（不占版面，仅悬停浮现） */}
+      <div className={`absolute -top-1 right-0 z-10 flex items-center gap-3 text-[11px] text-(--color-app-muted) transition-opacity duration-150 ${isLatest ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"}`}>
+        <button type="button" onClick={copy} aria-label={t("chat.copy")} title={t("chat.copy")} className="flex items-center gap-1 hover:text-(--color-app-text)">
+          <Copy size={12} />{copied ? t("chat.copied") : t("chat.copy")}
+        </button>
+        <button type="button" onClick={() => onQuote(messageText(parts))} aria-label={t("chat.quote")} title={t("chat.quote")} className="flex items-center gap-1 hover:text-(--color-app-text)">
+          <Quote size={12} />{t("chat.quote")}
+        </button>
       </div>
       {segments.map((seg, i) => {
         if (seg.kind === "thinking")
@@ -55,7 +53,7 @@ export function MessageFrame({ parts, streaming, isLatest, t, onQuote }: Props):
           );
         if (seg.kind === "tools") return <TurnCollapse key={i} parts={seg.parts} live={streaming} t={t} />;
         return (
-          <div key={i} className="min-h-6">
+          <div key={i} className="msg-body min-h-6">
             <MarkdownView source={seg.text} animated={streaming} t={t} />
             {streaming && i === segments.length - 1 && <span className="stream-caret" aria-label="streaming" />}
           </div>

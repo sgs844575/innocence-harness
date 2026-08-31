@@ -5,6 +5,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../../../shared/ipc";
 import { ChatView } from "../ChatView";
+import { BuiltinToolcards } from "./toolcards/builtinToolcards";
+import { SlotProvider } from "../../slots/react";
 
 afterEach(cleanup);
 
@@ -47,9 +49,11 @@ vi.mock("../Composer", () => ({
 }));
 
 describe("历史会话恢复渲染（ChatView 全链路）", () => {
-  it("用户气泡/正文/折叠组/思考块全部渲染，无崩溃", () => {
+  it("用户气泡/正文/工具时间线/思考块全部渲染，无崩溃", () => {
     render(
-      <ChatView
+      <SlotProvider>
+        <BuiltinToolcards />
+        <ChatView
         t={t}
         appName="InnocenceHarness"
         messages={restored}
@@ -65,13 +69,15 @@ describe("历史会话恢复渲染（ChatView 全链路）", () => {
         onPickProject={() => {}}
         recentProjects={[]}
         onOpenProjectDir={() => {}}
-      />,
+      />
+      </SlotProvider>,
     );
     expect(screen.getByText("帮我跑下测试")).toBeTruthy();
     expect(screen.getByText("全部通过。")).toBeTruthy();
     expect(screen.getByText("再看看文件")).toBeTruthy();
-    // 两条 assistant 各有一个折叠组
-    expect(screen.getAllByText(/chat.turn.operations/)).toHaveLength(2);
+    // 两条 assistant 各自的工具时间线（终端/读取动词行直接平铺）
+    expect(screen.getAllByText("终端").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("读取").length).toBeGreaterThan(0);
     // thinking 折叠行
     expect(screen.getAllByText(/chat.thinking.done/)).toHaveLength(1);
   });

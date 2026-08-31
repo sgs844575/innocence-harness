@@ -38,7 +38,7 @@ export function MessageItem({
   if (message.role === "user") {
     return (
       <div className="group flex flex-col items-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-(--color-app-bubble) px-4 py-2.5 text-sm leading-relaxed">
+        <div className="max-w-[85%] rounded-[12px] rounded-br-[3px] bg-(--color-app-bubble) px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
           {text}
         </div>
         {(onForkMessage || onForkSession) && (

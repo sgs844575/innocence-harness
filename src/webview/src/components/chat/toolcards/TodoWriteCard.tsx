@@ -1,8 +1,8 @@
-import { ChevronRight, ListChecks } from "lucide-react";
-import { RunningMark } from "./RunningMark";
+import { ListChecks } from "lucide-react";
+import { ToolLine } from "./ToolLine";
 import type { ToolCardProps } from "./registry";
 
-/** TodoWrite 卡：会话任务清单 —— 状态图标（○/◐/✓）+ 优先级配色 + 计数摘要。 */
+/** TodoWrite 行：会话任务清单 —— 状态图标（○/◐/✓）+ 优先级配色 + 计数摘要。 */
 const STATUS_ICON: Record<string, string> = {
   pending: "○",
   in_progress: "◐",
@@ -43,18 +43,18 @@ export function TodoWriteCard({ call, result, open, onToggle }: ToolCardProps): 
   const summary =
     todos.length === 0 ? "清单已清空" : `${todos.length} 项：${inProgress} 进行中 / ${pending} 待办`;
   return (
-    <div className={`my-1 overflow-hidden rounded-[10px] border border-(--color-app-hairline) bg-(--color-app-panel) ${result ? "" : "tool-sweep"}`}>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)/40">
-        <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <ListChecks size={12} className="shrink-0 text-(--color-app-accent)" />
-        <span className="shrink-0 text-(--color-app-text)">待办清单</span>
-        <span className="truncate">{summary}</span>
-        <span className={`ml-auto shrink-0 text-[10px] ${result?.isError ? "text-(--color-tool-err)" : "text-(--color-tool-ok)"}`}>
-          {result ? (result.isError ? "✕" : "✓") : <RunningMark />}
-        </span>
-      </button>
-      {open && (todos.length > 0 || result) && (
-        <ul className="scrollbar-thin max-h-48 overflow-auto border-t border-(--color-app-hairline) px-3 py-2 text-[11px] leading-relaxed">
+    <ToolLine
+      icon={ListChecks}
+      verb="待办清单"
+      name={<span className="min-w-0 truncate font-normal text-(--color-app-muted)">{summary}</span>}
+      open={open}
+      onToggle={onToggle}
+      running={!result}
+      error={result?.isError}
+      doneNote={result && !result.isError ? <span className="text-(--color-tool-ok)">✓</span> : undefined}
+    >
+      {(todos.length > 0 || result) && (
+        <ul className="scrollbar-thin max-h-48 list-none overflow-auto text-[12px] leading-relaxed">
           {todos.map((t, i) => (
             <li key={i} className="flex items-start gap-1.5 py-0.5">
               <span
@@ -71,6 +71,6 @@ export function TodoWriteCard({ call, result, open, onToggle }: ToolCardProps): 
           ))}
         </ul>
       )}
-    </div>
+    </ToolLine>
   );
 }

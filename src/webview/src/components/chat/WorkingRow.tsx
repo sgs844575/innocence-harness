@@ -1,4 +1,4 @@
-import { BrainCircuit, Loader2, Terminal } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import type { MessagePart } from "../../../../shared/ipc";
 
 export type WorkingState =
@@ -13,46 +13,48 @@ export type WorkingState =
 export function workingStateOf(parts: MessagePart[]): WorkingState {
   if (parts.length === 0) return { kind: "start" };
   const pending = new Set<string>();
-  let lastPending = "";
   for (const p of parts) {
-    if (p.type === "toolCall") {
-      pending.add(p.id);
-      lastPending = p.toolName;
-    } else if (p.type === "toolResult") {
-      pending.delete(p.toolCallId);
-    }
+    if (p.type === "toolCall") pending.add(p.id);
+    else if (p.type === "toolResult") pending.delete(p.toolCallId);
   }
-  if (pending.size > 0) return { kind: "tool", toolName: lastPending };
+  if (pending.size > 0) {
+    let lastPending = "";
+    for (const p of parts) if (p.type === "toolCall") lastPending = p.toolName;
+    return { kind: "tool", toolName: lastPending };
+  }
   const last = parts[parts.length - 1]!;
   if (last.type === "thinking") return { kind: "thinking" };
   if (last.type === "text") return { kind: "idle" };
   return { kind: "start" }; // 末尾是 toolResult：两个工具之间 / 即将收尾
 }
 
-/** 消息底部的活动指示行：旋转图标 + 当前动作标签，只在无文字流出的
- *  真空档渲染（文本流出时由 stream-caret 接管）。 */
+/** 消息尾部的活动指示行（参考稿 tail-spin）：旋转环 + 当前动作标签，
+ * 只在无文字流出的真空档渲染（文本流出时由 stream-caret 接管）。 */
 export function WorkingRow({ state, t }: { state: WorkingState; t: (key: string) => string }): React.JSX.Element | null {
   if (state.kind === "idle") return null;
   if (state.kind === "thinking") {
     return (
-      <div className="flex items-center gap-2 py-1 text-[11.5px] text-(--color-app-muted)">
-        <BrainCircuit size={13} className="animate-pulse text-(--color-app-accent)" />
+      <div className="flex items-center gap-2.5 py-1 text-[13px] text-(--color-app-muted)">
+        <span className="orbs" aria-hidden>
+          <i />
+          <i />
+          <i />
+        </span>
         {t("chat.working.thinking")}
       </div>
     );
   }
   if (state.kind === "tool") {
     return (
-      <div className="tool-sweep flex items-center gap-2 rounded-lg py-1 text-[11.5px] text-(--color-app-muted)">
-        <Terminal size={13} className="text-(--color-app-accent)" />
-        <Loader2 size={12} className="animate-spin text-(--color-app-accent)" />
+      <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-[13px] text-(--color-app-muted)">
+        <LoaderCircle size={15} className="animate-spin" />
         {t("chat.working.tool").replace("{tool}", state.toolName)}
       </div>
     );
   }
   return (
-    <div className="tool-sweep flex items-center gap-2 rounded-lg py-1 text-[11.5px] text-(--color-app-muted)">
-      <Loader2 size={13} className="animate-spin text-(--color-app-accent)" />
+    <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-[13px] text-(--color-app-muted)">
+      <LoaderCircle size={15} className="animate-spin" />
       {t("chat.working.start")}
     </div>
   );

@@ -82,7 +82,8 @@ describe("tool cards registry", () => {
   });
   it("File 卡展示工具名与目标并展开输出", () => {
     renderCard("Read", { call: call("Read", { path: "src/app.ts" }), result: res("1\thello"), open: true, onToggle: () => {} });
-    expect(screen.getByText(/Read src\/app\.ts/)).toBeTruthy();
+    expect(screen.getByText("读取")).toBeTruthy();
+    expect(screen.getByText("src/app.ts")).toBeTruthy();
     expect(screen.getByText(/hello/)).toBeTruthy();
   });
   it("Task 卡展示任务摘要与 agentType 徽标", () => {

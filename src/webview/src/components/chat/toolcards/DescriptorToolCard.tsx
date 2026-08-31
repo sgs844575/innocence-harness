@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
-import { ChevronRight, Plug } from "lucide-react";
-import { RunningMark } from "./RunningMark";
+import { Plug } from "lucide-react";
+import { ToolLine } from "./ToolLine";
 import type { ToolCardProps } from "./registry";
 
 /**
@@ -17,8 +17,8 @@ export interface ToolCardDescriptor {
   renderResult?: boolean;
 }
 
-/** 描述符驱动的通用卡：title 徽标 + 参数 JSON 折叠 + 结果/耗时/错误态
- *  （结构随 McpToolCard/UnknownTool 同款）。 */
+/** 描述符驱动的通用行：title 主名 + 参数 JSON 折叠 + 结果/耗时/错误态
+ *  （结构随 McpToolCard/UnknownTool 同款紧凑行）。 */
 export function DescriptorToolCard({
   descriptor,
   call,
@@ -28,31 +28,29 @@ export function DescriptorToolCard({
 }: ToolCardProps & { descriptor: ToolCardDescriptor }): React.JSX.Element {
   const title = descriptor.title ?? call.toolName;
   return (
-    <div className={`my-1 overflow-hidden rounded-[10px] border border-(--color-app-hairline) bg-(--color-app-panel) ${result ? "" : "tool-sweep"}`}>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)/40">
-        <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <Plug size={12} className="shrink-0 text-(--color-app-accent)" />
-        <span className="shrink-0 truncate text-(--color-app-accent)">{title}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {result?.durationMs ? (
-            <span className="text-[10px] text-(--color-app-muted)/60">{(result.durationMs / 1000).toFixed(1)}s</span>
-          ) : null}
-          <span className={`text-[10px] ${result?.isError ? "text-(--color-tool-err)" : "text-(--color-tool-ok)"}`}>
-            {result ? (result.isError ? "✕" : "✓") : <RunningMark />}
-          </span>
-        </span>
-      </button>
-      {open && (
-        <div className="border-t border-(--color-app-hairline) px-2.5 py-2 font-mono text-[11px] leading-relaxed text-(--color-app-muted)">
-          {descriptor.renderArgs !== false && (
-            <pre className="scrollbar-thin max-h-48 overflow-auto">{JSON.stringify(call.args, null, 2)}</pre>
-          )}
-          {descriptor.renderResult !== false && result && (
-            <pre className="scrollbar-thin mt-1 max-h-48 overflow-auto">{result.content}</pre>
-          )}
-        </div>
-      )}
-    </div>
+    <ToolLine
+      icon={Plug}
+      verb="插件工具"
+      name={title}
+      open={open}
+      onToggle={onToggle}
+      running={!result}
+      error={result?.isError}
+      doneNote={
+        result?.durationMs ? (
+          <span className="text-[11px] text-(--color-app-muted)/70">{(result.durationMs / 1000).toFixed(1)}s</span>
+        ) : null
+      }
+    >
+      <div className="font-mono text-[11.5px] leading-relaxed text-(--color-app-muted)">
+        {descriptor.renderArgs !== false && (
+          <pre className="scrollbar-thin max-h-48 overflow-auto">{JSON.stringify(call.args, null, 2)}</pre>
+        )}
+        {descriptor.renderResult !== false && result && (
+          <pre className="scrollbar-thin mt-1 max-h-48 overflow-auto">{result.content}</pre>
+        )}
+      </div>
+    </ToolLine>
   );
 }
 

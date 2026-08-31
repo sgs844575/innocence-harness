@@ -5,7 +5,6 @@ import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
 import { ProjectPicker, type RecentProject } from "./composer/ProjectPicker";
 import type { AgentModeOption } from "./composer/AgentModePicker";
-import { ConversationHeader } from "./chat/ConversationHeader";
 import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
 import type { AgentActivityProjection } from "./context-capsule/activityProjection";
 import { CAPSULE_WIDTH, defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
@@ -73,9 +72,6 @@ export function ChatView({
   onForkSession,
   onBackgroundRun,
   onOpenReview,
-  taskTitle,
-  projectName,
-  gitBranch,
   activity,
 }: Props): React.JSX.Element {
   const [presentation, dispatchPresentation] = useReducer(reduceWorkspacePresentationState, defaultWorkspacePresentationState);
@@ -173,7 +169,6 @@ export function ChatView({
     );
   }
 
-  const title = taskTitle ?? "当前会话";
   const capsule = activity ? (
     <AgentActivityCapsule
       open={presentation.capsuleOpen}
@@ -195,12 +190,28 @@ export function ChatView({
       ref={workspaceRef}
       className={`chat-workspace chat-workspace-${layout.capsulePlacement} flex h-full min-w-0 flex-1 flex-col`}
     >
-      <ConversationHeader task={title} project={projectName ?? ""} branch={gitBranch ?? null} actions={onOpenReview ? [{ label: "打开审查", onSelect: onOpenReview }] : []} />
-      <div className="chat-workspace-body min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
+      <div className="chat-workspace-body relative min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
+        {/* 左缘虚线滚动刻度（参考稿 chat-dashes）；审查入口悬于右上。 */}
+        {messages.length > 0 && (
+          <div className="chat-dashes" aria-hidden>
+            {Array.from({ length: 9 }, (_, i) => <i key={i} />)}
+          </div>
+        )}
+        {onOpenReview && (
+          <button
+            type="button"
+            onClick={onOpenReview}
+            aria-label="打开审查"
+            title="打开审查"
+            className="absolute right-0 top-2 z-10 flex h-7 items-center rounded-full bg-(--color-app-sunken) px-3 text-xs text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
+          >
+            打开审查
+          </button>
+        )}
         <div data-testid="chat-frame" className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
           <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
             <div data-testid="chat-timeline" className="chat-column mx-auto pb-6" style={{ maxWidth: layout.contentMaxWidth }}>
-              <div className="space-y-5 pt-6">
+              <div className="space-y-6 pt-8">
                 {messages.map((m) => (
                   <MessageItem
                     key={m.id}

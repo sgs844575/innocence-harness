@@ -1,29 +1,24 @@
-import { ChevronRight, Terminal } from "lucide-react";
-import { RunningMark } from "./RunningMark";
+import { Terminal } from "lucide-react";
+import { ToolLine } from "./ToolLine";
 import type { ToolCardProps } from "./registry";
 
-/** Bash 卡：命令一行 + open 时滚动输出，耗时/失败态右对齐。 */
+/** Bash 行：终端动词 + 命令单行（运行态动词提亮），open 时滚动输出。 */
 export function BashTool({ call, result, open, onToggle }: ToolCardProps): React.JSX.Element {
   const command = typeof call.args.command === "string" ? call.args.command : JSON.stringify(call.args);
+  const running = !result;
   return (
-    <div className={`my-1 overflow-hidden rounded-[10px] border border-(--color-app-hairline) bg-(--color-code-bg) ${result ? "" : "tool-sweep"}`}>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[11px] text-(--color-code-fg)/80 hover:bg-white/5">
-        <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <Terminal size={12} className="shrink-0" />
-        <span className="truncate">{command}</span>
-        <span className={`ml-auto shrink-0 text-[10px] ${result?.isError ? "text-(--color-tool-err)" : "text-(--color-tool-ok)"}`}>
-          {result
-            ? result.isError
-              ? "✕"
-              : result.durationMs != null
-                ? `✓ ${(result.durationMs / 1000).toFixed(1)}s`
-                : "✓"
-            : <RunningMark />}
-        </span>
-      </button>
-      {open && result && (
-        <pre className="scrollbar-thin max-h-56 overflow-auto border-t border-white/10 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-(--color-code-fg)/70">{result.content}</pre>
+    <ToolLine
+      icon={Terminal}
+      verb={running ? "正在执行" : "终端"}
+      name={<span className="min-w-0 truncate font-normal text-[12px] text-(--color-app-muted)">{command}</span>}
+      open={open}
+      onToggle={onToggle}
+      running={running}
+      error={result?.isError}
+    >
+      {result && (
+        <pre className="scrollbar-thin max-h-56 overflow-auto font-mono text-[11.5px] leading-relaxed text-(--color-code-fg)/80">{result.content}</pre>
       )}
-    </div>
+    </ToolLine>
   );
 }

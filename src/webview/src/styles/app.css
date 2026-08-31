@@ -139,6 +139,39 @@
     max-width: clamp(48rem, 72vw, 62rem);
   }
 
+  /* 助手正文段（参考稿 .msg）：14px 半粗、块间 24px 节奏。 */
+  .msg-body {
+    color: var(--color-app-text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+
+  .msg-body + .msg-body {
+    margin-top: 24px;
+  }
+
+  /* 聊天滚动区左缘的虚线刻度（参考稿 chat-dashes）。 */
+  .chat-dashes {
+    position: absolute;
+    left: 10px;
+    top: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .chat-dashes i {
+    width: 12px;
+    height: 3px;
+    border-radius: 1.5px;
+    background: var(--color-app-border);
+    opacity: 0.55;
+    display: block;
+  }
+
   .chat-header {
     background: color-mix(in srgb, var(--color-app-panel) 92%, transparent);
   }

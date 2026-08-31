@@ -14,19 +14,22 @@ const call: ToolCallPart = { type: "toolCall", id: "a", toolName: "Bash", args: 
 const result: ToolResultPart = { type: "toolResult", toolCallId: "a", content: "x", isError: false, durationMs: 50 };
 const t = (k: string) => k;
 
-describe("TurnCollapse", () => {
-  it("完成态默认折叠，点击组行展开工具行", () => {
+describe("TurnCollapse（工具时间线）", () => {
+  it("工具行直接平铺可见，点击行展开明细", () => {
     render(
       <SlotProvider>
         <BuiltinToolcards />
         <TurnCollapse parts={[call, result]} live={false} t={t} />
       </SlotProvider>,
     );
-    expect(screen.queryByText("ls")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /1 chat\.turn\.operations/ }));
-    expect(screen.getByText(/ls/)).toBeTruthy();
+    // 参考稿语言：每个动作一行，不再折叠成组——命令直接可见
+    expect(screen.getByText("ls")).toBeTruthy();
+    // 明细默认收起：输出内容不可见，点击行后展开
+    expect(screen.queryByText("x")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /终端/ }));
+    expect(screen.getByText("x")).toBeTruthy();
   });
-  it("流式态默认展开", () => {
+  it("流式态行同样直接可见", () => {
     render(
       <SlotProvider>
         <BuiltinToolcards />
