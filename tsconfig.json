@@ -16,7 +16,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"]
+    "types": ["node", "@testing-library/jest-dom"]
   },
   "include": [
     "src/**/*.ts",
