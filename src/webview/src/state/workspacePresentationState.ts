@@ -130,23 +130,23 @@ export function reduceWorkspacePresentationState(
 export interface WorkspaceLayout {
   /** 消息列宽度封顶（参考稿 .col max-width:1120px；窗口更窄时吃满余量）。 */
   contentMaxWidth: number;
-  /** 消息列左留白（参考稿满宽态 .scroll padding-left:100px，虚线刻度槽）。 */
+  /** 滚动区左留白（与右留白等大，保证聊天主体在窗口中轴居中）。 */
   contentGutter: number;
-  /** 滚动区右留白（参考稿 .scroll padding-right:20px）。 */
+  /** 滚动区右留白（与左留白等大，详见 contentGutter）。 */
   contentRightGutter: number;
   capsulePlacement: CapsulePlacement;
 }
 
-/** 参考稿实测：正文列 1120px 封顶、满宽态左留白 100px / 右留白 20px。 */
+/** 参考稿实测：正文列 1120px 封顶；左右留白等大（24..100px 呼吸，超出封顶后同步等比扩张）。 */
 export const CHAT_CONTENT_MAX_WIDTH = 1120;
-const CHAT_LEFT_GUTTER_MAX = 100;
-const CHAT_LEFT_GUTTER_MIN = 24;
-const CHAT_RIGHT_GUTTER = 20;
+const CHAT_GUTTER_MAX = 100;
+const CHAT_GUTTER_MIN = 24;
 
 export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout {
   // 满宽滚动 + 流体收缩内容列：滚动区铺满主列（滚动条贴窗口最右缘），
-  // 左留白随窗口宽度 8% 呼吸（24..100px），正文/输入盒吃满余量并在
-  // 1120px 封顶——窗口大小变化时整条轨道随之伸缩；胶囊悬浮其上不占列。
+  // 左右留白等大——随窗口宽度 8% 同步呼吸（24..100px），正文/输入盒吃满
+  // 余量并在 1120px 封顶；窗口超过 1320px 后列封顶，左右留白等比扩张
+  // 保证聊天主体始终居中。胶囊悬浮其上不占列。
   if (viewportWidth < 640) {
     return {
       contentMaxWidth: viewportWidth,
@@ -155,11 +155,13 @@ export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout 
       capsulePlacement: "sheet",
     };
   }
-  const gutter = Math.min(CHAT_LEFT_GUTTER_MAX, Math.max(CHAT_LEFT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
+  const idealGutter = Math.min(CHAT_GUTTER_MAX, Math.max(CHAT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
+  const contentMaxWidth = Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - 2 * idealGutter);
+  const gutter = (viewportWidth - contentMaxWidth) / 2;
   return {
-    contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - gutter - CHAT_RIGHT_GUTTER),
+    contentMaxWidth,
     contentGutter: gutter,
-    contentRightGutter: CHAT_RIGHT_GUTTER,
+    contentRightGutter: gutter,
     capsulePlacement: "floating",
   };
 }

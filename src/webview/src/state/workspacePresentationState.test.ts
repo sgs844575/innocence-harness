@@ -25,27 +25,29 @@ describe("workspace presentation state", () => {
   });
 
   it("uses one fluid content width model for messages, composer, and capsule", () => {
-    // 满宽窗口：左留白封顶 100px（参考稿满宽态），内容列 1120px 封顶。
+    // 满宽窗口：列 1120px 封顶，左右留白等比扩张至 (1440-1120)/2=160。
     expect(workspaceLayoutForWidth(1440)).toEqual({
       contentMaxWidth: 1120,
-      contentGutter: 100,
-      contentRightGutter: 20,
+      contentGutter: 160,
+      contentRightGutter: 160,
       capsulePlacement: "floating",
     });
-    // 中窗：留白随宽度 8% 呼吸（900×0.08=72），内容列吃满余量（900-72-20）。
+    // 中窗：左右留白等大（900×0.08=72），内容列吃满余量（900-72-72）。
     expect(workspaceLayoutForWidth(900)).toEqual({
-      contentMaxWidth: 808,
+      contentMaxWidth: 756,
       contentGutter: 72,
-      contentRightGutter: 20,
+      contentRightGutter: 72,
       capsulePlacement: "floating",
     });
-    // 中窄窗：留白仍按 8% 缩（650×0.08=52，24px 下限仅在极窄时兜底）。
+    // 中窄窗：留白仍按 8% 缩（650×0.08=52，左右等大），24px 下限仅在极窄时兜底。
     expect(workspaceLayoutForWidth(650)).toMatchObject({
       contentGutter: 52,
+      contentRightGutter: 52,
       capsulePlacement: "floating",
     });
     expect(workspaceLayoutForWidth(520)).toMatchObject({
       contentGutter: 16,
+      contentRightGutter: 16,
       capsulePlacement: "sheet",
     });
   });
