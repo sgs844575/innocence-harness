@@ -12,7 +12,7 @@ export function DropdownMenu({
     <RadixDropdownMenu.Root>
       <RadixDropdownMenu.Trigger asChild>{trigger}</RadixDropdownMenu.Trigger>
       <RadixDropdownMenu.Portal>
-        <RadixDropdownMenu.Content className="z-50 min-w-32 rounded-lg border border-(--color-app-border) bg-(--color-app-panel) p-1 shadow-(--shadow-pop)">
+        <RadixDropdownMenu.Content className="pop-in z-50 min-w-32 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) p-1 shadow-(--shadow-pop)">
           {children}
         </RadixDropdownMenu.Content>
       </RadixDropdownMenu.Portal>

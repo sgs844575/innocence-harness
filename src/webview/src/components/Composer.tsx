@@ -135,7 +135,7 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder={t(composerMode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
             rows={1}
-            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 text-[13.5px] leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
+            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
           />
           {composerMode === "landing" && (
             <div className="flex flex-wrap gap-x-3 px-3 pt-1 text-[10px] text-(--color-app-faint)">

@@ -18,7 +18,7 @@ export function Popover({ trigger, children, align = "start", side = "top", cont
           align={align}
           side={side}
           sideOffset={6}
-          className={`pop-in z-50 rounded-[10px] border border-(--color-app-border) bg-(--color-app-raised) shadow-(--shadow-pop) ${contentClassName}`}
+          className={`pop-in z-50 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) shadow-(--shadow-pop) ${contentClassName}`}
         >
           {children}
         </RadixPopover.Content>

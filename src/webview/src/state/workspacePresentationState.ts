@@ -135,11 +135,13 @@ export interface WorkspaceLayout {
 }
 
 export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout {
+  // 聊天主体满宽：内容列撑满可用宽度（仅留 gutter），不再居中封顶；
+  // 停靠胶囊的宽度由 ChatView 的 frame 布局扣除（companionWidth/gap）。
   if (viewportWidth < 640) {
-    return { contentMaxWidth: 720, contentGutter: 16, capsuleGap: 0, capsulePlacement: "sheet" };
+    return { contentMaxWidth: viewportWidth, contentGutter: 16, capsuleGap: 0, capsulePlacement: "sheet" };
   }
   if (viewportWidth < 1340) {
-    return { contentMaxWidth: 860, contentGutter: 24, capsuleGap: 16, capsulePlacement: "overlay" };
+    return { contentMaxWidth: viewportWidth, contentGutter: 24, capsuleGap: 16, capsulePlacement: "overlay" };
   }
-  return { contentMaxWidth: 960, contentGutter: 32, capsuleGap: 24, capsulePlacement: "docked" };
+  return { contentMaxWidth: viewportWidth, contentGutter: 32, capsuleGap: 24, capsulePlacement: "docked" };
 }

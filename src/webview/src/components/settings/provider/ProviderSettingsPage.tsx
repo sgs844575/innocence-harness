@@ -258,7 +258,7 @@ export function ProviderSettingsPage({
             onClick={() => setRenaming(null)}
             className="fade-in absolute inset-0 bg-black/25"
           />
-          <div className="relative flex w-[320px] flex-col gap-3 rounded-2xl border border-(--color-app-border) bg-(--color-app-panel) p-4 shadow-(--shadow-pop)">
+          <div className="pop-in relative flex w-[320px] flex-col gap-3 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) p-4 shadow-(--shadow-pop)">
             <h2 className="text-[13px] font-semibold">重命名厂家</h2>
             <input
               autoFocus

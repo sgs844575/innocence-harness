@@ -56,7 +56,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
         onClick={onClose}
         className="fade-in absolute inset-0 bg-black/25"
       />
-      <div className="relative w-[440px] rounded-2xl border border-(--color-app-border) bg-(--color-app-panel) p-5 shadow-(--shadow-pop)">
+      <div className="pop-in relative w-[440px] rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) p-5 shadow-(--shadow-pop)">
         <h2 className="mb-4 text-[14px] font-semibold">添加厂家</h2>
         <div className="flex flex-col gap-3 text-[12.5px]">
           <label className="flex flex-col gap-1">

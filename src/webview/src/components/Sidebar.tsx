@@ -1,7 +1,8 @@
 // Sidebar navigation: durable trees, explicit id-only drag commands, and archive recovery.
-// 呈现遵循参考稿：顶部 logo 芯片 + 通知；菜单块（新建/搜索/自动化/插件市场，
-// 带快捷键注记）；分组/项目分类芯片 + 筛选/归档工具；运行任务条（星芒旋转）；
+// 呈现遵循参考稿：菜单块（新建/搜索/自动化/插件市场，带快捷键注记）；
+// 分组/项目分类芯片 + 筛选/归档工具；运行任务条（星芒旋转）；
 // 底部身份条（logo 头像 + 应用名 + 本地徽章 + 设置）。
+// 顶部 logo/前进后退/新会话在标题栏左段（独立于侧栏，收起后仍保留）。
 import { useMemo, useRef, useState } from "react";
 import { DndContext, closestCenter, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -9,8 +10,6 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   ArchiveRestore,
-  ArrowLeft,
-  ArrowRight,
   Asterisk,
   ChevronRight,
   CircleAlert,
@@ -18,7 +17,6 @@ import {
   Filter,
   GripVertical,
   LayoutGrid,
-  PanelLeft,
   Pin,
   Search,
   Settings,
@@ -56,9 +54,6 @@ interface Props {
   collapsedProjectIds?: readonly string[];
   onViewChange?: (view: SidebarView) => void;
   onToggleProject?: (projectId: string) => void;
-  /** 侧栏开合语义（参考稿 side-top：logo + 导航箭头 + 收缩钮都在侧栏上）。 */
-  sidebarOpen?: boolean;
-  onToggleSidebar?: () => void;
 }
 
 const NAV_ITEMS: readonly {
@@ -73,7 +68,7 @@ const NAV_ITEMS: readonly {
   { icon: LayoutGrid, key: "sidebar.nav.plugins", action: "plugins" },
 ];
 
-export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject, sidebarOpen, onToggleSidebar }: Props): React.JSX.Element {
+export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [uncontrolledView, setUncontrolledView] = useState<SidebarView>("projects");
   const view = controlledView ?? uncontrolledView;
@@ -118,23 +113,6 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden">
-      {/* side-top：logo 芯片（页面底色挖孔感）+ 导航箭头（无历史，存根禁用）
-          + 侧栏收缩钮（收起态由 NavRail 的展开钮承接） */}
-      <div className="flex h-12 shrink-0 items-center gap-4 pl-3 pr-2.5">
-        <div className="grid size-[23px] shrink-0 place-items-center rounded-md bg-(--color-app-bg)">
-          <img src={logoUrl} alt={`${appName} Logo`} className="size-[15px] rounded-[3px]" />
-        </div>
-        <div className="flex items-center gap-[18px]">
-          <button type="button" disabled aria-label="后退" title="后退" className="text-(--color-app-muted) disabled:opacity-60"><ArrowLeft size={15} strokeWidth={1.3} /></button>
-          <button type="button" disabled aria-label="前进" title="前进" className="text-(--color-app-faint)"><ArrowRight size={15} strokeWidth={1.3} /></button>
-        </div>
-        {onToggleSidebar && (
-          <div className="ml-auto">
-            <button type="button" onClick={onToggleSidebar} aria-label={sidebarOpen ? "折叠侧边栏" : "展开侧栏"} aria-pressed={sidebarOpen} title={sidebarOpen ? "折叠侧边栏" : "展开侧栏"} className="grid size-7 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><PanelLeft size={15} /></button>
-          </div>
-        )}
-      </div>
-
       {/* 菜单块 */}
       <nav className="flex flex-col gap-px px-2.5 pt-3.5">
         {NAV_ITEMS.map(({ icon: Icon, key, action, kbd }) => <button key={key} type="button" onClick={actionFor(action)} title={t(key)} className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] text-(--color-app-text) hover:bg-(--color-app-hover)"><Icon size={16} className="text-(--color-app-muted)" />{t(key)}{kbd && <span aria-hidden className="ml-auto text-[11px] text-(--color-app-faint)">{kbd}</span>}</button>)}

@@ -29,7 +29,6 @@ describe("AppShell automation navigation", () => {
           t={(key) => key}
           titleBar={(nav) => <button type="button" onClick={nav.openAutomation}>Open automation</button>}
           sidebar={() => null}
-          rail={() => null}
           chat={<div>Chat surface</div>}
           automation={<div>Automation empty state</div>}
           settings={() => null}
@@ -52,7 +51,6 @@ describe("AppShell workbench navigation", () => {
           t={(key) => key}
           titleBar={(nav) => <output data-testid="active-workbench-tab">{nav.workbench.tab}</output>}
           sidebar={() => null}
-          rail={() => null}
           chat={<div>Chat surface</div>}
           settings={() => null}
           panels={{}}
@@ -63,7 +61,7 @@ describe("AppShell workbench navigation", () => {
   });
 });
 describe("AppShell sidebar collapse", () => {
-  it("removes the full sidebar and rail when a wide sidebar is collapsed", () => {
+  it("removes the sidebar entirely when collapsed (no rail strip; the title-bar toggle restores it)", () => {
     window.matchMedia = ((query: string) => ({
       matches: query === "(min-width: 1024px)",
       media: query,
@@ -81,7 +79,6 @@ describe("AppShell sidebar collapse", () => {
           t={(key) => key}
           titleBar={(nav) => <button type="button" onClick={nav.toggleSidebar} aria-label={nav.sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}>toggle</button>}
           sidebar={() => <div data-testid="full-sidebar">Full sidebar</div>}
-          rail={() => <div data-testid="sidebar-rail">Sidebar rail</div>}
           chat={<div>Chat surface</div>}
           settings={() => null}
           panels={{}}
@@ -90,15 +87,15 @@ describe("AppShell sidebar collapse", () => {
     );
 
     expect(screen.getByTestId("full-sidebar")).toBeTruthy();
-    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
 
+    // 收起 = 侧边栏整列宽度动画到 0（常驻挂载以便动画，无窄条 rail）
     fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
-    expect(screen.queryByTestId("full-sidebar")).toBeNull();
-    expect(screen.getByTestId("sidebar-rail")).toBeTruthy();
+    const collapsed = screen.getByTestId("full-sidebar");
+    expect(collapsed.parentElement?.className).toContain("w-0");
+    expect(screen.getByText("Chat surface")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
-    expect(screen.getByTestId("full-sidebar")).toBeTruthy();
-    expect(screen.queryByTestId("sidebar-rail")).toBeNull();
+    expect(screen.getByTestId("full-sidebar").parentElement?.className).toContain("w-[265px]");
   });
 });
 describe("AppShell global search", () => {
@@ -117,9 +114,8 @@ describe("AppShell global search", () => {
       <SlotProvider registry={createSlotRegistry()}>
         <AppShell
           t={(key) => key}
-          titleBar={() => null}
+          titleBar={(nav) => <button type="button" onClick={nav.toggleSidebar} aria-label={nav.sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}>toggle drawer</button>}
           sidebar={(nav) => <button type="button" onClick={nav.openSearch}>Search from drawer</button>}
-          rail={(nav) => <button type="button" onClick={nav.expandNav}>Open drawer</button>}
           chat={<div>Chat surface</div>}
           search={(nav) => nav.searchOpen ? <div role="dialog">Search</div> : null}
           settings={() => null}
@@ -127,12 +123,13 @@ describe("AppShell global search", () => {
         />
       </SlotProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Open drawer" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
     expect(screen.getByRole("button", { name: "Search from drawer" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Search from drawer" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Search from drawer" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open drawer" }));
+    // 抽屉已随导航收起——再次展开侧栏后搜索入口可见
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
     expect(screen.getByRole("button", { name: "Search from drawer" })).toBeTruthy();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(screen.queryByRole("button", { name: "Search from drawer" })).toBeNull();
@@ -145,7 +142,6 @@ describe("AppShell global search", () => {
           t={(key) => key}
           titleBar={(nav) => <button type="button" onClick={(nav as typeof nav & { openSearch: () => void }).openSearch}>Open search</button>}
           sidebar={() => null}
-          rail={() => null}
           chat={<div>Chat surface</div>}
           automation={null}
           search={(nav) => nav.searchOpen ? <div role="dialog" aria-label="Global search">Global search</div> : null}

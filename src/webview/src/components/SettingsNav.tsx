@@ -1,13 +1,12 @@
 // SettingsNav — the first-level settings menu that replaces the project
 // sidebar while the settings view is open (reference shots 4/5): a back-to-
 // chat row on top, then one entry per settings section. Pure content; the
-// shell column (docked / rail / drawer) supplies background and borders.
+// shell column (docked / drawer) supplies background and borders.
 // 自 1c 起分区清单从 settings.section 槽位派生（内置贡献由
 // builtinSettingsSections 注册；SettingsSection 类型保留内置五值联合）。
 import { ArrowLeft } from "lucide-react";
 import type { ComponentType } from "react";
 import { useSlotList } from "../slots/react";
-import { NavRail } from "./NavRail";
 
 export type SettingsSection =
   | "models"
@@ -74,21 +73,5 @@ export function SettingsNav({ t, section, onSelect, onBack }: Props): React.JSX.
         ))}
       </div>
     </nav>
-  );
-}
-
-/** 设置态的图标轨（中窗/折叠态）：分区清单同样从槽位派生。 */
-export function SettingsRail({ t, section, onSelect, onBack }: Props): React.JSX.Element {
-  const sections = useSettingsSections();
-  return (
-    <NavRail
-      top={{ icon: ArrowLeft, label: t("settings.backToChat"), onClick: onBack }}
-      items={sections.map(({ id, icon, labelKey }) => ({
-        icon,
-        label: t(labelKey),
-        onClick: () => onSelect(id),
-        active: section === id,
-      }))}
-    />
   );
 }

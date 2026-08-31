@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 设置分区槽位契约测试：内置五分区注册 → settings.section 清单（id/labelKey 序）
-// + SettingsNav / SettingsRail / SettingsView 三消费方派生（断言强度等价原
+// + SettingsNav / SettingsView 消费方派生（断言强度等价原
 // 硬编码清单与条件分发）+ 依赖更新不重注册（T2 引用稳定契约）。
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,6 @@ import { SettingsView } from "../SettingsView";
 import {
   SETTINGS_SECTION_SLOT,
   SettingsNav,
-  SettingsRail,
   type SettingsSection,
   type SettingsSectionContribution,
 } from "../SettingsNav";
@@ -131,24 +130,6 @@ describe("SettingsNav 槽位派生", () => {
     expect(items.map((item) => item.textContent)).toEqual(["模型服务", "通用", "插件", "技能", "外观", "关于"]);
     fireEvent.click(screen.getByRole("button", { name: "插件" }));
     expect(onSelect).toHaveBeenCalledWith("plugins");
-  });
-});
-
-describe("SettingsRail 槽位派生", () => {
-  it("轨道按钮按序派生（aria-label）并标注激活态与返回入口", () => {
-    const onSelect = vi.fn();
-    mountSections(
-      baseSettings(),
-      <SettingsRail t={t} section="plugins" onSelect={onSelect} onBack={() => {}} />,
-    );
-    const names = ["模型服务", "通用", "插件", "技能", "外观", "关于"];
-    for (const name of names) {
-      const button = screen.getByRole("button", { name });
-      expect(button.getAttribute("aria-pressed")).toBe(name === "插件" ? "true" : "false");
-    }
-    fireEvent.click(screen.getByRole("button", { name: "外观" }));
-    expect(onSelect).toHaveBeenCalledWith("appearance");
-    expect(screen.getByRole("button", { name: "返回会话" })).toBeTruthy();
   });
 });
 

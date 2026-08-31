@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
-import {
-  MessageSquarePlus,
-  PanelLeftOpen,
-  Settings as SettingsIcon,
-  SquareTerminal,
-} from "lucide-react";
 import { Sidebar } from "../components/Sidebar";
-import { SettingsNav, SettingsRail } from "../components/SettingsNav";
-import { NavRail } from "../components/NavRail";
+import { SettingsNav } from "../components/SettingsNav";
 import { SettingsView } from "../components/SettingsView";
 import type { AppShellNav } from "../components/AppShell";
 import type { AppInfo, HarnessSettings } from "../../../shared/ipc";
@@ -15,7 +8,6 @@ import type { SessionController } from "./useSessionController";
 import { useSidebarState } from "./useSidebarState";
 import { useSessionActivityProjection } from "./sessionActivityProjection";
 import { WORKSPACE_PRESENTATION_STORAGE_KEY, persistWorkspacePresentationState, reduceWorkspacePresentationState, restoreWorkspacePresentationState } from "./workspacePresentationState";
-import logoUrl from "../../../../logo.svg";
 
 export function useAppNavigation({
   t,
@@ -66,8 +58,6 @@ export function useAppNavigation({
           activeId={sessions.activeId}
           sidebar={sidebarState}
           sessionStatuses={sessionStatuses}
-          sidebarOpen={nav.sidebarOpen}
-          onToggleSidebar={nav.toggleSidebar}
           onSelect={(id) => { nav.closeDrawerOnNavigate(); sessions.selectSession(id); }}
           onNew={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
           onNewInGroup={(groupId) => { nav.closeDrawerOnNavigate(); sessions.newSession(groupId); }}
@@ -85,23 +75,6 @@ export function useAppNavigation({
       ),
     [t, sessions, sidebarState, sessionStatuses, presentation],
   );
-  const rail = useCallback(
-    (nav: AppShellNav) =>
-      nav.view === "settings" ? (
-        <SettingsRail t={t} section={nav.section} onSelect={nav.selectSection} onBack={nav.backToChat} />
-      ) : (
-        <NavRail
-          logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: nav.expandNav }}
-          top={{ icon: MessageSquarePlus, label: t("sidebar.nav.newChat"), onClick: () => { nav.closeDrawerOnNavigate(); sessions.newSession(); } }}
-          items={[
-            { icon: PanelLeftOpen, label: t("sidebar.open"), onClick: nav.expandNav },
-            { icon: SquareTerminal, label: t("workbench.tab.terminal"), onClick: nav.workbench.openTerminal },
-          ]}
-          bottom={{ icon: SettingsIcon, label: t("sidebar.settings"), onClick: nav.openSettings }}
-        />
-      ),
-    [t, sessions],
-  );
   const settingsView = useCallback(
     (nav: AppShellNav) => settings ? (
       <SettingsView
@@ -117,7 +90,6 @@ export function useAppNavigation({
   );
   return {
     sidebar,
-    rail,
     settingsView,
     activeArchived,
     activeSessionStatus,

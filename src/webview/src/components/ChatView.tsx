@@ -6,6 +6,7 @@ import { PermissionCard } from "./PermissionCard";
 import { ProjectPicker, type RecentProject } from "./composer/ProjectPicker";
 import type { AgentModeOption } from "./composer/AgentModePicker";
 import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
+import { ChatDashes } from "./chat/ChatDashes";
 import type { AgentActivityProjection } from "./context-capsule/activityProjection";
 import { CAPSULE_WIDTH, defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
 
@@ -94,6 +95,8 @@ export function ChatView({
   // （含程序动画）不会让 scrollTop 减小，方向判定天然免疫，对惯性/回弹也稳健。
   const [pinned, setPinned] = useState(true);
   const lastScrollTop = useRef(0);
+  // 滚动位置比例（0..1）：驱动左缘虚线刻度的高亮。
+  const [scrollFraction, setScrollFraction] = useState(0);
   // 引用通道：操作栏「引用」把文本塞进 Composer，Composer 消费后回调清空。
   const [quoteDraft, setQuoteDraft] = useState("");
 
@@ -119,6 +122,16 @@ export function ChatView({
     lastScrollTop.current = el.scrollTop;
     if (wentUp && !atBottom) setPinned(false);
     else if (atBottom) setPinned(true);
+    const range = el.scrollHeight - el.clientHeight;
+    setScrollFraction(range > 0 ? Math.min(1, Math.max(0, el.scrollTop / range)) : 0);
+  };
+
+  // 虚线刻度跳转：按比例滚动到对应历史位置。
+  const seekTo = (fraction: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const range = el.scrollHeight - el.clientHeight;
+    el.scrollTo({ top: fraction * range, behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -188,10 +201,14 @@ export function ChatView({
       className={`chat-workspace chat-workspace-${layout.capsulePlacement} flex h-full min-w-0 flex-1 flex-col`}
     >
       <div className="chat-workspace-body relative min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
-        {/* 左缘虚线滚动刻度（参考稿 chat-dashes）；审查入口悬于右上。 */}
+        {/* 左缘虚线刻度（参考稿 chat-dashes 功能化）：垂直居中于滚动区、
+            水平居中于左留白槽，点击按比例跳转；审查入口悬于右上。 */}
         {messages.length > 0 && (
-          <div className="chat-dashes" aria-hidden>
-            {Array.from({ length: 9 }, (_, i) => <i key={i} />)}
+          <div
+            className="absolute top-1/2 z-[5] -translate-y-1/2"
+            style={{ left: Math.max(0, Math.round((layout.contentGutter - 12) / 2)) }}
+          >
+            <ChatDashes fraction={scrollFraction} onSeek={seekTo} />
           </div>
         )}
         {onOpenReview && (

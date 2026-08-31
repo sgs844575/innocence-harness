@@ -3,8 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "../../../../shared/ipc";
 import type { SidebarStateController } from "../../state/useSidebarState";
-import logoUrl from "../../../../../logo.svg";
-import { NavRail } from "../NavRail";
 import { Sidebar } from "../Sidebar";
 
 const sessions: Session[] = [
@@ -40,29 +38,6 @@ const t = (key: string) => key;
 afterEach(cleanup);
 
 describe("Sidebar archive and session statuses", () => {
-  it("loads the repository logo asset in the expanded sidebar", () => {
-    render(<Sidebar t={t} appName="InnocenceHarness" sessions={sessions} activeId={null} sidebar={controller()} onSelect={() => {}} onNew={() => {}} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} />);
-    const logo = screen.getByRole("img", { name: "InnocenceHarness Logo" });
-    expect(decodeURIComponent(logo.getAttribute("src") ?? "")).toContain("polyline points='38,42 62,64 38,86'");
-  });
-
-  it("keeps the collapse toggle and history stubs on the sidebar top (not the title bar)", () => {
-    const onToggleSidebar = vi.fn();
-    render(<Sidebar t={t} appName="App" sessions={sessions} activeId={null} sidebar={controller()} onSelect={() => {}} onNew={() => {}} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} sidebarOpen onToggleSidebar={onToggleSidebar} />);
-    const collapse = screen.getByRole("button", { name: "折叠侧边栏" });
-    expect(collapse.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(collapse);
-    expect(onToggleSidebar).toHaveBeenCalledOnce();
-    // 导航箭头是无历史存根：存在但禁用
-    expect((screen.getByRole("button", { name: "后退" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "前进" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("omits the collapse toggle when no handler is wired", () => {
-    render(<Sidebar t={t} appName="App" sessions={sessions} activeId={null} sidebar={controller()} onSelect={() => {}} onNew={() => {}} onDelete={() => {}} onArchive={() => {}} onOpenSettings={() => {}} />);
-    expect(screen.queryByRole("button", { name: "折叠侧边栏" })).toBeNull();
-  });
-
   it("routes compact navigation actions through injected commands", () => {
     const onNew = vi.fn();
     const onSearch = vi.fn();
@@ -110,16 +85,6 @@ describe("Sidebar archive and session statuses", () => {
     fireEvent.click(screen.getByRole("button", { name: "在 Empty 中新建任务" }));
     expect(onNewInGroup).toHaveBeenCalledWith("empty");
     expect(onNew).not.toHaveBeenCalled();
-  });
-
-  it("loads the same repository logo asset in the icon rail", () => {
-    const onLogoClick = vi.fn();
-    render(<NavRail logo={{ src: logoUrl, alt: "InnocenceHarness Logo", onClick: onLogoClick }} items={[]} />);
-    fireEvent.click(screen.getByRole("button", { name: "InnocenceHarness Logo" }));
-    expect(onLogoClick).toHaveBeenCalledOnce();
-    const logo = screen.getByRole("button", { name: "InnocenceHarness Logo" }).querySelector("img");
-    expect(logo).not.toBeNull();
-    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).toContain("polyline points='38,42 62,64 38,86'");
   });
 
   it("excludes archived sessions from the active tree, expands recovery, and restores by id", () => {

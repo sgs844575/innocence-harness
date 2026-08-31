@@ -59,10 +59,9 @@
     box-shadow: var(--shadow-pop);
   }
 
-  /* Transparent title-bar strip over the shell background — just the
-     hairline that frames the top of every column. */
+  /* Transparent title-bar strip — 左段背景色由 TitleBar 左段元素自身随
+     侧栏显隐切换（侧栏色/透明）；这里只保留框顶发丝线。 */
   .titlebar {
-    background: transparent;
     border-bottom: 1px solid var(--color-app-hairline);
   }
 
@@ -131,12 +130,10 @@
     mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   }
 
-  /* 聊天主列（消息列表 + 输入框共用）：随容器宽度弹性伸缩——窄窗/未来
-     右侧面板挤占时收缩为容器宽，宽窗时温和放大（48rem → 62rem 封顶）。 */
+  /* 聊天主列（消息列表 + 输入框共用）：满宽模型——撑满 frame 宽度
+     （停靠胶囊已在 frame 层扣除），仅由外层 gutter 留白。 */
   .chat-column {
     width: 100%;
-    margin-inline: auto;
-    max-width: clamp(48rem, 72vw, 62rem);
   }
 
   /* 助手正文段（参考稿 .msg）：14px 半粗、块间 24px 节奏。 */
@@ -149,27 +146,6 @@
 
   .msg-body + .msg-body {
     margin-top: 24px;
-  }
-
-  /* 聊天滚动区左缘的虚线刻度（参考稿 chat-dashes）。 */
-  .chat-dashes {
-    position: absolute;
-    left: 10px;
-    top: 120px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    z-index: 5;
-    pointer-events: none;
-  }
-
-  .chat-dashes i {
-    width: 12px;
-    height: 3px;
-    border-radius: 1.5px;
-    background: var(--color-app-border);
-    opacity: 0.55;
-    display: block;
   }
 
   .chat-workspace-body {
@@ -361,6 +337,7 @@
   .code-fade::after { content: ""; position: absolute; inset-inline: 0; bottom: 0; height: 36px; background: linear-gradient(transparent, var(--color-code-bg)); }
 
   @media (prefers-reduced-motion: reduce) {
+    .titlebar,
     .drawer-in,
     .drawer-right,
     .fade-in,
@@ -370,6 +347,7 @@
     .shimmer,
     .animate-spin {
       animation: none;
+      transition: none;
     }
     /* 流式文字淡入（streamdown [data-sd-animate]）同样尊重减弱动效偏好 */
     [data-sd-animate] {

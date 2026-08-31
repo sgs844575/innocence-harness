@@ -37,8 +37,6 @@ export interface AppShellProps {
   titleBar: (nav: AppShellNav) => React.ReactNode;
   /** 整列导航内容（聊天侧栏 / 设置菜单）。 */
   sidebar: (nav: AppShellNav) => React.ReactNode;
-  /** 图标轨内容（聊天 / 设置两态）。 */
-  rail: (nav: AppShellNav) => React.ReactNode;
   /** 聊天主列（WorkbenchShell 内部）。 */
   chat: React.ReactNode;
   /** 自动化 presentation surface；业务状态仍由未来 capability 注入。 */
@@ -61,7 +59,6 @@ export function AppShell({
   t,
   titleBar,
   sidebar,
-  rail,
   chat,
   automation,
   search,
@@ -76,8 +73,9 @@ export function AppShell({
   const [section, setSection] = useState<SettingsSection>("models");
 
   const isWide = useMediaQuery("(min-width: 1024px)");
-  const isMedium = useMediaQuery("(min-width: 640px)") && !isWide;
-  const [railMode, setRailMode] = useState(false);
+  // 宽屏收起 = 侧边栏整体消失（标题栏左段保留 logo/箭头/新会话）；
+  // 窄屏 = 覆盖式抽屉。不再有窄条 rail 形态。
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // The overlay drawer only exists below the wide breakpoint.
@@ -129,12 +127,12 @@ export function AppShell({
   );
 
   const toggleSidebar = useCallback(() => {
-    if (isWide) setRailMode((v) => !v);
+    if (isWide) setSidebarHidden((v) => !v);
     else setDrawerOpen((v) => !v);
   }, [isWide]);
 
   const expandNav = useCallback(() => {
-    if (isWide) setRailMode(false);
+    if (isWide) setSidebarHidden(false);
     else setDrawerOpen(true);
   }, [isWide]);
 
@@ -142,7 +140,7 @@ export function AppShell({
     view,
     section,
     isWide,
-    sidebarOpen: isWide ? !railMode : drawerOpen,
+    sidebarOpen: isWide ? !sidebarHidden : drawerOpen,
     openSettings,
     openAutomation,
     openSearch,
@@ -159,27 +157,26 @@ export function AppShell({
 
   const inSettings = view === "settings";
   const navFull = sidebar(nav);
-  const navRail = rail(nav);
   const settingsNode = settings(nav);
+  const sidebarVisible = isWide && !sidebarHidden;
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-(--color-app-bg) text-(--color-app-text)">
-      {/* 参考稿分层：灰侧栏整列贴左；主区（黑）以 12px 左圆角浮起，
-          圆角外的缝隙透出页面底色。 */}
-      {isWide && !railMode && (
-        <div className="w-[265px] shrink-0 bg-(--color-app-sidebar)">
-          {navFull}
-        </div>
-      )}
-      {(isMedium || (isWide && railMode)) ? (
-        <div className="w-12 shrink-0 bg-(--color-app-sidebar)">
-          {navRail}
-        </div>
-      ) : null}
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-l-[12px] bg-(--color-app-panel)">
-        {titleBar(nav)}
-        {banner}
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-(--color-app-bg) text-(--color-app-text)">
+      {titleBar(nav)}
+      {banner}
+      {/* 标题栏之下：侧边栏整列（常驻挂载、宽度动画收展——收起即整体
+          消失）+ 主区（展开时左缘 12px 圆角浮起，收起时满幅直角）。 */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {isWide && (
+          <div
+            className={`shrink-0 overflow-hidden bg-(--color-app-sidebar) transition-[width] duration-200 ease-out ${
+              sidebarVisible ? "w-[265px]" : "w-0"
+            }`}
+          >
+            {navFull}
+          </div>
+        )}
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-(--color-app-panel)">
           {inSettings && settingsNode !== null ? (
             settingsNode
           ) : view === "automation" && automation ? (
@@ -196,10 +193,10 @@ export function AppShell({
               {chat}
             </WorkbenchShell>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
 
-      {/* Medium/narrow windows: overlay drawer with a scrim, flush against
+      {/* Narrow windows: overlay drawer with a scrim, flush against
           the left edge below the title bar. */}
       {!isWide && drawerOpen && (
         <div className="fixed inset-x-0 bottom-0 top-12 z-40">

@@ -118,7 +118,7 @@ export function App(): React.JSX.Element {
     taskId: task?.taskId ?? "",
     routeId: workbench.state.activeRouteId,
   });
-  const { sidebar, rail, settingsView, activeSessionStatus, subagents, selectedFilePath, selectFile } = useAppNavigation({
+  const { sidebar, settingsView, activeSessionStatus, subagents, selectedFilePath, selectFile } = useAppNavigation({
     t,
     sessions,
     settings,
@@ -305,6 +305,10 @@ export function App(): React.JSX.Element {
         }}
         titleBar={(nav) => (
           <TitleBar
+            sidebarOpen={nav.sidebarOpen}
+            onToggleSidebar={nav.toggleSidebar}
+            onNewSession={() => { nav.closeDrawerOnNavigate(); sessions.newSession(); }}
+            landing={sessions.activeId === null}
             title={activeSession?.title ?? ""}
             workbench={{
               project: projectName,
@@ -319,7 +323,6 @@ export function App(): React.JSX.Element {
           />
         )}
         sidebar={sidebar}
-        rail={rail}
         banner={banner}
         toast={error}
         panels={workbenchPanels}

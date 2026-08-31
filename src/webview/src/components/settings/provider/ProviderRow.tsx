@@ -38,7 +38,7 @@ export function ProviderRow({ profile, active, onSelect, onRename, onDuplicate, 
           <MoreVertical size={13} />
         </button>
         {menu && (
-          <div className="absolute right-0 top-6 z-20 w-28 rounded-lg border border-(--color-app-border) bg-(--color-app-panel) py-1 text-[12px] shadow-(--shadow-pop)">
+          <div className="pop-in absolute right-0 top-6 z-20 w-28 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) py-1 text-[12px] shadow-(--shadow-pop)">
             <button type="button" onClick={() => { setMenu(false); onRename(); }} className="flex w-full items-center gap-2 px-2.5 py-1 hover:bg-(--color-app-bubble)/50"><Pencil size={12} />重命名</button>
             <button type="button" onClick={() => { setMenu(false); onDuplicate(); }} className="flex w-full items-center gap-2 px-2.5 py-1 hover:bg-(--color-app-bubble)/50"><Copy size={12} />复制</button>
             <button type="button" onClick={() => { setMenu(false); onDelete(); }} className="flex w-full items-center gap-2 px-2.5 py-1 text-(--color-tool-err) hover:bg-(--color-app-bubble)/50"><Trash2 size={12} />删除</button>

@@ -1,24 +1,38 @@
-// 主区顶栏（48px，参考稿 titlebar）：任务标题 → 项目/路线/Git 胶囊 →
-// 更多菜单 → 右侧簇（编辑器芯片/终端/面板/分隔线/自绘窗口控制）。
-// 侧栏开关与前后导航在侧栏顶部（Sidebar side-top），不在这里。
+// 窗口顶栏（48px，独立于侧边栏）：左段 265px 收纳 logo（点击折叠/展开
+// 侧边栏——收起时侧边栏整体消失而非缩成窄条）、前进/后退存根箭头，以及
+// 仅在收起态出现的新会话快捷钮；左段背景色随侧边栏显隐在侧栏色/主区色间
+// 切换，使侧边栏在展开时视觉上直通窗口顶。右段：任务标题 → 项目/路线/Git
+// 胶囊 → 更多菜单 → 编辑器芯片/终端/面板/分隔线/自绘窗口控制。
 // 整条为拖拽区（无边框窗口），交互控件逐个 no-drag。纯 props-in/events-out。
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   ChevronDown,
   Code,
   FolderGit2,
   GitBranch,
   MoreHorizontal,
   PanelRight,
+  SquarePlus,
   SquareTerminal,
 } from "lucide-react";
+import logoUrl from "../../../../logo.svg";
 import { api } from "../lib/ipc";
 import { zhCN } from "../lib/i18n";
 import type { MenuId } from "../../../shared/ipc";
 import { TitleBarWindowControls } from "./TitleBarWindowControls";
 
 interface Props {
-  /** 当前任务/会话标题（t-title，15px 加粗；空串隐藏）。 */
+  /** 侧边栏当前是否可见（宽屏=显隐；窄屏=抽屉开合），驱动左段底色与新会话钮。 */
+  sidebarOpen: boolean;
+  /** logo 点击：折叠/展开侧边栏。缺省时 logo 为静态芯片。 */
+  onToggleSidebar?: () => void;
+  /** 收起态左段的新会话快捷钮（展开时侧栏菜单已有同项，故隐藏）。 */
+  onNewSession?: () => void;
+  /** 落地态（新会话、无激活会话）：隐藏更多菜单（"…"三点）。 */
+  landing?: boolean;
+  /** 当前任务/会话标题（t-title，14px 加粗；空串隐藏）。 */
   title?: string;
   /** Workbench view model; omitted cluster entirely when absent. */
   workbench?: {
@@ -51,6 +65,10 @@ const pill =
   "app-no-drag ml-3.5 flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-app-sunken) px-3.5 text-[13px] whitespace-nowrap text-(--color-app-text)";
 
 export function TitleBar({
+  sidebarOpen,
+  onToggleSidebar,
+  onNewSession,
+  landing = false,
   title,
   workbench,
   onOpenExternalEditor,
@@ -90,38 +108,77 @@ export function TitleBar({
   const terminalAction = terminalOpen ? onTogglePanel : onToggleTerminal;
 
   return (
-    <header className="titlebar app-drag relative z-30 flex h-12 shrink-0 items-center pl-4 text-(--color-app-muted)">
-      {/* 任务标题（t-title）+ 状态胶囊：项目 → 路线 → Git 分支。 */}
-      {title !== undefined && title !== "" && (
-        <span className="min-w-0 max-w-[40%] truncate text-[15px] font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
-          {title}
-        </span>
-      )}
-      {workbench && (
-        <div className="app-no-drag min-[861px]:contents max-[860px]:hidden min-w-0">
-          {workbench.project !== "" && (
-            <span className={`${pill} min-w-0`} title={`${t("titlebar.project")} ${workbench.project}`}>
-              <FolderGit2 size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
-              <span className="max-w-[180px] truncate">{workbench.project}</span>
-            </span>
-          )}
-          {workbench.routeId !== null && (
-            <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
-              <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
-              <span className="font-mono text-[12px]">{workbench.routeId}</span>
-              <ChevronDown size={12} className="text-(--color-app-faint)" />
-            </span>
-          )}
-          {workbench.gitBranch !== null && (
-            <span className={pill} title={workbench.gitBranch}>
-              <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
-              <span className="max-w-[140px] truncate font-mono text-[12px]">{workbench.gitBranch}</span>
-              <ChevronDown size={12} className="text-(--color-app-faint)" />
-            </span>
+    <header className="titlebar app-drag relative z-30 flex h-12 shrink-0 items-center">
+      {/* 左段：logo（折叠/展开）+ 导航箭头存根 + 收起态新会话钮。
+          段宽与背景色随侧栏显隐动画（展开=侧栏色直通窗顶，收起=透明露出主区色）。 */}
+      <div
+        className={`app-no-drag flex h-full shrink-0 items-center gap-4 pl-3 pr-2.5 transition-[width,background-color] duration-200 ease-out ${
+          sidebarOpen ? "w-[265px] bg-(--color-app-sidebar)" : "w-[142px] bg-transparent"
+        }`}
+      >
+        {/* logo 芯片：展开态挖孔页面底色，收起态沉底面（背景随侧栏显隐过渡）。 */}
+        {onToggleSidebar ? (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label={sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}
+            aria-pressed={sidebarOpen}
+            title={sidebarOpen ? "折叠侧边栏" : "展开侧边栏"}
+            className={`grid size-[23px] shrink-0 place-items-center rounded-md transition-[width,background-color] duration-200 ease-out ${
+              sidebarOpen ? "bg-(--color-app-bg)" : "bg-(--color-app-sunken)"
+            } hover:opacity-80`}
+          >
+            <img src={logoUrl} alt="" className="size-[15px] rounded-[3px]" />
+          </button>
+        ) : (
+          <div className="grid size-[23px] shrink-0 place-items-center rounded-md bg-(--color-app-bg)">
+            <img src={logoUrl} alt="" className="size-[15px] rounded-[3px]" />
+          </div>
+        )}
+        <div className="app-no-drag flex items-center gap-[18px]">
+          <button type="button" disabled aria-label="后退" title="后退" className="text-(--color-app-muted) disabled:opacity-60"><ArrowLeft size={15} strokeWidth={1.3} /></button>
+          <button type="button" disabled aria-label="前进" title="前进" className="text-(--color-app-faint)"><ArrowRight size={15} strokeWidth={1.3} /></button>
+          {!sidebarOpen && onNewSession && (
+            <button type="button" onClick={onNewSession} aria-label="新会话" title={t("sidebar.nav.newChat")} className="pop-in text-(--color-app-muted) hover:text-(--color-app-text)"><SquarePlus size={15} strokeWidth={1.3} /></button>
           )}
         </div>
-      )}
+      </div>
 
+      {/* 任务标题（t-title）+ 状态胶囊：项目 → 路线 → Git 分支。
+          pl-4 与左段（侧栏）保持距离；收起时左段收窄，标题随之左对齐。 */}
+      <div className="app-no-drag flex min-w-0 items-center pl-4">
+        {title !== undefined && title !== "" && (
+          <span className="min-w-0 max-w-[40%] truncate text-sm font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
+            {title}
+          </span>
+        )}
+        {workbench && (
+          <div className="flex min-w-0 items-center max-[860px]:hidden">
+            {workbench.project !== "" && (
+              <span className={`${pill} min-w-0`} title={`${t("titlebar.project")} ${workbench.project}`}>
+                <FolderGit2 size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+                <span className="max-w-[180px] truncate">{workbench.project}</span>
+              </span>
+            )}
+            {workbench.routeId !== null && (
+              <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
+                <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+                <span className="font-mono text-[12px]">{workbench.routeId}</span>
+                <ChevronDown size={12} className="text-(--color-app-faint)" />
+              </span>
+            )}
+            {workbench.gitBranch !== null && (
+              <span className={pill} title={workbench.gitBranch}>
+                <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+                <span className="max-w-[140px] truncate font-mono text-[12px]">{workbench.gitBranch}</span>
+                <ChevronDown size={12} className="text-(--color-app-faint)" />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!landing && (
       <div ref={menuRef} className="app-no-drag relative ml-4 shrink-0">
         <button
           type="button"
@@ -139,7 +196,7 @@ export function TitleBar({
             id={MENU_PANEL_ID}
             role="menu"
             aria-label={t("titlebar.menu.label")}
-            className="card-strong pop-in absolute left-0 top-9 z-50 min-w-32 rounded-[10px] p-1"
+            className="card-strong pop-in absolute left-0 top-9 z-50 min-w-32 p-1"
           >
             {MENUS.map((menu) => (
               <button
@@ -155,6 +212,7 @@ export function TitleBar({
           </div>
         )}
       </div>
+      )}
 
       <div className="flex-1" />
 

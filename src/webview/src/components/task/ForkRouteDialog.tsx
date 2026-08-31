@@ -60,7 +60,7 @@ export function ForkRouteDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="fork-route-title"
-        className="relative w-full max-w-[440px] border border-(--color-app-border) bg-(--color-app-panel) shadow-(--shadow-pop)"
+        className="pop-in relative w-full max-w-[440px] rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) shadow-(--shadow-pop)"
       >
         <header className="flex h-12 items-center border-b border-(--color-app-hairline) px-4">
           <h2 id="fork-route-title" className="text-[14px] font-semibold">创建隔离路线</h2>

@@ -26,7 +26,7 @@ describe("workspace presentation state", () => {
 
   it("uses one content width model for messages, composer, and capsule", () => {
     expect(workspaceLayoutForWidth(1440)).toEqual({
-      contentMaxWidth: 960,
+      contentMaxWidth: 1440, // 满宽模型：内容列撑满可用宽度
       contentGutter: 32,
       capsuleGap: 24,
       capsulePlacement: "docked",

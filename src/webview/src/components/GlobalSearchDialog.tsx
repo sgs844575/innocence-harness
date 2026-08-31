@@ -49,7 +49,7 @@ export function GlobalSearchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="fixed inset-0 z-50 bg-black/35" />
-        <DialogContent aria-label="全局搜索" className="fixed left-1/2 top-[18vh] z-50 w-[min(620px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-(--color-app-border) bg-(--color-app-panel) shadow-(--shadow-pop)">
+        <DialogContent aria-label="全局搜索" className="fixed left-1/2 top-[18vh] z-50 w-[min(620px,calc(100vw-32px))] -translate-x-1/2 pop-in overflow-hidden rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) shadow-(--shadow-pop)">
           <DialogTitle className="sr-only">全局搜索</DialogTitle>
           <div className="flex items-center gap-2 border-b border-(--color-app-hairline) px-4 py-3">
             <Search size={16} className="text-(--color-app-muted)" />
