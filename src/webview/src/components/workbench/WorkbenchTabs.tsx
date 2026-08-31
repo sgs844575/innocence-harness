@@ -59,10 +59,10 @@ export function WorkbenchTabs({ active, onSelect, t = tZh }: WorkbenchTabsProps)
             role="tab"
             aria-selected={isActive}
             onClick={() => onSelect(id)}
-            className={`h-7 shrink-0 rounded-md px-2.5 text-[12px] ${
+            className={`h-7 shrink-0 rounded-md px-2.5 text-[12px] transition-colors ${
               isActive
-                ? "bg-(--color-app-bubble) text-(--color-app-text)"
-                : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"
+                ? "bg-(--color-app-sunken) font-medium text-(--color-app-text)"
+                : "text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
             }`}
           >
             {labelFor(t, id, labelKey)}

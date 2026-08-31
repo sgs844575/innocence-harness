@@ -152,13 +152,13 @@ export function WorkbenchShell({
       style={widthStyle}
       className={className}
     >
-      <header className="flex h-9 shrink-0 items-center gap-1 border-b border-(--color-app-hairline) px-2">
+      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-(--color-app-hairline) px-2">
         <WorkbenchTabs active={active} onSelect={selectTab} t={t} />
         <button
           type="button"
           aria-label={t("workbench.panel.close")}
           onClick={close}
-          className="grid size-7 shrink-0 place-items-center rounded text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+          className="grid size-7 shrink-0 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
         >
           <X size={14} />
         </button>
@@ -203,7 +203,7 @@ export function WorkbenchShell({
       <div className="relative flex h-full min-h-0 w-full">
         {children}
         {isOpen && (
-          <div className="fixed inset-x-0 bottom-0 top-9 z-40">
+          <div className="fixed inset-x-0 bottom-0 top-12 z-40">
             <button
               type="button"
               aria-label={t("workbench.panel.close")}

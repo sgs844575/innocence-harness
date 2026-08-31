@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, CircleDot, GitBranch, GitCommitHorizontal, ListChecks, PanelRight, Play, SquareTerminal, Bot } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, FilePlus2, GitBranch, GitCommitHorizontal, ListChecks, Minimize2, Play, SquareTerminal } from "lucide-react";
 import type { ButtonHTMLAttributes } from "react";
 import { CAPSULE_SECTION_ORDER, type CapsulePlacement, type CapsuleSection } from "../../state/workspacePresentationState";
 import type { AgentActivityStatus, SubagentActivityView } from "./activityProjection";
@@ -38,20 +38,23 @@ export interface AgentActivityCapsuleProps {
 }
 
 const sectionLabel: Record<CapsuleSection, string> = {
-  environment: "环境信息 / Git",
+  environment: "Git 工具",
   process: "进程",
   terminal: "终端",
   agent: "智能体",
 };
 
+/** 参考稿 gp-row：26px 行、13px 文本、15px 图标、右侧簇。 */
+const gpRow = "flex w-full items-center gap-[11px] py-[5px] text-left text-[13px] whitespace-nowrap text-(--color-app-text)";
+
 function SectionButton({ section, expanded, detail, ...buttonProps }: { section: CapsuleSection; expanded: boolean; detail?: string } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const Icon = section === "environment" ? GitBranch : section === "process" ? ListChecks : section === "terminal" ? SquareTerminal : Bot;
   return (
-    <button {...buttonProps} type="button" aria-expanded={expanded} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)">
-      <Icon size={13} className="shrink-0" />
-      <span>{sectionLabel[section]}</span>
-      {detail && <span className="truncate text-[10px] text-(--color-app-muted)">{detail}</span>}
-      <ChevronRight size={12} className={`ml-auto shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+    <button {...buttonProps} type="button" aria-expanded={expanded} className={`${gpRow} pr-3 text-(--color-app-muted) hover:text-(--color-app-text)`}>
+      <Icon size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
+      <span className="font-bold">{sectionLabel[section]}</span>
+      {detail && <span className="truncate text-[12px] font-normal">{detail}</span>}
+      <ChevronRight size={12} strokeWidth={1.3} className={`ml-auto shrink-0 text-(--color-app-muted) transition-transform ${expanded ? "rotate-90" : ""}`} />
     </button>
   );
 }
@@ -80,10 +83,10 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
     const compactClass = placement === "docked" ? "" : " agent-capsule-collapsed-compact";
     return (
       <aside className={`${className} agent-capsule-collapsed${compactClass}`} aria-label="当前进程胶囊">
-        <button type="button" onClick={onToggleOpen} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] text-(--color-app-text)">
-          <CircleDot size={12} className="text-(--color-app-accent)" />
+        <button type="button" onClick={onToggleOpen} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-(--color-app-text)">
+          <ListChecks size={13} className="text-(--color-app-accent)" />
           <span className="truncate">{process?.current || agent.name}</span>
-          <PanelRight size={13} className="ml-auto shrink-0 text-(--color-app-muted)" />
+          <ChevronDown size={13} className="ml-auto shrink-0 text-(--color-app-muted)" />
         </button>
       </aside>
     );
@@ -91,13 +94,15 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
 
   return (
     <aside className={className} aria-label="Agent 活动胶囊">
-      <div className="flex items-center border-b border-(--color-app-hairline) px-3 py-2">
-        <span className="text-[11px] font-medium text-(--color-app-text)">活动上下文</span>
-        <button type="button" aria-label="折叠活动胶囊" onClick={onToggleOpen} className="ml-auto grid size-6 place-items-center rounded-full text-(--color-app-muted) hover:bg-(--color-app-bubble)">
-          <ChevronDown size={13} />
-        </button>
+      <div className="flex h-[22px] items-center px-4 pt-3 pb-2 text-[13px] font-bold text-(--color-app-text)">
+        <span>活动上下文</span>
+        <span className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
+          <button type="button" aria-label="折叠活动胶囊" onClick={onToggleOpen} className="grid size-5 place-items-center rounded hover:text-(--color-app-text)">
+            <Minimize2 size={13} />
+          </button>
+        </span>
       </div>
-      <div className="divide-y divide-(--color-app-hairline)">
+      <div className="flex flex-col px-4">
         {sections.map((section) => {
           const isExpanded = expanded(section);
           return (
@@ -114,33 +119,58 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                 }
               >
               {section === "environment" && environment && (
-                <div className="space-y-1 px-3 pb-3 text-[10.5px] text-(--color-app-muted)">
-                  <div className="flex items-center justify-between rounded-md bg-(--color-app-bubble) px-2 py-1.5"><span><GitCommitHorizontal size={12} className="mr-1 inline" />变更 {environment.changedFiles}</span><span><b className="text-(--color-tool-ok)">+{environment.additions}</b> <b className="text-(--color-tool-err)">−{environment.deletions}</b></span></div>
-                  <div className="flex items-center justify-between px-1 py-1"><span>工作区种类</span><span>{environment.workspaceKind}</span></div>
-                  <div className="flex items-center justify-between px-1 py-1"><span><GitBranch size={12} className="mr-1 inline" />分支</span><span>{environment.branch ?? "未检测"}</span></div>
-                  <div className="flex gap-1 pt-1">
-                    <button type="button" disabled={!environment.onCommit} onClick={environment.onCommit} className="capsule-action"><GitCommitHorizontal size={11} />提交</button>
-                    <button type="button" disabled={!environment.onPush} onClick={environment.onPush} className="capsule-action"><Play size={11} />推送</button>
-                    <button type="button" disabled={!environment.onCompare} onClick={environment.onCompare} className="capsule-action">比较</button>
+                <div className="pb-2 text-[13px] text-(--color-app-text)">
+                  <div className={gpRow}>
+                    <FilePlus2 size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
+                    <span>更改</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      {environment.changedFiles > 0 && <span className="text-[12px] text-(--color-app-muted)">{environment.changedFiles} 文件</span>}
+                      <span className="text-[12.5px] text-(--color-diff-add)">+{environment.additions}</span>
+                      <span className="text-[12.5px] text-(--color-diff-del)">−{environment.deletions}</span>
+                    </span>
+                  </div>
+                  <div className={gpRow}>
+                    <GitBranch size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
+                    <span>分支</span>
+                    <span className="ml-auto truncate text-[12.5px] text-(--color-app-muted)">{environment.branch ?? "未检测"}</span>
+                  </div>
+                  <div className={gpRow}>
+                    <GitCommitHorizontal size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
+                    <span>提交或推送</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      <button type="button" disabled={!environment.onCommit} onClick={environment.onCommit} className="capsule-action">提交</button>
+                      <button type="button" disabled={!environment.onPush} onClick={environment.onPush} className="capsule-action"><Play size={11} />推送</button>
+                      <button type="button" disabled={!environment.onCompare} onClick={environment.onCompare} className="capsule-action">比较</button>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-px bg-(--color-app-hairline)" />
+                  <div className="flex items-center gap-3 pt-1 text-[12px] text-(--color-app-muted)">
+                    <span>工作区</span>
+                    <span>{environment.workspaceKind}</span>
                   </div>
                 </div>
               )}
               {section === "process" && process && <TodoPanel {...process} />}
-              {section === "terminal" && terminal && <div className="flex items-center justify-between px-3 pb-3 text-[10.5px] text-(--color-app-muted)"><span>{terminalLabel}</span><button type="button" disabled={!terminal.onOpen} onClick={terminal.onOpen} className="capsule-action">打开终端</button></div>}
+              {section === "terminal" && terminal && (
+                <div className="flex items-center justify-between px-1 pb-3 text-[12px] text-(--color-app-muted)">
+                  <span>{terminalLabel}</span>
+                  <button type="button" disabled={!terminal.onOpen} onClick={terminal.onOpen} className="capsule-action">打开终端</button>
+                </div>
+              )}
               {section === "agent" && (
-                <div className="space-y-2 px-3 pb-3 text-[10.5px] text-(--color-app-muted)">
-                  <div className="flex items-center gap-2"><Bot size={12} />{agent.name}<span className="ml-auto">{agent.status}</span></div>
+                <div className="flex flex-col gap-1.5 pb-3 text-[13px] text-(--color-app-muted)">
+                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{agent.status}</span></div>
                   {childAgents.map((child) => (
                     <button
                       key={child.childId}
                       type="button"
                       onClick={() => openChild?.(child.childId)}
-                      className="flex w-full items-center gap-2 rounded-md bg-(--color-app-bubble) px-2 py-1.5 text-left hover:bg-(--color-app-bubble)/70"
+                      className="flex w-full items-center gap-[11px] rounded-md px-1 py-1 text-left hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
                       disabled={!openChild}
                     >
                       <Bot size={11} className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{child.description || "子智能体"}</span>
-                      <span className="shrink-0">{child.status}</span>
+                      <span className="shrink-0 text-[12px]">{child.status}</span>
                     </button>
                   ))}
                 </div>

@@ -120,14 +120,14 @@ describe("ChatView shared responsive layout", () => {
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("960px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("960px");
     expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
-    expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("286px");
+    expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("319px");
     expect(screen.getByTestId("chat-frame").style.maxWidth).toBe("");
 
     fireEvent.click(screen.getByRole("button", { name: "折叠活动胶囊" }));
 
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("960px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("960px");
-    expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("286px");
+    expect(screen.getByTestId("chat-capsule-slot").style.width).toBe("319px");
     expect(screen.getByLabelText("当前进程胶囊")).toBeTruthy();
   });
 });

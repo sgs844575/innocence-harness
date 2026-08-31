@@ -184,21 +184,22 @@
     position: relative;
   }
 
+  /* 参考稿 Git 浮层：raised 灰面 + 强描边 + 10px 圆角，停靠/覆盖/抽底三形态。 */
   .agent-capsule {
     z-index: 10;
     overflow: hidden;
     border: 1px solid var(--color-app-border);
-    border-radius: 14px;
-    background: var(--color-app-panel);
+    border-radius: 10px;
+    background: var(--color-app-raised);
     box-shadow: var(--shadow-pop);
     color: var(--color-app-text);
   }
 
   .agent-capsule-docked {
     align-self: flex-start;
-    width: 286px;
+    width: 319px;
     margin-top: 18px;
-    flex: 0 0 286px;
+    flex: 0 0 319px;
   }
 
   .agent-capsule-overlay,
@@ -206,7 +207,7 @@
     position: absolute;
     right: 0;
     top: 18px;
-    width: min(286px, calc(100% - 32px));
+    width: min(319px, calc(100% - 32px));
   }
 
   .agent-capsule-sheet {
@@ -214,7 +215,7 @@
     right: 0;
     bottom: 0;
     width: 100%;
-    border-radius: 14px 14px 0 0;
+    border-radius: 10px 10px 0 0;
   }
 
   .agent-capsule-collapsed {
@@ -222,7 +223,7 @@
   }
 
   .agent-capsule-collapsed-compact {
-    width: min(286px, calc(100% - 32px));
+    width: min(319px, calc(100% - 32px));
   }
 
   .capsule-action {
@@ -231,12 +232,12 @@
     gap: 0.25rem;
     border-radius: 0.375rem;
     padding: 0.25rem 0.4rem;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--color-app-muted);
   }
 
   .capsule-action:hover:not(:disabled) {
-    background: var(--color-app-bubble);
+    background: var(--color-app-hover);
     color: var(--color-app-text);
   }
 

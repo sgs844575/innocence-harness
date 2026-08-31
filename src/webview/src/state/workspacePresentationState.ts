@@ -29,7 +29,7 @@ export type WorkspacePresentationAction =
   | { type: "panel/select"; panel: WorkspacePresentationState["selectedPanel"] }
   | { type: "chat/width"; width: number };
 
-export const CAPSULE_WIDTH = 286;
+export const CAPSULE_WIDTH = 319;
 
 export const CAPSULE_SECTION_ORDER: readonly CapsuleSection[] = [
   "environment",
