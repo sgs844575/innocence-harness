@@ -130,23 +130,23 @@ export function reduceWorkspacePresentationState(
 export interface WorkspaceLayout {
   /** 消息列宽度封顶（参考稿 .col max-width:1120px；窗口更窄时吃满余量）。 */
   contentMaxWidth: number;
-  /** 消息列左留白（参考稿满宽态 .scroll padding-left:100px，虚线刻度槽）。 */
+  /** 滚动区左留白（24..100px 呼吸，容纳 ChatDashes 12px 槽）。 */
   contentGutter: number;
-  /** 滚动区右留白（参考稿 .scroll padding-right:20px）。 */
+  /** 滚动区右留白（337 + 8% 视窗呼吸，clamp 337..500，专门容纳 319px 胶囊 + 18px 边距）。 */
   contentRightGutter: number;
   capsulePlacement: CapsulePlacement;
 }
 
-/** 参考稿实测：正文列 1120px 封顶、满宽态左留白 100px / 右留白 20px。 */
+/** 胶囊宽 319 + 18px 边距 = 337，公式下限。 */
 export const CHAT_CONTENT_MAX_WIDTH = 1120;
-const CHAT_LEFT_GUTTER_MAX = 100;
 const CHAT_LEFT_GUTTER_MIN = 24;
-const CHAT_RIGHT_GUTTER = 20;
+const CHAT_LEFT_GUTTER_MAX = 100;
+const CHAT_RIGHT_GUTTER_BASE = 337; // 胶囊 + 18px 边距，永不压列
+const CHAT_RIGHT_GUTTER_MAX = 500;
 
 export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout {
-  // 满宽滚动 + 流体收缩内容列：滚动区铺满主列（滚动条贴窗口最右缘），
-  // 左留白随窗口宽度 8% 呼吸（24..100px），正文/输入盒吃满余量并在
-  // 1120px 封顶——窗口大小变化时整条轨道随之伸缩；胶囊悬浮其上不占列。
+  // 不对称左锚：左 8% 呼吸给 ChatDashes，右 = 337 + 8% 视窗呼吸专给胶囊；
+  // 列封顶 1120，左锚——列右缘 ≤ 胶囊左缘，永不压列。
   if (viewportWidth < 640) {
     return {
       contentMaxWidth: viewportWidth,
@@ -155,11 +155,12 @@ export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout 
       capsulePlacement: "sheet",
     };
   }
-  const gutter = Math.min(CHAT_LEFT_GUTTER_MAX, Math.max(CHAT_LEFT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
+  const leftGutter = Math.min(CHAT_LEFT_GUTTER_MAX, Math.max(CHAT_LEFT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
+  const rightGutter = Math.min(CHAT_RIGHT_GUTTER_MAX, Math.max(CHAT_RIGHT_GUTTER_BASE, CHAT_RIGHT_GUTTER_BASE + Math.round(viewportWidth * 0.08)));
   return {
-    contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - gutter - CHAT_RIGHT_GUTTER),
-    contentGutter: gutter,
-    contentRightGutter: CHAT_RIGHT_GUTTER,
+    contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - leftGutter - rightGutter),
+    contentGutter: leftGutter,
+    contentRightGutter: rightGutter,
     capsulePlacement: "floating",
   };
 }

@@ -25,28 +25,37 @@ describe("workspace presentation state", () => {
   });
 
   it("uses one fluid content width model for messages, composer, and capsule", () => {
-    // 满宽窗口：左留白封顶 100px（参考稿满宽态），内容列 1120px 封顶。
+    // 1440 视窗：左 = clamp(round(115), 24, 100) = 100；右 = clamp(337+115, 337, 500) = 452；
+    // 列 = min(1120, 1440-100-452) = 888
     expect(workspaceLayoutForWidth(1440)).toEqual({
-      contentMaxWidth: 1120,
+      contentMaxWidth: 888,
       contentGutter: 100,
-      contentRightGutter: 20,
+      contentRightGutter: 452,
       capsulePlacement: "floating",
     });
-    // 中窗：留白随宽度 8% 呼吸（900×0.08=72），内容列吃满余量（900-72-20）。
+    // 900 视窗：左 = clamp(round(72), 24, 100) = 72；右 = clamp(337+72, 337, 500) = 409；
+    // 列 = min(1120, 900-72-409) = 419
     expect(workspaceLayoutForWidth(900)).toEqual({
-      contentMaxWidth: 808,
+      contentMaxWidth: 419,
       contentGutter: 72,
-      contentRightGutter: 20,
+      contentRightGutter: 409,
       capsulePlacement: "floating",
     });
-    // 中窄窗：留白仍按 8% 缩（650×0.08=52，24px 下限仅在极窄时兜底）。
+    // 650 视窗：左 = clamp(round(52), 24, 100) = 52；右 = clamp(337+52, 337, 500) = 389；
+    // 列 = min(1120, 650-52-389) = 209
     expect(workspaceLayoutForWidth(650)).toMatchObject({
       contentGutter: 52,
+      contentRightGutter: 389,
       capsulePlacement: "floating",
     });
     expect(workspaceLayoutForWidth(520)).toMatchObject({
       contentGutter: 16,
+      contentRightGutter: 16,
       capsulePlacement: "sheet",
+    });
+    // 2100 视窗：右触顶 500
+    expect(workspaceLayoutForWidth(2100)).toMatchObject({
+      contentRightGutter: 500,
     });
   });
 
