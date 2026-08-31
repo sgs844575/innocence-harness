@@ -12,14 +12,14 @@ afterEach(cleanup);
 
 const call: ToolCallPart = { type: "toolCall", id: "a", toolName: "Bash", args: { command: "ls" } };
 const result: ToolResultPart = { type: "toolResult", toolCallId: "a", content: "x", isError: false, durationMs: 50 };
-const t = (k: string) => k;
+
 
 describe("TurnCollapse（工具时间线）", () => {
   it("工具行直接平铺可见，点击行展开明细", () => {
     render(
       <SlotProvider>
         <BuiltinToolcards />
-        <TurnCollapse parts={[call, result]} live={false} t={t} />
+        <TurnCollapse parts={[call, result]} />
       </SlotProvider>,
     );
     // 参考稿语言：每个动作一行，不再折叠成组——命令直接可见
@@ -33,7 +33,7 @@ describe("TurnCollapse（工具时间线）", () => {
     render(
       <SlotProvider>
         <BuiltinToolcards />
-        <TurnCollapse parts={[call]} live t={t} />
+        <TurnCollapse parts={[call]} />
       </SlotProvider>,
     );
     expect(screen.getByText(/ls/)).toBeTruthy();

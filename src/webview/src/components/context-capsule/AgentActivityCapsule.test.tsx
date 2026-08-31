@@ -118,7 +118,7 @@ describe("AgentActivityCapsule", () => {
       />,
     );
     const labels = screen.getAllByRole("button", { name: /子会话/ }).map((node) => node.textContent);
-    expect(labels).toEqual(["已完成子会话completed", "运行中子会话running", "失败子会话failed"]);
+    expect(labels).toEqual(["已完成子会话已完成", "运行中子会话运行中", "失败子会话失败"]);
 
     fireEvent.click(screen.getByRole("button", { name: /已完成子会话/ }));
     expect(onOpenSubagent).toHaveBeenCalledWith("child-done");

@@ -41,7 +41,7 @@ export function TitleBarWindowControls(): React.JSX.Element | null {
         type="button"
         aria-label="最小化"
         title="最小化"
-        onClick={() => call(api.minimizeWindow)}
+        onClick={() => call(() => api.minimizeWindow())}
         className={`${controlButton} hover:bg-(--color-app-hover)`}
       >
         <Minus size={11} strokeWidth={1.4} />
@@ -50,7 +50,7 @@ export function TitleBarWindowControls(): React.JSX.Element | null {
         type="button"
         aria-label={maximized ? "还原" : "最大化"}
         title={maximized ? "还原" : "最大化"}
-        onClick={() => call(api.toggleMaximizeWindow)}
+        onClick={() => call(() => api.toggleMaximizeWindow())}
         className={`${controlButton} hover:bg-(--color-app-hover)`}
       >
         {maximized ? (
@@ -66,7 +66,7 @@ export function TitleBarWindowControls(): React.JSX.Element | null {
         type="button"
         aria-label="关闭"
         title="关闭"
-        onClick={() => call(api.closeWindow)}
+        onClick={() => call(() => api.closeWindow())}
         className={`${controlButton} hover:bg-[#c42b1c] hover:text-white`}
       >
         <X size={13} strokeWidth={1.4} />

@@ -350,9 +350,6 @@ export function App(): React.JSX.Element {
           <ChatView
             t={t}
             appName={APP_NAME}
-            taskTitle={activeSession?.title}
-            projectName={projectName}
-            gitBranch={task?.gitBranch ?? null}
             activity={workspacePresentation.activity}
             messages={chat.messages}
             streaming={chat.streaming}

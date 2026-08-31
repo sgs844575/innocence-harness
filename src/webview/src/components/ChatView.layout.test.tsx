@@ -67,9 +67,6 @@ function renderChat(options: { permission?: ChatPermissionEvent } = {}): void {
     <ChatView
       t={(key) => key}
       appName="InnocenceHarness"
-      taskTitle="Task seven"
-      projectName="InnocenceCode"
-      gitBranch="main"
       messages={[message]}
       streaming={false}
       settings={null}

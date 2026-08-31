@@ -34,7 +34,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
           data-model-picker-trigger
           className="flex max-w-[220px] items-center gap-2 rounded-md px-1.5 py-1 text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)"
         >
-          <BrandIcon subject={activeProfile ? `${activeProfile.name} ${activeProfile.kind}` : activeModel} color size={14} />
+          <BrandIcon subject={`${activeProfile ? `${activeProfile.name} ${activeProfile.kind}` : ""} ${activeModel}`} color size={14} />
           <span className="truncate">{label}</span>
           <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
         </button>

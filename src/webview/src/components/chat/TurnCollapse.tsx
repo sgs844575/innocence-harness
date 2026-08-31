@@ -5,8 +5,6 @@ import { pairTools } from "./turnSummary";
 
 interface Props {
   parts: (ToolCallPart | ToolResultPart)[];
-  live: boolean;
-  t: (key: string) => string;
 }
 
 /** 工具时间线：每个工具调用一行紧凑行（参考稿 tool-row 节奏），

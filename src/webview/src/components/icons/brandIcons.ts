@@ -17,7 +17,7 @@ const byName: ReadonlyMap<string, string> = new Map(
 const MATCHERS: readonly [RegExp, string][] = [
   [/anthropic|claude/i, "claude"],
   [/deepseek/i, "deepseek"],
-  [/gemini|gemma|palm|bard/i, "gemini"],
+  [/gemini|gemma|palm|bard|google/i, "gemini"],
   [/qwen|tongyi|wanx/i, "qwen"],
   [/zhipu|glm|chatglm|bigmodel/i, "zhipu"],
   [/moonshot|kimi/i, "moonshot"],
@@ -37,6 +37,22 @@ export function resolveBrandIcon(subject: string, color = false): string | null 
   const hit = MATCHERS.find(([pattern]) => pattern.test(subject))?.[1];
   if (!hit) return null;
   return byName.get(color ? `${hit}-color` : hit) ?? byName.get(hit) ?? null;
+}
+
+export interface ResolvedBrand {
+  url: string;
+  /** 单色（currentColor）资产：暗色主题需反色（img 无 CSS 电流色上下文）。 */
+  mono: boolean;
+}
+
+/** 带单色标记的解析：BrandIcon 据此决定是否套暗色反色滤镜。 */
+export function resolveBrand(subject: string, color = false): ResolvedBrand | null {
+  const hit = MATCHERS.find(([pattern]) => pattern.test(subject))?.[1];
+  if (!hit) return null;
+  const colorUrl = byName.get(`${hit}-color`);
+  if (color && colorUrl) return { url: colorUrl, mono: false };
+  const monoUrl = byName.get(hit);
+  return monoUrl ? { url: monoUrl, mono: true } : null;
 }
 
 /** 供诊断/测试：品牌集内是否存在某图标名。 */

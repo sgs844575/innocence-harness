@@ -12,9 +12,6 @@ import { CAPSULE_WIDTH, defaultWorkspacePresentationState, reduceWorkspacePresen
 interface Props {
   t: (key: string) => string;
   appName: string;
-  taskTitle?: string;
-  projectName?: string;
-  gitBranch?: string | null;
   messages: ChatMessage[];
   streaming: boolean;
   settings: HarnessSettings | null;

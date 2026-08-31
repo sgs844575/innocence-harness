@@ -138,9 +138,9 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     <GitCommitHorizontal size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>提交或推送</span>
                     <span className="ml-auto flex items-center gap-2">
-                      <button type="button" disabled={!environment.onCommit} onClick={environment.onCommit} className="capsule-action">提交</button>
-                      <button type="button" disabled={!environment.onPush} onClick={environment.onPush} className="capsule-action"><Play size={11} />推送</button>
-                      <button type="button" disabled={!environment.onCompare} onClick={environment.onCompare} className="capsule-action">比较</button>
+                      {environment.onCommit && <button type="button" onClick={environment.onCommit} className="capsule-action">提交</button>}
+                      {environment.onPush && <button type="button" onClick={environment.onPush} className="capsule-action"><Play size={11} />推送</button>}
+                      {environment.onCompare && <button type="button" onClick={environment.onCompare} className="capsule-action">比较</button>}
                     </span>
                   </div>
                   <div className="mt-1 h-px bg-(--color-app-hairline)" />
@@ -159,7 +159,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               )}
               {section === "agent" && (
                 <div className="flex flex-col gap-1.5 pb-3 text-[13px] text-(--color-app-muted)">
-                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{agent.status}</span></div>
+                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{statusLabel(agent.status)}</span></div>
                   {childAgents.map((child) => (
                     <button
                       key={child.childId}
@@ -170,7 +170,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     >
                       <Bot size={11} className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{child.description || "子智能体"}</span>
-                      <span className="shrink-0 text-[12px]">{child.status}</span>
+                      <span className="shrink-0 text-[12px]">{statusLabel(child.status)}</span>
                     </button>
                   ))}
                 </div>
@@ -187,4 +187,20 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
 function formatDuration(durationMs: number): string {
   const seconds = Math.max(0, Math.floor(durationMs / 1000));
   return `${Math.floor(seconds / 60)}分 ${String(seconds % 60).padStart(2, "0")}秒`;
+}
+
+/** 状态枚举的中文标签（未知值原样透传，便于诊断新枚举漏配）。 */
+const STATUS_LABELS: Record<string, string> = {
+  idle: "空闲",
+  running: "运行中",
+  "waiting-permission": "等待权限",
+  failed: "失败",
+  archived: "已归档",
+  started: "已启动",
+  completed: "已完成",
+  cancelled: "已取消",
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
 }

@@ -172,16 +172,13 @@
     display: block;
   }
 
-  .chat-header {
-    background: color-mix(in srgb, var(--color-app-panel) 92%, transparent);
-  }
-
-  .chat-context-chip {
-    background: var(--color-app-bubble);
-  }
-
   .chat-workspace-body {
     position: relative;
+  }
+
+  /* 单色品牌图标（currentColor 资产经 <img> 渲染为黑）：暗色主题反色为白。 */
+  .electron-dark .brand-mono {
+    filter: invert(1);
   }
 
   /* 参考稿 Git 浮层：raised 灰面 + 强描边 + 10px 圆角，停靠/覆盖/抽底三形态。 */
@@ -370,7 +367,8 @@
     .toast-in,
     .pop-in,
     .rise-in,
-    .shimmer {
+    .shimmer,
+    .animate-spin {
       animation: none;
     }
     /* 流式文字淡入（streamdown [data-sd-animate]）同样尊重减弱动效偏好 */
@@ -392,6 +390,9 @@
     .beam::after {
       animation: none;
       opacity: 0;
+    }
+    .stream-caret {
+      animation: none;
     }
   }
 }

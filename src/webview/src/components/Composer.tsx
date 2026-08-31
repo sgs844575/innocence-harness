@@ -70,6 +70,13 @@ export function Composer({
     // 依赖只含 initialText：onConsumed 后 draft 已清空，回调引用不触发重复并入。
   }, [initialText]);
 
+  // 自适应高度跟随值变化：发送清空后回弹、引用注入后长高（onChange 之外
+  // 的值变更没有输入事件，必须在这里补）。
+  useEffect(() => {
+    const el = ref.current;
+    if (el) autosize(el);
+  }, [value]);
+
   const submit = (): void => {
     const text = value.trim();
     if (!text || streaming) return;

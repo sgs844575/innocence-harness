@@ -51,7 +51,7 @@ export function MessageFrame({ parts, streaming, isLatest, t, onQuote }: Props):
               t={t}
             />
           );
-        if (seg.kind === "tools") return <TurnCollapse key={i} parts={seg.parts} live={streaming} t={t} />;
+        if (seg.kind === "tools") return <TurnCollapse key={i} parts={seg.parts} />;
         return (
           <div key={i} className="msg-body min-h-6">
             <MarkdownView source={seg.text} animated={streaming} t={t} />
