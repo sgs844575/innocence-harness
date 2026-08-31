@@ -73,14 +73,12 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
         : section === "terminal" ? terminal !== undefined
           : true
   ));
-  const className = placement === "docked"
-    ? "agent-capsule agent-capsule-docked"
-    : placement === "overlay"
-      ? "agent-capsule agent-capsule-overlay"
-      : "agent-capsule agent-capsule-sheet";
+  const className = placement === "floating"
+    ? "agent-capsule agent-capsule-floating"
+    : "agent-capsule agent-capsule-sheet";
 
   if (!open) {
-    const compactClass = placement === "docked" ? "" : " agent-capsule-collapsed-compact";
+    const compactClass = placement === "floating" ? " agent-capsule-collapsed-compact" : "";
     return (
       <aside className={`${className} agent-capsule-collapsed${compactClass}`} aria-label="当前进程胶囊">
         <button type="button" onClick={onToggleOpen} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-(--color-app-text)">

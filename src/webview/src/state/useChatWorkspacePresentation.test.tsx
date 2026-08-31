@@ -56,14 +56,15 @@ describe("useChatWorkspacePresentation", () => {
     expect(result.current.activity.environment).toMatchObject({ changedFiles: 1, branch: "main" });
   });
 
-  it("hides the environment section when the Git branch is undetectable even with changes", () => {
+  it("keeps the environment section visible with an undetected branch fallback", () => {
     const { result } = renderHook(() => useChatWorkspacePresentation({
       ...baseInput,
       task: { ...task, gitBranch: null },
     }));
 
-    // environment 契约：分支不可检测（非 Git 项目）→ 整段隐藏，即使有变更。
-    expect(result.current.activity.environment).toBeUndefined();
+    // environment 契约（Git 工具始终可见）：分支不可检测时 Git 段仍渲染，
+    // 分支回落 null（胶囊内显示「未检测」），变更计数照常上报。
+    expect(result.current.activity.environment).toMatchObject({ changedFiles: 1, branch: null });
   });
 
   it("does not use streaming text as a process when TodoWrite is absent", () => {

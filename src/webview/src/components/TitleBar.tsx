@@ -12,6 +12,7 @@ import {
   Code,
   FolderGit2,
   GitBranch,
+  GitFork,
   MoreHorizontal,
   PanelRight,
   SquarePlus,
@@ -37,6 +38,7 @@ interface Props {
   /** Workbench view model; omitted cluster entirely when absent. */
   workbench?: {
     project: string;
+    /** 分叉路线 id；主路线传 null（与 Git 分支胶囊同值同图标会像重复分支）。 */
     routeId: string | null;
     /** null → chip hidden (real Git detection lands with the task context wiring). */
     gitBranch: string | null;
@@ -144,7 +146,7 @@ export function TitleBar({
         </div>
       </div>
 
-      {/* 任务标题（t-title）+ 状态胶囊：项目 → 路线 → Git 分支。
+      {/* 任务标题（t-title）+ 状态胶囊：项目 →（分叉路线，GitFork 图标）→ Git 分支。
           pl-4 与左段（侧栏）保持距离；收起时左段收窄，标题随之左对齐。 */}
       <div className="app-no-drag flex min-w-0 items-center pl-4">
         {title !== undefined && title !== "" && (
@@ -162,7 +164,7 @@ export function TitleBar({
             )}
             {workbench.routeId !== null && (
               <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
-                <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
+                <GitFork size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
                 <span className="font-mono text-[12px]">{workbench.routeId}</span>
                 <ChevronDown size={12} className="text-(--color-app-faint)" />
               </span>

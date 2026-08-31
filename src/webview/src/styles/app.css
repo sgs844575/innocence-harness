@@ -130,8 +130,8 @@
     mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   }
 
-  /* 聊天主列（消息列表 + 输入框共用）：满宽模型——撑满 frame 宽度
-     （停靠胶囊已在 frame 层扣除），仅由外层 gutter 留白。 */
+  /* 聊天主列（消息列表 + 输入框共用）：左锚收缩模型——宽度由
+     外层滚动区 padding（左 100px 虚线槽）+ 1120px 封顶约束。 */
   .chat-column {
     width: 100%;
   }
@@ -158,7 +158,9 @@
     filter: invert(1);
   }
 
-  /* 参考稿 Git 浮层：raised 灰面 + 强描边 + 10px 圆角，停靠/覆盖/抽底三形态。 */
+  /* 参考稿 Git 浮层：raised 灰面 + 强描边 + 10px 圆角，悬浮/抽底两形态。
+     悬浮态绝对定位于滚动区右上（top/right 18px），覆盖在聊天表面之上，
+     不占布局列——滚动条得以贴窗口最右缘。 */
   .agent-capsule {
     z-index: 10;
     overflow: hidden;
@@ -169,25 +171,18 @@
     color: var(--color-app-text);
   }
 
-  .agent-capsule-docked {
-    align-self: flex-start;
-    width: 319px;
-    margin-top: 18px;
-    flex: 0 0 319px;
+  .agent-capsule-floating {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: min(319px, calc(100% - 36px));
   }
 
-  .agent-capsule-overlay,
   .agent-capsule-sheet {
     position: absolute;
     right: 0;
-    top: 18px;
-    width: min(319px, calc(100% - 32px));
-  }
-
-  .agent-capsule-sheet {
-    top: auto;
-    right: 0;
     bottom: 0;
+    left: 0;
     width: 100%;
     border-radius: 10px 10px 0 0;
   }
@@ -197,7 +192,7 @@
   }
 
   .agent-capsule-collapsed-compact {
-    width: min(319px, calc(100% - 32px));
+    width: min(319px, calc(100% - 36px));
   }
 
   .capsule-action {

@@ -8,7 +8,7 @@ import type { AgentModeOption } from "./composer/AgentModePicker";
 import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
 import { ChatDashes } from "./chat/ChatDashes";
 import type { AgentActivityProjection } from "./context-capsule/activityProjection";
-import { CAPSULE_WIDTH, defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
+import { defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
 
 interface Props {
   t: (key: string) => string;
@@ -44,8 +44,7 @@ interface Props {
   /** Opens the existing typed Review panel from the header action. */
   onOpenReview?: () => void;
   /** Existing domain/runtime state projected for the right activity capsule. */
-  activity?: AgentActivityProjection;
-}
+  activity?: AgentActivityProjection;}
 
 export function ChatView({
   t,
@@ -69,23 +68,11 @@ export function ChatView({
   onForkMessage,
   onForkSession,
   onBackgroundRun,
-  onOpenReview,
   activity,
 }: Props): React.JSX.Element {
   const [presentation, dispatchPresentation] = useReducer(reduceWorkspacePresentationState, defaultWorkspacePresentationState);
   const [availableWidth, setAvailableWidth] = useState(() => typeof window === "undefined" ? 1024 : window.innerWidth);
   const layout = workspaceLayoutForWidth(availableWidth);
-  const hasDockedCapsule = layout.capsulePlacement === "docked" && activity !== undefined;
-  // The companion track remains outside the reading column when collapsed, so
-  // messages and Composer never shift or narrow as the capsule disclosure changes.
-  const companionWidth = hasDockedCapsule ? CAPSULE_WIDTH : 0;
-  const companionGap = hasDockedCapsule ? layout.capsuleGap : 0;
-  const legacyFrameMaxWidth = layout.contentMaxWidth + companionGap + companionWidth;
-  const frameMaxWidth = landing
-    ? layout.contentMaxWidth
-    : layout.capsulePlacement !== "sheet" && activity !== undefined
-      ? undefined
-      : legacyFrameMaxWidth;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -161,8 +148,8 @@ export function ChatView({
               onSend={onSend}
               onStop={onStop}
               contentMaxWidth={layout.contentMaxWidth}
-              contentGutter={0}
-              frameMaxWidth={layout.contentMaxWidth}
+              gutterLeft={0}
+              gutterRight={0}
               header={
                 <ProjectPicker
                   t={t}
@@ -196,65 +183,53 @@ export function ChatView({
   ) : null;
 
   return (
-      <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
-        <div className="chat-workspace-body relative min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
-        {/* 左缘虚线刻度（参考稿 chat-dashes 功能化）：垂直居中于滚动区、
-            水平居中于左留白槽，点击按比例跳转；审查入口悬于右上。 */}
+    <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
+      {/* 滚动区满宽铺开：Y 滚动条贴主列最右缘（参考稿 .scroll 满宽模型）；
+          内容列流体收缩——左留白 8% 呼吸（24..100px）、吃满余量至 1120px 封顶，
+          胶囊悬浮其上（.agent-capsule-floating 绝对定位），不再扣列。 */}
+      <div className="chat-workspace-body relative min-h-0 flex-1">
+        {/* 左缘虚线刻度（参考稿 chat-dashes left:12px）：垂直居中于滚动区、
+            紧贴主列左缘，点击按比例跳转。 */}
         {messages.length > 0 && (
-          <div
-            className="absolute top-1/2 z-[5] -translate-y-1/2"
-            style={{ left: Math.max(0, Math.round((layout.contentGutter - 12) / 2)) }}
-          >
+          <div className="absolute left-[12px] top-1/2 z-[5] -translate-y-1/2">
             <ChatDashes fraction={scrollFraction} onSeek={seekTo} />
           </div>
         )}
-        {onOpenReview && (
-          <button
-            type="button"
-            onClick={onOpenReview}
-            aria-label="打开审查"
-            title="打开审查"
-            className="absolute right-0 top-2 z-10 flex h-7 items-center rounded-full bg-(--color-app-sunken) px-3 text-xs text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
-          >
-            打开审查
-          </button>
-        )}
-        <div data-testid="chat-frame" className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
-          <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
-            <div data-testid="chat-timeline" className="chat-column mx-auto pb-8" style={{ maxWidth: layout.contentMaxWidth }}>
-              <div className="space-y-8 pt-10">
-                {messages.map((m) => (
-                  <MessageItem
-                    key={m.id}
-                    t={t}
-                    message={m}
-                    isLatest={m.id === messages[messages.length - 1]?.id}
-                    onQuote={setQuoteDraft}
-                    onForkMessage={onForkMessage}
-                    onForkSession={onForkSession}
-                    taskChange={taskChanges?.[m.id]}
-                    onOpenTaskReview={onOpenTaskReview ? () => onOpenTaskReview(m.id) : undefined}
-                  />
-                ))}
-              </div>
-              <div ref={bottomRef} />
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="scrollbar-thin h-full min-w-0 overflow-y-auto"
+          style={{ padding: `2px ${layout.contentRightGutter}px 0 ${layout.contentGutter}px` }}
+        >
+          <div data-testid="chat-timeline" className="chat-column pb-8" style={{ maxWidth: layout.contentMaxWidth }}>
+            <div className="space-y-8 pt-10">
+              {messages.map((m) => (
+                <MessageItem
+                  key={m.id}
+                  t={t}
+                  message={m}
+                  isLatest={m.id === messages[messages.length - 1]?.id}
+                  onQuote={setQuoteDraft}
+                  onForkMessage={onForkMessage}
+                  onForkSession={onForkSession}
+                  taskChange={taskChanges?.[m.id]}
+                  onOpenTaskReview={onOpenTaskReview ? () => onOpenTaskReview(m.id) : undefined}
+                />
+              ))}
             </div>
+            <div ref={bottomRef} />
           </div>
-          {hasDockedCapsule ? (
-            <div data-testid="chat-capsule-slot" className="relative shrink-0" style={{ width: companionWidth }}>
-              {capsule}
-            </div>
-          ) : capsule}
         </div>
+        {capsule}
       </div>
 
       {permission && (
-        <div style={{ paddingInline: layout.contentGutter }}>
-          <div className="mx-auto flex w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
-            <div className="chat-column" style={{ maxWidth: layout.contentMaxWidth }}>
-              <PermissionCard t={t} request={permission} onRespond={onPermissionRespond} />
-            </div>
-            {companionWidth > 0 && <div aria-hidden="true" className="shrink-0" style={{ width: companionWidth }} />}
+        <div
+          className="shrink-0 pb-2"
+          style={{ paddingLeft: layout.contentGutter, paddingRight: layout.contentRightGutter }}
+        >
+          <div className="chat-column" style={{ maxWidth: layout.contentMaxWidth }}>
+            <PermissionCard t={t} request={permission} onRespond={onPermissionRespond} />
           </div>
         </div>
       )}
@@ -264,10 +239,8 @@ export function ChatView({
         mode="existing"
         contextCount={0}
         contentMaxWidth={layout.contentMaxWidth}
-        contentGutter={layout.contentGutter}
-        frameMaxWidth={frameMaxWidth}
-        companionWidth={companionWidth}
-        companionGap={companionGap}
+        gutterLeft={layout.contentGutter}
+        gutterRight={layout.contentRightGutter}
         streaming={streaming}
         settings={settings}
         agentModes={agentModes}

@@ -27,7 +27,7 @@ const baseProps = {
   },
   terminal: { durationMs: 30_000, backgroundTasks: 1, onOpen: vi.fn() },
   agent: { name: "default", status: "running" as const },
-  placement: "docked" as const,
+  placement: "floating" as const,
 };
 
 describe("AgentActivityCapsule", () => {
@@ -132,8 +132,8 @@ describe("AgentActivityCapsule", () => {
     expect(screen.queryByText("default")).toBeNull();
   });
 
-  it("keeps a collapsed overlay capsule compact instead of stretching across the chat frame", () => {
-    render(<AgentActivityCapsule {...baseProps} open={false} placement="overlay" />);
+  it("keeps a collapsed floating capsule compact instead of stretching across the chat surface", () => {
+    render(<AgentActivityCapsule {...baseProps} open={false} placement="floating" />);
     expect(screen.getByLabelText("当前进程胶囊").className).toContain("agent-capsule-collapsed-compact");
   });
 

@@ -266,6 +266,13 @@ export function App(): React.JSX.Element {
     [task, workbench, reviewData, chat],
   );
 
+  // 标题栏路线胶囊：只在分叉路线（parentRouteId 非空）上显示；主路线与
+  // Git 分支胶囊语义重复（默认路线 id 即 "main"），同显会像两个分支名。
+  const forkRouteId = useMemo(() => {
+    const active = task?.routes.find((route) => route.routeId === workbench.state.activeRouteId);
+    return active && active.parentRouteId !== null ? active.routeId : null;
+  }, [task, workbench.state.activeRouteId]);
+
   // Native menu "New Session" shortcut — leaves settings, dismisses the
   // overlay drawer, and returns to the landing chat state.
   useEffect(() => {
@@ -314,7 +321,7 @@ export function App(): React.JSX.Element {
             title={activeSession?.title ?? ""}
             workbench={{
               project: projectName,
-              routeId: task ? workbench.state.activeRouteId : null,
+              routeId: forkRouteId,
               gitBranch: task?.gitBranch ?? null,
             }}
             panelOpen={nav.workbench.open}

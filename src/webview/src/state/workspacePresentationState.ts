@@ -1,7 +1,7 @@
 export type SidebarView = "groups" | "projects";
 export type SidebarSort = "recent" | "created" | "name";
 export type CapsuleSection = "environment" | "process" | "terminal" | "agent";
-export type CapsulePlacement = "docked" | "overlay" | "sheet";
+export type CapsulePlacement = "floating" | "sheet";
 
 export interface WorkspacePresentationState {
   sidebarView: SidebarView;
@@ -128,20 +128,38 @@ export function reduceWorkspacePresentationState(
 }
 
 export interface WorkspaceLayout {
+  /** 消息列宽度封顶（参考稿 .col max-width:1120px；窗口更窄时吃满余量）。 */
   contentMaxWidth: number;
+  /** 消息列左留白（参考稿满宽态 .scroll padding-left:100px，虚线刻度槽）。 */
   contentGutter: number;
-  capsuleGap: number;
+  /** 滚动区右留白（参考稿 .scroll padding-right:20px）。 */
+  contentRightGutter: number;
   capsulePlacement: CapsulePlacement;
 }
 
+/** 参考稿实测：正文列 1120px 封顶、满宽态左留白 100px / 右留白 20px。 */
+export const CHAT_CONTENT_MAX_WIDTH = 1120;
+const CHAT_LEFT_GUTTER_MAX = 100;
+const CHAT_LEFT_GUTTER_MIN = 24;
+const CHAT_RIGHT_GUTTER = 20;
+
 export function workspaceLayoutForWidth(viewportWidth: number): WorkspaceLayout {
-  // 聊天主体满宽：内容列撑满可用宽度（仅留 gutter），不再居中封顶；
-  // 停靠胶囊的宽度由 ChatView 的 frame 布局扣除（companionWidth/gap）。
+  // 满宽滚动 + 流体收缩内容列：滚动区铺满主列（滚动条贴窗口最右缘），
+  // 左留白随窗口宽度 8% 呼吸（24..100px），正文/输入盒吃满余量并在
+  // 1120px 封顶——窗口大小变化时整条轨道随之伸缩；胶囊悬浮其上不占列。
   if (viewportWidth < 640) {
-    return { contentMaxWidth: viewportWidth, contentGutter: 16, capsuleGap: 0, capsulePlacement: "sheet" };
+    return {
+      contentMaxWidth: viewportWidth,
+      contentGutter: 16,
+      contentRightGutter: 16,
+      capsulePlacement: "sheet",
+    };
   }
-  if (viewportWidth < 1340) {
-    return { contentMaxWidth: viewportWidth, contentGutter: 24, capsuleGap: 16, capsulePlacement: "overlay" };
-  }
-  return { contentMaxWidth: viewportWidth, contentGutter: 32, capsuleGap: 24, capsulePlacement: "docked" };
+  const gutter = Math.min(CHAT_LEFT_GUTTER_MAX, Math.max(CHAT_LEFT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
+  return {
+    contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - gutter - CHAT_RIGHT_GUTTER),
+    contentGutter: gutter,
+    contentRightGutter: CHAT_RIGHT_GUTTER,
+    capsulePlacement: "floating",
+  };
 }

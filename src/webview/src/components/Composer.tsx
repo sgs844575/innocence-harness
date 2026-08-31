@@ -16,11 +16,11 @@ interface Props {
   /** landing shows project selection and contextual input guidance; existing is compact follow-up mode. */
   mode?: "landing" | "existing";
   contextCount?: number;
+  /** 输入盒宽度封顶（与消息列同轨道：流体吃满余量、1120px 封顶）。 */
   contentMaxWidth?: number;
-  contentGutter?: number;
-  frameMaxWidth?: number;
-  companionWidth?: number;
-  companionGap?: number;
+  /** 左右留白（与消息列同轨道；落地态居中由父层负责）。 */
+  gutterLeft?: number;
+  gutterRight?: number;
   streaming: boolean;
   settings: HarnessSettings | null;
   /** agent 模式目录（缺省回落仅内置 default，App 层经 useAgentModes 注入）。 */
@@ -43,10 +43,8 @@ export function Composer({
   mode,
   contextCount = 0,
   contentMaxWidth,
-  contentGutter,
-  frameMaxWidth,
-  companionWidth = 0,
-  companionGap = 0,
+  gutterLeft = 0,
+  gutterRight = 0,
   streaming,
   settings,
   agentModes,
@@ -118,9 +116,16 @@ export function Composer({
     "grid size-5 shrink-0 place-items-center rounded-[6px] bg-(--color-app-strong) text-(--color-app-panel) transition-transform active:scale-90 disabled:opacity-30";
 
   return (
-    <div className="shrink-0 pb-[clamp(10px,1.5vw,16px)]" style={{ paddingInline: contentGutter }}>
-      <div className="mx-auto flex w-full items-end" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
-      <div data-testid="chat-composer" className="chat-column" style={{ maxWidth: contentMaxWidth }}>
+    <div
+      className="shrink-0 pb-[clamp(10px,1.5vw,16px)]"
+      style={{ paddingLeft: gutterLeft, paddingRight: gutterRight }}
+    >
+      {/* 既有会话与消息列同轨道左锚；落地态居中。 */}
+      <div
+        data-testid="chat-composer"
+        className={`chat-column w-full ${composerMode === "landing" ? "mx-auto" : ""}`}
+        style={{ maxWidth: contentMaxWidth }}
+      >
         <div
           className={`flex min-h-[105px] flex-col justify-between rounded-[12px] border border-(--color-app-border) bg-(--color-app-raised) transition-colors focus-within:border-(--color-app-accent) ${streaming ? "beam" : ""}`}
         >
@@ -237,8 +242,6 @@ export function Composer({
             )}
           </div>
         </div>
-      </div>
-      {companionWidth > 0 && <div aria-hidden="true" className="shrink-0" style={{ width: companionWidth }} />}
       </div>
     </div>
   );
