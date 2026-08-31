@@ -23,6 +23,22 @@ describe("CompletionMetadata", () => {
     expect(screen.getByText(/stop/)).toBeTruthy();
   });
 
+  it("prefers the resolved provider display name over the raw profile id", () => {
+    render(
+      <CompletionMetadata
+        completion={{
+          providerId: "custom_mtb2pr7n",
+          modelId: "GLM-5.2",
+          finishReason: "stop",
+          aborted: false,
+        }}
+        providerName="词花"
+      />,
+    );
+    expect(screen.getByText("词花 / GLM-5.2")).toBeTruthy();
+    expect(screen.queryByText(/custom_mtb2pr7n/)).toBeNull();
+  });
+
   it("renders nothing when the host has not supplied completion metadata", () => {
     const { container } = render(<CompletionMetadata completion={undefined} />);
     expect(container.textContent).toBe("");

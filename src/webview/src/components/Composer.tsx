@@ -30,9 +30,6 @@ interface Props {
   onStop: () => void;
   /** S1 后台运行入口：同段输入改走后台作业；缺省不渲染按钮。 */
   onBackgroundRun?: (text: string) => void;
-  /** 引用通道注入文本：并入输入框后立即回调 onConsumed 清掉 draft。 */
-  initialText?: string;
-  onConsumed?: () => void;
   /** 面板首行（落地态的项目选择器；聊天态不传 = 无此行）。 */
   header?: ReactNode;
 }
@@ -52,24 +49,13 @@ export function Composer({
   onSend,
   onStop,
   onBackgroundRun,
-  initialText,
-  onConsumed,
   header,
 }: Props): React.JSX.Element {
   const composerMode = mode ?? (header ? "landing" : "existing");
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    if (!initialText) return;
-    setValue((v) => (v ? `${v}\n${initialText}` : initialText));
-    onConsumed?.();
-    requestAnimationFrame(() => ref.current?.focus());
-    // 依赖只含 initialText：onConsumed 后 draft 已清空，回调引用不触发重复并入。
-  }, [initialText]);
-
-  // 自适应高度跟随值变化：发送清空后回弹、引用注入后长高（onChange 之外
-  // 的值变更没有输入事件，必须在这里补）。
+  // 自适应高度跟随值变化（onChange 之外的值变更没有输入事件，必须在这里补）。
   useEffect(() => {
     const el = ref.current;
     if (el) autosize(el);

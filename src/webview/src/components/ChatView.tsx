@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { ChatMessage, ChatPermissionEvent, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
 import { MessageItem, type ForkMessageCommand, type TaskChangeCardCommand } from "./MessageItem";
 import { Composer } from "./Composer";
@@ -84,8 +84,15 @@ export function ChatView({
   const lastScrollTop = useRef(0);
   // 滚动位置比例（0..1）：驱动左缘虚线刻度的高亮。
   const [scrollFraction, setScrollFraction] = useState(0);
-  // 引用通道：操作栏「引用」把文本塞进 Composer，Composer 消费后回调清空。
-  const [quoteDraft, setQuoteDraft] = useState("");
+  // 供应商显示名：完成元数据只有 profile id（如 custom_mtb2pr7n），
+  // 这里按 settings.profiles 解析成用户可读的厂家名（同 ModelPicker 芯片）。
+  const providerNameOf = useCallback(
+    (providerId?: string): string | undefined => {
+      if (!providerId) return undefined;
+      return settings?.profiles.find((profile) => profile.id === providerId)?.name ?? providerId;
+    },
+    [settings],
+  );
 
   useEffect(() => {
     const workspace = workspaceRef.current;
@@ -208,12 +215,11 @@ export function ChatView({
                   key={m.id}
                   t={t}
                   message={m}
-                  isLatest={m.id === messages[messages.length - 1]?.id}
-                  onQuote={setQuoteDraft}
                   onForkMessage={onForkMessage}
                   onForkSession={onForkSession}
                   taskChange={taskChanges?.[m.id]}
                   onOpenTaskReview={onOpenTaskReview ? () => onOpenTaskReview(m.id) : undefined}
+                  providerNameOf={providerNameOf}
                 />
               ))}
             </div>
@@ -248,8 +254,6 @@ export function ChatView({
         onSend={onSend}
         onStop={onStop}
         onBackgroundRun={onBackgroundRun}
-        initialText={quoteDraft}
-        onConsumed={() => setQuoteDraft("")}
       />
     </div>
   );

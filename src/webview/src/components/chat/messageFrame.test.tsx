@@ -10,7 +10,6 @@ afterEach(cleanup);
 Element.prototype.scrollIntoView = () => {};
 
 const t = (key: string) => key;
-const onQuote = () => {};
 
 describe("MessageFrame 思考块的 live 判定", () => {
   it("思考是末段且流式中 → live（shimmer 预览）", () => {
@@ -18,9 +17,7 @@ describe("MessageFrame 思考块的 live 判定", () => {
       <MessageFrame
         parts={[{ type: "thinking", text: "正在推理……" }] as MessagePart[]}
         streaming
-        isLatest
         t={t}
-        onQuote={onQuote}
       />,
     );
     // live 分支：shimmer 预览行（文本尾段 + .shimmer 类），无"已思考"静态行
@@ -36,9 +33,7 @@ describe("MessageFrame 思考块的 live 判定", () => {
           { type: "text", text: "答案是 42。" },
         ] as MessagePart[]}
         streaming
-        isLatest
         t={t}
-        onQuote={onQuote}
       />,
     );
     expect(screen.queryByText(/chat.thinking.live/)).toBeNull();

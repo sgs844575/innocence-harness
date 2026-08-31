@@ -45,6 +45,26 @@ function toMessagePart(p: unknown): MessagePart | null {
   return null;
 }
 
+/** Reminders middleware 注入段信封（<system-reminder>…</system-reminder>）：
+ *  组合后的用户轮会在原文之后追加这些注入 text part——它们属于请求组装，
+ *  不是用户输入，回放历史时必须剥掉（否则重开应用会把提示词暴露在气泡里）。 */
+function isInjectedReminderText(part: MessagePart): boolean {
+  return part.type === "text" && part.text.trimStart().startsWith("<system-reminder>");
+}
+
+/** 用户消息只保留真实输入：首个非注入 text part 之后的 text 都是中间件
+ *  追加的注入（提醒/上下文注入），全部丢弃；非 text part（如附件/未知保留段）
+ *  原样保留。 */
+function stripUserInjections(parts: MessagePart[]): MessagePart[] {
+  let seenUserText = false;
+  return parts.filter((part) => {
+    if (part.type !== "text") return true;
+    if (seenUserText || isInjectedReminderText(part)) return false;
+    seenUserText = true;
+    return true;
+  });
+}
+
 /** Restores message bodies from the session's JSONL transcript, if any. */
 export function hydrateSessionMessages(record: SessionRecord, options: HydrateOptions): void {
   record.messagesLoaded = true;
@@ -102,12 +122,13 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
     // Keep every valid part (text/thinking/toolCall/toolResult) so restored
     // transcripts match the live structured stream; rows with no valid parts
     // at all (empty text + empty tool) produce no message.
-    const mapped = (
+    let mapped = (
       Array.isArray((m as { parts?: unknown }).parts)
         ? ((m as { parts?: unknown[] }).parts ?? []).map(toMessagePart)
         : []
     ).filter((x): x is MessagePart => x !== null);
     if (mapped.length === 0) continue;
+    if (role === "user") mapped = stripUserInjections(mapped);
     // Tool results are persisted as their own textless user turn (the loop
     // loop.ts pushes { role: "user", parts: resultParts }), while the live
     // stream appends them to the assistant message — the shape pairTools
@@ -129,13 +150,15 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
     });
   }
   // 一轮 = 一条助手消息（对齐 live 形状）：transcript 里每个工具轮是独立的
-  // assistant 消息（中间夹 user 工具结果轮，上一步已并入），这里把连续的
+  // assistant 消息（中间夹 user 工具结果轮，上一步已并入），这里把同一轮内的
   // assistant 消息归并成一条——否则重载后一轮对话会被拆成多个气泡。
-  // 真实用户消息（含 text）天然分隔轮次，不会跨轮误并。
+  // 轮边界以 completion 为准：它只挂在每轮最后一个 assistant 块上；下一轮
+  // （重试/续跑轮之间没有用户消息分隔）必须另起气泡，否则两轮合一，
+  // 重开应用后看起来"少了一段回复"。
   const coalesced: ChatMessage[] = [];
   for (const m of messages) {
     const prev = coalesced[coalesced.length - 1];
-    if (m.role === "assistant" && prev?.role === "assistant") {
+    if (m.role === "assistant" && prev?.role === "assistant" && prev.completion === undefined) {
       prev.parts.push(...m.parts);
       if (m.completion) prev.completion = m.completion;
     } else {

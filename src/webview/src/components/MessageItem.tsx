@@ -21,18 +21,18 @@ export interface TaskChangeCardCommand {
 }
 
 export function MessageItem({
-  t, message, isLatest, onQuote, onForkMessage, onForkSession, taskChange, onOpenTaskReview,
+  t, message, onForkMessage, onForkSession, taskChange, onOpenTaskReview, providerNameOf,
 }: {
   t: (key: string) => string;
   message: ChatMessage;
-  isLatest: boolean;
-  onQuote: (text: string) => void;
   onForkMessage?: (command: ForkMessageCommand) => void;
   /** M1 会话 fork：非任务会话的用户消息动作（任务会话走路线分叉）。
    *  mode="worktree" 为工作树分叉（A:95：父 Git 工作区建分离工作树）。 */
   onForkSession?: (messageId: string, mode?: "text" | "worktree") => void;
   taskChange?: TaskChangeCardCommand;
   onOpenTaskReview?: () => void;
+  /** completion.providerId → 供应商显示名（ChatView 按 settings.profiles 解析）。 */
+  providerNameOf?: (providerId?: string) => string | undefined;
 }): React.JSX.Element {
   const text = messageText(message.parts);
   if (message.role === "user") {
@@ -83,8 +83,8 @@ export function MessageItem({
   }
   return (
     <div className="rise-in group">
-      <MessageFrame parts={message.parts} streaming={message.streaming === true} isLatest={isLatest} t={t} onQuote={onQuote} />
-      <CompletionMetadata completion={message.completion} />
+      <MessageFrame parts={message.parts} streaming={message.streaming === true} t={t} />
+      <CompletionMetadata completion={message.completion} providerName={providerNameOf?.(message.completion?.providerId)} />
       {taskChange && (
         <div className="mt-2">
           <TaskChangeCard
