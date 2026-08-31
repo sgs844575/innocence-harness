@@ -163,23 +163,23 @@ export function AppShell({
   const settingsNode = settings(nav);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-(--color-app-bg) text-(--color-app-text)">
-      {titleBar(nav)}
-      {banner}
-      {/* One continuous surface: sidebar column (sidebar tone) + content
-          column (panel tone), separated by hairlines only. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {isWide && !railMode && (
-          <div className="w-[clamp(232px,20vw,288px)] shrink-0 border-r border-(--color-app-hairline) bg-(--color-app-sidebar)">
-            {navFull}
-          </div>
-        )}
-        {(isMedium || (isWide && railMode)) ? (
-          <div className="w-12 shrink-0 border-r border-(--color-app-hairline) bg-(--color-app-sidebar)">
-            {navRail}
-          </div>
-        ) : null}
-        <main className="min-w-0 flex-1 overflow-hidden bg-(--color-app-panel)">
+    <div className="flex h-full w-full overflow-hidden bg-(--color-app-bg) text-(--color-app-text)">
+      {/* 参考稿分层：灰侧栏整列贴左；主区（黑）以 12px 左圆角浮起，
+          圆角外的缝隙透出页面底色。 */}
+      {isWide && !railMode && (
+        <div className="w-[265px] shrink-0 bg-(--color-app-sidebar)">
+          {navFull}
+        </div>
+      )}
+      {(isMedium || (isWide && railMode)) ? (
+        <div className="w-12 shrink-0 bg-(--color-app-sidebar)">
+          {navRail}
+        </div>
+      ) : null}
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-l-[12px] bg-(--color-app-panel)">
+        {titleBar(nav)}
+        {banner}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {inSettings && settingsNode !== null ? (
             settingsNode
           ) : view === "automation" && automation ? (
@@ -196,20 +196,20 @@ export function AppShell({
               {chat}
             </WorkbenchShell>
           )}
-        </main>
-      </div>
+        </div>
+      </main>
 
       {/* Medium/narrow windows: overlay drawer with a scrim, flush against
           the left edge below the title bar. */}
       {!isWide && drawerOpen && (
-        <div className="fixed inset-x-0 bottom-0 top-9 z-40">
+        <div className="fixed inset-x-0 bottom-0 top-12 z-40">
           <button
             type="button"
             aria-label={t("sidebar.close")}
             onClick={() => setDrawerOpen(false)}
             className="fade-in absolute inset-0 bg-black/25"
           />
-          <div className="drawer-in absolute bottom-0 left-0 top-0 w-[clamp(240px,72vw,300px)] border-r border-(--color-app-border) bg-(--color-app-sidebar) shadow-(--shadow-pop)">
+          <div className="drawer-in absolute bottom-0 left-0 top-0 w-[clamp(240px,72vw,300px)] bg-(--color-app-sidebar) shadow-(--shadow-pop)">
             {navFull}
           </div>
         </div>

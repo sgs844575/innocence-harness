@@ -1,4 +1,7 @@
 // Sidebar navigation: durable trees, explicit id-only drag commands, and archive recovery.
+// 呈现遵循参考稿：顶部 logo 芯片 + 通知；菜单块（新建/搜索/自动化/插件市场，
+// 带快捷键注记）；分组/项目分类芯片 + 筛选/归档工具；运行任务条（星芒旋转）；
+// 底部身份条（logo 头像 + 应用名 + 本地徽章 + 设置）。
 import { useMemo, useRef, useState } from "react";
 import { DndContext, closestCenter, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -6,20 +9,19 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   ArchiveRestore,
+  Asterisk,
   Bell,
   ChevronRight,
   CircleAlert,
+  CirclePlus,
+  Filter,
   GripVertical,
-  LoaderCircle,
-  MessageSquare,
-  MessageSquarePlus,
+  LayoutGrid,
+  Pin,
   Search,
   Settings,
   ShieldAlert,
-  Store,
   Workflow,
-  Hash,
-  FolderTree,
   X,
 } from "lucide-react";
 import logoUrl from "../../../../logo.svg";
@@ -54,12 +56,17 @@ interface Props {
   onToggleProject?: (projectId: string) => void;
 }
 
-const NAV_ITEMS = [
-  { icon: MessageSquarePlus, key: "sidebar.nav.newChat", action: "new" },
-  { icon: Search, key: "sidebar.nav.search", action: "search" },
+const NAV_ITEMS: readonly {
+  icon: typeof CirclePlus;
+  key: string;
+  action: "new" | "search" | "automation" | "plugins";
+  kbd?: string;
+}[] = [
+  { icon: CirclePlus, key: "sidebar.nav.newChat", action: "new", kbd: "Ctrl+N" },
+  { icon: Search, key: "sidebar.nav.search", action: "search", kbd: "Ctrl+K" },
   { icon: Workflow, key: "sidebar.nav.automation", action: "automation" },
-  { icon: Store, key: "sidebar.nav.plugins", action: "plugins" },
-] as const;
+  { icon: LayoutGrid, key: "sidebar.nav.plugins", action: "plugins" },
+];
 
 export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new Map(), sidebar, onSelect, onNew, onNewInGroup, onDelete, onArchive, onOpenSettings, onSearch, onAutomation, onPlugins, view: controlledView, collapsedProjectIds = [], onViewChange, onToggleProject }: Props): React.JSX.Element {
   const [query, setQuery] = useState("");
@@ -79,6 +86,13 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
   const byId = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
   const archivedSessions = useMemo(() => sidebar.state.order.map((id) => byId.get(id)).filter((session): session is Session => session !== undefined && sidebar.state.archived[session.id] === true), [sidebar.state, byId]);
   const headerIds = useMemo(() => tree.filter((node) => node.kind !== "ungrouped").map((node) => `header:${node.id}`), [tree]);
+  // 运行任务条：优先当前选中会话，否则取任一运行中的会话（多任务并行时
+  // 展示第一条，完整清单仍在树内各自标注状态）。
+  const runningSession = useMemo(
+    () => sessions.find((session) => session.id === activeId && sessionStatuses.get(session.id) === "running")
+      ?? sessions.find((session) => sessionStatuses.get(session.id) === "running"),
+    [sessions, activeId, sessionStatuses],
+  );
 
   const onDragEnd = (event: DragEndEvent) => {
     if (!event.over) return;
@@ -95,24 +109,48 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
     return onPlugins ?? onOpenSettings;
   };
 
+  const viewLabel = view === "groups" ? t("sidebar.groups") : t("sidebar.projects");
+
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <img src={logoUrl} alt={`${appName} Logo`} className="size-6 rounded-md" />
-        <span className="truncate text-[15px] font-semibold">{appName}</span>
-        <div className="flex-1" />
-        <button type="button" aria-label={t("sidebar.noNotifications")} className="grid size-7 place-items-center rounded-full text-(--color-app-muted) hover:bg-(--color-app-bubble)"><Bell size={15} /></button>
-      </div>
-      <nav className="flex flex-col gap-0.5 px-2 pb-3">
-        {NAV_ITEMS.map(({ icon: Icon, key, action }) => <button key={key} type="button" onClick={actionFor(action)} title={t(key)} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm hover:bg-(--color-app-bubble)"><Icon size={16} className="text-(--color-app-muted)" />{t(key)}</button>)}
-      </nav>
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-2">
-        <div className="mb-2 flex items-center gap-1 rounded-full bg-(--color-app-bubble) p-0.5 text-xs">
-          <button type="button" onClick={() => setView("groups")} className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 ${view === "groups" ? "bg-(--color-app-panel) font-medium" : "text-(--color-app-muted)"}`}><Hash size={12} />{t("sidebar.groups")}</button>
-          <button type="button" onClick={() => setView("projects")} className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 ${view === "projects" ? "bg-(--color-app-panel) font-medium" : "text-(--color-app-muted)"}`}><FolderTree size={12} />{t("sidebar.projects")}</button>
+      {/* side-top：logo 芯片（页面底色挖孔感）+ 通知 */}
+      <div className="flex h-12 shrink-0 items-center gap-3 pl-3 pr-4">
+        <div className="grid size-[23px] shrink-0 place-items-center rounded-md bg-(--color-app-bg)">
+          <img src={logoUrl} alt={`${appName} Logo`} className="size-[15px] rounded-[3px]" />
         </div>
-        {view === "groups" && <div className="mb-2">
-          <button type="button" onClick={() => setGroupDialogOpen(true)} className="w-full rounded-lg border border-dashed border-(--color-app-border) px-2 py-1.5 text-left text-xs text-(--color-app-muted) hover:bg-(--color-app-bubble)">新建分组</button>
+        <div className="flex-1" />
+        <button type="button" aria-label={t("sidebar.noNotifications")} className="grid size-7 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><Bell size={15} /></button>
+      </div>
+
+      {/* 菜单块 */}
+      <nav className="flex flex-col gap-px px-2.5 pt-3.5">
+        {NAV_ITEMS.map(({ icon: Icon, key, action, kbd }) => <button key={key} type="button" onClick={actionFor(action)} title={t(key)} className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] text-(--color-app-text) hover:bg-(--color-app-hover)"><Icon size={16} className="text-(--color-app-muted)" />{t(key)}{kbd && <span aria-hidden className="ml-auto text-[11px] text-(--color-app-faint)">{kbd}</span>}</button>)}
+      </nav>
+
+      {/* 分类芯片 + 筛选/归档工具 */}
+      <div className="flex items-center gap-1 px-3.5 pt-3">
+        <button type="button" onClick={() => setView("groups")} aria-pressed={view === "groups"} className={`flex h-[26px] items-center gap-1.5 rounded-full px-2.5 text-[13px] ${view === "groups" ? "bg-(--color-app-panel) font-medium text-(--color-app-text)" : "text-(--color-app-muted) hover:text-(--color-app-text)"}`}>{t("sidebar.groups")}</button>
+        <button type="button" onClick={() => setView("projects")} aria-pressed={view === "projects"} className={`flex h-[26px] items-center gap-1.5 rounded-full px-2.5 text-[13px] ${view === "projects" ? "bg-(--color-app-panel) font-medium text-(--color-app-text)" : "text-(--color-app-muted) hover:text-(--color-app-text)"}`}>{t("sidebar.projects")}</button>
+        {view === "projects" && <Pin size={13} className="ml-0.5 text-(--color-app-faint)" aria-hidden />}
+        <div className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
+          <button type="button" aria-label={t("sidebar.filter")} title={t("sidebar.filter")} onClick={() => filterRef.current?.focus()} className="hover:text-(--color-app-text)"><Filter size={14} /></button>
+          <button type="button" aria-label="归档列表" title="归档列表" onClick={() => setArchivedExpanded((v) => !v)} aria-expanded={archivedExpanded} className="hover:text-(--color-app-text)"><Archive size={14} /></button>
+        </div>
+      </div>
+
+      {/* 运行任务条 */}
+      {runningSession && (
+        <button type="button" onClick={() => onSelect(runningSession.id)} title={runningSession.title} className="relative mx-2.5 mt-3.5 flex h-8 items-center gap-2.5 overflow-hidden rounded-[9px] bg-(--color-app-hover) pr-2.5 pl-2.5 text-left text-[13px] whitespace-nowrap text-(--color-app-text)">
+          <Asterisk size={15} className="burst-spin shrink-0 text-(--color-app-muted)" />
+          <span className="min-w-0 flex-1 truncate">{runningSession.title}</span>
+          <span className="shrink-0 text-xs text-(--color-app-muted)">刚刚</span>
+        </button>
+      )}
+
+      <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pt-1">
+        <div className="px-1.5 pt-3 pb-1 text-xs text-(--color-app-faint)">{viewLabel}</div>
+        {view === "groups" && <div className="mb-1">
+          <button type="button" onClick={() => setGroupDialogOpen(true)} className="w-full rounded-md border border-dashed border-(--color-app-border) px-2 py-1.5 text-left text-xs text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)">新建分组</button>
           {groupDialogOpen && <form className="mt-1 flex gap-1" onSubmit={(event) => {
             event.preventDefault();
             const name = newGroupName.trim();
@@ -121,11 +159,11 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
             setNewGroupName("");
             setGroupDialogOpen(false);
           }}>
-            <input aria-label="分组名称" autoFocus value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-(--color-app-border) bg-(--color-app-panel) px-2 py-1 text-xs outline-none focus:border-(--color-app-accent)" />
-            <button type="submit" aria-label="保存分组" disabled={!newGroupName.trim()} className="rounded-lg bg-(--color-app-accent) px-2 py-1 text-xs text-(--color-app-accent-fg) disabled:opacity-40">保存</button>
+            <input aria-label="分组名称" autoFocus value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} className="min-w-0 flex-1 rounded-md border border-(--color-app-border) bg-(--color-app-panel) px-2 py-1 text-xs outline-none focus:border-(--color-app-accent)" />
+            <button type="submit" aria-label="保存分组" disabled={!newGroupName.trim()} className="rounded-md bg-(--color-app-accent) px-2 py-1 text-xs text-(--color-app-accent-fg) disabled:opacity-40">保存</button>
           </form>}
         </div>}
-        <input ref={filterRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.filter")} className="mb-2 w-full rounded-full border border-transparent bg-(--color-app-bubble) px-3.5 py-1.5 text-xs outline-none focus:border-(--color-app-accent)" />
+        <input ref={filterRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.filter")} className="mb-2 w-full rounded-md border border-transparent bg-(--color-app-sunken) px-3 py-1.5 text-xs outline-none placeholder:text-(--color-app-faint) focus:border-(--color-app-accent)" />
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={headerIds} strategy={verticalListSortingStrategy}>
             {tree.map((node) => <TreeNode key={node.id} node={node} sessions={byId} archived={sidebar.state.archived} activeId={activeId} statuses={sessionStatuses} onSelect={onSelect} onNew={onNew} onNewInGroup={onNewInGroup} onDelete={onDelete} onArchive={onArchive} onCollapse={(collapsed) => node.kind === "group" ? void sidebar.setSidebarGroupCollapsed(node.id, collapsed) : onToggleProject?.(node.id)} dndDisabled={filterActive} deleteLabel={t("sidebar.delete")} />)}
@@ -134,9 +172,17 @@ export function Sidebar({ t, appName, sessions, activeId, sessionStatuses = new 
         {tree.length === 0 && <div className="px-2 py-3 text-center text-xs text-(--color-app-muted)">{t("sidebar.empty")}</div>}
         <ArchivedSection expanded={archivedExpanded} sessions={archivedSessions} activeId={activeId} onSelect={onSelect} onRestore={(id) => onArchive(id)} onDelete={onDelete} onToggle={() => setArchivedExpanded((value) => !value)} deleteLabel={t("sidebar.delete")} />
       </div>
-      <footer className="flex items-center justify-between border-t border-(--color-app-hairline) px-3 py-2.5">
-        <span className="rounded-full bg-(--color-app-bubble) px-2.5 py-1 text-[11px] font-semibold tracking-wide">{t("sidebar.localMode")}</span>
-        <button type="button" onClick={onOpenSettings} aria-label={t("sidebar.settings")} className="grid size-7 place-items-center rounded-full text-(--color-app-muted) hover:bg-(--color-app-bubble)"><Settings size={15} /></button>
+
+      {/* side-bottom：身份条 */}
+      <footer className="mt-auto flex shrink-0 items-center gap-2.5 px-4 pb-4 pt-2">
+        <div className="grid size-8 shrink-0 place-items-center rounded-full bg-(--color-app-bg)">
+          <img src={logoUrl} alt="" className="size-[15px] rounded-[3px]" />
+        </div>
+        <span className="min-w-0 truncate text-sm font-bold text-(--color-app-strong)">{appName}</span>
+        <span className="shrink-0 rounded-full bg-(--color-app-bg) px-1.5 py-0.5 text-[10px] leading-none text-(--color-app-muted)">{t("sidebar.localMode")}</span>
+        <div className="ml-auto">
+          <button type="button" onClick={onOpenSettings} aria-label={t("sidebar.settings")} className="grid size-7 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><Settings size={15} /></button>
+        </div>
       </footer>
     </aside>
   );
@@ -153,23 +199,23 @@ function TreeNode({ node, sessions, archived, activeId, statuses, onSelect, onNe
     ? `展开${node.kind === "project" ? "项目" : "分组"} ${node.name}`
     : `折叠${node.kind === "project" ? "项目" : "分组"} ${node.name}`;
   return <section ref={drop.setNodeRef} className="mb-1">
-    <div ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className="group flex items-center gap-1 rounded-xl px-1 py-1.5 text-sm">
-      {node.kind !== "ungrouped" && <button type="button" {...sortable.attributes} {...sortable.listeners} aria-label="拖动" className="cursor-grab text-(--color-app-muted) opacity-0 group-hover:opacity-100 focus:opacity-100"><GripVertical size={13} /></button>}
-      {node.kind !== "ungrouped" && <button type="button" onClick={() => onCollapse(!collapsed)} aria-label={collapseLabel}><ChevronRight size={14} className={collapsed ? "" : "rotate-90"} /></button>}
-      <span className="truncate font-medium" data-container-id={containerLabel}>{node.name}</span><span className="ml-auto text-[10px] text-(--color-app-muted)">{node.sessionIds.length}</span>
+    <div ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className="group flex items-center gap-1 rounded-md px-1.5 py-1 text-[13.5px]">
+      {node.kind !== "ungrouped" && <button type="button" {...sortable.attributes} {...sortable.listeners} aria-label="拖动" className="cursor-grab text-(--color-app-faint) opacity-0 group-hover:opacity-100 focus:opacity-100"><GripVertical size={12} /></button>}
+      {node.kind !== "ungrouped" && <button type="button" onClick={() => onCollapse(!collapsed)} aria-label={collapseLabel} className="text-(--color-app-muted)"><ChevronRight size={13} className={collapsed ? "" : "rotate-90"} /></button>}
+      <span className="truncate font-medium text-(--color-app-text)" data-container-id={containerLabel}>{node.name}</span><span className="ml-auto text-[10px] text-(--color-app-faint)">{node.sessionIds.length}</span>
     </div>
-    {!collapsed && <ul className="ml-[13px] space-y-0.5 border-l border-(--color-app-border) pl-2"><SortableContext items={node.sessionIds.map((id) => `session:${id}`)} strategy={verticalListSortingStrategy}>{node.sessionIds.map((id) => { const session = sessions.get(id); return session ? <SessionRow key={id} session={session} active={id === activeId} status={statuses.get(id)} archived={archived[id] === true} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} dndDisabled={dndDisabled} deleteLabel={deleteLabel} /> : null; })}</SortableContext>{node.kind === "group" && node.sessionIds.length === 0 && <li ref={emptyGroupDrop.setNodeRef} className="rounded-lg border border-dashed border-(--color-app-border) px-2 py-2 text-xs text-(--color-app-muted)"><button type="button" aria-label={`在 ${node.name} 中新建任务`} onClick={() => { if (onNewInGroup) onNewInGroup(node.id); else onNew(); }} className="text-left hover:text-(--color-app-text)">新建任务</button><div role="button" aria-label={`拖放到 ${node.name}`} tabIndex={0} className="mt-1">或拖放到这里…</div></li>}</ul>}
+    {!collapsed && <ul className="ml-3 space-y-px border-l border-(--color-app-border) pl-2"><SortableContext items={node.sessionIds.map((id) => `session:${id}`)} strategy={verticalListSortingStrategy}>{node.sessionIds.map((id) => { const session = sessions.get(id); return session ? <SessionRow key={id} session={session} active={id === activeId} status={statuses.get(id)} archived={archived[id] === true} onSelect={onSelect} onDelete={onDelete} onArchive={onArchive} dndDisabled={dndDisabled} deleteLabel={deleteLabel} /> : null; })}</SortableContext>{node.kind === "group" && node.sessionIds.length === 0 && <li ref={emptyGroupDrop.setNodeRef} className="rounded-md border border-dashed border-(--color-app-border) px-2 py-2 text-xs text-(--color-app-muted)"><button type="button" aria-label={`在 ${node.name} 中新建任务`} onClick={() => { if (onNewInGroup) onNewInGroup(node.id); else onNew(); }} className="text-left hover:text-(--color-app-text)">新建任务</button><div role="button" aria-label={`拖放到 ${node.name}`} tabIndex={0} className="mt-1">或拖放到这里…</div></li>}</ul>}
   </section>;
 }
 
 function SessionRow({ session, active, status, archived, onSelect, onDelete, onArchive, dndDisabled, deleteLabel }: { session: Session; active: boolean; status?: SidebarSessionStatus; archived: boolean; onSelect: (id: string) => void; onDelete: (id: string) => void; onArchive: (id: string) => void; dndDisabled: boolean; deleteLabel: string }): React.JSX.Element {
   const sortable = useSortable({ id: `session:${session.id}`, disabled: dndDisabled || archived });
   return <li ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className="group relative flex items-center">
-    {!archived && <button type="button" {...sortable.attributes} {...sortable.listeners} aria-label="拖动" className="mr-0.5 shrink-0 cursor-grab text-(--color-app-muted) opacity-0 group-hover:opacity-100 focus:opacity-100"><GripVertical size={12} /></button>}
-    <button type="button" onClick={() => onSelect(session.id)} title={session.title} className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-(--color-app-accent-soft) font-medium text-(--color-app-accent)" : "hover:bg-(--color-app-bubble)"}`}>
-      {status === "running" ? <LoaderCircle aria-label="running" size={13} className="shrink-0 animate-spin" /> : status === "waiting-permission" ? <ShieldAlert aria-label="waiting-permission" size={13} className="shrink-0" /> : status === "failed" ? <CircleAlert aria-label="failed" size={13} className="shrink-0 text-(--color-tool-err)" /> : <MessageSquare size={12} className="shrink-0 text-(--color-app-muted)" />}
+    {!archived && <button type="button" {...sortable.attributes} {...sortable.listeners} aria-label="拖动" className="mr-0.5 shrink-0 cursor-grab text-(--color-app-faint) opacity-0 group-hover:opacity-100 focus:opacity-100"><GripVertical size={12} /></button>}
+    <button type="button" onClick={() => onSelect(session.id)} title={session.title} className={`flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[13px] ${active ? "bg-(--color-app-hover) font-medium text-(--color-app-strong)" : "text-(--color-app-text) hover:bg-(--color-app-hover)"}`}>
+      {status === "running" ? <Asterisk aria-label="running" size={13} className="burst-spin shrink-0 text-(--color-app-accent)" /> : status === "waiting-permission" ? <ShieldAlert aria-label="waiting-permission" size={13} className="shrink-0 text-(--color-tool-warn)" /> : status === "failed" ? <CircleAlert aria-label="failed" size={13} className="shrink-0 text-(--color-tool-err)" /> : <span className="grid size-[13px] shrink-0 place-items-center rounded-full border border-(--color-app-border)" aria-hidden />}
       <span className="min-w-0 flex-1 truncate">{session.title}</span>
-      <time className="shrink-0 text-[10px] font-normal text-(--color-app-muted)" dateTime={new Date(session.updatedAt).toISOString()}>{relativeTime(session.updatedAt)}</time>
+      <time className="shrink-0 text-[10px] font-normal text-(--color-app-faint)" dateTime={new Date(session.updatedAt).toISOString()}>{relativeTime(session.updatedAt)}</time>
     </button>
     {!archived && <button type="button" aria-label="归档会话" onClick={(event) => { event.stopPropagation(); onArchive(session.id); }} className="absolute right-7 top-1/2 hidden -translate-y-1/2 rounded px-1 text-xs text-(--color-app-muted) hover:text-(--color-app-text) group-hover:block"><Archive size={12} /></button>}
     <button type="button" aria-label={deleteLabel} onClick={(event) => { event.stopPropagation(); onDelete(session.id); }} className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded px-1 text-xs text-(--color-app-muted) hover:text-(--color-app-text) group-hover:block"><X size={12} /></button>
@@ -187,7 +233,7 @@ function relativeTime(timestamp: number): string {
 function ArchivedSection({ expanded, sessions, activeId, onSelect, onRestore, onDelete, onToggle, deleteLabel }: { expanded: boolean; sessions: readonly Session[]; activeId: string | null; onSelect: (id: string) => void; onRestore: (id: string) => void; onDelete: (id: string) => void; onToggle: () => void; deleteLabel: string }): React.JSX.Element | null {
   if (sessions.length === 0) return null;
   return <section className="mt-3 border-t border-(--color-app-hairline) pt-2">
-    <button type="button" onClick={onToggle} aria-expanded={expanded} className="flex w-full items-center gap-1 rounded-xl px-2 py-1.5 text-left text-sm text-(--color-app-muted) hover:bg-(--color-app-bubble)"><ChevronRight size={14} className={expanded ? "rotate-90" : ""} />Archived<span className="ml-auto text-[10px]">{sessions.length}</span></button>
-    {expanded && <ul className="ml-[13px] space-y-0.5 border-l border-(--color-app-border) pl-2">{sessions.map((session) => <li key={session.id} className="group relative flex items-center"><button type="button" onClick={() => onSelect(session.id)} className={`min-w-0 flex-1 truncate rounded-xl px-2 py-1.5 text-left text-sm ${activeId === session.id ? "bg-(--color-app-accent-soft) font-medium text-(--color-app-accent)" : "hover:bg-(--color-app-bubble)"}`}>{session.title}</button><button type="button" aria-label="恢复归档" onClick={() => onRestore(session.id)} className="absolute right-7 top-1/2 hidden -translate-y-1/2 group-hover:block"><ArchiveRestore size={12} /></button><button type="button" aria-label={deleteLabel} onClick={() => onDelete(session.id)} className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 group-hover:block">✕</button></li>)}</ul>}
+    <button type="button" onClick={onToggle} aria-expanded={expanded} className="flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-[13px] text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"><ChevronRight size={13} className={expanded ? "rotate-90" : ""} />Archived<span className="ml-auto text-[10px]">{sessions.length}</span></button>
+    {expanded && <ul className="ml-3 space-y-px border-l border-(--color-app-border) pl-2">{sessions.map((session) => <li key={session.id} className="group relative flex items-center"><button type="button" onClick={() => onSelect(session.id)} className={`min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] ${activeId === session.id ? "bg-(--color-app-hover) font-medium text-(--color-app-strong)" : "text-(--color-app-text) hover:bg-(--color-app-hover)"}`}>{session.title}</button><button type="button" aria-label="恢复归档" onClick={() => onRestore(session.id)} className="absolute right-7 top-1/2 hidden -translate-y-1/2 group-hover:block"><ArchiveRestore size={12} /></button><button type="button" aria-label={deleteLabel} onClick={() => onDelete(session.id)} className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 group-hover:block">✕</button></li>)}</ul>}
   </section>;
 }
