@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { PROVIDER_PRESET_MIRROR, type HarnessSettings, type ProviderKind, type ProviderProfile } from "../../../../shared/ipc";
 import { CapabilityTags } from "../tags/CapabilityTags";
+import { BrandIcon } from "../icons/BrandIcon";
 import { Popover } from "../ui/Popover";
 import { filterProfiles } from "./modelPickerFilter";
 
@@ -31,10 +32,11 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
         <button
           type="button"
           data-model-picker-trigger
-          className="flex max-w-[200px] items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium hover:bg-(--color-app-bubble)"
+          className="flex max-w-[220px] items-center gap-2 rounded-md px-1.5 py-1 text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)"
         >
+          <BrandIcon subject={activeProfile ? `${activeProfile.name} ${activeProfile.kind}` : activeModel} color size={14} />
           <span className="truncate">{label}</span>
-          <ChevronDown size={11} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
         </button>
       }
     >

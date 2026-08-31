@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Plus, Square, ArrowUp, Files, Play } from "lucide-react";
+import { Plus, Square, ArrowUp, Files, Play, LoaderCircle } from "lucide-react";
 import {
   MOCK_MODEL,
   MOCK_PROFILE_ID,
@@ -37,6 +37,7 @@ interface Props {
   header?: ReactNode;
 }
 
+/** 参考稿输入盒：raised 灰盒 + 12px 圆角；运行时边框光束（beam）循环游走。 */
 export function Composer({
   t,
   mode,
@@ -105,12 +106,18 @@ export function Composer({
       }
     : null;
 
+  // 反色方形动作钮（参考稿 stop-btn）：暗底上亮块 / 亮底上墨块。
+  const squareButton =
+    "grid size-5 shrink-0 place-items-center rounded-[6px] bg-(--color-app-strong) text-(--color-app-panel) transition-transform active:scale-90 disabled:opacity-30";
+
   return (
     <div className="shrink-0 pb-[clamp(10px,1.5vw,16px)]" style={{ paddingInline: contentGutter }}>
       <div className="mx-auto flex w-full items-end" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
       <div data-testid="chat-composer" className="chat-column" style={{ maxWidth: contentMaxWidth }}>
-        <div className="rounded-[18px] border border-(--color-app-border) bg-(--color-app-panel) shadow-(--shadow-card) transition-colors focus-within:border-(--color-app-accent)">
-          {composerMode === "landing" && header && <div className="px-2.5 pt-2.5">{header}</div>}
+        <div
+          className={`flex min-h-[105px] flex-col justify-between rounded-[12px] border border-(--color-app-border) bg-(--color-app-raised) transition-colors focus-within:border-(--color-app-accent) ${streaming ? "beam" : ""}`}
+        >
+          {composerMode === "landing" && header && <div className="px-3 pt-3">{header}</div>}
           <textarea
             ref={ref}
             value={value}
@@ -121,23 +128,23 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder={t(composerMode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
             rows={1}
-            className="scrollbar-thin max-h-44 min-h-9 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
+            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 text-[13.5px] leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
           />
           {composerMode === "landing" && (
-            <div className="flex flex-wrap gap-x-2 px-3.5 pb-1 text-[10px] text-(--color-app-muted)">
+            <div className="flex flex-wrap gap-x-3 px-3 pt-1 text-[10px] text-(--color-app-faint)">
               <span>使用 @ 添加上下文</span>
               <span>使用 / 选择命令或能力</span>
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2 text-xs text-(--color-app-muted)">
+          <div className="flex flex-wrap items-center gap-4 px-3 pb-2.5 pt-1.5 text-[13px] text-(--color-app-muted)">
             <button
               type="button"
               aria-label="添加附件"
               aria-description="当前会话不支持附件上下文"
               disabled
-              className="grid size-7 shrink-0 cursor-not-allowed place-items-center rounded-full opacity-45"
+              className="grid size-7 shrink-0 cursor-not-allowed place-items-center rounded-md opacity-45"
             >
-              <Plus size={15} />
+              <Plus size={17} strokeWidth={1.5} />
             </button>
             <PermissionModePicker
               t={t}
@@ -151,11 +158,13 @@ export function Composer({
               onChange={(mode) => onSettingsChange({ activeAgentMode: mode })}
             />
             {composerMode === "existing" && (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-(--color-app-muted)" aria-label="上下文数量">
+              <span className="inline-flex items-center gap-1 text-[12px] text-(--color-app-muted)" aria-label="上下文数量">
                 <Files size={12} />{contextCount}
               </span>
             )}
             <div className="flex-1" />
+
+            {streaming && <LoaderCircle size={14} className="shrink-0 animate-spin" aria-label="streaming" />}
 
             {pickerSettings ? (
               <ModelPicker
@@ -170,7 +179,7 @@ export function Composer({
               <button
                 type="button"
                 disabled
-                className="flex max-w-[200px] items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium"
+                className="flex max-w-[200px] items-center gap-1 text-[13px] font-medium"
               >
                 <span className="truncate">{t("provider.mock")}</span>
               </button>
@@ -191,9 +200,9 @@ export function Composer({
                 disabled={!canSend}
                 aria-label={t("chat.backgroundRun")}
                 title={t("chat.backgroundRun")}
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-(--color-app-bubble) transition-transform active:scale-95 disabled:opacity-30"
+                className="grid size-5 shrink-0 place-items-center rounded-[6px] bg-(--color-app-bubble) transition-transform active:scale-90 disabled:opacity-30"
               >
-                <Play size={13} />
+                <Play size={11} />
               </button>
             )}
 
@@ -202,9 +211,10 @@ export function Composer({
                 type="button"
                 onClick={onStop}
                 aria-label={t("chat.stop")}
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-(--color-app-bubble) transition-transform active:scale-95"
+                title={t("chat.stop")}
+                className={squareButton}
               >
-                <Square size={13} fill="currentColor" />
+                <Square size={10} fill="currentColor" strokeWidth={0} />
               </button>
             ) : (
               <button
@@ -212,9 +222,10 @@ export function Composer({
                 onClick={submit}
                 disabled={!canSend}
                 aria-label={t("chat.send")}
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,var(--color-app-accent),color-mix(in_srgb,var(--color-app-accent)_72%,#2563eb))] text-(--color-app-accent-fg) shadow-md transition-all active:scale-95 disabled:opacity-30 disabled:shadow-none"
+                title={t("chat.send")}
+                className={squareButton}
               >
-                <ArrowUp size={15} />
+                <ArrowUp size={12} strokeWidth={2} />
               </button>
             )}
           </div>

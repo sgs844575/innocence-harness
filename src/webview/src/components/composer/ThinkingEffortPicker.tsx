@@ -32,11 +32,11 @@ export function ThinkingEffortPicker({
           type="button"
           aria-label={t("reasoning.effort")}
           data-thinking-label={label}
-          className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] hover:bg-(--color-app-bubble)"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)"
         >
-          <BrainCircuit size={13} className="shrink-0 text-(--color-app-accent)" />
+          <BrainCircuit size={14} className="shrink-0 text-(--color-app-muted)" />
           <span>{label}</span>
-          <ChevronDown size={11} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
         </button>
       }
     >
@@ -45,7 +45,7 @@ export function ThinkingEffortPicker({
           key={v}
           type="button"
           onClick={() => onChange(v)}
-          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11.5px] hover:bg-(--color-app-bubble)/60 ${v === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}
+          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-(--color-app-hover) ${v === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}
         >
           <span>{t(key)}</span>
           {v === value && <Check size={12} className="ml-auto shrink-0" />}
