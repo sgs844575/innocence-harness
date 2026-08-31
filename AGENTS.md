@@ -46,3 +46,19 @@
 
 17. **Prefer installed components over hand-rolled code.** Before writing parsing, protocol, streaming, version-comparison, archive, transport, or crypto logic, first check the Node standard library and the workspace's already-installed dependencies, and reuse them so the hand-rolled surface shrinks instead of grows. When a dependency is added, land its first real consumer in the same change; a declared dependency with no import site is dead weight — remove it, or land the capability that justifies it. A well-chosen component replaces bespoke code (parsers, mappers, adapters) with a maintained, tested implementation; a dependency kept "for later" without a consumer does the opposite.
 
+## UI Design System
+
+The webview follows the 2026-08 reference redesign (gray sidebar + floating dark main, monospace identity, compact tool rows). Rules below keep new work in that language.
+
+18. **Token-first styling.** Colors, radii, and shadows come from `src/webview/src/styles/tokens/*` (`--color-app-*`) — never hardcode hex values in components. Dark is the primary theme: page gap `#0d0d0d`, sidebar/raised `#2b2b2b`, main canvas `#161616`, sunken chips `#262626`, strong border `#414141`, hairline `#2e2e2e`; text ramp `#f0f0f0 / #dcdcdc / #8a8a8a / #6e6e6e`; mode accent orange `#f0872f` (full-access permission tier); diff add/del `#6fbf73 / #e0524e`. The light mirror in `tokens/semantic.css` `:root` must stay functional in the same change.
+
+19. **Shell layout.** Gray sidebar column (265px, full height) plus a dark main area with 12px left rounding floating over the page background; the 48px title bar lives inside the main area (title + pills + custom window controls). The companion activity capsule is 319px (`CAPSULE_WIDTH`); the chat column stays `clamp(48rem, 72vw, 62rem)`. The font identity is monospace: `--font-sans` and `--font-mono` share the Maple Mono / Cascadia Code stack (CJK falls back to YaHei); body text is 14px.
+
+20. **Chat surface language.** Assistant messages render headerless with the `.msg-body` rhythm (14px semibold, 24px block gaps; copy/quote live in a hover action row). Tool calls are flat compact `ToolLine` rows — icon, verb, colored file icon, name, path, ±diff counts — with click-to-expand indented details. Do not reintroduce grouped/collapsed tool cards, boxed card chrome around tool rows, or per-message avatar headers.
+
+21. **Icons.** File-type icons resolve through `components/icons/fileIcons.ts` + `FileIcon` (asset set `src/webview/assets/fileicons/`, with `_light` variants in light theme); provider/model brand icons through `brandIcons.ts` + `BrandIcon` (`assets/brandicons/`), and mono brand assets must carry `.brand-mono` so the dark theme inverts them. UI line icons stay `lucide-react` at stroke width ~1.1. Do not inline new file/brand SVGs or fetch remote icon URLs (CSP is `img-src 'self' data:`).
+
+22. **Motion.** Shared animations live in `styles/motion.css` (`orbs` thinking dots, `beam` animated border, `pop-in` / `rise-in` transitions, `burst-spin`) plus `.tool-sweep` in `app.css`; every new animation must add a `prefers-reduced-motion: reduce` branch in the same change. Use the running-state beam on the composer, orbs for thinking states, and the sweep only while a row is executing.
+
+23. **Window chrome.** Window controls are custom-drawn (`TitleBarWindowControls`) over the `window:*` IPC channels — do not re-enable `titleBarOverlay` on Windows/Linux; macOS keeps `hiddenInset` system lights. Changing `--color-app-bg` requires syncing `src/main/appWindow.ts` `backgroundColor` and the `index.html` startup background in the same change. Restyling must preserve the load-bearing UI test contracts (visible tool-row texts, aria labels such as the hardcoded 折叠/展开侧边栏 toggle, `data-testid`s, `.tool-sweep`, `line-clamp-2` on todo items).
+
