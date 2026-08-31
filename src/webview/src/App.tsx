@@ -252,6 +252,8 @@ export function App(): React.JSX.Element {
     onCompare: openReviewPanel,
     onOpenProcess: openReviewPanel,
     onOpenTerminal: openTerminalPanel,
+    // 工作区级 git 兜底：无任务时让胶囊 Git 段仍可见（分支可能为 null→"未检测"）。
+    workspaceBranch: task?.gitBranch ?? null,
   });
 
   const handleForkSwitched = useCallback(

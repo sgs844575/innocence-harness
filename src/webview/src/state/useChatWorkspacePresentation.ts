@@ -27,6 +27,9 @@ export function useChatWorkspacePresentation(input: {
   onCompare: () => void;
   onOpenProcess: () => void;
   onOpenTerminal: () => void;
+  /** 工作区级 git 兜底（无任务时让胶囊 Git 段仍可见）。 */
+  workspaceBranch?: string | null;
+  workspaceKindFallback?: string;
 }): {
   activity: AgentActivityProjection;
   taskChanges: Record<string, TaskChangeCardCommand> | undefined;
@@ -59,6 +62,8 @@ export function useChatWorkspacePresentation(input: {
   const activity = useMemo(
     () => agentActivityFromWorkspace({
       task: input.task,
+      workspaceBranch: input.workspaceBranch ?? null,
+      workspaceKindFallback: input.workspaceKindFallback,
       changedFiles: input.changedFiles,
       changeSummary,
       process,
@@ -74,7 +79,7 @@ export function useChatWorkspacePresentation(input: {
         : undefined,
       onOpenSubagent: input.onOpenSubagent,
     }),
-    [input.task, input.sessionId, input.subagents, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.onCompare, input.onOpenProcess, input.onOpenTerminal, input.onOpenSubagent, changeSummary, process],
+    [input.task, input.workspaceBranch, input.workspaceKindFallback, input.sessionId, input.subagents, input.changedFiles, input.terminal, input.agentName, input.streaming, input.sessionStatus, input.onCompare, input.onOpenProcess, input.onOpenTerminal, input.onOpenSubagent, changeSummary, process],
   );
 
   return { activity, taskChanges };

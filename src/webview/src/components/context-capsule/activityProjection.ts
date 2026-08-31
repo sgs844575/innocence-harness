@@ -64,6 +64,9 @@ function agentStatus(input: {
 
 export function agentActivityFromWorkspace(input: {
   task: { gitBranch: string | null; workspaceKind: string; status?: string } | null;
+  /** 工作区级 git 分支/种类（无任务时也提供，胶囊 Git 段保持可见）。 */
+  workspaceBranch?: string | null;
+  workspaceKindFallback?: string;
   changedFiles: readonly string[];
   changeSummary: { added: number; removed: number };
   process?: ProcessActivity;
@@ -77,21 +80,20 @@ export function agentActivityFromWorkspace(input: {
   subagents?: readonly SubagentActivityView[];
   onOpenSubagent?: (childId: string) => void;
 }): AgentActivityProjection {
-  // 项目不存在 git（分支不可检测）或没有变更时隐藏 environment 段：
-  // branch 为空时展示的“未检测”空壳没有信息量，宁可整段隐藏。
-  const hasEnvironment = Boolean(input.task?.gitBranch) && input.changedFiles.length > 0;
+  // Git 段始终渲染：有任务时取任务分支/种类；无任务时回落工作区级信息
+  // （分支可能为 null→"未检测"），确保胶囊 Git 工具面板在所有会话都可见。
+  const branch = input.task?.gitBranch ?? input.workspaceBranch ?? null;
+  const workspaceKind = input.task?.workspaceKind ?? input.workspaceKindFallback ?? "git";
   const hasTerminal = input.terminal.backgroundTasks > 0;
   return {
-    ...(hasEnvironment ? {
-      environment: {
-        branch: input.task?.gitBranch ?? null,
-        changedFiles: input.changedFiles.length,
-        additions: input.changeSummary.added,
-        deletions: input.changeSummary.removed,
-        workspaceKind: input.task?.workspaceKind ?? "unknown",
-        ...(input.task ? { onCompare: input.onCompare } : {}),
-      },
-    } : {}),
+    environment: {
+      branch,
+      changedFiles: input.changedFiles.length,
+      additions: input.changeSummary.added,
+      deletions: input.changeSummary.removed,
+      workspaceKind,
+      ...(input.task ? { onCompare: input.onCompare } : { onCompare: input.onCompare }),
+    },
     ...(input.process ? {
       process: { ...input.process, ...(input.onOpenProcess ? { onOpen: input.onOpenProcess } : {}) },
     } : {}),

@@ -14,7 +14,7 @@ export function TurnCollapse({ parts }: Props): React.JSX.Element | null {
   const pairs = pairTools(parts);
   if (pairs.length === 0) return null;
   return (
-    <div className="flex flex-col gap-[10px]">
+    <div className="flex flex-col gap-3.5">
       {pairs.map(({ call, result }) => {
         const open = openTools.has(call.id) ?? false;
         return (

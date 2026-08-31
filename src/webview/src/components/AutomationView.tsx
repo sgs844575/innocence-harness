@@ -80,7 +80,7 @@ export function AutomationView({ onBack, sessionId = "", taskId, routeId = "main
   };
 
   return (
-    <main className="flex h-full min-w-0 flex-1 flex-col">
+    <div className="flex h-full min-w-0 flex-1 flex-col">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-(--color-app-hairline) px-4">
         <button type="button" onClick={onBack} aria-label="返回聊天" className="grid size-7 place-items-center rounded-full text-(--color-app-muted) hover:bg-(--color-app-bubble)"><ArrowLeft size={14} /></button>
         <h1 className="text-[13px] font-semibold">自动化</h1>
@@ -116,6 +116,6 @@ export function AutomationView({ onBack, sessionId = "", taskId, routeId = "main
           </section>
         )}
       </div>
-    </main>
+    </div>
   );
 }

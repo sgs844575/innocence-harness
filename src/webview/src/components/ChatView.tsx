@@ -86,7 +86,7 @@ export function ChatView({
     : layout.capsulePlacement !== "sheet" && activity !== undefined
       ? undefined
       : legacyFrameMaxWidth;
-  const workspaceRef = useRef<HTMLElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // 贴底策略：用户上滚（scrollTop 减小）→ 暂停跟随；回到底部（距底 <48px）→ 恢复。
@@ -145,7 +145,7 @@ export function ChatView({
   // 落地态（无激活会话）：输入面板垂直居中 + 顶部项目选择行；不渲染消息区。
   if (landing) {
     return (
-      <main ref={workspaceRef} className="flex h-full min-w-0 flex-1 flex-col">
+      <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
         <div className="flex flex-1 items-center justify-center pb-24" style={{ paddingInline: layout.contentGutter }}>
           <div className="w-full" style={{ maxWidth: layout.contentMaxWidth }}>
             <h1 className="mb-4 text-center text-[clamp(17px,2vw,21px)] font-medium">
@@ -175,9 +175,9 @@ export function ChatView({
             />
           </div>
         </div>
-      </main>
-    );
-  }
+      </div>
+  );
+}
 
   const capsule = activity ? (
     <AgentActivityCapsule
@@ -196,11 +196,8 @@ export function ChatView({
   ) : null;
 
   return (
-    <main
-      ref={workspaceRef}
-      className={`chat-workspace chat-workspace-${layout.capsulePlacement} flex h-full min-w-0 flex-1 flex-col`}
-    >
-      <div className="chat-workspace-body relative min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
+      <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
+        <div className="chat-workspace-body relative min-h-0 flex-1" style={{ paddingInline: layout.contentGutter }}>
         {/* 左缘虚线刻度（参考稿 chat-dashes 功能化）：垂直居中于滚动区、
             水平居中于左留白槽，点击按比例跳转；审查入口悬于右上。 */}
         {messages.length > 0 && (
@@ -224,8 +221,8 @@ export function ChatView({
         )}
         <div data-testid="chat-frame" className="relative mx-auto flex h-full min-h-0 w-full" style={{ maxWidth: frameMaxWidth, gap: companionGap }}>
           <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
-            <div data-testid="chat-timeline" className="chat-column mx-auto pb-6" style={{ maxWidth: layout.contentMaxWidth }}>
-              <div className="space-y-6 pt-8">
+            <div data-testid="chat-timeline" className="chat-column mx-auto pb-8" style={{ maxWidth: layout.contentMaxWidth }}>
+              <div className="space-y-8 pt-10">
                 {messages.map((m) => (
                   <MessageItem
                     key={m.id}
@@ -281,6 +278,6 @@ export function ChatView({
         initialText={quoteDraft}
         onConsumed={() => setQuoteDraft("")}
       />
-    </main>
+    </div>
   );
 }

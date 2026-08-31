@@ -121,7 +121,7 @@ describe("processActivityFromMessages", () => {
     expect(processActivityFromMessages(messages, "fallback")).toBeUndefined();
   });
 
-  it("hides environment without a task, real Git branch, or changed files", () => {
+  it("renders the Git panel with null branch when no task, branch, or changes are available", () => {
     const projection = agentActivityFromWorkspace({
       task: null,
       changedFiles: [],
@@ -133,11 +133,19 @@ describe("processActivityFromMessages", () => {
       onCompare: () => undefined,
     });
 
-    expect(projection.environment).toBeUndefined();
+    // Git 段始终显示（无任务 → 兜底），让胶囊 Git 工具面板在所有会话都可见
+    expect(projection.environment).toEqual({
+      branch: null,
+      changedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      workspaceKind: "git",
+      onCompare: expect.any(Function),
+    });
     expect(projection.terminal).toBeUndefined();
   });
 
-  it("hides environment for file-level changes when the Git branch is undetectable, keeping live terminal", () => {
+  it("keeps the Git panel visible for file-level changes with a null branch and shows a live terminal", () => {
     const projection = agentActivityFromWorkspace({
       task: { gitBranch: null, workspaceKind: "git" },
       changedFiles: ["image.png"],
@@ -149,11 +157,18 @@ describe("processActivityFromMessages", () => {
       onCompare: () => undefined,
     });
 
-    expect(projection.environment).toBeUndefined();
+    expect(projection.environment).toEqual({
+      branch: null,
+      changedFiles: 1,
+      additions: 0,
+      deletions: 0,
+      workspaceKind: "git",
+      onCompare: expect.any(Function),
+    });
     expect(projection.terminal).toEqual({ durationMs: 30_000, backgroundTasks: 1 });
   });
 
-  it("hides environment when the task exists but the branch is undetectable and nothing changed", () => {
+  it("still renders the Git panel when the task exists but the branch is undetectable and nothing changed", () => {
     const projection = agentActivityFromWorkspace({
       task: { gitBranch: null, workspaceKind: "git" },
       changedFiles: [],
@@ -165,10 +180,17 @@ describe("processActivityFromMessages", () => {
       onCompare: () => undefined,
     });
 
-    expect(projection.environment).toBeUndefined();
+    expect(projection.environment).toEqual({
+      branch: null,
+      changedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      workspaceKind: "git",
+      onCompare: expect.any(Function),
+    });
   });
 
-  it("hides environment when a branch is detectable but there are no changed files", () => {
+  it("still renders the Git panel when a branch is detectable but there are no changed files", () => {
     const projection = agentActivityFromWorkspace({
       task: { gitBranch: "main", workspaceKind: "git" },
       changedFiles: [],
@@ -180,7 +202,14 @@ describe("processActivityFromMessages", () => {
       onCompare: () => undefined,
     });
 
-    expect(projection.environment).toBeUndefined();
+    expect(projection.environment).toEqual({
+      branch: "main",
+      changedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      workspaceKind: "git",
+      onCompare: expect.any(Function),
+    });
   });
   it("combines existing task, review, terminal, chat, and settings state without owning them", () => {
     const onCompare = () => undefined;
@@ -248,7 +277,14 @@ describe("processActivityFromMessages", () => {
     expect(agentActivityFromWorkspace({ ...base, sessionStatus: "waiting-permission" }).agent.status).toBe("waiting-permission");
     expect(agentActivityFromWorkspace(base).agent.status).toBe("failed");
     expect(agentActivityFromWorkspace({ ...base, sessionStatus: "archived" }).agent.status).toBe("archived");
-    // base 没有变更文件：按新规则即使分支可检测也不生成 environment 段。
-    expect(agentActivityFromWorkspace(base).environment).toBeUndefined();
+    // Git 段始终渲染：分支可检测 + 0 变更 → environment 段存在、additions/deletions=0
+    expect(agentActivityFromWorkspace(base).environment).toEqual({
+      branch: "main",
+      changedFiles: 0,
+      additions: 0,
+      deletions: 0,
+      workspaceKind: "snapshot",
+      onCompare: expect.any(Function),
+    });
   });
 });

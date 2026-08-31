@@ -94,7 +94,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
 
   return (
     <aside className={className} aria-label="Agent 活动胶囊">
-      <div className="flex h-[22px] items-center px-[18px] pt-[14px] text-[13px] font-bold text-(--color-app-text)">
+      <div className="flex h-[22px] items-center px-[18px] pt-[16px] pb-3 text-[13px] font-bold text-(--color-app-text)">
         <span>活动上下文</span>
         <span className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
           <button type="button" aria-label="折叠活动胶囊" onClick={onToggleOpen} className="grid size-5 place-items-center rounded hover:text-(--color-app-text)">
@@ -102,7 +102,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
           </button>
         </span>
       </div>
-      <div className="flex flex-col px-[18px] pb-[14px]">
+      <div className="flex flex-col px-[18px] pb-[18px]">
         {sections.map((section) => {
           const isExpanded = expanded(section);
           return (
