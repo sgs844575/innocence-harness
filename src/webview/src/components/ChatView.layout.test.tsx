@@ -101,7 +101,7 @@ describe("ChatView shared responsive layout", () => {
     renderChat();
 
     act(() => resizeContainer?.(900));
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("808px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("419px");
 
     act(() => resizeContainer?.(520));
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("520px");
