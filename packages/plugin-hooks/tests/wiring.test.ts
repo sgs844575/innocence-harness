@@ -640,3 +640,27 @@ describe("createHooksPlugin", () => {
     expect(entries.some((entry) => entry.message.includes("teardown-hook"))).toBe(true);
   });
 });
+
+describe("LLM hook conditions (final deferred)", () => {
+  it("does not run the command when the evaluator returns ok:false; the tool remains allowed", async () => {
+    const calls: string[] = [];
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "preToolCall", match: "Write", command: "conditional-guard", condition: "only when approved" },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      conditionEvaluator: { evaluate: async () => ({ ok: false, reason: "insufficient evidence in transcript" }) },
+      runner: fakeRunner((hook) => {
+        calls.push(hook.command);
+        return { ok: false, exitCode: 9, output: "should not run" };
+      }),
+    });
+    const result = await wiring.middleware.execute(
+      invocation("Write", { path: "src/a.ts" }),
+      async () => ({ content: "write proceeds" }),
+    );
+    expect(result).toEqual({ content: "write proceeds" });
+    expect(calls).toEqual([]);
+  });
+});

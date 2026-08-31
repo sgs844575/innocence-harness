@@ -36,6 +36,8 @@ export interface HookDefinition {
   match?: string;
   /** Kill ceiling in milliseconds; upper-clamped, defaults at run time. */
   timeoutMs?: number;
+  /** Optional LLM condition; false/insufficient evidence skips the command. */
+  condition?: string;
 }
 
 export interface ParsedHooks {
@@ -107,11 +109,18 @@ export function parseHookDefinitions(raw: unknown): ParsedHooks {
       }
     }
 
+    const condition = record.condition;
+    if (condition !== undefined && (typeof condition !== "string" || condition.trim().length === 0)) {
+      warnings.push(`${where}: condition must be a non-empty string when present`);
+      return;
+    }
+
     hooks.push({
       event,
       command: command.trim(),
       ...(match !== undefined ? { match: match.trim() } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(condition !== undefined ? { condition: condition.trim() } : {}),
     });
   });
   return { hooks, warnings };

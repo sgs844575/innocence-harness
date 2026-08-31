@@ -58,6 +58,8 @@ export interface HookRunResult {
   /** True when the run was cut short by an abort signal instead of the
    *  deadline; an infrastructure failure for wiring (fail-open). */
   aborted?: boolean;
+  /** Condition evaluator decided this hook is inapplicable (not a runner failure). */
+  skipped?: boolean;
 }
 
 export interface HookExecFileOptions {

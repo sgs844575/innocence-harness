@@ -14,6 +14,8 @@ import type { Context } from "@innocenceharness/kernel";
 // (ctx.session, ctx.tools, ctx.permissions) into this compilation — the
 // same pattern as plugin-memory and plugin-planflow.
 import { createHooksWiring, type HooksWiringOptions } from "./wiring";
+import { createHookConditionEvaluator } from "./condition";
+import type {} from "@innocenceharness/harness-providers";
 
 // Type-only visibility for ctx.logger: kernel-logger ships no Context
 // augmentation of its own, so this declares the same member the session
@@ -27,6 +29,7 @@ declare module "@innocenceharness/kernel" {
 }
 
 export * from "./config";
+export * from "./condition";
 export * from "./gate";
 export * from "./runner";
 export * from "./stop";
@@ -61,9 +64,17 @@ export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
       // stop-face log sink the same way (the service outlives this fiber
       // in the unwind order: the logger plugin mounts first, so it
       // disposes last).
+      // Providers fiber may be absent in minimal/test contexts; conditional
+      // hooks then fail closed in wiring instead of making the hooks plugin fail.
+      const providers = ctx.providers;
+      const providerId = providers?.ids?.()[0];
+      const provider = providerId ? providers.get(providerId) : undefined;
       const { processor, middleware, dispose } = createHooksWiring({
         ...options,
         getPermissions: () => ctx.permissions,
+        ...(provider
+          ? { conditionEvaluator: createHookConditionEvaluator(provider, () => [...ctx.session.history]) }
+          : {}),
         log: (level, message) => ctx.logger.log(level, `[hooks] ${message}`),
       });
       ctx.session.registerProcessor(processor);

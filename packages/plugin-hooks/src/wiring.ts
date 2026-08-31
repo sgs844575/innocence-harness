@@ -41,6 +41,7 @@ import type {
   ToolResult,
 } from "@innocenceharness/harness-tools";
 import { parseHookDefinitions, type HookDefinition, type ParsedHooks } from "./config";
+import type { HookConditionEvaluator } from "./condition";
 import {
   createHookPermissionGate,
   type HookPermissionGate,
@@ -87,6 +88,8 @@ export interface HooksWiringOptions {
    * spawn fresh hook children during teardown.
    */
   readonly isHostShuttingDown?: () => boolean;
+  /** S4/A:100 optional LLM condition evaluator; missing means condition hooks skip fail-closed. */
+  readonly conditionEvaluator?: HookConditionEvaluator;
 }
 
 export interface HooksWiring {
@@ -144,6 +147,12 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
   // an unexpected throw is an infrastructure failure (warning, fail-open),
   // never a pipeline break.
   const runGuarded = async (hook: HookDefinition, input: HookRunInput): Promise<HookRunResult> => {
+    if (hook.condition) {
+      const decision = options.conditionEvaluator
+        ? await options.conditionEvaluator.evaluate({ condition: hook.condition, hook: input })
+        : { ok: false, reason: "condition evaluator unavailable" };
+      if (!decision.ok) return { ok: true, output: "", skipped: true };
+    }
     try {
       return await runner.runHook(hook, input);
     } catch (error) {
