@@ -35,6 +35,11 @@ const api: InnocenceCodeApi = {
   getTheme: () => ipcRenderer.invoke(IPC.themeGet),
   setTheme: (mode: ThemeMode) => ipcRenderer.invoke(IPC.themeSet, mode),
   onThemeChanged: (cb) => subscribe(IPC.themeChanged, cb as never),
+  minimizeWindow: () => ipcRenderer.invoke(IPC.windowMinimize),
+  toggleMaximizeWindow: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
+  closeWindow: () => ipcRenderer.invoke(IPC.windowClose),
+  isWindowMaximized: () => ipcRenderer.invoke(IPC.windowMaximizedGet),
+  onWindowMaximizedChanged: (cb) => subscribe(IPC.windowMaximizedChanged, cb as never),
   listSessions: () => ipcRenderer.invoke(IPC.sessionsList),
   createSession: (options?: { title?: string; workspaceRoot?: string }) =>
     ipcRenderer.invoke(IPC.sessionCreate, options),

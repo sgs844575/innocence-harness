@@ -8,7 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { APP_SCHEME, appIndexUrl } from "./protocol";
 import { logger } from "./logger";
-import { getTheme, titleBarOverlayFor } from "./theme";
+import { getTheme } from "./theme";
+import { IPC } from "../shared/ipc";
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -28,11 +29,6 @@ export function getMainWindow(): BrowserWindow | undefined {
 }
 
 export async function createMainWindow(onRendererReady?: () => void): Promise<BrowserWindow> {
-  // Match the window chrome to whatever theme is active right now, so the
-  // Windows caption-button overlay never mismatches the custom title bar
-  // (it previously stayed hardcoded dark and clashed with the light theme).
-  // backgroundColor 必须与 --color-app-bg 完全同值：DPI 缩放下 overlay 绘制
-  // 边界与网页 36px 各自取整，偶现的 1px 缝会透出窗口底色——同值则不可见。
   const resolved = getTheme().resolved;
 
   // Dev runs under the stock Electron executable, whose default shell icon
@@ -57,10 +53,11 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
     minWidth: 760,
     minHeight: 520,
     show: false,
-    backgroundColor: resolved === "dark" ? "#0f0f13" : "#f7f7f9",
+    backgroundColor: resolved === "dark" ? "#0d0d0d" : "#d6d6da",
     ...(iconPath ? { icon: iconPath } : {}),
+    // 自绘窗口控制：Win/Linux 无边框 + 网页内控制钮（TitleBar 渲染，
+    // window:* IPC 驱动）；macOS 保留系统红绿灯（hiddenInset）。
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
-    titleBarOverlay: process.platform === "win32" ? titleBarOverlayFor(resolved) : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       sandbox: true,
@@ -123,6 +120,14 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
     if (!isAllowedNavigationUrl(url, devServerUrl)) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
+  // 自绘控制钮需要最大化状态同步（TitleBar 的还原图标切换）。
+  win.on("maximize", () => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, true);
+  });
+  win.on("unmaximize", () => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, false);
+  });
 
   mainWindow = win;
   win.on("closed", () => {

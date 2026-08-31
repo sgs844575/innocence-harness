@@ -10,6 +10,12 @@ export const IPC = {
   themeGet: "theme:get",
   themeSet: "theme:set",
   themeChanged: "theme:changed",
+  // 自绘窗口控制（Win/Linux 无边框标题栏）：最小化/最大化切换/关闭与状态。
+  windowMinimize: "window:minimize",
+  windowToggleMaximize: "window:toggle-maximize",
+  windowClose: "window:close",
+  windowMaximizedGet: "window:maximized-get",
+  windowMaximizedChanged: "window:maximized-changed",
   uiNewSession: "ui:new-session",
   menuPopup: "menu:popup",
   sessionsList: "sessions:list",
@@ -385,6 +391,11 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   getTheme(): Promise<{ mode: ThemeMode; resolved: ResolvedTheme }>;
   setTheme(mode: ThemeMode): Promise<void>;
   onThemeChanged(cb: (mode: ThemeMode, resolved: ResolvedTheme) => void): () => void;
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<void>;
+  closeWindow(): Promise<void>;
+  isWindowMaximized(): Promise<boolean>;
+  onWindowMaximizedChanged(cb: (maximized: boolean) => void): () => void;
   listSessions(): Promise<Session[]>;
   createSession(options?: { title?: string; workspaceRoot?: string }): Promise<Session>;
   deleteSession(id: string): Promise<void>;

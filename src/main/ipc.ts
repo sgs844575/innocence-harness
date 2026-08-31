@@ -73,6 +73,16 @@ export function registerIpcHandlers(): void {
     broadcastTheme(needWindow());
   });
 
+  // 自绘窗口控制（TitleBar 的最小化/最大化切换/关闭）。
+  ipcMain.handle(IPC.windowMinimize, () => needWindow().minimize());
+  ipcMain.handle(IPC.windowToggleMaximize, () => {
+    const win = needWindow();
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.handle(IPC.windowClose, () => needWindow().close());
+  ipcMain.handle(IPC.windowMaximizedGet, () => needWindow().isMaximized());
+
   ipcMain.handle(IPC.sessionsList, () => sessions.listSessions());
   ipcMain.handle(IPC.sidebarGet, () => sessions.getSidebarState());
   ipcMain.handle(IPC.sidebarArchive, (_e, id: string, archived: boolean) => {
