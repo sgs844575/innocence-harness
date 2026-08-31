@@ -18,8 +18,10 @@ import {
 import { hydrateSessionMessages } from "./sessionHydration";
 import { appendSessionMessage, updateSessionMessage } from "./sessionMessages";
 import {
+  createForkWorktree,
   forkMessagePrefix,
   forkSessionRecord,
+  forkWorktreeSessionRecord,
   writeForkTranscript,
   type SessionForkOptions,
 } from "./sessionFork";
@@ -115,21 +117,37 @@ export function deleteSession(id: string): void {
  * M1 会话 fork（存储编排半边）：按用户消息切口把父会话的已水合历史分叉成
  * 新会话——种子转录走既有 hydration/运行时播种路径，索引记录 forkedFrom
  * 血缘。无效切口（未知 id / 非用户消息）或父会话不存在返回 undefined。
- * 工作树隔离语义属 S2，此处不涉及。
+ * worktree 模式（A:95）：父工作区自 HEAD 建分离工作树并绑定为新会话根
+ *（父工作树因根切换天然禁入）；非 Git/创建失败同样返回 undefined。
  */
-export function forkSession(parentId: string, options?: SessionForkOptions): Session | undefined {
+export async function forkSession(
+  parentId: string,
+  options?: SessionForkOptions,
+): Promise<Session | undefined> {
   const parent = sessions.get(parentId);
   if (!parent) return undefined;
   if (!parent.messagesLoaded) hydrate(parent);
   const prefix = forkMessagePrefix(parent.messages, options?.upToMessageId);
   if (prefix === undefined) return undefined;
   const id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  let worktreeRoot: string | undefined;
+  if (options?.worktree === true) {
+    worktreeRoot = await createForkWorktree(parent.workspaceRoot ?? "", id);
+    if (!worktreeRoot) return undefined;
+  }
   writeForkTranscript(storeDir, id, prefix);
-  const record = forkSessionRecord(parent, prefix, {
-    id,
-    now: Date.now(),
-    upToMessageId: options?.upToMessageId,
-  });
+  const record = worktreeRoot
+    ? forkWorktreeSessionRecord(parent, prefix, {
+        id,
+        now: Date.now(),
+        upToMessageId: options?.upToMessageId,
+        worktreeRoot,
+      })
+    : forkSessionRecord(parent, prefix, {
+        id,
+        now: Date.now(),
+        upToMessageId: options?.upToMessageId,
+      });
   sessions.set(id, record);
   order.unshift(id);
   persistIndex();

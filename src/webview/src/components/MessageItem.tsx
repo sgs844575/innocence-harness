@@ -1,4 +1,4 @@
-import { GitFork, Pencil, RotateCcw } from "lucide-react";
+import { GitBranch, GitFork, Pencil, RotateCcw } from "lucide-react";
 import type { ChatMessage } from "../../../shared/ipc";
 import { messageText } from "../../../shared/ipc";
 import type { ValidationResult } from "../../../shared/taskIpc";
@@ -28,8 +28,9 @@ export function MessageItem({
   isLatest: boolean;
   onQuote: (text: string) => void;
   onForkMessage?: (command: ForkMessageCommand) => void;
-  /** M1 会话 fork：非任务会话的用户消息动作（任务会话走路线分叉）。 */
-  onForkSession?: (messageId: string) => void;
+  /** M1 会话 fork：非任务会话的用户消息动作（任务会话走路线分叉）。
+   *  mode="worktree" 为工作树分叉（A:95：父 Git 工作区建分离工作树）。 */
+  onForkSession?: (messageId: string, mode?: "text" | "worktree") => void;
   taskChange?: TaskChangeCardCommand;
   onOpenTaskReview?: () => void;
 }): React.JSX.Element {
@@ -62,6 +63,17 @@ export function MessageItem({
                 className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
               >
                 <GitFork size={13} /> 从这里分叉
+              </button>
+            )}
+            {onForkSession && (
+              <button
+                type="button"
+                title="从这里分叉到工作树"
+                aria-label="从这里分叉到工作树"
+                onClick={() => onForkSession(message.id, "worktree")}
+                className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+              >
+                <GitBranch size={13} /> 分叉到工作树
               </button>
             )}
           </div>

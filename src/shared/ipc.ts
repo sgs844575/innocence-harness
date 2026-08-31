@@ -388,8 +388,13 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   listSessions(): Promise<Session[]>;
   createSession(options?: { title?: string; workspaceRoot?: string }): Promise<Session>;
   deleteSession(id: string): Promise<void>;
-  /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。 */
-  forkSession(sessionId: string, options?: { upToMessageId?: string }): Promise<Session | null>;
+  /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。
+   *  worktree=true 为工作树分叉（父 Git 工作区自 HEAD 建分离工作树并绑定为
+   *  新会话根；非 Git/失败返回 null）。 */
+  forkSession(
+    sessionId: string,
+    options?: { upToMessageId?: string; worktree?: boolean },
+  ): Promise<Session | null>;
   /** S1 后台作业：新建后台会话并机器身份触发一次自含运行；即回工作态。
    *  workspaceRoot 绑定作业会话的项目根（缺省回落全局设置根）。 */
   startBackgroundJob(

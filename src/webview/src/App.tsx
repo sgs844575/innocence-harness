@@ -185,19 +185,25 @@ export function App(): React.JSX.Element {
 
   // M1 会话 fork（非任务会话）：按用户消息切口分叉出新会话并切换过去；
   // 任务会话不挂此入口（已有路线分叉 + 工作树语义，避免双分叉口径）。
+  // worktree 模式（A:95）：父 Git 工作区自 HEAD 建分离工作树并绑定为新
+  // 会话根——父工作树因根切换天然禁入。
   const handleForkSession = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, mode?: "text" | "worktree") => {
       const activeId = sessions.activeId;
       if (!activeId) return;
+      const worktree = mode === "worktree";
       try {
-        const forked = await api.forkSession(activeId, { upToMessageId: messageId });
+        const forked = await api.forkSession(
+          activeId,
+          worktree ? { upToMessageId: messageId, worktree: true } : { upToMessageId: messageId },
+        );
         if (forked) {
           sessions.selectSession(forked.id);
         } else {
-          showError(t("chat.forkFailed"));
+          showError(t(worktree ? "chat.forkWorktreeFailed" : "chat.forkFailed"));
         }
       } catch {
-        showError(t("chat.forkFailed"));
+        showError(t(worktree ? "chat.forkWorktreeFailed" : "chat.forkFailed"));
       }
     },
     [sessions, showError, t],
@@ -365,7 +371,9 @@ export function App(): React.JSX.Element {
             onOpenTaskReview={openReviewPanel}
             onOpenReview={openReviewPanel}
             onForkMessage={task ? handleForkMessage : undefined}
-            onForkSession={task ? undefined : (messageId) => void handleForkSession(messageId)}
+            onForkSession={
+              task ? undefined : (messageId, mode) => void handleForkSession(messageId, mode)
+            }
             onBackgroundRun={(text) => void handleBackgroundRun(text)}
           />
         }

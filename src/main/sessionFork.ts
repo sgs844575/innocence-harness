@@ -16,6 +16,43 @@ export interface SessionForkOptions {
   /** 切口消息 id：必须是用户消息且含切口本身（其后的助手回复被丢弃，
    *  分叉后从该用户消息重新作答）。缺省 = 从最新状态整段分叉。 */
   upToMessageId?: string;
+  /**
+   * 工作树分叉模式（A:95）：在父会话工作区的 .innocence/worktrees/ 下自
+   * 父当前 HEAD 建分离工作树，并把新会话绑定到该工作树——父工作树因会话
+   * 根切换而天然禁入（路径约束拒越根）。非 Git 仓库或创建失败返回
+   * undefined（显式模式不静默回退文本分叉）。
+   */
+  worktree?: boolean;
+}
+
+/** git 执行面（execFile，无 shell；与 tools-worktree 同口径）。 */
+async function runGit(cwd: string, args: readonly string[]): Promise<string> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { stdout } = await promisify(execFile)("git", [...args], { cwd, encoding: "utf8" });
+  return stdout;
+}
+
+/**
+ * 工作树分叉：自父工作区当前 HEAD 建分离工作树并返回其绝对路径。失败
+ * （非 Git 仓库/git 报错）返回 undefined。
+ */
+export async function createForkWorktree(
+  parentWorkspaceRoot: string,
+  forkId: string,
+): Promise<string | undefined> {
+  if (!parentWorkspaceRoot) return undefined;
+  try {
+    const inside = (
+      await runGit(parentWorkspaceRoot, ["rev-parse", "--is-inside-work-tree"])
+    ).trim();
+    if (inside !== "true") return undefined;
+    const relative = `.innocence/worktrees/fork_${forkId}`;
+    await runGit(parentWorkspaceRoot, ["worktree", "add", "--detach", relative, "HEAD"]);
+    return path.resolve(parentWorkspaceRoot, relative);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -106,6 +143,16 @@ export function forkSessionRecord(
       ...(input.upToMessageId ? { messageId: input.upToMessageId } : {}),
     },
   };
+}
+
+/** 同上，但会话绑定到指定工作树根（A:95 工作树分叉模式）。 */
+export function forkWorktreeSessionRecord(
+  parent: SessionRecord,
+  prefix: readonly ChatMessage[],
+  input: { id: string; now: number; upToMessageId?: string; worktreeRoot: string },
+): SessionRecord {
+  const record = forkSessionRecord(parent, prefix, input);
+  return { ...record, workspaceRoot: input.worktreeRoot, title: `${parent.title} · 工作树分叉` };
 }
 
 export type { Session };

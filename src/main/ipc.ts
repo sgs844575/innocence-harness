@@ -109,15 +109,18 @@ export function registerIpcHandlers(): void {
     broadcastSidebar();
     return session;
   });
-  ipcMain.handle(IPC.sessionFork, (_e, id: string, options?: { upToMessageId?: string }) => {
-    // M1 会话 fork：无效切口/父会话缺失返回 null，由渲染层提示。
-    const session = sessions.forkSession(id, options);
-    if (session) {
-      broadcastSessions();
-      broadcastSidebar();
-    }
-    return session ?? null;
-  });
+  ipcMain.handle(
+    IPC.sessionFork,
+    async (_e, id: string, options?: { upToMessageId?: string; worktree?: boolean }) => {
+      // M1 会话 fork：无效切口/父会话缺失返回 null，由渲染层提示。
+      const session = await sessions.forkSession(id, options);
+      if (session) {
+        broadcastSessions();
+        broadcastSidebar();
+      }
+      return session ?? null;
+    },
+  );
   ipcMain.handle(
     IPC.backgroundStart,
     (_e, prompt: string, options?: { workspaceRoot?: string }) =>

@@ -371,6 +371,14 @@ function isTaskWorktreeSession(
   );
 }
 
+/** A:95 工作树分叉会话：会话根位于 .innocence/worktrees/ 命名空间即视为
+ *  隔离工作树会话（S2a 隔离纪律片段由此注入；父工作树因根切换天然禁入）。 */
+function isForkWorktreeSession(sessionId: string): boolean {
+  const root = sessions.getSession(sessionId)?.workspaceRoot ?? "";
+  const normalized = root.replace(/\\/g, "/").toLowerCase();
+  return normalized.includes("/.innocence/worktrees/");
+}
+
 const runtime = new HarnessRuntime({
   settings: () => settings,
   persistDir: transcriptsDir(),
@@ -399,7 +407,7 @@ const runtime = new HarnessRuntime({
     isTaskWorktreeSession(taskBridge, {
       taskId: context.taskId || undefined,
       routeId: context.routeId,
-    }),
+    }) || isForkWorktreeSession(context.sessionId),
   // S3 权限分类器：设置开关开启时武装 ask 边界评估轮（副模型结构化判定，
   // 失败/超时/无意见回落用户询问）。模型走当次 settings 快照的活跃供应商，
   // 与 automation candidateModel 同一惰性解析路径；关闭时恒 undefined，
