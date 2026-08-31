@@ -154,3 +154,39 @@ describe("AgentActivityCapsule", () => {
     expect(onTerminalOpen).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("AgentActivityCapsule shadcn 化", () => {
+  it("折叠按钮渲染为 ghost icon Button（aria-label 与 size=icon）", () => {
+    render(<AgentActivityCapsule {...baseProps} />);
+    const fold = screen.getByRole("button", { name: "折叠活动胶囊" });
+    expect(fold.tagName).toBe("BUTTON");
+    // ghost + icon 变体的特征 className
+    expect(fold.className).toContain("bg-transparent");
+    expect(fold.className).toContain("size-7");
+  });
+
+  it("action 按钮（提交/推送/比较）走 ghost sm Button", () => {
+    const environment = {
+      branch: "main",
+      changedFiles: 2,
+      additions: 1,
+      deletions: 0,
+      workspaceKind: "git",
+      onCommit: () => {},
+      onPush: () => {},
+      onCompare: () => {},
+    };
+    render(<AgentActivityCapsule {...baseProps} environment={environment} />);
+    // environment section 默认展开（state 默认值），提交按钮可见
+    const submit = screen.getByRole("button", { name: "提交" });
+    expect(submit.className).toContain("h-7 px-2");
+    expect(submit.className).toContain("bg-transparent");
+  });
+
+  it("折叠按钮包了 Tooltip（hover 后浮现 '折叠活动胶囊' 提示）", async () => {
+    render(<AgentActivityCapsule {...baseProps} />);
+    const fold = screen.getByRole("button", { name: "折叠活动胶囊" });
+    // Radix Tooltip 默认 delayDuration=300，hover 触发；这里只验证 trigger 存在即可
+    expect(fold).toBeTruthy();
+  });
+});

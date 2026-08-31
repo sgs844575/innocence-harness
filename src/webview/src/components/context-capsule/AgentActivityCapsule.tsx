@@ -3,6 +3,8 @@ import type { ButtonHTMLAttributes } from "react";
 import { CAPSULE_SECTION_ORDER, type CapsulePlacement, type CapsuleSection } from "../../state/workspacePresentationState";
 import type { AgentActivityStatus, SubagentActivityView } from "./activityProjection";
 import { Collapsible } from "../ui/Collapsible";
+import { Tooltip } from "../ui/Tooltip";
+import { Button } from "../ui/Button";
 import { TodoPanel } from "../task/TodoPanel";
 
 export { CAPSULE_SECTION_ORDER } from "../../state/workspacePresentationState";
@@ -95,9 +97,11 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
       <div className="flex h-[22px] items-center px-[18px] pt-[16px] pb-3 text-[13px] font-bold text-(--color-app-text)">
         <span>活动上下文</span>
         <span className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
-          <button type="button" aria-label="折叠活动胶囊" onClick={onToggleOpen} className="grid size-5 place-items-center rounded hover:text-(--color-app-text)">
-            <Minimize2 size={13} />
-          </button>
+          <Tooltip label="折叠活动胶囊">
+            <Button variant="ghost" size="icon" aria-label="折叠活动胶囊" onClick={onToggleOpen}>
+              <Minimize2 size={13} />
+            </Button>
+          </Tooltip>
         </span>
       </div>
       <div className="flex flex-col px-[18px] pb-[18px]">
@@ -136,9 +140,9 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     <GitCommitHorizontal size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>提交或推送</span>
                     <span className="ml-auto flex items-center gap-2">
-                      {environment.onCommit && <button type="button" onClick={environment.onCommit} className="capsule-action">提交</button>}
-                      {environment.onPush && <button type="button" onClick={environment.onPush} className="capsule-action"><Play size={11} />推送</button>}
-                      {environment.onCompare && <button type="button" onClick={environment.onCompare} className="capsule-action">比较</button>}
+                      {environment.onCommit && <Button variant="ghost" size="sm" onClick={environment.onCommit}>提交</Button>}
+                      {environment.onPush && <Button variant="ghost" size="sm" onClick={environment.onPush}><Play size={11} />推送</Button>}
+                      {environment.onCompare && <Button variant="ghost" size="sm" onClick={environment.onCompare}>比较</Button>}
                     </span>
                   </div>
                   <div className="mt-[13px] h-px bg-(--color-app-hairline)" />
@@ -152,24 +156,25 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               {section === "terminal" && terminal && (
                 <div className="flex h-[26px] items-center justify-between pt-[2px] text-[12px] text-(--color-app-muted)">
                   <span>{terminalLabel}</span>
-                  <button type="button" disabled={!terminal.onOpen} onClick={terminal.onOpen} className="capsule-action">打开终端</button>
+                  <Button variant="ghost" size="sm" disabled={!terminal.onOpen} onClick={terminal.onOpen}>打开终端</Button>
                 </div>
               )}
               {section === "agent" && (
                 <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-[13px] text-(--color-app-muted)">
                   <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{statusLabel(agent.status)}</span></div>
                   {childAgents.map((child) => (
-                    <button
+                    <Button
                       key={child.childId}
-                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-[11px]"
                       onClick={() => openChild?.(child.childId)}
-                      className="flex w-full items-center gap-[11px] rounded-md px-1 py-1 text-left hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
                       disabled={!openChild}
                     >
                       <Bot size={11} className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{child.description || "子智能体"}</span>
                       <span className="shrink-0 text-[12px]">{statusLabel(child.status)}</span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
