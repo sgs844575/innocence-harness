@@ -177,10 +177,16 @@ export const isGitInternal = (relativePath: string) =>
 /**
  * Opaque workspace version token: the last committed event id — the SAME
  * token main's TaskGetResponse.version hands the renderer, so CAS-flavored
- * commands round-trip between hosts unchanged.
+ * commands round-trip between hosts unchanged. Envelope-less tail events
+ * (plugin capture appends changeRecorded/attribution* without an eventId)
+ * are skipped, matching reduceTask's lastCommittedEventId exactly.
  */
 export function versionOf(events: readonly TaskEvent[]): string {
-  return events.at(-1)?.eventId ?? "";
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const eventId = events[index]?.eventId;
+    if (eventId !== undefined) return eventId;
+  }
+  return "";
 }
 
 export function routeSummary(state: TaskState, route: Route): TaskRouteSummaryDto {

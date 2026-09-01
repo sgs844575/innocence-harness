@@ -218,6 +218,30 @@ describe("TaskCommandService error semantics", () => {
     await expect(service.listHunks("t1", "ghost")).rejects.toMatchObject({ code: "route-not-found" });
   });
 
+  it("accepts the head version even when envelope-less capture events sit at the log tail", async () => {
+    const { deps } = fakeDeps({
+      seed: [
+        taskCreatedEvent({ taskId: "t1", sessionId: "s1", routeId: "main", workspaceRoot: "ws://t1", baselineCheckpointId: "ckpt_base" }),
+        // Plugin capture appends changeRecorded WITHOUT an eventId envelope;
+        // the reducer skips it when advancing lastCommittedEventId.
+        { type: "changeRecorded", path: "a.txt", source: "declared", beforeHash: null, afterHash: "h2" } as TaskEvent,
+      ],
+      checkpointFiles: [fileRef("a.txt", "h1")],
+    });
+    deps.diff.diff = async () => [{
+      path: "a.txt", before: fileRef("a.txt", "h1"), after: fileRef("a.txt", "h2"), binary: false,
+      hunks: [{ ref: "ref-1", path: "a.txt", before: "one\n", after: "two\n", context: [], status: "pending" }],
+    }];
+    const service = createTaskCommandService(deps);
+    // The renderer CAS token is the head version from task:get — review must
+    // accept the SAME token (no false version-conflict on the bare tail).
+    const version = (await service.get("t1")).version;
+    expect(version).toBeTruthy();
+    await expect(
+      service.review({ taskId: "t1", routeId: "main", hunkRef: "ref-1", status: "accepted", expectedVersion: version }),
+    ).resolves.toBeUndefined();
+  });
+
   it("rejects a stale expectedVersion with version-conflict and writes nothing", async () => {
     const { deps, tasks } = fakeDeps({ checkpointFiles: [fileRef("a.txt", "h1")] });
     deps.diff.diff = async () => [{
