@@ -36,9 +36,9 @@ beforeEach(() => {
   isWindowMaximized.mockImplementation(() => Promise.resolve(true));
   onWindowMaximizedChanged.mockImplementation((_cb: (maximized: boolean) => void) => () => {});
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440, writable: true });
-  Object.defineProperty(window, "outerWidth", { configurable: true, value: 1024, writable: true });
-});
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440, writable: true });
+    Object.defineProperty(window, "outerWidth", { configurable: true, value: 1024, writable: true });
+  });
 
 afterEach(() => {
   cleanup();
@@ -74,7 +74,7 @@ const activity = {
   agent: { name: "default", status: "running" as const },
 };
 
-function renderChat(options: { permission?: ChatPermissionEvent } = {}): void {
+function renderChat(options: { permission?: ChatPermissionEvent; width?: number } = {}): void {
   render(
     <ChatView
       t={(key) => key}
@@ -95,6 +95,9 @@ function renderChat(options: { permission?: ChatPermissionEvent } = {}): void {
       activity={activity}
     />,
   );
+  // jsdom 无布局：ResizeObserver 要手动喂容器实宽。默认按「1440 窗口、侧栏
+  // 展开」的主列宽（1175）；收起侧栏后容器回到窗口宽，由用例传入 width。
+  act(() => resizeContainer?.(options.width ?? 1175));
 }
 
 describe("ChatView shared responsive layout", () => {
@@ -120,12 +123,12 @@ describe("ChatView shared responsive layout", () => {
   });
 
   it("uses the same content track for the permission card and composer", () => {
-    renderChat({ permission });
+    renderChat({ permission, width: 1440 });
     expect(screen.getByRole("alertdialog").parentElement?.style.maxWidth).toBe("888px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
   });
   it("keeps the contracted width model while the capsule is collapsed", () => {
-    renderChat();
+    renderChat({ width: 1440 });
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
     expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
@@ -141,7 +144,7 @@ describe("ChatView shared responsive layout", () => {
   it("centers the chat column with equal gutters while the window is not maximized", async () => {
     Object.defineProperty(window, "outerWidth", { configurable: true, value: 800, writable: true });
     isWindowMaximized.mockImplementation(() => Promise.resolve(false));
-    renderChat();
+    renderChat({ width: 1440 });
     await waitFor(() => expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1120px"));
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1120px");
     expect(screen.getByLabelText("Agent 活动胶囊").className).toContain("agent-capsule-floating");
@@ -153,10 +156,23 @@ describe("ChatView shared responsive layout", () => {
       notify = cb;
       return () => {};
     });
-    renderChat();
+    renderChat({ width: 1440 });
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
 
     act(() => notify?.(false));
     await waitFor(() => expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1120px"));
+  });
+
+  it("recomputes the reading column from the chat container width, not the window width", () => {
+    renderChat();
+    expect(window.innerWidth).toBe(1440);
+    // 1175 最大化：左 94、右 337+94=431、列 = 1175-94-431 = 650
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("650px");
+
+    // 侧栏收起后容器涨到窗口宽、窗口宽度不变：列必须按容器重算。
+    act(() => resizeContainer?.(1440));
+    expect(window.innerWidth).toBe(1440);
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
   });
 });

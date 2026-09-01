@@ -147,6 +147,7 @@ const CHAT_RIGHT_GUTTER_BASE = 337; // 胶囊 + 18px 边距，永不压列
 const CHAT_RIGHT_GUTTER_MAX = 500;
 
 export function workspaceLayoutForWidth(viewportWidth: number, maximized: boolean): WorkspaceLayout {
+  // viewportWidth 是聊天容器实宽（侧栏/工作台停靠后的余量），不是窗口宽度。
   if (viewportWidth < 640) {
     return {
       contentMaxWidth: viewportWidth,

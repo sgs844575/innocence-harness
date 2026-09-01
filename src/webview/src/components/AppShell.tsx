@@ -165,18 +165,22 @@ export function AppShell({
       {titleBar(nav)}
       {banner}
       {/* 标题栏之下：侧边栏整列（常驻挂载、宽度动画收展——收起即整体
-          消失）+ 主区（展开时左缘 12px 圆角浮起，收起时满幅直角）。 */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+          消失）+ 主区。展开时主区左缘 12px 圆角浮起，收起时满幅直角。 */}
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-(--color-app-bg)">
         {isWide && (
           <div
-            className={`shrink-0 overflow-hidden bg-(--color-app-sidebar) transition-[width] duration-200 ease-out ${
+            className={`shrink-0 overflow-hidden bg-(--color-app-sidebar) transition-[width] duration-200 ease-out motion-reduce:transition-none ${
               sidebarVisible ? "w-[265px]" : "w-0"
             }`}
           >
             {navFull}
           </div>
         )}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-(--color-app-panel)">
+        <main
+          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-(--color-app-panel) transition-[border-radius] duration-200 ease-out motion-reduce:transition-none ${
+            sidebarVisible ? "rounded-tl-[12px] rounded-bl-[12px]" : "rounded-none"
+          }`}
+        >
           {inSettings && settingsNode !== null ? (
             settingsNode
           ) : view === "automation" && automation ? (

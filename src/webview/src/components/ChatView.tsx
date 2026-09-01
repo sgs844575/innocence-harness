@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import type { ChatMessage, ChatPermissionEvent, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
 import { MessageItem, type ForkMessageCommand, type TaskChangeCardCommand } from "./MessageItem";
 import { Composer } from "./Composer";
@@ -72,7 +72,9 @@ export function ChatView({
   activity,
 }: Props): React.JSX.Element {
   const [presentation, dispatchPresentation] = useReducer(reduceWorkspacePresentationState, defaultWorkspacePresentationState);
-  const [availableWidth, setAvailableWidth] = useState(() => typeof window === "undefined" ? 1024 : window.innerWidth);
+  // 轨道按聊天容器实宽重算（侧栏/工作台停靠后的余量），初值 0 等到
+  // layout 测量后再出列——避免用 window.innerWidth 把「侧栏已收」的宽当成当前列宽。
+  const [availableWidth, setAvailableWidth] = useState(0);
   // 最大化状态决定轨道形态：最大化 → 不对称左锚（右留白专给胶囊）；
   // 非最大化 → 左右留白等大、聊天主体居中。初值用窗口尺寸启发式避免
   // 首帧布局跳变，随后以 preload 桥的真实状态为准（桥缺失时沿用启发式）。
@@ -104,16 +106,21 @@ export function ChatView({
     [settings],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const workspace = workspaceRef.current;
     if (workspace && typeof ResizeObserver !== "undefined") {
+      const applyWidth = (width: number) => {
+        if (width > 0) setAvailableWidth(width);
+      };
+      applyWidth(workspace.getBoundingClientRect().width);
       const observer = new ResizeObserver(([entry]) => {
-        if (entry?.contentRect.width > 0) setAvailableWidth(entry.contentRect.width);
+        applyWidth(entry?.contentRect.width ?? 0);
       });
       observer.observe(workspace);
       return () => observer.disconnect();
     }
     const onResize = () => setAvailableWidth(window.innerWidth);
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [landing]);

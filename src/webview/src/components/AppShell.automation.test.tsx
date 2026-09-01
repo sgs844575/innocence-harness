@@ -89,13 +89,21 @@ describe("AppShell sidebar collapse", () => {
     expect(screen.getByTestId("full-sidebar")).toBeTruthy();
 
     // 收起 = 侧边栏整列宽度动画到 0（常驻挂载以便动画，无窄条 rail）
+    const chatSurface = screen.getByText("Chat surface");
+    const main = chatSurface.closest("main");
+    expect(main?.className).toContain("rounded-tl-[12px]");
+    expect(main?.className).toContain("rounded-bl-[12px]");
+
     fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
     const collapsed = screen.getByTestId("full-sidebar");
     expect(collapsed.parentElement?.className).toContain("w-0");
+    expect(main?.className).toContain("rounded-none");
     expect(screen.getByText("Chat surface")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
     expect(screen.getByTestId("full-sidebar").parentElement?.className).toContain("w-[265px]");
+    expect(main?.className).toContain("rounded-tl-[12px]");
+    expect(main?.className).toContain("rounded-bl-[12px]");
   });
 });
 describe("AppShell global search", () => {
