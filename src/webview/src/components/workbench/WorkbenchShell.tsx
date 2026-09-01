@@ -182,7 +182,7 @@ export function WorkbenchShell({
           );
         })}
         {activeContent === undefined && (
-          <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">
+          <div className="grid flex-1 place-items-center px-4 py-8 text-(--color-app-muted)">
             {t("workbench.empty")}
           </div>
         )}

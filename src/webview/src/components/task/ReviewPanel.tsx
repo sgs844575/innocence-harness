@@ -59,13 +59,13 @@ export function ReviewPanel({
       className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-panel)"
     >
       <header className="flex items-center gap-2 border-b border-(--color-app-hairline) px-3 py-2">
-        <span className="text-[12.5px] font-semibold">{t("task.review.title")}</span>
+        <span className="font-semibold">{t("task.review.title")}</span>
         <button
           type="button"
           disabled={!onReview || files.length === 0 || hasConflict}
           title={hasConflict ? t("task.review.blockedByConflict") : undefined}
           onClick={() => onReview?.(acceptCommand(null))}
-          className="ml-auto flex h-7 items-center gap-1.5 rounded bg-(--color-app-accent) px-2.5 text-[12px] font-medium text-(--color-app-accent-fg) disabled:opacity-50"
+          className="ml-auto flex h-7 items-center gap-1.5 rounded bg-(--color-app-accent) px-2.5 font-medium text-(--color-app-accent-fg) disabled:opacity-50"
         >
           <CheckCheck size={13} /> {t("task.review.acceptAll")}
         </button>
@@ -74,16 +74,16 @@ export function ReviewPanel({
         {files.map((group) => (
           <div key={group.path} className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="min-w-0 truncate font-mono text-[12px]" title={group.path}>
+              <span className="min-w-0 truncate font-mono " title={group.path}>
                 {group.path}
               </span>
-              <span className="shrink-0 font-mono text-[11px] text-emerald-600">+{group.added}</span>
-              <span className="shrink-0 font-mono text-[11px] text-red-600">−{group.removed}</span>
+              <span className="shrink-0 font-mono text-emerald-600">+{group.added}</span>
+              <span className="shrink-0 font-mono text-red-600">−{group.removed}</span>
               <button
                 type="button"
                 disabled={!onReview}
                 onClick={() => acceptFile(group)}
-                className="ml-auto h-6 shrink-0 rounded border border-(--color-app-border) px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
+                className="ml-auto h-6 shrink-0 rounded border border-(--color-app-border) px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
               >
                 {t("task.review.acceptFile")}
               </button>

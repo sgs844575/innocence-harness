@@ -10,14 +10,14 @@ export function BashTool({ call, result, open, onToggle }: ToolCardProps): React
     <ToolLine
       icon={Terminal}
       verb={running ? "正在执行" : "终端"}
-      name={<span className="min-w-0 truncate font-normal text-[12px] text-(--color-app-muted)">{command}</span>}
+      name={<span className="min-w-0 truncate font-normal text-(--color-app-muted)">{command}</span>}
       open={open}
       onToggle={onToggle}
       running={running}
       error={result?.isError}
     >
       {result && (
-        <pre className="scrollbar-thin max-h-56 overflow-auto font-mono text-[11.5px] leading-relaxed text-(--color-code-fg)/80">{result.content}</pre>
+        <pre className="scrollbar-thin max-h-56 overflow-auto font-mono leading-relaxed text-(--color-code-fg)/80">{result.content}</pre>
       )}
     </ToolLine>
   );

@@ -64,7 +64,7 @@ const MENUS: { id: MenuId; labelKey: string; fallback: string }[] = [
 
 /** 参考稿 t-pill：28px 圆角胶囊，沉底面 + 图标 + 文本，胶囊间 14px 间距。 */
 const pill =
-  "app-no-drag ml-3.5 flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-app-sunken) px-3.5 text-[13px] whitespace-nowrap text-(--color-app-text)";
+  "app-no-drag ml-3.5 flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-app-sunken) px-3.5 whitespace-nowrap text-(--color-app-text)";
 
 export function TitleBar({
   sidebarOpen,
@@ -150,7 +150,7 @@ export function TitleBar({
           pl-4 与左段（侧栏）保持距离；收起时左段收窄，标题随之左对齐。 */}
       <div className="app-no-drag flex min-w-0 items-center pl-4">
         {title !== undefined && title !== "" && (
-          <span className="min-w-0 max-w-[40%] truncate text-sm font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
+          <span className="min-w-0 max-w-[40%] truncate font-bold whitespace-nowrap text-(--color-app-strong)" title={title}>
             {title}
           </span>
         )}
@@ -165,14 +165,14 @@ export function TitleBar({
             {workbench.routeId !== null && (
               <span className={pill} title={`${t("titlebar.route")} ${workbench.routeId}`}>
                 <GitFork size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
-                <span className="font-mono text-[12px]">{workbench.routeId}</span>
+                <span className="font-mono ">{workbench.routeId}</span>
                 <ChevronDown size={12} className="text-(--color-app-faint)" />
               </span>
             )}
             {workbench.gitBranch !== null && (
               <span className={pill} title={workbench.gitBranch}>
                 <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-app-muted)" />
-                <span className="max-w-[140px] truncate font-mono text-[12px]">{workbench.gitBranch}</span>
+                <span className="max-w-[140px] truncate font-mono ">{workbench.gitBranch}</span>
                 <ChevronDown size={12} className="text-(--color-app-faint)" />
               </span>
             )}
@@ -206,7 +206,7 @@ export function TitleBar({
                 type="button"
                 role="menuitem"
                 onClick={() => selectMenu(menu.id)}
-                className="block w-full rounded-md px-3 py-1.5 text-left text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)"
+                className="block w-full rounded-md px-3 py-1.5 text-left text-(--color-app-text) hover:bg-(--color-app-hover)"
               >
                 {t(menu.labelKey) === menu.labelKey ? menu.fallback : t(menu.labelKey)}
               </button>

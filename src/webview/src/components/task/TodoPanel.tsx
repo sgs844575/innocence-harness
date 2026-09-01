@@ -13,7 +13,7 @@ export interface TodoPanelProps {
  * 完成 → 对勾划线；无底色行 + 13px/19px 行高，行距 14px。 */
 export function TodoPanel({ todos, completed, total, pending, onOpen }: TodoPanelProps): React.JSX.Element {
   return (
-    <div className="px-[18px] pb-[16px] text-[13px] text-(--color-app-muted)">
+    <div className="px-[18px] pb-[16px] text-(--color-app-muted)">
       <div className="flex h-[26px] items-center gap-[38px] pt-[8px]">
         <span>进程</span>
         <b className="font-normal text-(--color-app-text)">{completed}/{total}</b>

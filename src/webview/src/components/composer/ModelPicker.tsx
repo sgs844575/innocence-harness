@@ -32,7 +32,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
         <button
           type="button"
           data-model-picker-trigger
-          className="flex max-w-[220px] items-center gap-2 rounded-md px-1.5 py-1 text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)"
+          className="flex max-w-[220px] items-center gap-2 rounded-md px-1.5 py-1 text-(--color-app-text) hover:bg-(--color-app-hover)"
         >
           <BrandIcon subject={`${activeProfile ? `${activeProfile.name} ${activeProfile.kind}` : ""} ${activeModel}`} color size={14} />
           <span className="truncate">{label}</span>
@@ -47,7 +47,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索模型…"
-            className="w-full bg-transparent text-[12px] outline-none placeholder:text-(--color-app-muted)"
+            className="w-full bg-transparent outline-none placeholder:text-(--color-app-muted)"
           />
         </div>
       </div>
@@ -60,7 +60,7 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
               key={p.id}
               type="button"
               onClick={() => setFocused(p.id)}
-              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] ${p.id === current?.id ? "bg-(--color-app-accent-soft) text-(--color-app-text) shadow-[inset_2px_0_0_var(--color-app-accent)]" : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"}`}
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left ${p.id === current?.id ? "bg-(--color-app-accent-soft) text-(--color-app-text) shadow-[inset_2px_0_0_var(--color-app-accent)]" : "text-(--color-app-muted) hover:bg-(--color-app-bubble)/50"}`}
             >
               <span className="truncate">{profileLabel(p)}</span>
               <ProtocolBadge kind={p.kind} />
@@ -73,12 +73,12 @@ export function ModelPicker({ settings, activeProfileId, activeModel, onSelect }
               key={m.id}
               type="button"
               onClick={() => onSelect(current.id, m.id)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-(--color-app-bubble)/50"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-(--color-app-bubble)/50"
             >
-              <span className="truncate font-mono text-[11.5px]">{m.name ?? m.id}</span>
+              <span className="truncate font-mono ">{m.name ?? m.id}</span>
               <CapabilityTags model={m} />
               {m.contextWindow != null && (
-                <span className="ml-auto shrink-0 rounded-full border border-(--color-app-hairline) px-1.5 font-mono text-[9.5px] text-(--color-app-muted)">
+                <span className="ml-auto shrink-0 rounded-full border border-(--color-app-hairline) px-1.5 font-mono text-(--color-app-muted)">
                   {Math.round(m.contextWindow / 1000)}K
                 </span>
               )}
@@ -104,7 +104,7 @@ function ProtocolBadge({ kind }: { kind: ProviderKind }): React.JSX.Element {
       ? "google-generative"
       : "openai-compatible";
   return (
-    <span className="ml-auto shrink-0 rounded border border-(--color-app-hairline) px-1 font-mono text-[8px] text-(--color-app-muted)">
+    <span className="ml-auto shrink-0 rounded border border-(--color-app-hairline) px-1 font-mono text-(--color-app-muted)">
       {protocol}
     </span>
   );

@@ -38,11 +38,11 @@ export function DescriptorToolCard({
       error={result?.isError}
       doneNote={
         result?.durationMs ? (
-          <span className="text-[11px] text-(--color-app-muted)/70">{(result.durationMs / 1000).toFixed(1)}s</span>
+          <span className="text-(--color-app-muted)/70">{(result.durationMs / 1000).toFixed(1)}s</span>
         ) : null
       }
     >
-      <div className="font-mono text-[11.5px] leading-relaxed text-(--color-app-muted)">
+      <div className="font-mono leading-relaxed text-(--color-app-muted)">
         {descriptor.renderArgs !== false && (
           <pre className="scrollbar-thin max-h-48 overflow-auto">{JSON.stringify(call.args, null, 2)}</pre>
         )}

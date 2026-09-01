@@ -54,11 +54,11 @@ export function ModelList({ profile, onChange, onEditModel, onSync }: Props): Re
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h2 className="text-[13px] font-semibold">模型列表</h2>
+        <h2 className="font-semibold">模型列表</h2>
         <div className="ml-auto flex items-center gap-1.5">
           <div className="flex h-7 items-center gap-1 rounded-lg border border-(--color-app-hairline) px-1.5">
             <Search size={11} className="text-(--color-app-muted)" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" className="w-28 bg-transparent text-[11.5px] outline-none" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" className="w-28 bg-transparent outline-none" />
           </div>
           <div className="flex items-center gap-0.5 rounded-lg border border-(--color-app-hairline) p-0.5">
             {TABS.map(({ id, label, Icon, color }) => (
@@ -89,10 +89,10 @@ export function ModelList({ profile, onChange, onEditModel, onSync }: Props): Re
         const open = !collapsed.has(name);
         return (
           <div key={name} className="overflow-hidden rounded-lg border border-(--color-app-hairline)">
-            <button type="button" onClick={() => setCollapsed((prev) => toggle(prev, name))} className="flex w-full items-center gap-2 bg-(--color-app-bubble)/30 px-3 py-1.5 text-left text-[12px]">
+            <button type="button" onClick={() => setCollapsed((prev) => toggle(prev, name))} className="flex w-full items-center gap-2 bg-(--color-app-bubble)/30 px-3 py-1.5 text-left ">
               <ChevronRight size={13} className={`transition-transform ${open ? "rotate-90" : ""}`} />
               <span>{name}</span>
-              <span className="text-[10.5px] text-(--color-app-muted)">{models.length}</span>
+              <span className="text-(--color-app-muted)">{models.length}</span>
             </button>
             {open && models.map((m) => (
               <ModelRow key={m.id} model={m} onEdit={() => onEditModel?.(m)} onDelete={() => deleteModel(m.id)} />
@@ -101,10 +101,10 @@ export function ModelList({ profile, onChange, onEditModel, onSync }: Props): Re
         );
       })}
       {profile.models.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-(--color-app-border) py-6 text-center text-[12px] text-(--color-app-muted)">暂无模型——点右上 ↻ 获取，或 ＋ 手动添加</div>
+        <div className="rounded-lg border border-dashed border-(--color-app-border) py-6 text-center text-(--color-app-muted)">暂无模型——点右上 ↻ 获取，或 ＋ 手动添加</div>
       ) : (
         filtered.length === 0 && (
-          <div className="rounded-lg border border-dashed border-(--color-app-border) py-6 text-center text-[12px] text-(--color-app-muted)/80">无匹配模型</div>
+          <div className="rounded-lg border border-dashed border-(--color-app-border) py-6 text-center text-(--color-app-muted)/80">无匹配模型</div>
         )
       )}
     </section>

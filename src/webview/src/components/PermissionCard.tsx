@@ -42,16 +42,16 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
       aria-label={t("permission.card.title")}
       className="mx-auto mb-2 w-full rounded-[10px] border border-(--color-tool-warn)/40 bg-(--color-app-panel) px-4 py-3 shadow-(--shadow-card)"
     >
-      <div className="flex items-center gap-2 text-sm font-medium text-(--color-app-text)">
+      <div className="flex items-center gap-2 font-medium text-(--color-app-text)">
         <ShieldQuestion size={16} className="shrink-0 text-(--color-tool-warn)" />
         {t("permission.card.title")}
-        <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5 font-mono text-xs">
+        <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5 font-mono ">
           {request.toolName}
         </code>
       </div>
       {/* 稳定资源摘要：kind/action/scope 均为脱敏持久化 token（raw 值
           不出 core），一眼看清这次批准到底放行了什么。 */}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-xs text-(--color-app-text)">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-(--color-app-text)">
         <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5">{resource.action}</code>
         <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5">{resource.kind}</code>
         <code
@@ -63,10 +63,10 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
         </code>
       </div>
       <details className="mt-2">
-        <summary className="cursor-pointer select-none text-xs text-(--color-app-muted) transition-colors hover:text-(--color-app-text)">
+        <summary className="cursor-pointer select-none text-(--color-app-muted) transition-colors hover:text-(--color-app-text)">
           {t("permission.card.args")}
         </summary>
-        <pre className="scrollbar-thin mt-2 max-h-32 overflow-auto rounded-xl bg-(--color-app-bubble) p-2 font-mono text-xs text-(--color-app-muted)">
+        <pre className="scrollbar-thin mt-2 max-h-32 overflow-auto rounded-xl bg-(--color-app-bubble) p-2 font-mono text-(--color-app-muted)">
           {argsText}
         </pre>
       </details>
@@ -75,7 +75,7 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
           type="button"
           onClick={() => respond("deny")}
           disabled={responding}
-          className="rounded-full bg-(--color-app-bubble) px-3.5 py-1.5 text-xs text-(--color-app-muted) transition-colors hover:bg-(--color-app-border) hover:text-(--color-app-text) disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-(--color-app-bubble) px-3.5 py-1.5 text-(--color-app-muted) transition-colors hover:bg-(--color-app-border) hover:text-(--color-app-text) disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.deny")}
         </button>
@@ -83,7 +83,7 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
           type="button"
           onClick={() => respond("allowSession")}
           disabled={responding}
-          className="rounded-full border border-(--color-app-border) px-3.5 py-1.5 text-xs text-(--color-app-text) transition-colors hover:bg-(--color-app-bubble) disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-(--color-app-border) px-3.5 py-1.5 text-(--color-app-text) transition-colors hover:bg-(--color-app-bubble) disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.allowSession")}
         </button>
@@ -91,7 +91,7 @@ export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Elem
           type="button"
           onClick={() => respond("allow")}
           disabled={responding}
-          className="rounded-full bg-(--color-app-accent) px-3.5 py-1.5 text-xs font-medium text-(--color-app-accent-fg) shadow-md transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-(--color-app-accent) px-3.5 py-1.5 font-medium text-(--color-app-accent-fg) shadow-md transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("permission.card.allow")}
         </button>

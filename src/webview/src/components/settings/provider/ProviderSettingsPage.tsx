@@ -219,7 +219,7 @@ export function ProviderSettingsPage({
           onSync={openSync}
         />
       ) : (
-        <div className="grid min-w-0 flex-1 place-items-center text-sm text-(--color-app-muted)">
+        <div className="grid min-w-0 flex-1 place-items-center text-(--color-app-muted)">
           选择左侧厂家
         </div>
       )}
@@ -246,7 +246,7 @@ export function ProviderSettingsPage({
         onCreate={addProvider}
       />
       {toast && (
-        <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-(--color-app-border) bg-(--color-app-panel) px-4 py-1.5 text-[12px] shadow-(--shadow-pop)">
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-(--color-app-border) bg-(--color-app-panel) px-4 py-1.5 shadow-(--shadow-pop)">
           {toast}
         </div>
       )}
@@ -259,7 +259,7 @@ export function ProviderSettingsPage({
             className="fade-in absolute inset-0 bg-black/25"
           />
           <div className="pop-in relative flex w-[320px] flex-col gap-3 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) p-4 shadow-(--shadow-pop)">
-            <h2 className="text-[13px] font-semibold">重命名厂家</h2>
+            <h2 className="font-semibold">重命名厂家</h2>
             <input
               autoFocus
               value={renaming.draft}
@@ -269,9 +269,9 @@ export function ProviderSettingsPage({
                 if (e.key === "Escape") setRenaming(null);
               }}
               aria-label="厂家名称"
-              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 text-[12.5px] outline-none"
+              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 outline-none"
             />
-            <div className="flex justify-end gap-2 text-[12px]">
+            <div className="flex justify-end gap-2 ">
               <button
                 type="button"
                 onClick={() => setRenaming(null)}

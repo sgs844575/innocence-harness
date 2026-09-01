@@ -8,7 +8,7 @@ export function ThinkingBlock({ text, live, t }: { text: string; live: boolean; 
   const secs = Math.max(1, Math.round(text.length / 400)); // 字数近似时长，无服务端时间戳
   return (
     <div className="py-0.5">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center gap-2.5 py-1 text-left text-[13px] text-(--color-app-muted) hover:text-(--color-app-text)">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center gap-2.5 py-1 text-left text-(--color-app-muted) hover:text-(--color-app-text)">
         <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
         <span className="orbs shrink-0" aria-hidden>
           <i />
@@ -25,7 +25,7 @@ export function ThinkingBlock({ text, live, t }: { text: string; live: boolean; 
         )}
       </button>
       {open && (
-        <pre className="scrollbar-thin mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-l border-(--color-app-hairline) pl-3 text-[12px] leading-relaxed text-(--color-app-muted)">{text}</pre>
+        <pre className="scrollbar-thin mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-l border-(--color-app-hairline) pl-3 leading-relaxed text-(--color-app-muted)">{text}</pre>
       )}
     </div>
   );

@@ -44,7 +44,7 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
       .split("\n")
       .filter((line, index, all) => line !== "" || index < all.length - 1)
       .map((line, i) => (
-        <div key={`${mark}${i}`} className={`px-2 font-mono text-[11.5px] leading-5 ${tone}`}>
+        <div key={`${mark}${i}`} className={`px-2 font-mono text-(--font-size-code) leading-5 ${tone}`}>
           {mark} {line || " "}
         </div>
       ));
@@ -56,11 +56,11 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
       className="rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) hover:border-(--color-app-border)"
     >
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium ${statusClass[hunk.status]}`}>
+        <span className={`rounded px-1.5 py-0.5 font-medium ${statusClass[hunk.status]}`}>
           {t(statusKey[hunk.status])}
         </span>
-        <span className="font-mono text-[11px] text-emerald-600">+{added}</span>
-        <span className="font-mono text-[11px] text-red-600">−{removed}</span>
+        <span className="font-mono text-emerald-600">+{added}</span>
+        <span className="font-mono text-red-600">−{removed}</span>
         <div className="ml-auto flex items-center gap-1">
           {hunk.status === "accepted" && (
             <button
@@ -70,7 +70,7 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
                 event.stopPropagation();
                 onRestore?.(hunk.ref);
               }}
-              className="flex h-6 items-center gap-1 rounded px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
+              className="flex h-6 items-center gap-1 rounded px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
             >
               <RotateCcw size={12} /> {t("task.review.restore")}
             </button>
@@ -82,7 +82,7 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
               event.stopPropagation();
               onAccept?.(hunk.ref);
             }}
-            className="flex h-6 items-center gap-1 rounded px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
+            className="flex h-6 items-center gap-1 rounded px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
           >
             <Check size={12} /> {t("task.review.accept")}
           </button>

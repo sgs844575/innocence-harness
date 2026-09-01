@@ -11,14 +11,14 @@ export function TaskTool({ call, result, open, onToggle }: ToolCardProps): React
       icon={Bot}
       verb="子代理"
       name={desc || "任务"}
-      extra={<span className="ml-1.5 rounded-full border border-(--color-app-hairline) px-1.5 font-mono text-[10px] text-(--color-app-muted)">{agentType}</span>}
+      extra={<span className="ml-1.5 rounded-full border border-(--color-app-hairline) px-1.5 font-mono text-(--color-app-muted)">{agentType}</span>}
       open={open}
       onToggle={onToggle}
       running={!result}
       error={result?.isError}
     >
       {result && (
-        <pre className="scrollbar-thin max-h-48 overflow-auto font-mono text-[11.5px] leading-relaxed text-(--color-app-muted)">{result.content}</pre>
+        <pre className="scrollbar-thin max-h-48 overflow-auto font-mono leading-relaxed text-(--color-app-muted)">{result.content}</pre>
       )}
     </ToolLine>
   );

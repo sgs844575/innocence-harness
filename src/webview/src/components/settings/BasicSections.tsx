@@ -24,7 +24,7 @@ export function GeneralSection({
       <SettingRow label={t("settings.general.workspace")} desc={t("settings.general.workspaceDesc")}>
         <div className="flex min-w-0 items-center gap-2">
           <code
-            className="min-w-0 max-w-56 truncate font-mono text-xs text-(--color-app-muted)"
+            className="min-w-0 max-w-56 truncate font-mono text-(--color-app-muted)"
             title={settings.workspaceRoot || undefined}
           >
             {settings.workspaceRoot || t("workspace.none")}
@@ -32,7 +32,7 @@ export function GeneralSection({
           <button
             type="button"
             onClick={onPickWorkspace}
-            className="shrink-0 rounded-full border border-(--color-app-border) px-2.5 py-1 text-xs hover:bg-(--color-app-bubble)"
+            className="shrink-0 rounded-full border border-(--color-app-border) px-2.5 py-1 hover:bg-(--color-app-bubble)"
           >
             {t("settings.general.change")}
           </button>
@@ -47,7 +47,7 @@ export function GeneralSection({
               permissionMode: e.target.value as PermissionMode,
             })
           }
-          className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bubble) px-3 py-1.5 text-sm outline-none"
+          className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bubble) px-3 py-1.5 outline-none"
         >
           <option value="auto">{t("permission.mode.auto")}</option>
           <option value="ask">{t("permission.mode.ask")}</option>
@@ -65,6 +65,26 @@ const THEME_OPTIONS: { value: ThemeMode; key: string }[] = [
   { value: "light", key: "settings.theme.light" },
   { value: "dark", key: "settings.theme.dark" },
 ];
+
+/** 界面/代码字号可选档（px）；与 harness-electron normalizeFontSize 的 12..18 收窄一致。 */
+const FONT_SIZE_OPTIONS = [12, 13, 14, 15, 16, 17, 18];
+
+function FontSizeSelect({ label, value, onChange }: { label: string; value: number; onChange: (size: number) => void }): React.JSX.Element {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bubble) px-3 py-1.5 outline-none"
+    >
+      {FONT_SIZE_OPTIONS.map((size) => (
+        <option key={size} value={size}>
+          {size}px
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function AppearanceSection({
   t,
@@ -87,7 +107,7 @@ export function AppearanceSection({
               key={value}
               type="button"
               onClick={() => onSettingsChange({ ...settings, themeMode: value })}
-              className={`rounded-full px-3 py-1 text-xs transition-colors ${
+              className={`rounded-full px-3 py-1 transition-colors ${
                 theme === value
                   ? "bg-(--color-app-panel) font-medium text-(--color-app-text) shadow-(--shadow-card)"
                   : "text-(--color-app-muted) hover:text-(--color-app-text)"
@@ -107,12 +127,26 @@ export function AppearanceSection({
               locale: e.target.value as HarnessSettings["locale"],
             })
           }
-          className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bubble) px-3 py-1.5 text-sm outline-none"
+          className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bubble) px-3 py-1.5 outline-none"
         >
           <option value="">{t("settings.language.system")}</option>
           <option value="zh-CN">{t("settings.language.zhCN")}</option>
           <option value="en-US">{t("settings.language.enUS")}</option>
         </select>
+      </SettingRow>
+      <SettingRow label={t("settings.appearance.fontSizeUi")} desc={t("settings.appearance.fontSizeUiDesc")}>
+        <FontSizeSelect
+          label={t("settings.appearance.fontSizeUi")}
+          value={settings.uiFontSize ?? 14}
+          onChange={(uiFontSize) => onSettingsChange({ ...settings, uiFontSize })}
+        />
+      </SettingRow>
+      <SettingRow label={t("settings.appearance.fontSizeCode")} desc={t("settings.appearance.fontSizeCodeDesc")}>
+        <FontSizeSelect
+          label={t("settings.appearance.fontSizeCode")}
+          value={settings.codeFontSize ?? 14}
+          onChange={(codeFontSize) => onSettingsChange({ ...settings, codeFontSize })}
+        />
       </SettingRow>
     </div>
   );
@@ -130,19 +164,19 @@ export function AboutSection({
   return (
     <div className="card divide-y divide-(--color-app-hairline)">
       <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center">
-        <span aria-hidden className="font-mono text-2xl font-bold text-(--color-app-accent)">
+        <span aria-hidden className="font-mono font-bold text-(--color-app-accent)">
           &gt;_
         </span>
-        <span className="text-base font-semibold">InnocenceHarness</span>
-        <span className="text-xs text-(--color-app-muted)">{t("settings.about.desc")}</span>
+        <span className="font-semibold">InnocenceHarness</span>
+        <span className="text-(--color-app-muted)">{t("settings.about.desc")}</span>
       </div>
       <SettingRow label={t("settings.about.version")}>
-        <span className="font-mono text-sm text-(--color-app-muted)">
+        <span className="font-mono text-(--color-app-muted)">
           {appInfo?.version ?? "—"}
         </span>
       </SettingRow>
       <SettingRow label={t("settings.about.platform")}>
-        <span className="font-mono text-sm text-(--color-app-muted)">
+        <span className="font-mono text-(--color-app-muted)">
           {appInfo?.platform ?? "—"}
         </span>
       </SettingRow>
@@ -165,8 +199,8 @@ export function SettingRow({
   return (
     <div className="flex items-center justify-between gap-4 px-3.5 py-3">
       <div className="min-w-0">
-        <p className="text-sm">{label}</p>
-        {desc && <p className="mt-0.5 text-xs text-(--color-app-muted)">{desc}</p>}
+        <p className="">{label}</p>
+        {desc && <p className="mt-0.5 text-(--color-app-muted)">{desc}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

@@ -26,8 +26,9 @@ import {
 
 vi.mock("@xterm/xterm", () => ({
   // `function` implementations are required for `new Terminal()` mocks.
-  Terminal: vi.fn(function () {
+  Terminal: vi.fn(function (opts?: { fontSize?: number }) {
     return {
+      options: { fontSize: opts?.fontSize ?? 0 },
       write: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
       onResize: vi.fn(),
@@ -96,7 +97,7 @@ function fakeTerminalApi() {
 type FakeApi = ReturnType<typeof fakeTerminalApi>;
 
 /** The xterm instances the mocked Terminal class produced (newest last). */
-function xtermInstances(): Array<{ write: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn> }> {
+function xtermInstances(): Array<{ options: { fontSize: number }; write: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn> }> {
   return vi.mocked(Terminal).mock.instances as never;
 }
 
@@ -305,6 +306,17 @@ describe("TerminalPanel", () => {
       api.emitOutput({ taskId: "t1", routeId: "main", ptyId: "pty_1", data: "hello shell" });
     });
     expect(term.write).toHaveBeenCalledWith("hello shell");
+  });
+
+  it("constructs xterm with the code font size and hot-updates it on setting change", async () => {
+    const { rerender } = render(<TerminalPanel api={api} codeFontSize={14} activeTask={{ taskId: "t1", routeId: "main" }} />);
+    await screen.findByRole("tab", { name: /main/ });
+    await waitFor(() => expect(xtermInstances()).toHaveLength(1));
+    const term = xtermInstances()[0];
+    expect(term.options.fontSize).toBe(14);
+
+    rerender(<TerminalPanel api={api} codeFontSize={16} activeTask={{ taskId: "t1", routeId: "main" }} />);
+    expect(term.options.fontSize).toBe(16);
   });
 
   it("renders a no-PTY shell transcript with command, live output, and completion status", async () => {

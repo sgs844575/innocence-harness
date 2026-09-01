@@ -32,14 +32,14 @@ export function ProviderDetail({ profile, listModels, onChange, onApiKeyChange, 
     <div className="scrollbar-thin h-full flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-4">
         <div className="flex items-center gap-2">
-          <h1 className="text-[15px] font-semibold">{profile.name}</h1>
+          <h1 className="font-semibold">{profile.name}</h1>
           {preset?.website && (
             <a href={preset.website} target="_blank" rel="noreferrer" className="text-(--color-app-muted) hover:text-(--color-app-text)"><ExternalLink size={13} /></a>
           )}
-          <div className="ml-auto flex items-center gap-2 text-[12px] text-(--color-app-muted)">启用<Switch checked={profile.enabled} onChange={(v) => onChange({ enabled: v })} aria-label="启用厂家" /></div>
+          <div className="ml-auto flex items-center gap-2 text-(--color-app-muted)">启用<Switch checked={profile.enabled} onChange={(v) => onChange({ enabled: v })} aria-label="启用厂家" /></div>
         </div>
         <section className="flex flex-col gap-2">
-          <div className="text-[12.5px] font-medium">API 密钥</div>
+          <div className="font-medium">API 密钥</div>
           <ApiKeyField
             configured={profile.apiKeyConfigured}
             website={preset?.apiKeyWebsite}
@@ -48,7 +48,7 @@ export function ProviderDetail({ profile, listModels, onChange, onApiKeyChange, 
           />
         </section>
         <section className="flex flex-col gap-2">
-          <div className="text-[12.5px] font-medium">API 地址</div>
+          <div className="font-medium">API 地址</div>
           <ApiHostField kind={profile.kind} baseURL={profile.baseURL} presetBaseURL={preset?.baseURL ?? ""} onChange={(url) => onChange({ baseURL: url })} />
         </section>
         <ModelList profile={profile} onChange={onChange} listModels={listModels} onToast={onToast} onEditModel={onEditModel} onSync={onSync} />

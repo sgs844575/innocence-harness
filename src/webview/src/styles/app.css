@@ -22,7 +22,7 @@
     background: var(--color-app-bg);
     color: var(--color-app-text);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: var(--font-size-ui);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
@@ -136,10 +136,10 @@
     width: 100%;
   }
 
-  /* 助手正文段（参考稿 .msg）：14px 半粗、块间 24px 节奏。 */
+  /* 助手正文段（参考稿 .msg）：界面字号半粗、块间 24px 节奏。 */
   .msg-body {
     color: var(--color-app-text);
-    font-size: 14px;
+    font-size: var(--font-size-ui);
     font-weight: 600;
     line-height: 1.7;
     letter-spacing: 0.005em;

@@ -217,7 +217,7 @@ export function AppShell({
       {toast && (
         <div
           role="alert"
-          className="toast-in card-strong fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-sm"
+          className="toast-in card-strong fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 "
         >
           {toast}
         </div>

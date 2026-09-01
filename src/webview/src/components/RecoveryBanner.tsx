@@ -21,7 +21,7 @@ export function RecoveryBanner({
   return (
     <div
       role="status"
-      className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-700"
+      className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-amber-700"
     >
       <span className="min-w-0 truncate" title={message}>
         {message}
@@ -30,7 +30,7 @@ export function RecoveryBanner({
         <button
           type="button"
           onClick={onRetry}
-          className="h-6 shrink-0 rounded border border-amber-600/50 px-2 text-[11px] hover:bg-amber-500/20"
+          className="h-6 shrink-0 rounded border border-amber-600/50 px-2 hover:bg-amber-500/20"
         >
           {retryLabel}
         </button>
@@ -38,7 +38,7 @@ export function RecoveryBanner({
       <button
         type="button"
         onClick={onDismiss}
-        className="ml-auto h-6 shrink-0 rounded px-2 text-[11px] hover:bg-amber-500/20"
+        className="ml-auto h-6 shrink-0 rounded px-2 hover:bg-amber-500/20"
       >
         {dismissLabel}
       </button>

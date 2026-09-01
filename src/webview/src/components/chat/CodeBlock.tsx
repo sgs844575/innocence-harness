@@ -29,8 +29,8 @@ export function CodeBlock({ lang, code, t = tZh }: { lang: string; code: string;
   return (
     <div className="code-block overflow-hidden rounded-xl border border-(--color-app-hairline) bg-(--color-code-bg) text-(--color-code-fg) shadow-(--shadow-card)">
       <div className="flex items-center justify-between border-b border-(--color-app-hairline) px-3 py-1.5">
-        <span className="font-mono text-[11px] text-(--color-app-muted)">{lang}</span>
-        <div className="flex items-center gap-2 text-[11px]">
+        <span className="font-mono text-(--color-app-muted)">{lang}</span>
+        <div className="flex items-center gap-2 ">
           {over && (
             <button type="button" onClick={() => setExpanded((v) => !v)} className="text-(--color-app-muted) hover:text-(--color-app-text)">
               {expanded ? t("code.collapse") : t("code.expand").replace("{n}", String(lines.length))}
@@ -52,9 +52,9 @@ export function CodeBlock({ lang, code, t = tZh }: { lang: string; code: string;
       </div>
       <div className={`scrollbar-thin overflow-x-auto ${over && !expanded ? "code-fade" : ""}`}>
         {html ? (
-          <div className="code-html p-3 font-mono text-[13px] leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
+          <div className="code-html p-3 font-mono text-(--font-size-code) leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
         ) : (
-          <pre className="p-3 font-mono text-[13px] leading-relaxed"><code>{code}</code></pre>
+          <pre className="p-3 font-mono text-(--font-size-code) leading-relaxed"><code>{code}</code></pre>
         )}
       </div>
     </div>

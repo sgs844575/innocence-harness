@@ -57,6 +57,7 @@ function Probe(): React.JSX.Element | null {
 function mountSections(
   settings: HarnessSettings,
   child: React.ReactNode,
+  onSettingsChange: (next: HarnessSettings) => void = () => {},
 ): ReturnType<typeof render> {
   return render(
     <SlotProvider>
@@ -65,7 +66,7 @@ function mountSections(
           t,
           settings,
           appInfo,
-          onSettingsChange: () => {},
+          onSettingsChange,
           onPickWorkspace: () => {},
           pluginInventory: PLUGIN_INVENTORY,
         }}
@@ -183,6 +184,33 @@ describe("SettingsView 槽位分发", () => {
     expect(screen.getByText(SECTION_LABEL.appearance)).toBeTruthy();
     expect(screen.getByText("主题")).toBeTruthy();
     expect(screen.getByRole("button", { name: "深色" })).toBeTruthy();
+  });
+
+  it("appearance → 界面/代码字号两行（选择即写入对应设置字段）", () => {
+    const onSettingsChange = vi.fn();
+    const settings = baseSettings();
+    mountSections(
+      settings,
+      <SettingsView
+        t={t}
+        section="appearance"
+        settings={settings}
+        appInfo={appInfo}
+        onSettingsChange={onSettingsChange}
+        onPickWorkspace={() => {}}
+      />,
+      onSettingsChange,
+    );
+    expect(screen.getByText("界面字号")).toBeTruthy();
+    expect(screen.getByText("代码字号")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "界面字号" })).toHaveValue("14");
+    expect(screen.getByRole("combobox", { name: "代码字号" })).toHaveValue("14");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "界面字号" }), { target: { value: "16" } });
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ uiFontSize: 16 }));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "代码字号" }), { target: { value: "13" } });
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ codeFontSize: 13 }));
   });
 
   it("about → 关于节（应用名 + 版本号）", () => {

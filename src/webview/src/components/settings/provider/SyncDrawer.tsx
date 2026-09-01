@@ -18,7 +18,7 @@ interface Props {
 }
 
 const chipBtn =
-  "ml-auto flex items-center gap-1 rounded-full border border-(--color-app-border) px-2 py-0.5 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)/50 hover:text-(--color-app-text)";
+  "ml-auto flex items-center gap-1 rounded-full border border-(--color-app-border) px-2 py-0.5 text-(--color-app-muted) hover:bg-(--color-app-bubble)/50 hover:text-(--color-app-text)";
 const rowBtn =
   "grid size-5 shrink-0 place-items-center rounded-md text-(--color-app-muted) hover:bg-(--color-app-bubble)/50";
 
@@ -67,15 +67,15 @@ export function SyncDrawer({
   return (
     <Drawer open={open} title="获取模型" onClose={onClose} width={420}>
       {error && (
-        <div className="rounded-lg border border-(--color-tool-err)/40 bg-(--color-diff-del-bg) p-3 text-[12px] text-(--color-tool-err)">
+        <div className="rounded-lg border border-(--color-tool-err)/40 bg-(--color-diff-del-bg) p-3 text-(--color-tool-err)">
           {error}
         </div>
       )}
       {!plan && !error && (
-        <div className="text-[12px] text-(--color-app-muted)">正在获取模型列表…</div>
+        <div className="text-(--color-app-muted)">正在获取模型列表…</div>
       )}
       {plan && (
-        <div className="flex flex-col gap-4 text-[12px]">
+        <div className="flex flex-col gap-4 ">
           <section>
             <div className="mb-1.5 flex items-center gap-2">
               <Plus size={13} className="text-(--color-tool-ok)" />
@@ -102,10 +102,10 @@ export function SyncDrawer({
                 key={m.id}
                 className="flex items-center gap-2 border-b border-(--color-app-hairline) py-1.5"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{m.id}</span>
+                <span className="min-w-0 flex-1 truncate font-mono ">{m.id}</span>
                 <CapabilityTags model={m} />
                 {m.contextWindow != null && (
-                  <span className="font-mono text-[10px] text-(--color-app-muted)">
+                  <span className="font-mono text-(--color-app-muted)">
                     {Math.round(m.contextWindow / 1000)}K
                   </span>
                 )}
@@ -140,7 +140,7 @@ export function SyncDrawer({
                 key={m.id}
                 className="flex items-center gap-2 border-b border-(--color-app-hairline) py-1.5"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-(--color-app-muted) line-through">
+                <span className="min-w-0 flex-1 truncate font-mono text-(--color-app-muted) line-through">
                   {m.id}
                 </span>
                 <button type="button" aria-label={`移除 ${m.id}`} title="移除" onClick={() => removeOne(m)} className={`${rowBtn} text-(--color-tool-err)`}>
@@ -158,7 +158,7 @@ export function SyncDrawer({
           <button
             type="button"
             onClick={() => onApply(plan, { closeAfter: true })}
-            className="self-start rounded-lg bg-(--color-app-accent) px-3 py-1.5 text-[12px] font-medium text-(--color-app-accent-fg)"
+            className="self-start rounded-lg bg-(--color-app-accent) px-3 py-1.5 font-medium text-(--color-app-accent-fg)"
           >
             应用全部变更（+{plan.added.length} / −{plan.removed.length}）
           </button>

@@ -163,7 +163,7 @@ export function ChatView({
       <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
         <div className="flex flex-1 items-center justify-center pb-24" style={{ paddingInline: layout.contentGutter }}>
           <div className="w-full" style={{ maxWidth: layout.contentMaxWidth }}>
-            <h1 className="mb-4 text-center text-[clamp(17px,2vw,21px)] font-medium">
+            <h1 className="mb-4 text-center font-medium">
               {t("chat.empty.title").replace("InnocenceHarness", appName)}
             </h1>
             <Composer

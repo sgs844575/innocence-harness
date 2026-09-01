@@ -36,6 +36,7 @@ import { writeToolsBlocked } from "./state/workbenchState";
 import { createSettingsCommitter } from "./state/settingsCommitter";
 import { useAgentModes } from "./state/agentModes";
 import { diffSettingsSnapshot } from "../../shared/settingsPatch";
+import { applyFontScale, FONT_SIZE_DEFAULT } from "./lib/fontScale";
 
 const APP_NAME = "InnocenceHarness";
 
@@ -64,6 +65,11 @@ export function App(): React.JSX.Element {
     void api.getAppInfo().then(setAppInfo);
     void api.getHarnessSettings().then(setSettings);
   }, []);
+
+  // 外观字号注入根元素：界面/代码两档独立缩放，全树（含设置页自身）即时生效。
+  useEffect(() => {
+    applyFontScale(settings?.uiFontSize ?? FONT_SIZE_DEFAULT, settings?.codeFontSize ?? FONT_SIZE_DEFAULT);
+  }, [settings]);
 
   // agent 模式目录（agents:modes 通道）：App 组装层拉取，经 props 下发 Composer。
   // refreshKey 接插件清单状态——清单每次刷新（初载 / plugins:changed 事件 /
@@ -140,6 +146,7 @@ export function App(): React.JSX.Element {
     t,
     workbench,
     reviewData,
+    codeFontSize: settings?.codeFontSize ?? FONT_SIZE_DEFAULT,
     onTerminalActivityChange: setTerminalActivity,
     showError,
     onCloseTerminal: () => shellNav.current?.workbench.setOpen(false),

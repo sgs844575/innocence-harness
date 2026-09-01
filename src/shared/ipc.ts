@@ -337,6 +337,12 @@ export interface HarnessSettings {
   permissionMode: PermissionMode;
   /** UI theme preference; "system" follows nativeTheme. */
   themeMode?: ThemeMode;
+  /** 界面字号（px，12..18；缺失/非法回落 14）。纯渲染层外观，注入
+   *  --font-size-ui，与 harness-electron 同步持久化。 */
+  uiFontSize?: number;
+  /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容
+   *  注入 --font-size-code，与 harness-electron 同步持久化。 */
+  codeFontSize?: number;
   /** Preferred UI language; "" follows the system locale. */
   locale?: "zh-CN" | "en-US" | "";
   /** 思考档位（""=跟随模型默认；off/low/medium/high/max）。与 harness-electron 同步。 */

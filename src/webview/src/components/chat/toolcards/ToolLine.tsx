@@ -46,7 +46,7 @@ export function ToolLine({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex h-6 w-full items-center gap-2.5 rounded-md px-0.5 text-left text-[13px] whitespace-nowrap hover:bg-(--color-app-hover)/60"
+        className="flex h-6 w-full items-center gap-2.5 rounded-md px-0.5 text-left whitespace-nowrap hover:bg-(--color-app-hover)/60"
       >
         {running ? (
           <LoaderCircle size={15} className="shrink-0 animate-spin text-(--color-app-muted)" />
@@ -59,10 +59,10 @@ export function ToolLine({
           <span className="min-w-0 shrink-0 truncate font-semibold text-(--color-app-text)">{name}</span>
         )}
         {path !== undefined && path !== "" && (
-          <span className="min-w-0 shrink-0 truncate text-[13px] text-(--color-app-muted)">{path}</span>
+          <span className="min-w-0 shrink-0 truncate text-(--color-app-muted)">{path}</span>
         )}
         {extra}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-[12.5px]">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 ">
           {error ? <span className="text-(--color-tool-err)">✕</span> : !running && doneNote}
         </span>
       </button>

@@ -47,7 +47,7 @@ const sectionLabel: Record<CapsuleSection, string> = {
 };
 
 /** 参考稿 gp-row：26px 行、13px 文本、15px 图标、右侧簇；行距 11px。 */
-const gpRow = "flex h-[26px] w-full items-center gap-[11px] text-left text-[13px] whitespace-nowrap text-(--color-app-text)";
+const gpRow = "flex h-[26px] w-full items-center gap-[11px] text-left whitespace-nowrap text-(--color-app-text)";
 
 function SectionButton({ section, expanded, detail, ...buttonProps }: { section: CapsuleSection; expanded: boolean; detail?: string } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const Icon = section === "environment" ? GitBranch : section === "process" ? ListChecks : section === "terminal" ? SquareTerminal : Bot;
@@ -55,7 +55,7 @@ function SectionButton({ section, expanded, detail, ...buttonProps }: { section:
     <button {...buttonProps} type="button" aria-expanded={expanded} className={`${gpRow} mt-[11px] pr-1 text-(--color-app-muted) hover:text-(--color-app-text)`}>
       <Icon size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
       <span className="font-bold">{sectionLabel[section]}</span>
-      {detail && <span className="truncate text-[12px] font-normal">{detail}</span>}
+      {detail && <span className="truncate font-normal">{detail}</span>}
       <ChevronRight size={12} strokeWidth={1.3} className={`ml-auto shrink-0 text-(--color-app-muted) transition-transform ${expanded ? "rotate-90" : ""}`} />
     </button>
   );
@@ -83,7 +83,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
     const compactClass = placement === "floating" ? " agent-capsule-collapsed-compact" : "";
     return (
       <aside className={`${className} agent-capsule-collapsed${compactClass}`} aria-label="当前进程胶囊">
-        <button type="button" onClick={onToggleOpen} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-(--color-app-text)">
+        <button type="button" onClick={onToggleOpen} className="flex w-full items-center gap-2 px-3 py-2 text-left text-(--color-app-text)">
           <ListChecks size={13} className="text-(--color-app-accent)" />
           <span className="truncate">{process?.current || agent.name}</span>
           <ChevronDown size={13} className="ml-auto shrink-0 text-(--color-app-muted)" />
@@ -94,7 +94,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
 
   return (
     <aside className={className} aria-label="Agent 活动胶囊">
-      <div className="flex h-[22px] items-center px-[18px] pt-[16px] pb-3 text-[13px] font-bold text-(--color-app-text)">
+      <div className="flex h-[22px] items-center px-[18px] pt-[16px] pb-3 font-bold text-(--color-app-text)">
         <span>活动上下文</span>
         <span className="ml-auto flex items-center gap-3.5 text-(--color-app-muted)">
           <Tooltip label="折叠活动胶囊">
@@ -121,20 +121,20 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                 }
               >
               {section === "environment" && environment && (
-                <div className="pt-[6px] text-[13px] text-(--color-app-text)">
+                <div className="pt-[6px] text-(--color-app-text)">
                   <div className={`${gpRow} mt-[5px]`}>
                     <FilePlus2 size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>更改</span>
                     <span className="ml-auto flex items-center gap-2.5">
-                      {environment.changedFiles > 0 && <span className="text-[12px] text-(--color-app-muted)">{environment.changedFiles} 文件</span>}
-                      <span className="text-[12.5px] text-(--color-diff-add)">+{environment.additions}</span>
-                      <span className="text-[12.5px] text-(--color-diff-del)">−{environment.deletions}</span>
+                      {environment.changedFiles > 0 && <span className="text-(--color-app-muted)">{environment.changedFiles} 文件</span>}
+                      <span className="text-(--color-diff-add)">+{environment.additions}</span>
+                      <span className="text-(--color-diff-del)">−{environment.deletions}</span>
                     </span>
                   </div>
                   <div className={`${gpRow} mt-[11px]`}>
                     <GitBranch size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>分支</span>
-                    <span className="ml-auto min-w-0 truncate text-[12.5px] text-(--color-app-muted)">{environment.branch ?? "未检测"}</span>
+                    <span className="ml-auto min-w-0 truncate text-(--color-app-muted)">{environment.branch ?? "未检测"}</span>
                   </div>
                   <div className={`${gpRow} mt-[11px]`}>
                     <GitCommitHorizontal size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
@@ -146,7 +146,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     </span>
                   </div>
                   <div className="mt-[13px] h-px bg-(--color-app-hairline)" />
-                  <div className="flex h-[26px] items-center gap-[38px] pt-[2px] text-[13px] text-(--color-app-muted)">
+                  <div className="flex h-[26px] items-center gap-[38px] pt-[2px] text-(--color-app-muted)">
                     <span>工作区</span>
                     <span>{environment.workspaceKind}</span>
                   </div>
@@ -154,14 +154,14 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               )}
               {section === "process" && process && <TodoPanel {...process} />}
               {section === "terminal" && terminal && (
-                <div className="flex h-[26px] items-center justify-between pt-[2px] text-[12px] text-(--color-app-muted)">
+                <div className="flex h-[26px] items-center justify-between pt-[2px] text-(--color-app-muted)">
                   <span>{terminalLabel}</span>
                   <Button variant="ghost" size="sm" disabled={!terminal.onOpen} onClick={terminal.onOpen}>打开终端</Button>
                 </div>
               )}
               {section === "agent" && (
-                <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-[13px] text-(--color-app-muted)">
-                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto text-[12px]">{statusLabel(agent.status)}</span></div>
+                <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-(--color-app-muted)">
+                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto ">{statusLabel(agent.status)}</span></div>
                   {childAgents.map((child) => (
                     <Button
                       key={child.childId}
@@ -173,7 +173,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     >
                       <Bot size={11} className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{child.description || "子智能体"}</span>
-                      <span className="shrink-0 text-[12px]">{statusLabel(child.status)}</span>
+                      <span className="shrink-0 ">{statusLabel(child.status)}</span>
                     </Button>
                   ))}
                 </div>

@@ -30,25 +30,25 @@ export function EditModelDrawer({ open, model, onClose, onSave }: Props): React.
   };
   return (
     <Drawer open={open} title={model.id ? "编辑模型" : "添加模型"} onClose={onClose}>
-      <div className="flex flex-col gap-5 text-[12.5px]">
+      <div className="flex flex-col gap-5 ">
         <label className="flex flex-col gap-1">
           <span className="text-(--color-app-muted)">模型 ID</span>
           {model.id ? (
-            <span className="flex items-center gap-2 font-mono text-[12px]">
+            <span className="flex items-center gap-2 font-mono ">
               {model.id}
               <button type="button" aria-label="复制 ID" onClick={() => void navigator.clipboard.writeText(model.id)} className="text-(--color-app-muted) hover:text-(--color-app-text)"><Copy size={12} /></button>
             </span>
           ) : (
-            <input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} onBlur={() => { if (draft.id !== model.id) save({ id: draft.id }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono text-[12px] outline-none" />
+            <input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} onBlur={() => { if (draft.id !== model.id) save({ id: draft.id }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono outline-none" />
           )}
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-(--color-app-muted)">模型名称</span>
-          <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} onBlur={() => { if (draft.name !== model.name) save({ name: draft.name }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 text-[12px] outline-none" />
+          <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} onBlur={() => { if (draft.name !== model.name) save({ name: draft.name }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 outline-none" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-(--color-app-muted)">分组名称</span>
-          <input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value })} onBlur={() => { if (draft.group !== model.group) save({ group: draft.group }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 text-[12px] outline-none" />
+          <input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value })} onBlur={() => { if (draft.group !== model.group) save({ group: draft.group }); }} className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 outline-none" />
         </label>
         <section className="flex flex-col gap-2">
           <div className="font-medium">能力</div>
@@ -61,7 +61,7 @@ export function EditModelDrawer({ open, model, onClose, onSave }: Props): React.
                 type="button"
                 aria-label={label}
                 onClick={() => { setDraft({ ...draft, [key]: !draft[key] }); save({ [key]: !draft[key] }); }}
-                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11.5px] ${draft[key] ? "border-(--color-app-accent) bg-(--color-app-accent-soft) text-(--color-app-accent)" : "border-(--color-app-border) text-(--color-app-muted)"}`}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 ${draft[key] ? "border-(--color-app-accent) bg-(--color-app-accent-soft) text-(--color-app-accent)" : "border-(--color-app-border) text-(--color-app-muted)"}`}
               >
                 <Icon size={12} />{label}
               </button>
@@ -75,14 +75,14 @@ export function EditModelDrawer({ open, model, onClose, onSave }: Props): React.
               ["contextWindow", "上下文窗口", draft.contextWindow], ["maxInput", "最大输入", draft.maxInput], ["maxOutput", "最大输出", draft.maxOutput],
             ] as const).map(([key, label, value]) => (
               <label key={key} className="flex flex-col gap-1">
-                <span className="text-[10.5px] text-(--color-app-muted)">{label}</span>
+                <span className="text-(--color-app-muted)">{label}</span>
                 <input
                   aria-label={label}
                   inputMode="numeric"
                   value={value ?? ""}
                   onChange={(e) => setDraft({ ...draft, [key]: num(e.target.value) })}
                   onBlur={() => { if (draft[key] !== model[key]) save({ [key]: draft[key] }); }}
-                  className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono text-[12px] outline-none"
+                  className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono outline-none"
                 />
               </label>
             ))}
@@ -92,7 +92,7 @@ export function EditModelDrawer({ open, model, onClose, onSave }: Props): React.
           <span>流式输出</span>
           <Switch checked={draft.streaming !== false} onChange={(v) => { setDraft({ ...draft, streaming: v }); save({ streaming: v }); }} aria-label="流式输出" />
         </label>
-        <div className="flex items-center gap-2 text-[10.5px] text-(--color-app-muted)/70">
+        <div className="flex items-center gap-2 text-(--color-app-muted)/70">
           <RotateCcw size={11} /> 参数默认取预设，改动只存本地，enrich 不会覆盖已修改字段
         </div>
       </div>

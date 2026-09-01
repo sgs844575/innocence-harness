@@ -38,13 +38,13 @@ export function ApiKeyField({
         }}
         onBlur={submit}
         placeholder={configured ? "已配置（输入新密钥以替换）" : "API 密钥"}
-        className="w-full bg-transparent font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-(--color-app-muted)"
+        className="w-full bg-transparent font-mono outline-none placeholder:font-sans placeholder:text-(--color-app-muted)"
       />
       <button type="button" aria-label="检查连接" onClick={onCheck} className="shrink-0 text-(--color-app-muted) hover:text-(--color-app-text)">
         <Activity size={13} />
       </button>
       {website && (
-        <a href={website} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] text-(--color-app-accent)">获取密钥</a>
+        <a href={website} target="_blank" rel="noreferrer" className="shrink-0 text-(--color-app-accent)">获取密钥</a>
       )}
     </div>
   );

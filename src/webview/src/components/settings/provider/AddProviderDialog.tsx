@@ -57,8 +57,8 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
         className="fade-in absolute inset-0 bg-black/25"
       />
       <div className="pop-in relative w-[440px] rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) p-5 shadow-(--shadow-pop)">
-        <h2 className="mb-4 text-[14px] font-semibold">添加厂家</h2>
-        <div className="flex flex-col gap-3 text-[12.5px]">
+        <h2 className="mb-4 font-semibold">添加厂家</h2>
+        <div className="flex flex-col gap-3 ">
           <label className="flex flex-col gap-1">
             名称
             <input
@@ -74,7 +74,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono text-[12px] outline-none"
+              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono outline-none"
             />
           </label>
           <div className="flex flex-col gap-1">
@@ -85,7 +85,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
                   key={k}
                   type="button"
                   onClick={() => setKind(k)}
-                  className={`rounded-full border px-3 py-1 text-[11.5px] ${
+                  className={`rounded-full border px-3 py-1 ${
                     kind === k
                       ? "border-(--color-app-accent) bg-(--color-app-accent-soft) text-(--color-app-accent)"
                       : "border-(--color-app-border) text-(--color-app-muted)"
@@ -102,7 +102,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
               value={baseURL}
               onChange={(e) => setBaseURL(e.target.value)}
               placeholder={kind === "anthropic" ? "https://api.anthropic.com" : kind === "google" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"}
-              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono text-[12px] outline-none"
+              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 font-mono outline-none"
             />
           </label>
           <div className="flex flex-col gap-1.5 border-t border-(--color-app-hairline) pt-3">
@@ -111,7 +111,7 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索预设…"
-              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 text-[12px] outline-none"
+              className="h-8 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) px-2 outline-none"
             />
             <div className="scrollbar-thin max-h-36 overflow-y-auto">
               {hit.map((p) => (
@@ -119,10 +119,10 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
                   key={p.name}
                   type="button"
                   onClick={() => submit(p)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-(--color-app-bubble)/50"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-(--color-app-bubble)/50"
                 >
                   {p.name}
-                  <span className="ml-auto font-mono text-[10px] text-(--color-app-muted)">
+                  <span className="ml-auto font-mono text-(--color-app-muted)">
                     {p.models.length} 模型
                   </span>
                 </button>
@@ -133,14 +133,14 @@ export function AddProviderDialog({ open, presets, onClose, onCreate }: Props): 
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-(--color-app-border) px-3 py-1.5 text-[12px]"
+              className="rounded-lg border border-(--color-app-border) px-3 py-1.5 "
             >
               取消
             </button>
             <button
               type="button"
               onClick={() => submit(null)}
-              className="rounded-lg bg-(--color-app-accent) px-3 py-1.5 text-[12px] font-medium text-(--color-app-accent-fg)"
+              className="rounded-lg bg-(--color-app-accent) px-3 py-1.5 font-medium text-(--color-app-accent-fg)"
             >
               创建
             </button>

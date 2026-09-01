@@ -38,7 +38,7 @@ export function MessageItem({
   if (message.role === "user") {
     return (
       <div className="rise-in group flex flex-col items-end">
-        <div className="max-w-[85%] rounded-[12px] rounded-br-[3px] bg-(--color-app-bubble) px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-[12px] rounded-br-[3px] bg-(--color-app-bubble) px-4 py-2.5 leading-relaxed whitespace-pre-wrap">
           {text}
         </div>
         {(onForkMessage || onForkSession) && (
@@ -49,7 +49,7 @@ export function MessageItem({
                 title="编辑并创建路线"
                 aria-label="编辑并创建路线"
                 onClick={() => onForkMessage({ turnId: message.id, mode: "edit-user", text })}
-                className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
               >
                 <Pencil size={13} /> 编辑并创建路线
               </button>
@@ -60,7 +60,7 @@ export function MessageItem({
                 title="从这里分叉会话"
                 aria-label="从这里分叉会话"
                 onClick={() => onForkSession(message.id)}
-                className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
               >
                 <GitFork size={13} /> 从这里分叉
               </button>
@@ -71,7 +71,7 @@ export function MessageItem({
                 title="从这里分叉到工作树"
                 aria-label="从这里分叉到工作树"
                 onClick={() => onForkSession(message.id, "worktree")}
-                className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
               >
                 <GitBranch size={13} /> 分叉到工作树
               </button>
@@ -102,7 +102,7 @@ export function MessageItem({
             type="button"
             title="重试并创建路线"
             onClick={() => onForkMessage({ turnId: message.id, mode: "retry-assistant", text })}
-            className="flex h-7 items-center gap-1 px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+            className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
           >
             <RotateCcw size={13} /> 重试并创建路线
           </button>

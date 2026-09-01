@@ -54,7 +54,7 @@ export function TodoWriteCard({ call, result, open, onToggle }: ToolCardProps): 
       doneNote={result && !result.isError ? <span className="text-(--color-tool-ok)">✓</span> : undefined}
     >
       {(todos.length > 0 || result) && (
-        <ul className="scrollbar-thin max-h-48 list-none overflow-auto text-[12px] leading-relaxed">
+        <ul className="scrollbar-thin max-h-48 list-none overflow-auto leading-relaxed">
           {todos.map((t, i) => (
             <li key={i} className="flex items-start gap-1.5 py-0.5">
               <span

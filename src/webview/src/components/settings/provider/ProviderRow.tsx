@@ -26,11 +26,11 @@ export function ProviderRow({ profile, active, onSelect, onRename, onDuplicate, 
         <GripVertical size={13} />
       </button>
       <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className="grid size-[26px] shrink-0 place-items-center rounded-full border border-(--color-app-hairline) text-[11px] font-semibold text-(--color-app-accent)">
+        <span className="grid size-[26px] shrink-0 place-items-center rounded-full border border-(--color-app-hairline) font-semibold text-(--color-app-accent)">
           {profile.name.slice(0, 1)}
         </span>
-        <span className="truncate text-[12.5px]">{profile.name}</span>
-        {profile.preset && <span className="shrink-0 rounded-full border border-(--color-app-hairline) px-1 text-[9px] text-(--color-app-muted)">预设</span>}
+        <span className="truncate ">{profile.name}</span>
+        {profile.preset && <span className="shrink-0 rounded-full border border-(--color-app-hairline) px-1 text-(--color-app-muted)">预设</span>}
       </button>
       {profile.enabled && <span className="size-1.5 shrink-0 rounded-full bg-(--color-tool-ok) group-hover:invisible" />}
       <div className="relative shrink-0">
@@ -38,7 +38,7 @@ export function ProviderRow({ profile, active, onSelect, onRename, onDuplicate, 
           <MoreVertical size={13} />
         </button>
         {menu && (
-          <div className="pop-in absolute right-0 top-6 z-20 w-28 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) py-1 text-[12px] shadow-(--shadow-pop)">
+          <div className="pop-in absolute right-0 top-6 z-20 w-28 rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) py-1 shadow-(--shadow-pop)">
             <button type="button" onClick={() => { setMenu(false); onRename(); }} className="flex w-full items-center gap-2 px-2.5 py-1 hover:bg-(--color-app-bubble)/50"><Pencil size={12} />重命名</button>
             <button type="button" onClick={() => { setMenu(false); onDuplicate(); }} className="flex w-full items-center gap-2 px-2.5 py-1 hover:bg-(--color-app-bubble)/50"><Copy size={12} />复制</button>
             <button type="button" onClick={() => { setMenu(false); onDelete(); }} className="flex w-full items-center gap-2 px-2.5 py-1 text-(--color-tool-err) hover:bg-(--color-app-bubble)/50"><Trash2 size={12} />删除</button>

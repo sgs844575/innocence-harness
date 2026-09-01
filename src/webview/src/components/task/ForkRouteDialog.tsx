@@ -63,7 +63,7 @@ export function ForkRouteDialog({
         className="pop-in relative w-full max-w-[440px] rounded-(--radius-pop) border border-(--color-app-border) bg-(--color-app-raised) shadow-(--shadow-pop)"
       >
         <header className="flex h-12 items-center border-b border-(--color-app-hairline) px-4">
-          <h2 id="fork-route-title" className="text-[14px] font-semibold">创建隔离路线</h2>
+          <h2 id="fork-route-title" className="font-semibold">创建隔离路线</h2>
           <button
             type="button"
             aria-label="关闭"
@@ -75,7 +75,7 @@ export function ForkRouteDialog({
             <X size={16} />
           </button>
         </header>
-        <dl className="grid grid-cols-[112px_1fr] gap-y-3 px-4 py-4 text-[12.5px]">
+        <dl className="grid grid-cols-[112px_1fr] gap-y-3 px-4 py-4 ">
           <dt className="text-(--color-app-muted)">父路线</dt>
           <dd className="font-mono">{request.sourceRouteId}</dd>
           <dt className="text-(--color-app-muted)">目标 checkpoint</dt>
@@ -86,7 +86,7 @@ export function ForkRouteDialog({
           <dd>原路线保持不变</dd>
         </dl>
         {request.mode === "edit-user" && (
-          <label className="flex flex-col gap-1 border-t border-(--color-app-hairline) px-4 py-3 text-[12.5px]">
+          <label className="flex flex-col gap-1 border-t border-(--color-app-hairline) px-4 py-3 ">
             修改后的消息
             <textarea
               value={editedText}
@@ -97,14 +97,14 @@ export function ForkRouteDialog({
             />
           </label>
         )}
-        {error && <p role="alert" className="border-t border-(--color-app-hairline) px-4 py-2 text-[12px] text-red-600">{error}</p>}
+        {error && <p role="alert" className="border-t border-(--color-app-hairline) px-4 py-2 text-red-600">{error}</p>}
         <footer className="flex justify-end gap-2 border-t border-(--color-app-hairline) px-4 py-3">
-          <button type="button" onClick={onClose} disabled={pending} className="h-8 border border-(--color-app-border) px-3 text-[12px]">取消</button>
+          <button type="button" onClick={onClose} disabled={pending} className="h-8 border border-(--color-app-border) px-3 ">取消</button>
           <button
             type="button"
             onClick={confirm}
             disabled={pending}
-            className="flex h-8 items-center gap-1.5 bg-(--color-app-accent) px-3 text-[12px] font-medium text-(--color-app-accent-fg) disabled:opacity-60"
+            className="flex h-8 items-center gap-1.5 bg-(--color-app-accent) px-3 font-medium text-(--color-app-accent-fg) disabled:opacity-60"
           >
             <GitBranch size={14} />
             {pending ? "创建中" : "创建路线"}

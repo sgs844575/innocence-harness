@@ -41,6 +41,7 @@ function Harness({ showError, onCloseTerminal = () => undefined }: { showError: 
     t: (key) => key,
     workbench: workbench as never,
     reviewData: { hunks: [], refresh, files: [] } as never,
+    codeFontSize: 14,
     showError,
     onCloseTerminal,
     onSelectTab: () => undefined,

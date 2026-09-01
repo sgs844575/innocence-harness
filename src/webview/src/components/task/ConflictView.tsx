@@ -29,10 +29,10 @@ function Side({
 }): React.JSX.Element {
   return (
     <div className="min-w-0 flex-1 rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg)">
-      <div className={`border-b border-(--color-app-hairline) px-2 py-1 text-[10.5px] font-medium ${tone}`}>
+      <div className={`border-b border-(--color-app-hairline) px-2 py-1 font-medium ${tone}`}>
         {label}
       </div>
-      <pre className="scrollbar-thin max-h-48 overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre-wrap">
+      <pre className="scrollbar-thin max-h-48 overflow-auto p-2 font-mono text-(--font-size-code) leading-5 whitespace-pre-wrap">
         {content}
       </pre>
     </div>
@@ -52,7 +52,7 @@ export function ConflictView({
       aria-label={t("task.conflict.title")}
       className="space-y-3 rounded-xl border border-(--color-app-hairline) bg-(--color-app-panel) p-3"
     >
-      <div className="flex items-center gap-2 text-[12.5px] font-semibold">
+      <div className="flex items-center gap-2 font-semibold">
         <ShieldAlert size={14} className="text-red-600" /> {t("task.conflict.title")}
       </div>
       {conflicts.map((conflict) => (
@@ -61,11 +61,11 @@ export function ConflictView({
           className="space-y-2 rounded-lg border border-(--color-app-hairline) p-2"
         >
           <div className="flex items-center gap-2">
-            <span className="min-w-0 truncate font-mono text-[12px]" title={conflict.path}>
+            <span className="min-w-0 truncate font-mono " title={conflict.path}>
               {conflict.path}
             </span>
             {conflict.reason && (
-              <span className="shrink-0 text-[11px] text-(--color-app-muted)" title={t("task.conflict.reason")}>
+              <span className="shrink-0 text-(--color-app-muted)" title={t("task.conflict.reason")}>
                 {conflict.reason}
               </span>
             )}
@@ -80,7 +80,7 @@ export function ConflictView({
               type="button"
               disabled={!onKeepCurrent}
               onClick={() => onKeepCurrent?.(conflict.path)}
-              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 text-[12px] hover:bg-(--color-app-bubble) disabled:opacity-50"
+              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 hover:bg-(--color-app-bubble) disabled:opacity-50"
             >
               <ShieldCheck size={13} /> {t("task.conflict.keepCurrent")}
             </button>
@@ -88,7 +88,7 @@ export function ConflictView({
               type="button"
               disabled={!onAdoptAgent}
               onClick={() => onAdoptAgent?.(conflict.path)}
-              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 text-[12px] hover:bg-(--color-app-bubble) disabled:opacity-50"
+              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 hover:bg-(--color-app-bubble) disabled:opacity-50"
             >
               <Replace size={13} /> {t("task.conflict.adoptAgent")}
             </button>
@@ -96,7 +96,7 @@ export function ConflictView({
               type="button"
               disabled={!onAskRedo}
               onClick={() => onAskRedo?.(conflict.path)}
-              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 text-[12px] hover:bg-(--color-app-bubble) disabled:opacity-50"
+              className="flex h-7 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 hover:bg-(--color-app-bubble) disabled:opacity-50"
             >
               <Redo2 size={13} /> {t("task.conflict.redo")}
             </button>

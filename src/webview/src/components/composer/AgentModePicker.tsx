@@ -33,7 +33,7 @@ export function AgentModePicker({
       trigger={
         <button type="button" aria-label={t("agentMode.select")}
           title={triggerDesc || undefined}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[13px] text-(--color-app-text) hover:bg-(--color-app-hover)">
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-(--color-app-text) hover:bg-(--color-app-hover)">
           <Bot size={14} className="shrink-0 text-(--color-app-muted)" />
           <span>{labelFor(t, value, options)}</span>
           <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
@@ -45,7 +45,7 @@ export function AgentModePicker({
         return (
           <button key={o.id} type="button" onClick={() => onChange(o.id)}
             title={desc || undefined}
-            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-(--color-app-hover) ${o.id === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}>
+            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-(--color-app-hover) ${o.id === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}>
             <span>{labelFor(t, o.id, options)}</span>
             {o.id === value && <Check size={12} className="ml-auto shrink-0" />}
           </button>

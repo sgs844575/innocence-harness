@@ -31,8 +31,8 @@ export function EditTool({ call, result, open, onToggle }: ToolCardProps): React
       path={dir}
       extra={
         <>
-          <span className="ml-1.5 text-[12.5px] text-(--color-diff-add)">+{add}</span>
-          <span className="ml-2 text-[12.5px] text-(--color-diff-del)">−{del}</span>
+          <span className="ml-1.5 text-(--color-diff-add)">+{add}</span>
+          <span className="ml-2 text-(--color-diff-del)">−{del}</span>
         </>
       }
       open={open}
@@ -40,7 +40,7 @@ export function EditTool({ call, result, open, onToggle }: ToolCardProps): React
       running={!result}
       error={result?.isError}
     >
-      <pre className="scrollbar-thin max-h-56 overflow-auto font-mono text-[11.5px] leading-relaxed">
+      <pre className="scrollbar-thin max-h-56 overflow-auto font-mono leading-relaxed">
         {oldS.split("\n").map((l, i) => (
           <span key={`d${i}`} className="block bg-(--color-diff-del-bg) px-1.5 text-(--color-diff-del)">− {l}</span>
         ))}

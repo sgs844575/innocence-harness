@@ -48,7 +48,7 @@ export function SettingsNav({ t, section, onSelect, onBack }: Props): React.JSX.
         <button
           type="button"
           onClick={onBack}
-          className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
+          className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-(--color-app-muted) hover:bg-(--color-app-hover) hover:text-(--color-app-text)"
         >
           <ArrowLeft size={16} className="shrink-0" />
           <span className="truncate">{t("settings.backToChat")}</span>
@@ -61,7 +61,7 @@ export function SettingsNav({ t, section, onSelect, onBack }: Props): React.JSX.
             key={id}
             type="button"
             onClick={() => onSelect(id)}
-            className={`flex h-9 items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] transition-colors ${
+            className={`flex h-9 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors ${
               section === id
                 ? "bg-(--color-app-panel) font-medium text-(--color-app-text)"
                 : "text-(--color-app-text) hover:bg-(--color-app-hover)"

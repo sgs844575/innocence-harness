@@ -126,15 +126,15 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder={t(composerMode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
             rows={1}
-            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
+            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
           />
           {composerMode === "landing" && (
-            <div className="flex flex-wrap gap-x-3 px-3 pt-1 text-[10px] text-(--color-app-faint)">
+            <div className="flex flex-wrap gap-x-3 px-3 pt-1 text-(--color-app-faint)">
               <span>使用 @ 添加上下文</span>
               <span>使用 / 选择命令或能力</span>
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-4 px-3 pb-2.5 pt-1.5 text-[13px] text-(--color-app-muted)">
+          <div className="flex flex-wrap items-center gap-4 px-3 pb-2.5 pt-1.5 text-(--color-app-muted)">
             <button
               type="button"
               aria-label="添加附件"
@@ -156,7 +156,7 @@ export function Composer({
               onChange={(mode) => onSettingsChange({ activeAgentMode: mode })}
             />
             {composerMode === "existing" && (
-              <span className="inline-flex items-center gap-1 text-[12px] text-(--color-app-muted)" aria-label="上下文数量">
+              <span className="inline-flex items-center gap-1 text-(--color-app-muted)" aria-label="上下文数量">
                 <Files size={12} />{contextCount}
               </span>
             )}
@@ -177,7 +177,7 @@ export function Composer({
               <button
                 type="button"
                 disabled
-                className="flex max-w-[200px] items-center gap-1 text-[13px] font-medium"
+                className="flex max-w-[200px] items-center gap-1 font-medium"
               >
                 <span className="truncate">{t("provider.mock")}</span>
               </button>

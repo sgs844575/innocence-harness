@@ -32,6 +32,8 @@ export type { TerminalActivitySummary } from "./useTerminalActivityProjection";
 export interface TerminalPanelProps {
   /** Typed terminal bridge (preload implements the same shape). */
   api: TerminalIpcApi;
+  /** xterm 前端字号（px，外观设置的代码字号）；变更时热更新并重排。缺省 14。 */
+  codeFontSize?: number;
   /** The active task route; switching it flags other terminals as 旧路线. */
   activeTask: TerminalRouteRef | null;
   /** Presentation-only projection for the activity capsule. */
@@ -54,6 +56,7 @@ function safeDimensions(fit: FitAddon): { cols: number; rows: number } | null {
 interface TerminalViewProps {
   readonly entry: TerminalEntryState;
   readonly visible: boolean;
+  readonly codeFontSize: number;
   onInput(ptyId: string, data: string): void;
   onFit(ptyId: string, cols: number, rows: number): void;
   register(ptyId: string, term: Terminal): void;
@@ -61,8 +64,14 @@ interface TerminalViewProps {
 }
 
 /** One xterm.js frontend for one PTY. Kept mounted while the tab exists. */
-function TerminalView({ entry, visible, onInput, onFit, register, unregister }: TerminalViewProps) {
+function TerminalView({ entry, visible, codeFontSize, onInput, onFit, register, unregister }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  // Last applied font size: the terminal is constructed with the render-time
+  // value, so the hot-update effect skips its mount run and only reacts to
+  // real setting changes.
+  const lastFontSizeRef = useRef(codeFontSize);
   // Latest-callback refs: the mount effect runs once per ptyId and must not
   // capture render-scoped closures.
   const callbacks = useRef({ onInput, onFit });
@@ -72,7 +81,7 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
     const host = hostRef.current;
     if (!host) return;
     const term = new Terminal({
-      fontSize: 12,
+      fontSize: codeFontSize,
       fontFamily: "Consolas, 'Courier New', monospace",
       cursorBlink: true,
       scrollback: 2000,
@@ -82,6 +91,8 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    termRef.current = term;
+    fitRef.current = fit;
     register(entry.ptyId, term);
 
     const dataSub = term.onData((data) => callbacks.current.onInput(entry.ptyId, data));
@@ -112,11 +123,28 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
       observer?.disconnect();
       dataSub.dispose();
       unregister(entry.ptyId);
+      termRef.current = null;
+      fitRef.current = null;
       term.dispose();
     };
     // Identity fields never change for a ptyId; callbacks go through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry.ptyId, register, unregister]);
+
+  // 代码字号热更新：外观设置改动后重设字号并重排（mount effect 按 ptyId
+  // 只跑一次，字号走这条独立通道；跳过挂载首轮——构造时已用当前值）。
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit || lastFontSizeRef.current === codeFontSize) return;
+    lastFontSizeRef.current = codeFontSize;
+    term.options.fontSize = codeFontSize;
+    const dims = safeDimensions(fit);
+    if (dims) {
+      term.resize(dims.cols, dims.rows);
+      callbacks.current.onFit(entry.ptyId, dims.cols, dims.rows);
+    }
+  }, [codeFontSize, entry.ptyId]);
 
   return <div ref={hostRef} className={visible ? "absolute inset-0" : "hidden"} />;
 }
@@ -124,7 +152,7 @@ function TerminalView({ entry, visible, onInput, onFit, register, unregister }: 
 function ShellTranscriptView({ entry }: { entry: ShellTranscriptState }): React.JSX.Element {
   const output = `${entry.stdout}${entry.stderr}`;
   return (
-    <article className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto bg-(--color-app-bg) p-3 font-mono text-xs">
+    <article className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto bg-(--color-app-bg) p-3 font-mono text-(--font-size-code)">
       <div className="text-(--color-app-text)">{entry.command}</div>
       {output && <pre className="whitespace-pre-wrap text-(--color-app-muted)">{output}</pre>}
       {entry.completed && (
@@ -138,7 +166,7 @@ function ShellTranscriptView({ entry }: { entry: ShellTranscriptState }): React.
   );
 }
 
-export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: TerminalPanelProps): React.JSX.Element {
+export function TerminalPanel({ api, codeFontSize = 14, activeTask, onActivityChange, onClose }: TerminalPanelProps): React.JSX.Element {
   const [collection, setCollection] = useState<TerminalCollectionState>(emptyTerminalState);
   const [createError, setCreateError] = useState<string | null>(null);
   useTerminalActivityProjection(collection, onActivityChange);
@@ -308,7 +336,7 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
                 key={ptyId}
                 role="tab"
                 aria-selected={active}
-                className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] ${
+                className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 ${
                   active ? "bg-(--color-app-bubble) text-(--color-app-text)" : "text-(--color-app-muted)"
                 }`}
               >
@@ -319,12 +347,12 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
                 >
                   <span className="font-mono">{entry.routeId}</span>
                   {entry.stale && (
-                    <span className="rounded bg-(--color-app-accent) px-1 text-[10px] text-(--color-app-accent-fg)">
+                    <span className="rounded bg-(--color-app-accent) px-1 text-(--color-app-accent-fg)">
                       旧路线
                     </span>
                   )}
                   {entry.exited && (
-                    <span className="rounded bg-(--color-app-bubble) px-1 text-[10px] text-(--color-app-muted)">
+                    <span className="rounded bg-(--color-app-bubble) px-1 text-(--color-app-muted)">
                       已退出
                     </span>
                   )}
@@ -354,7 +382,7 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
                 role="tab"
                 aria-selected={active}
                 onClick={() => setCollection((prev) => setActiveShell(prev, entry.id))}
-                className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[12px] ${
+                className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono ${
                   active ? "bg-(--color-app-bubble) text-(--color-app-text)" : "text-(--color-app-muted)"
                 }`}
               >
@@ -364,7 +392,7 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
           })}
         </div>
         {createError && (
-          <span role="alert" className="max-w-[280px] truncate text-[11px] text-red-600">
+          <span role="alert" className="max-w-[280px] truncate text-red-600">
             {createError}
           </span>
         )}
@@ -384,6 +412,7 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
             key={ptyId}
             entry={collection.entries[ptyId]}
             visible={collection.activePane === "pty" && collection.activePtyId === ptyId}
+            codeFontSize={codeFontSize}
             onInput={handleInput}
             onFit={handleFit}
             register={register}
@@ -393,7 +422,7 @@ export function TerminalPanel({ api, activeTask, onActivityChange, onClose }: Te
         {collection.activePane === "shell" && collection.activeShellId && collection.shellEntries[collection.activeShellId] ? (
           <ShellTranscriptView entry={collection.shellEntries[collection.activeShellId]!} />
         ) : collection.activePane === null ? (
-          <div className="p-3 text-xs text-(--color-app-muted)">无活动终端</div>
+          <div className="p-3 text-(--color-app-muted)">无活动终端</div>
         ) : null}
       </div>
     </section>

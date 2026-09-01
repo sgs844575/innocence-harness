@@ -1,6 +1,10 @@
 @layer theme {
   /* 语义表面（浅色镜像）：页面外圈深一档，主画布最亮，浮起卡片纯白。 */
   :root {
+    /* 字号双变量：界面文字与代码内容均 14px 起步，外观设置可分别覆盖
+       （App 根层以行内样式写入 px 值）。两主题共用，不随主题切换。 */
+    --font-size-ui: 14px;
+    --font-size-code: 14px;
     --color-app-bg: #d6d6da;
     --color-app-sidebar: #e2e2e6;
     --color-app-panel: #f4f4f6;

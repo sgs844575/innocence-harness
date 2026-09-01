@@ -39,8 +39,8 @@ export function WorkbenchHome({ onSelect, t = tZh }: Props): React.JSX.Element {
   return (
     <section className="space-y-4 px-4 py-5" aria-labelledby="workbench-home-title">
       <div>
-        <h1 id="workbench-home-title" className="text-base font-semibold">{copyFor(t, "workbench.home.title")}</h1>
-        <p className="mt-1 text-xs text-(--color-app-muted)">{copyFor(t, "workbench.home.description")}</p>
+        <h1 id="workbench-home-title" className="font-semibold">{copyFor(t, "workbench.home.title")}</h1>
+        <p className="mt-1 text-(--color-app-muted)">{copyFor(t, "workbench.home.description")}</p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {CARDS.map(({ tab, labelKey, icon: Icon }) => (
@@ -52,7 +52,7 @@ export function WorkbenchHome({ onSelect, t = tZh }: Props): React.JSX.Element {
             className="group flex items-center gap-3 rounded-xl border border-(--color-app-hairline) bg-(--color-app-panel) p-3 text-left transition-colors hover:border-(--color-app-accent) hover:bg-(--color-app-bubble)"
           >
             <Icon size={17} className="text-(--color-app-accent)" />
-            <span className="text-[12.5px] font-medium text-(--color-app-text)">{copyFor(t, labelKey)}</span>
+            <span className="font-medium text-(--color-app-text)">{copyFor(t, labelKey)}</span>
           </button>
         ))}
       </div>

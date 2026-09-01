@@ -19,13 +19,13 @@ export function ApiHostField({
           value={baseURL}
           onChange={(e) => onChange(e.target.value)}
           placeholder={presetBaseURL || "https://api.openai.com/v1"}
-          className="w-full bg-transparent font-mono text-[12px] outline-none placeholder:text-(--color-app-muted)"
+          className="w-full bg-transparent font-mono outline-none placeholder:text-(--color-app-muted)"
         />
         <button type="button" aria-label="恢复预设地址" title="恢复预设地址" onClick={() => onChange(presetBaseURL)} className="shrink-0 text-(--color-app-muted) hover:text-(--color-app-text)">
           <RotateCcw size={13} />
         </button>
       </div>
-      <div className="mt-1 truncate font-mono text-[10.5px] text-(--color-app-muted)/70">{base.replace(/\/+$/, "")}{path}</div>
+      <div className="mt-1 truncate font-mono text-(--color-app-muted)/70">{base.replace(/\/+$/, "")}{path}</div>
     </div>
   );
 }

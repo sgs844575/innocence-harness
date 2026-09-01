@@ -18,14 +18,14 @@ export function ValidationSummary({ validation, compact = false, t = tZh }: Vali
   const [open, setOpen] = useState(false);
   if (validation === null) {
     return (
-      <span className="flex items-center gap-1 text-[11px] text-(--color-app-muted)">
+      <span className="flex items-center gap-1 text-(--color-app-muted)">
         <ShieldQuestion size={12} /> {t("task.validation.none")}
       </span>
     );
   }
   if (validation.success) {
     return (
-      <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+      <span className="flex items-center gap-1 text-emerald-600">
         <ShieldCheck size={12} /> {t("task.validation.passed")}
       </span>
     );
@@ -35,7 +35,7 @@ export function ValidationSummary({ validation, compact = false, t = tZh }: Vali
       <button
         type="button"
         onClick={() => !compact && setOpen((v) => !v)}
-        className="flex items-center gap-1 text-[11px] text-red-600"
+        className="flex items-center gap-1 text-red-600"
       >
         <ShieldAlert size={12} /> {t("task.validation.failed")}
         {!compact && (
@@ -46,7 +46,7 @@ export function ValidationSummary({ validation, compact = false, t = tZh }: Vali
         )}
       </button>
       {!compact && open && validation.message && (
-        <pre className="scrollbar-thin max-h-40 overflow-auto rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) p-2 font-mono text-[11px] whitespace-pre-wrap text-(--color-app-text)">
+        <pre className="scrollbar-thin max-h-40 overflow-auto rounded-lg border border-(--color-app-hairline) bg-(--color-app-bg) p-2 font-mono text-(--font-size-code) whitespace-pre-wrap text-(--color-app-text)">
           {validation.message}
         </pre>
       )}

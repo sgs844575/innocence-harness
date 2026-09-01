@@ -38,9 +38,9 @@ export function ProviderList({ profiles, activeId, onSelect, onReorder, onRename
       <div className="flex items-center gap-1.5 border-b border-(--color-app-hairline) p-2">
         <div className="flex h-8 flex-1 items-center gap-1.5 rounded-[10px] border border-(--color-app-hairline) px-2">
           <Search size={12} className="text-(--color-app-muted)" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索厂家或模型" className="w-full bg-transparent text-[12px] outline-none placeholder:text-(--color-app-muted)" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索厂家或模型" className="w-full bg-transparent outline-none placeholder:text-(--color-app-muted)" />
         </div>
-        <button type="button" onClick={() => setMode((m) => (m === "all" ? "enabled" : "all"))} title={mode === "all" ? "全部" : "已启用"} className="h-8 rounded-[10px] border border-(--color-app-hairline) px-2 text-[11px] text-(--color-app-muted)">
+        <button type="button" onClick={() => setMode((m) => (m === "all" ? "enabled" : "all"))} title={mode === "all" ? "全部" : "已启用"} className="h-8 rounded-[10px] border border-(--color-app-hairline) px-2 text-(--color-app-muted)">
           {mode === "all" ? "全部" : "已启用"}
         </button>
       </div>
@@ -61,7 +61,7 @@ export function ProviderList({ profiles, activeId, onSelect, onReorder, onRename
           </SortableContext>
         </DndContext>
       </div>
-      <button type="button" onClick={onAdd} className="m-2 rounded-[10px] border border-dashed border-(--color-app-border) py-1.5 text-[12px] text-(--color-app-muted) hover:text-(--color-app-text)">
+      <button type="button" onClick={onAdd} className="m-2 rounded-[10px] border border-dashed border-(--color-app-border) py-1.5 text-(--color-app-muted) hover:text-(--color-app-text)">
         ＋ 添加厂家
       </button>
     </aside>

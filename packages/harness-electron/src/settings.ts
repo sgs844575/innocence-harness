@@ -55,6 +55,10 @@ export interface HarnessSettings {
   permissionMode: PermissionMode;
   /** UI theme preference; "system" follows nativeTheme. */
   themeMode?: ThemeMode;
+  /** 界面字号（px，12..18；缺失/非法回落 14）。渲染层外观，仅持久化不参与会话。 */
+  uiFontSize?: number;
+  /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容用。 */
+  codeFontSize?: number;
   /** Preferred UI language; "" follows the system locale. */
   locale?: UiLocale;
   /** 思考档位（""=跟随模型默认；off/low/medium/high）。 */
@@ -95,6 +99,11 @@ function normalizeReasoningEffort(raw: unknown): ReasoningEffort {
 function normalizeActiveAgentMode(raw: unknown): string {
   return typeof raw === "string" && raw.length > 0 ? raw : "default";
 }
+
+/** 界面/代码字号收窄区间（px）与默认值；normalizeFontSize 共用。 */
+export const FONT_SIZE_MIN = 12;
+export const FONT_SIZE_MAX = 18;
+export const FONT_SIZE_DEFAULT = 14;
 
 /** Built-in offline profile — always available, models: ["mock"]. */
 export const MOCK_PROFILE_ID = "__mock__";
@@ -144,6 +153,8 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   permissionMode: "ask",
   themeMode: "system",
   locale: "",
+  uiFontSize: FONT_SIZE_DEFAULT,
+  codeFontSize: FONT_SIZE_DEFAULT,
   reasoningEffort: "",
   activeAgentMode: "default",
   externalSkillDiscovery: true,
@@ -227,6 +238,13 @@ function normalizePermissionMode(raw: unknown): PermissionMode {
 
 function normalizeLocale(raw: unknown): UiLocale {
   return raw === "zh-CN" || raw === "en-US" ? raw : "";
+}
+
+/** 界面/代码字号归一化：整数 12..18 收窄，缺失/非法回落 14。 */
+function normalizeFontSize(raw: unknown): number {
+  return typeof raw === "number" && Number.isFinite(raw)
+    ? Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(raw)))
+    : FONT_SIZE_DEFAULT;
 }
 
 /** 布尔值键保留、非布尔剔除；无有效键回落 undefined（undefined = 默认全开，
@@ -331,6 +349,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     return { ...DEFAULT_SETTINGS, workspaceRoot: src.workspaceRoot ?? "",
       permissionMode: normalizePermissionMode(src.permissionMode),
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
+      uiFontSize: normalizeFontSize(src.uiFontSize), codeFontSize: normalizeFontSize(src.codeFontSize),
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
       activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
       externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
@@ -354,6 +373,8 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     permissionMode: normalizePermissionMode(src.permissionMode),
     themeMode: normalizeThemeMode(src.themeMode),
     locale: normalizeLocale(src.locale),
+    uiFontSize: normalizeFontSize(src.uiFontSize),
+    codeFontSize: normalizeFontSize(src.codeFontSize),
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
     activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),

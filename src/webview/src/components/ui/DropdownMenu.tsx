@@ -24,7 +24,7 @@ export function DropdownMenuItem({ children, onSelect }: { children: ReactNode; 
   return (
     <RadixDropdownMenu.Item
       onSelect={onSelect}
-      className="cursor-pointer rounded px-2.5 py-1.5 text-[12px] outline-none hover:bg-(--color-app-bubble) focus:bg-(--color-app-bubble)"
+      className="cursor-pointer rounded px-2.5 py-1.5 outline-none hover:bg-(--color-app-bubble) focus:bg-(--color-app-bubble)"
     >
       {children}
     </RadixDropdownMenu.Item>

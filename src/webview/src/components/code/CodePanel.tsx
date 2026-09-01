@@ -114,12 +114,12 @@ export function CodePanel({
             if (e.key === "Enter") void runSearch();
           }}
           placeholder={t("code.search.placeholder")}
-          className="h-6 min-w-0 flex-1 rounded border border-(--color-app-border) bg-(--color-app-panel) px-2 text-[11.5px] outline-none focus:border-(--color-app-accent)"
+          className="h-6 min-w-0 flex-1 rounded border border-(--color-app-border) bg-(--color-app-panel) px-2 outline-none focus:border-(--color-app-accent)"
         />
         <button
           type="button"
           onClick={() => void runSearch()}
-          className="h-6 shrink-0 rounded bg-(--color-app-accent) px-2 text-[11px] text-(--color-app-accent-fg)"
+          className="h-6 shrink-0 rounded bg-(--color-app-accent) px-2 text-(--color-app-accent-fg)"
         >
           {t("code.search.submit")}
         </button>
@@ -136,7 +136,7 @@ export function CodePanel({
       </div>
 
       {error && (
-        <div role="alert" className="max-h-16 shrink-0 overflow-auto border-b border-(--color-app-hairline) px-2 py-1 text-[11px] text-red-600">
+        <div role="alert" className="max-h-16 shrink-0 overflow-auto border-b border-(--color-app-hairline) px-2 py-1 text-red-600">
           {error}
         </div>
       )}
@@ -144,7 +144,7 @@ export function CodePanel({
       {matches !== null && (
         <div className="task-code-search-results max-h-40 shrink-0 overflow-auto border-b border-(--color-app-hairline) px-1 py-1">
           {matches.length === 0 ? (
-            <div className="px-1.5 py-1 text-[11px] text-(--color-app-muted)">{t("code.search.empty")}</div>
+            <div className="px-1.5 py-1 text-(--color-app-muted)">{t("code.search.empty")}</div>
           ) : (
             matches.map((match) => (
               <button
@@ -154,10 +154,10 @@ export function CodePanel({
                 onClick={() => void loadFile(match.path, { line: match.line, column: match.column })}
                 className="flex w-full items-baseline gap-2 rounded px-1.5 py-1 text-left hover:bg-(--color-app-bubble)"
               >
-                <span className="shrink-0 font-mono text-[11px] text-(--color-app-accent)">
+                <span className="shrink-0 font-mono text-(--color-app-accent)">
                   {match.path}:{match.line}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--color-app-muted)">
+                <span className="min-w-0 flex-1 truncate font-mono text-(--color-app-muted)">
                   {match.preview}
                 </span>
               </button>
@@ -173,7 +173,7 @@ export function CodePanel({
         {file !== null ? (
           <CodeViewer {...file} t={t} />
         ) : (
-          <div className="grid flex-1 place-items-center px-4 text-[11.5px] text-(--color-app-muted)">
+          <div className="grid flex-1 place-items-center px-4 text-(--color-app-muted)">
             {t("code.noSelection")}
           </div>
         )}

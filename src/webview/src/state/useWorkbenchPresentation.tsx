@@ -18,6 +18,7 @@ export function useWorkbenchPresentation({
   t,
   workbench,
   reviewData,
+  codeFontSize,
   onTerminalActivityChange,
   onSelectTab,
   showError,
@@ -29,6 +30,8 @@ export function useWorkbenchPresentation({
   t: (key: string) => string;
   workbench: WorkbenchStateController;
   reviewData: TaskReviewDataController;
+  /** xterm 前端字号（设置里的代码字号，px）——透传 TerminalPanel。 */
+  codeFontSize: number;
   onTerminalActivityChange?: (activity: TerminalActivitySummary) => void;
   onSelectTab: (tab: WorkbenchTabId) => void;
   showError: (message: string) => void;
@@ -98,11 +101,11 @@ export function useWorkbenchPresentation({
           api={codeApi}
         />
       ),
-      todo: <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">{t("workbench.placeholder.todo")}</div>,
-      terminal: <TerminalPanel api={terminalApi} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} onClose={onCloseTerminal} />,
-      browser: <div className="grid flex-1 place-items-center px-4 py-8 text-[12px] text-(--color-app-muted)">{t("workbench.placeholder.browser")}</div>,
+      todo: <div className="grid flex-1 place-items-center px-4 py-8 text-(--color-app-muted)">{t("workbench.placeholder.todo")}</div>,
+      terminal: <TerminalPanel api={terminalApi} codeFontSize={codeFontSize} activeTask={workbench.activeTask} onActivityChange={onTerminalActivityChange} onClose={onCloseTerminal} />,
+      browser: <div className="grid flex-1 place-items-center px-4 py-8 text-(--color-app-muted)">{t("workbench.placeholder.browser")}</div>,
     }),
-    [t, task, selectedSubagent, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, onTerminalActivityChange, onSelectTab, selectedFilePath, onSelectFile, onCloseTerminal],
+    [t, task, selectedSubagent, workbench.state.activeRouteId, reviewFiles, reviewData.files, reviewAndRefresh, restoreAndRefresh, workbench.switchRoute, workbench.activeTask, codeFontSize, onTerminalActivityChange, onSelectTab, selectedFilePath, onSelectFile, onCloseTerminal],
   );
   const banner = useMemo(() => {
     const recovery = workbench.state.recovery;

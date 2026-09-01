@@ -10,7 +10,7 @@ function cn(...classes: Array<string | undefined | false | null>): string {
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-1.5",
-    "rounded-[var(--radius-pop)] text-[13px] font-medium whitespace-nowrap",
+    "rounded-[var(--radius-pop)] font-medium whitespace-nowrap",
     "transition-colors focus-visible:outline-none focus-visible:ring-2",
     "focus-visible:ring-(--color-app-accent) focus-visible:ring-offset-1",
     "focus-visible:ring-offset-(--color-app-panel)",
@@ -27,7 +27,7 @@ const buttonVariants = cva(
       },
       size: {
         default: "h-8 px-3",
-        sm:      "h-7 px-2 text-[12px]",
+        sm:      "h-7 px-2 ",
         lg:      "h-9 px-4",
         icon:    "size-7 p-0",
       },

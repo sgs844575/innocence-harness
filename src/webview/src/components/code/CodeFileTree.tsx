@@ -35,7 +35,7 @@ function NodeRow({
           aria-level={depth + 1}
           aria-expanded="true"
           style={{ paddingLeft: 8 + depth * 12 }}
-          className="flex items-center gap-1 py-0.5 font-mono text-[11.5px] text-(--color-app-muted)"
+          className="flex items-center gap-1 py-0.5 font-mono text-(--color-app-muted)"
         >
           <ChevronRight size={12} className="shrink-0" /> {node.name}
         </div>
@@ -63,7 +63,7 @@ function NodeRow({
       title={node.path}
       onClick={() => onSelectFile?.(node.path)}
       style={{ paddingLeft: 8 + depth * 12 }}
-      className={`flex w-full items-center gap-1 rounded py-0.5 text-left font-mono text-[11.5px] ${
+      className={`flex w-full items-center gap-1 rounded py-0.5 text-left font-mono ${
         active ? "bg-(--color-app-bubble) text-(--color-app-text)" : "text-(--color-app-text) hover:bg-(--color-app-bubble)/50"
       }`}
     >
@@ -81,7 +81,7 @@ export function CodeFileTree({
   return (
     <div role="tree" aria-label={t("code.tree")} className="code-file-tree py-1">
       {nodes.length === 0 ? (
-        <div className="px-2 py-2 text-[11.5px] text-(--color-app-muted)">{t("code.tree.empty")}</div>
+        <div className="px-2 py-2 text-(--color-app-muted)">{t("code.tree.empty")}</div>
       ) : (
         nodes.map((node) => (
           <NodeRow key={node.path} node={node} depth={0} activePath={activePath} t={t} onSelectFile={onSelectFile} />

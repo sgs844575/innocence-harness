@@ -34,7 +34,7 @@ export function WorkingRow({ state, t }: { state: WorkingState; t: (key: string)
   if (state.kind === "idle") return null;
   if (state.kind === "thinking") {
     return (
-      <div className="flex items-center gap-2.5 py-1 text-[13px] text-(--color-app-muted)">
+      <div className="flex items-center gap-2.5 py-1 text-(--color-app-muted)">
         <span className="orbs" aria-hidden>
           <i />
           <i />
@@ -46,14 +46,14 @@ export function WorkingRow({ state, t }: { state: WorkingState; t: (key: string)
   }
   if (state.kind === "tool") {
     return (
-      <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-[13px] text-(--color-app-muted)">
+      <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-(--color-app-muted)">
         <LoaderCircle size={15} className="animate-spin" />
         {t("chat.working.tool").replace("{tool}", state.toolName)}
       </div>
     );
   }
   return (
-    <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-[13px] text-(--color-app-muted)">
+    <div className="tool-sweep flex items-center gap-2.5 rounded-md px-0.5 py-1 text-(--color-app-muted)">
       <LoaderCircle size={15} className="animate-spin" />
       {t("chat.working.start")}
     </div>

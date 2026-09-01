@@ -29,7 +29,7 @@ function StatusLine({
         ? t("settings.plugins.stateActive")
         : t("settings.plugins.stateDisabled");
   return (
-    <span className="mt-0.5 flex items-center gap-1.5 text-xs text-(--color-app-muted)">
+    <span className="mt-0.5 flex items-center gap-1.5 text-(--color-app-muted)">
       <span
         aria-hidden
         className={`size-1.5 shrink-0 rounded-full ${
@@ -44,7 +44,7 @@ function StatusLine({
 /** 行右缘小徽标（client 模块 / 内置）。 */
 function Badge({ text }: { text: string }): React.JSX.Element {
   return (
-    <span className="rounded-full border border-(--color-app-hairline) px-1.5 py-0.5 text-[10px] leading-none text-(--color-app-muted)">
+    <span className="rounded-full border border-(--color-app-hairline) px-1.5 py-0.5 leading-none text-(--color-app-muted)">
       {text}
     </span>
   );
@@ -52,7 +52,7 @@ function Badge({ text }: { text: string }): React.JSX.Element {
 
 function InventoryError({ t }: { t: (key: string) => string }): React.JSX.Element {
   return (
-    <p role="alert" className="card px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+    <p role="alert" className="card px-3.5 py-6 text-center text-(--color-app-muted)">
       {t("settings.plugins.inventoryError")}
     </p>
   );
@@ -104,7 +104,7 @@ export function PluginsSection({
   return (
     <div className="card divide-y divide-(--color-app-hairline)">
       {inventory.length === 0 ? (
-        <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+        <p className="px-3.5 py-6 text-center text-(--color-app-muted)">
           {t("settings.plugins.empty")}
         </p>
       ) : (
@@ -132,7 +132,7 @@ export function PluginsSection({
           );
         })
       )}
-      <p className="px-3.5 py-3 text-xs text-(--color-app-muted)">{t("settings.plugins.note")}</p>
+      <p className="px-3.5 py-3 text-(--color-app-muted)">{t("settings.plugins.note")}</p>
     </div>
   );
 }

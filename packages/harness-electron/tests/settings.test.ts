@@ -83,6 +83,8 @@ describe("mergeSettings", () => {
       permissionMode: "auto" as const,
       themeMode: "dark" as const,
       locale: "zh-CN" as const,
+      uiFontSize: 16,
+      codeFontSize: 13,
       reasoningEffort: "high" as const,
       activeAgentMode: "code-review",
       externalSkillDiscovery: true,
@@ -141,6 +143,23 @@ describe("mergeSettings", () => {
       themeMode: "light",
       locale: "en-US",
     });
+  });
+
+  it("字号归一化：12..18 收窄、四舍五入、缺失/非法回落 14", () => {
+    expect(mergeSettings({ profiles: [], uiFontSize: 16, codeFontSize: 13 })).toMatchObject({
+      uiFontSize: 16,
+      codeFontSize: 13,
+    });
+    expect(mergeSettings({ profiles: [], uiFontSize: 8, codeFontSize: 24 })).toMatchObject({
+      uiFontSize: 12,
+      codeFontSize: 18,
+    });
+    expect(mergeSettings({ profiles: [], uiFontSize: 14.6 })).toMatchObject({ uiFontSize: 15 });
+    expect(mergeSettings({ profiles: [], uiFontSize: "16", codeFontSize: null })).toMatchObject({
+      uiFontSize: 14,
+      codeFontSize: 14,
+    });
+    expect(mergeSettings({ profiles: [] })).toMatchObject({ uiFontSize: 14, codeFontSize: 14 });
   });
 
   it("reasoningEffort 往返：合法值保留，非法值回落空串", () => {

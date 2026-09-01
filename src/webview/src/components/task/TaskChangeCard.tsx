@@ -25,15 +25,15 @@ export function TaskChangeCard({ summary, checkpointId, validation, t = tZh, onR
         <FileDiff size={15} />
       </span>
       <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-2 text-[12.5px]">
+        <div className="flex items-center gap-2 ">
           <span>{t("task.change.files").replace("{n}", String(summary.fileCount))}</span>
-          <span className="font-mono text-[11.5px] text-emerald-600">+{summary.added}</span>
-          <span className="font-mono text-[11.5px] text-red-600">−{summary.removed}</span>
+          <span className="font-mono text-emerald-600">+{summary.added}</span>
+          <span className="font-mono text-red-600">−{summary.removed}</span>
         </div>
         <div className="flex items-center gap-3">
           <ValidationSummary validation={validation} compact t={t} />
           <span
-            className="flex items-center gap-1 font-mono text-[10.5px] text-(--color-app-muted)"
+            className="flex items-center gap-1 font-mono text-(--color-app-muted)"
             title={t("task.change.checkpoint")}
           >
             <GitCommitHorizontal size={11} /> {checkpointId}
@@ -44,7 +44,7 @@ export function TaskChangeCard({ summary, checkpointId, validation, t = tZh, onR
         type="button"
         disabled={!onReview}
         onClick={onReview}
-        className="ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 text-[12px] text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
+        className="ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded border border-(--color-app-border) px-2.5 text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
       >
         <PanelRightOpen size={13} /> {t("task.change.review")}
       </button>

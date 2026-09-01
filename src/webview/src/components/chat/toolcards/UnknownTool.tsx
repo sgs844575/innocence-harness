@@ -14,7 +14,7 @@ export function UnknownTool({ call, result, open, onToggle }: ToolCardProps): Re
       running={!result}
       error={result?.isError}
     >
-      <div className="font-mono text-[11.5px] leading-relaxed text-(--color-app-muted)">
+      <div className="font-mono leading-relaxed text-(--color-app-muted)">
         <pre className="overflow-x-auto">{JSON.stringify(call.args, null, 2)}</pre>
         {result && <pre className="scrollbar-thin mt-1 max-h-48 overflow-auto">{result.content}</pre>}
       </div>

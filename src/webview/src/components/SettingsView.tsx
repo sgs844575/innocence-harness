@@ -24,7 +24,7 @@ export function SettingsView({ t, section }: Props): React.JSX.Element | null {
   if (active === undefined) return null;
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-11 shrink-0 items-center border-b border-(--color-app-hairline) px-4 text-sm font-medium">
+      <header className="flex h-11 shrink-0 items-center border-b border-(--color-app-hairline) px-4 font-medium">
         {t(active.labelKey)}
       </header>
       {active.render()}

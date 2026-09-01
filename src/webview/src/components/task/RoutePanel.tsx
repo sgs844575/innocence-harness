@@ -67,32 +67,32 @@ export function RoutePanel({ taskId, routes, activeRouteId, t = tZh, switchRoute
             size={13}
             className={`shrink-0 ${active ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}
           />
-          <span className="font-mono text-[12px]">{node.routeId}</span>
+          <span className="font-mono ">{node.routeId}</span>
           {active && (
-            <span className="rounded bg-(--color-app-accent) px-1.5 py-0.5 text-[10px] text-(--color-app-accent-fg)">
+            <span className="rounded bg-(--color-app-accent) px-1.5 py-0.5 text-(--color-app-accent-fg)">
               {t("task.route.active")}
             </span>
           )}
           {switching && (
-            <span className="flex items-center gap-1 text-[10.5px] text-(--color-app-muted)">
+            <span className="flex items-center gap-1 text-(--color-app-muted)">
               <Loader2 size={11} className="animate-spin" /> {t("task.route.switching")}
             </span>
           )}
           {node.forkTurnId !== null && (
             <span
-              className="flex shrink-0 items-center gap-0.5 font-mono text-[10.5px] text-(--color-app-muted)"
+              className="flex shrink-0 items-center gap-0.5 font-mono text-(--color-app-muted)"
               title={t("task.route.forkTurn")}
             >
               <CornerDownRight size={11} /> {node.forkTurnId}
             </span>
           )}
           <span
-            className="flex shrink-0 items-center gap-0.5 font-mono text-[10.5px] text-(--color-app-muted)"
+            className="flex shrink-0 items-center gap-0.5 font-mono text-(--color-app-muted)"
             title={t("task.route.checkpoint")}
           >
             <GitCommitHorizontal size={11} /> {node.checkpointId}
           </span>
-          <span className="shrink-0 text-[10.5px] text-(--color-app-muted)">
+          <span className="shrink-0 text-(--color-app-muted)">
             {workspaceKindLabel(node.workspaceKind, t)}
           </span>
           {!active && (
@@ -101,7 +101,7 @@ export function RoutePanel({ taskId, routes, activeRouteId, t = tZh, switchRoute
               aria-label={`${t("task.route.switch")} ${node.routeId}`}
               disabled={switchingTo !== null}
               onClick={() => void switchTo(node.routeId)}
-              className="ml-auto h-6 shrink-0 rounded border border-(--color-app-border) px-2 text-[11px] text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
+              className="ml-auto h-6 shrink-0 rounded border border-(--color-app-border) px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
             >
               {t("task.route.switch")}
             </button>
@@ -118,9 +118,9 @@ export function RoutePanel({ taskId, routes, activeRouteId, t = tZh, switchRoute
       className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-panel)"
     >
       <header className="flex items-center gap-2 border-b border-(--color-app-hairline) px-3 py-2">
-        <span className="text-[12.5px] font-semibold">{t("task.route.title")}</span>
+        <span className="font-semibold">{t("task.route.title")}</span>
         {error && (
-          <span role="alert" className="ml-auto max-w-[60%] truncate text-[11px] text-red-600" title={error}>
+          <span role="alert" className="ml-auto max-w-[60%] truncate text-red-600" title={error}>
             {error}
           </span>
         )}

@@ -17,7 +17,7 @@ export function PermissionModePicker({
     <Popover
       contentClassName="w-56 p-1"
       trigger={
-        <button type="button" className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[13px] hover:bg-(--color-app-hover) ${value === "full" ? "text-(--color-app-mode-accent)" : "text-(--color-app-text)"}`}>
+        <button type="button" className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-(--color-app-hover) ${value === "full" ? "text-(--color-app-mode-accent)" : "text-(--color-app-text)"}`}>
           <ShieldCheck size={14} className={shieldCls} />
           <span>{t(`permission.mode.${value}`)}</span>
           <ChevronDown size={11} className="text-(--color-app-faint)" />
@@ -29,12 +29,12 @@ export function PermissionModePicker({
           key={id}
           type="button"
           onClick={() => onChange(id)}
-          className={`flex w-full flex-col items-start rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-(--color-app-hover) ${
+          className={`flex w-full flex-col items-start rounded-md px-2.5 py-1.5 text-left hover:bg-(--color-app-hover) ${
             id === value ? (id === "full" ? "text-(--color-app-mode-accent)" : "text-(--color-app-accent)") : "text-(--color-app-muted)"
           }`}
         >
           <span>{t(`permission.mode.${id}`)}</span>
-          <span className="text-[10px] text-(--color-app-faint)">{t(`permission.mode.${id}.desc`)}</span>
+          <span className="text-(--color-app-faint)">{t(`permission.mode.${id}.desc`)}</span>
         </button>
       ))}
     </Popover>

@@ -29,7 +29,7 @@ export function FileTool({ call, result, open, onToggle }: ToolCardProps): React
       error={result?.isError}
     >
       {result && (
-        <pre className="scrollbar-thin max-h-48 overflow-auto font-mono text-[11.5px] leading-relaxed text-(--color-app-muted)">{result.content}</pre>
+        <pre className="scrollbar-thin max-h-48 overflow-auto font-mono leading-relaxed text-(--color-app-muted)">{result.content}</pre>
       )}
     </ToolLine>
   );

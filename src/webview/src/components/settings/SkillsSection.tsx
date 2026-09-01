@@ -43,8 +43,8 @@ function McpImportBlock({ t, workspaceRoot }: { t: (key: string) => string; work
     <div className="px-3.5 py-3" data-testid="mcp-import-block">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm">{t("settings.mcp.title")}</p>
-          <p className="mt-0.5 truncate text-xs text-(--color-app-muted)" title={found}>
+          <p className="">{t("settings.mcp.title")}</p>
+          <p className="mt-0.5 truncate text-(--color-app-muted)" title={found}>
             {t("settings.mcp.found").replace("{path}", found)}
           </p>
         </div>
@@ -52,13 +52,13 @@ function McpImportBlock({ t, workspaceRoot }: { t: (key: string) => string; work
           type="button"
           disabled={busy}
           onClick={doImport}
-          className="rounded-lg border border-(--color-app-hairline) px-2.5 py-1 text-xs text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
+          className="rounded-lg border border-(--color-app-hairline) px-2.5 py-1 text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
         >
           {busy ? t("settings.mcp.importing") : t("settings.mcp.import")}
         </button>
       </div>
       {result && (
-        <p className="mt-2 text-xs text-(--color-app-accent)" role="status">
+        <p className="mt-2 text-(--color-app-accent)" role="status">
           {t("settings.mcp.importDone")
             .replace("{imported}", String(result.imported.length))
             .replace("{skipped}", String(result.skipped.length))}
@@ -66,7 +66,7 @@ function McpImportBlock({ t, workspaceRoot }: { t: (key: string) => string; work
         </p>
       )}
       {error && (
-        <p className="mt-2 text-xs text-red-500" role="alert">
+        <p className="mt-2 text-red-500" role="alert">
           {t("settings.mcp.importFailed")} ({error})
         </p>
       )}
@@ -134,15 +134,15 @@ export function SkillsSection({
         />
       </SettingRow>
       {!externalDiscoveryEnabled ? (
-        <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+        <p className="px-3.5 py-6 text-center text-(--color-app-muted)">
           {t("settings.skills.discoveryDisabled")}
         </p>
       ) : list === null ? (
-        <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+        <p className="px-3.5 py-6 text-center text-(--color-app-muted)">
           {t("settings.skills.loading")}
         </p>
       ) : list.length === 0 ? (
-        <p className="px-3.5 py-6 text-center text-sm text-(--color-app-muted)">
+        <p className="px-3.5 py-6 text-center text-(--color-app-muted)">
           {t("settings.skills.empty")}
         </p>
       ) : (
@@ -151,16 +151,16 @@ export function SkillsSection({
             key={`${skill.origin}/${skill.name}`}
             label={skill.name}
             desc={
-              <span className="mt-0.5 flex items-center gap-1.5 text-xs text-(--color-app-muted)">
+              <span className="mt-0.5 flex items-center gap-1.5 text-(--color-app-muted)">
                 {skill.description}
-                <span className="rounded-full border border-(--color-app-hairline) px-1.5 py-0.5 text-[10px] leading-none">
+                <span className="rounded-full border border-(--color-app-hairline) px-1.5 py-0.5 leading-none">
                   {t(`settings.skills.origin.${skill.origin}`)}
                 </span>
               </span>
             }
           >
             {skill.imported ? (
-              <span className="text-xs text-(--color-app-muted)">
+              <span className="text-(--color-app-muted)">
                 {t("settings.skills.importedBadge")}
               </span>
             ) : (
@@ -168,7 +168,7 @@ export function SkillsSection({
                 type="button"
                 disabled={busy !== null}
                 onClick={() => doImport(skill)}
-                className="rounded-lg border border-(--color-app-hairline) px-2.5 py-1 text-xs text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
+                className="rounded-lg border border-(--color-app-hairline) px-2.5 py-1 text-(--color-app-text) hover:bg-(--color-app-bubble) disabled:opacity-50"
               >
                 {busy === skill.name ? t("settings.skills.importing") : t("settings.skills.import")}
               </button>
@@ -178,7 +178,7 @@ export function SkillsSection({
       )}
       {feedback && (
         <p
-          className={`px-3.5 py-2 text-xs ${
+          className={`px-3.5 py-2 ${
             feedback.kind === "ok" ? "text-(--color-app-accent)" : "text-red-500"
           }`}
           role="status"
@@ -187,7 +187,7 @@ export function SkillsSection({
         </p>
       )}
       <McpImportBlock t={t} workspaceRoot={workspaceRoot} />
-      <p className="px-3.5 py-3 text-xs text-(--color-app-muted)">{t("settings.skills.note")}</p>
+      <p className="px-3.5 py-3 text-(--color-app-muted)">{t("settings.skills.note")}</p>
     </div>
   );
 }
