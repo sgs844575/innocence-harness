@@ -9,6 +9,7 @@ import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
 import { ChatDashes } from "./chat/ChatDashes";
 import type { AgentActivityProjection } from "./context-capsule/activityProjection";
 import { defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
+import { api } from "../lib/ipc";
 
 interface Props {
   t: (key: string) => string;
@@ -72,7 +73,16 @@ export function ChatView({
 }: Props): React.JSX.Element {
   const [presentation, dispatchPresentation] = useReducer(reduceWorkspacePresentationState, defaultWorkspacePresentationState);
   const [availableWidth, setAvailableWidth] = useState(() => typeof window === "undefined" ? 1024 : window.innerWidth);
-  const layout = workspaceLayoutForWidth(availableWidth);
+  // 最大化状态决定轨道形态：最大化 → 不对称左锚（右留白专给胶囊）；
+  // 非最大化 → 左右留白等大、聊天主体居中。初值用窗口尺寸启发式避免
+  // 首帧布局跳变，随后以 preload 桥的真实状态为准（桥缺失时沿用启发式）。
+  const [maximized, setMaximized] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.outerWidth !== "number") return true;
+    const avail = window.screen?.availWidth;
+    if (typeof avail !== "number") return true;
+    return window.outerWidth >= avail - 8;
+  });
+  const layout = workspaceLayoutForWidth(availableWidth, maximized);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -107,6 +117,17 @@ export function ChatView({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [landing]);
+
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    try {
+      void api.isWindowMaximized().then(setMaximized);
+      off = api.onWindowMaximizedChanged(setMaximized);
+    } catch {
+      // preload 桥缺失（测试/纯浏览器渲染）：沿用窗口尺寸启发式初值。
+    }
+    return () => off?.();
+  }, []);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -192,8 +213,9 @@ export function ChatView({
   return (
     <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
       {/* 滚动区满宽铺开：Y 滚动条贴主列最右缘（参考稿 .scroll 满宽模型）；
-          内容列流体收缩——左留白 8% 呼吸（24..100px）、吃满余量至 1120px 封顶，
-          胶囊悬浮其上（.agent-capsule-floating 绝对定位），不再扣列。 */}
+          内容列流体收缩——最大化时左锚（左 8% 呼吸、右留白专给胶囊），
+          非最大化时左右留白等大、列居中；1120px 封顶，胶囊悬浮其上
+          （.agent-capsule-floating 绝对定位），不再扣列。 */}
       <div className="chat-workspace-body relative min-h-0 flex-1">
         {/* 左缘虚线刻度（参考稿 chat-dashes left:12px）：垂直居中于滚动区、
             紧贴主列左缘，点击按比例跳转。 */}

@@ -25,37 +25,73 @@ describe("workspace presentation state", () => {
   });
 
   it("uses one fluid content width model for messages, composer, and capsule", () => {
-    // 1440 视窗：左 = clamp(round(115), 24, 100) = 100；右 = clamp(337+115, 337, 500) = 452；
+    // 最大化 1440 视窗：左 = clamp(round(115), 24, 100) = 100；右 = clamp(337+115, 337, 500) = 452；
     // 列 = min(1120, 1440-100-452) = 888
-    expect(workspaceLayoutForWidth(1440)).toEqual({
+    expect(workspaceLayoutForWidth(1440, true)).toEqual({
       contentMaxWidth: 888,
       contentGutter: 100,
       contentRightGutter: 452,
       capsulePlacement: "floating",
     });
-    // 900 视窗：左 = clamp(round(72), 24, 100) = 72；右 = clamp(337+72, 337, 500) = 409；
+    // 最大化 900 视窗：左 = clamp(round(72), 24, 100) = 72；右 = clamp(337+72, 337, 500) = 409；
     // 列 = min(1120, 900-72-409) = 419
-    expect(workspaceLayoutForWidth(900)).toEqual({
+    expect(workspaceLayoutForWidth(900, true)).toEqual({
       contentMaxWidth: 419,
       contentGutter: 72,
       contentRightGutter: 409,
       capsulePlacement: "floating",
     });
-    // 650 视窗：左 = clamp(round(52), 24, 100) = 52；右 = clamp(337+52, 337, 500) = 389；
+    // 最大化 650 视窗：左 = clamp(round(52), 24, 100) = 52；右 = clamp(337+52, 337, 500) = 389；
     // 列 = min(1120, 650-52-389) = 209
-    expect(workspaceLayoutForWidth(650)).toMatchObject({
+    expect(workspaceLayoutForWidth(650, true)).toMatchObject({
       contentGutter: 52,
       contentRightGutter: 389,
       capsulePlacement: "floating",
     });
-    expect(workspaceLayoutForWidth(520)).toMatchObject({
+    expect(workspaceLayoutForWidth(520, true)).toMatchObject({
       contentGutter: 16,
       contentRightGutter: 16,
       capsulePlacement: "sheet",
     });
-    // 2100 视窗：右触顶 500
-    expect(workspaceLayoutForWidth(2100)).toMatchObject({
+    // 最大化 2100 视窗：右触顶 500
+    expect(workspaceLayoutForWidth(2100, true)).toMatchObject({
       contentRightGutter: 500,
+    });
+  });
+
+  it("centers the chat column with equal gutters when the window is not maximized", () => {
+    // 1440：理想留白 = clamp(round(115), 24, 100) = 100；列 = min(1120, 1440-200) = 1120；
+    // 留白 = (1440-1120)/2 = 160
+    expect(workspaceLayoutForWidth(1440, false)).toEqual({
+      contentMaxWidth: 1120,
+      contentGutter: 160,
+      contentRightGutter: 160,
+      capsulePlacement: "floating",
+    });
+    // 900：理想留白 = 72；列 = min(1120, 900-144) = 756；留白 = (900-756)/2 = 72
+    expect(workspaceLayoutForWidth(900, false)).toEqual({
+      contentMaxWidth: 756,
+      contentGutter: 72,
+      contentRightGutter: 72,
+      capsulePlacement: "floating",
+    });
+    // 650：理想留白 = 52；列 = min(1120, 650-104) = 546；留白 = (650-546)/2 = 52
+    expect(workspaceLayoutForWidth(650, false)).toMatchObject({
+      contentMaxWidth: 546,
+      contentGutter: 52,
+      contentRightGutter: 52,
+      capsulePlacement: "floating",
+    });
+    // 2100：列封顶 1120，多余宽度平分两侧 (2100-1120)/2 = 490
+    expect(workspaceLayoutForWidth(2100, false)).toMatchObject({
+      contentMaxWidth: 1120,
+      contentRightGutter: 490,
+    });
+    // 窄窗 sheet 形态与最大化无关
+    expect(workspaceLayoutForWidth(520, false)).toMatchObject({
+      contentGutter: 16,
+      contentRightGutter: 16,
+      capsulePlacement: "sheet",
     });
   });
 
