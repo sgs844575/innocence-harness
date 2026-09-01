@@ -113,7 +113,7 @@ class FakeCommandPort implements TaskCommandPort {
     workspaceRoot: "/worktrees/fork_1",
     prompt: "resolved fork prompt",
   });
-  reviewHunk = async (_taskId: string, _routeId: string, _hunkRef: string, _status: "accepted" | "restored", _expectedVersion?: string) => {};
+  reviewHunk = async (_taskId: string, _routeId: string, _hunkRef: string | readonly string[], _status: "accepted" | "restored", _expectedVersion?: string) => {};
   restoreHunk = async () => {};
   applyAccepted: TaskCommandPort["applyAccepted"] = async () => ({ applied: [], conflicts: [] });
   preflightApply: TaskCommandPort["preflightApply"] = async () => ({ status: "clean" as const });
@@ -228,6 +228,46 @@ describe("TaskIpcHandlers", () => {
         expectedVersion: "v1:evt",
       }),
     ).rejects.toThrow("hunk scope");
+  });
+
+  it("accepts a content-fingerprint hunkRef belonging to the current task", async () => {
+    // Real hunks are SHA-256 fingerprints (task-core fingerprintHunk), not
+    // "taskId:index". Prefix-based ownership would reject every live review.
+    const fingerprint = "a".repeat(64);
+    commandPort.hunks = [
+      { ref: fingerprint, path: "a.ts", before: "", after: "x", context: [], status: "pending" },
+    ];
+    await expect(
+      handlers.review({
+        taskId: "t1",
+        routeId: "main",
+        hunkRef: fingerprint,
+        status: "accepted",
+        expectedVersion: "v1:evt",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reviews every pending hunk when hunkRef is null (batch accept)", async () => {
+    const reviewed: Array<string | readonly string[]> = [];
+    commandPort.hunks = [
+      { ref: "aa".repeat(32), path: "a.ts", before: "a", after: "b", context: [], status: "pending" },
+      { ref: "bb".repeat(32), path: "b.ts", before: "c", after: "d", context: [], status: "pending" },
+      { ref: "cc".repeat(32), path: "c.ts", before: "e", after: "f", context: [], status: "conflict" },
+    ];
+    commandPort.reviewHunk = async (_taskId, _routeId, hunkRef) => {
+      reviewed.push(hunkRef);
+    };
+    await expect(
+      handlers.review({
+        taskId: "t1",
+        routeId: "main",
+        hunkRef: null,
+        status: "accepted",
+        expectedVersion: "v1:evt",
+      }),
+    ).resolves.toBeUndefined();
+    expect(reviewed).toEqual([["aa".repeat(32), "bb".repeat(32)]]);
   });
 
   it("blocks completion with unresolved conflict or unstable call", async () => {

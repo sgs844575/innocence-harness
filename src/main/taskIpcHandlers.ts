@@ -58,7 +58,7 @@ export interface TaskCommandPort {
   listRoutes(taskId: string): Promise<TaskRouteSummary[]>;
   switchRoute(taskId: string, routeId: string): Promise<TaskRouteSummary>;
   forkRoute(request: TaskForkRouteRequest): Promise<TaskForkRouteResponse>;
-  reviewHunk(taskId: string, routeId: string, hunkRef: string, status: "accepted" | "restored", expectedVersion?: string): Promise<void>;
+  reviewHunk(taskId: string, routeId: string, hunkRef: string | readonly string[], status: "accepted" | "restored", expectedVersion?: string): Promise<void>;
   /** Restores one hunk: reverts its file to the checkpoint state (version-guarded). */
   restoreHunk(taskId: string, routeId: string, hunkRef: string, expectedVersion?: string): Promise<void>;
   applyAccepted(taskId: string, routeId: string): Promise<{ applied: string[]; conflicts: ConflictDetail[] }>;
@@ -91,15 +91,16 @@ function assertRouteExists(state: TaskState, routeId: string): void {
 }
 
 function assertHunkScope(hunks: Hunk[], hunkRef: string, taskId: string): void {
-  // The hunk ref format is "taskId:hunkIndex".  A hunk from another task
-  // has a different taskId prefix.
+  // Ownership is membership in this task/route's hunk list. Real refs are
+  // SHA-256 fingerprints (fingerprintHunk) — the historical "taskId:index"
+  // prefix is still rejected when it names a different task, so a renderer
+  // cannot review another task's ledger by swapping taskId on the DTO.
+  if (hunks.some((h) => h.ref === hunkRef)) return;
   const prefix = hunkRef.split(":")[0];
-  if (prefix !== taskId) {
+  if (prefix !== "" && prefix !== taskId) {
     throw new Error("hunk scope");
   }
-  if (!hunks.some((h) => h.ref === hunkRef)) {
-    throw new Error(`hunk not found: ${hunkRef}`);
-  }
+  throw new Error(`hunk not found: ${hunkRef}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,15 +213,19 @@ export class TaskIpcHandlers {
     // Hunk scope check BEFORE route validation — the brief's verbatim test
     // sends a valid routeId with a hunk from another task; scope rejection
     // must fire regardless of route validity.
-    if (request.hunkRef !== null) {
-      const hunks = await this.commandPort.getHunks(request.taskId, request.routeId);
-      assertHunkScope(hunks, request.hunkRef, request.taskId);
+    const hunks = await this.commandPort.getHunks(request.taskId, request.routeId);
+    const refs = request.hunkRef === null
+      ? hunks.filter((hunk) => hunk.status !== "conflict").map((hunk) => hunk.ref)
+      : [request.hunkRef];
+    for (const hunkRef of refs) {
+      assertHunkScope(hunks, hunkRef, request.taskId);
     }
     this.assertRoute(state, request.routeId);
+    if (refs.length === 0) return;
     await this.commandPort.reviewHunk(
       request.taskId,
       request.routeId,
-      request.hunkRef ?? "",
+      refs.length === 1 ? refs[0]! : refs,
       request.status,
       request.expectedVersion,
     );

@@ -279,6 +279,36 @@ describe("TaskCommandService error semantics", () => {
     expect(gate.gate.unreviewedChanges).toBe(1);
   });
 
+  it("reviews a batch of hunks under one expectedVersion without a mid-batch conflict", async () => {
+    const { deps } = fakeDeps({ checkpointFiles: [fileRef("a.txt", "h1"), fileRef("b.txt", "h3")] });
+    deps.diff.diff = async () => [
+      {
+        path: "a.txt", before: fileRef("a.txt", "h1"), after: fileRef("a.txt", "h2"), binary: false,
+        hunks: [{ ref: "ref-1", path: "a.txt", before: "one\n", after: "two\n", context: [], status: "pending" }],
+      },
+      {
+        path: "b.txt", before: fileRef("b.txt", "h3"), after: fileRef("b.txt", "h4"), binary: false,
+        hunks: [{ ref: "ref-2", path: "b.txt", before: "three\n", after: "four\n", context: [], status: "pending" }],
+      },
+    ];
+    const service = createTaskCommandService(deps);
+    const version = (await service.get("t1")).version;
+    await expect(
+      service.review({
+        taskId: "t1",
+        routeId: "main",
+        hunkRef: ["ref-1", "ref-2"],
+        status: "accepted",
+        expectedVersion: version,
+      }),
+    ).resolves.toBeUndefined();
+    const events = await deps.store.listEvents("t1");
+    expect(events.filter((event) => event.type === "hunkReviewed")).toEqual([
+      expect.objectContaining({ hunkRef: "ref-1", status: "accepted" }),
+      expect.objectContaining({ hunkRef: "ref-2", status: "accepted" }),
+    ]);
+  });
+
   it("lets completion pass once every hunk is reviewed", async () => {
     const { deps } = fakeDeps({ checkpointFiles: [fileRef("a.txt", "h1")] });
     deps.diff.diff = async () => [{

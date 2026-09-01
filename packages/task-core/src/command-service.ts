@@ -169,12 +169,17 @@ export function createTaskCommandService(deps: TaskCommandDeps): TaskCommandServ
         assertVersion(request.expectedVersion, events);
         const route = routeOf(state, request.routeId);
         const hunks = await statusedHunks(deps, request.taskId, state, route, events);
-        if (!hunks.some((hunk) => hunk.ref === request.hunkRef)) {
-          throw new TaskCommandError("hunk-not-found", `hunk not found: ${request.hunkRef}`);
+        const refs = typeof request.hunkRef === "string" ? [request.hunkRef] : [...request.hunkRef];
+        for (const hunkRef of refs) {
+          if (!hunks.some((hunk) => hunk.ref === hunkRef)) {
+            throw new TaskCommandError("hunk-not-found", `hunk not found: ${hunkRef}`);
+          }
         }
-        await appendDurable(deps, request.taskId, [
-          hunkReviewedEvent({ routeId: request.routeId, hunkRef: request.hunkRef, status: request.status, clock }),
-        ]);
+        await appendDurable(
+          deps,
+          request.taskId,
+          refs.map((hunkRef) => hunkReviewedEvent({ routeId: request.routeId, hunkRef, status: request.status, clock })),
+        );
       });
     },
 

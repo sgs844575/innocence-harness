@@ -107,7 +107,8 @@ export interface TaskCommandService {
   review(request: {
     taskId: string;
     routeId: string;
-    hunkRef: string;
+    /** One ref, or a batch reviewed under a single expectedVersion CAS. */
+    hunkRef: string | readonly string[];
     status: "accepted" | "restored";
     expectedVersion?: string;
   }): Promise<void>;
