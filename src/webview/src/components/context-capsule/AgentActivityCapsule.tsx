@@ -5,6 +5,8 @@ import type { AgentActivityStatus, SubagentActivityView } from "./activityProjec
 import { Collapsible } from "../ui/Collapsible";
 import { Tooltip } from "../ui/Tooltip";
 import { Button } from "../ui/Button";
+import { Badge } from "../ui/Badge";
+import { Separator } from "../ui/Separator";
 import { TodoPanel } from "../task/TodoPanel";
 
 export { CAPSULE_SECTION_ORDER } from "../../state/workspacePresentationState";
@@ -126,9 +128,9 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     <FilePlus2 size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />
                     <span>更改</span>
                     <span className="ml-auto flex items-center gap-2.5">
-                      {environment.changedFiles > 0 && <span className="text-(--color-app-muted)">{environment.changedFiles} 文件</span>}
-                      <span className="text-(--color-diff-add)">+{environment.additions}</span>
-                      <span className="text-(--color-diff-del)">−{environment.deletions}</span>
+                      {environment.changedFiles > 0 && <Badge variant="secondary">{environment.changedFiles} 文件</Badge>}
+                      <Badge variant="success">+{environment.additions}</Badge>
+                      <Badge variant="destructive">−{environment.deletions}</Badge>
                     </span>
                   </div>
                   <div className={`${gpRow} mt-[11px]`}>
@@ -145,10 +147,10 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                       {environment.onCompare && <Button variant="ghost" size="sm" onClick={environment.onCompare}>比较</Button>}
                     </span>
                   </div>
-                  <div className="mt-[13px] h-px bg-(--color-app-hairline)" />
+                  <Separator className="mt-[13px]" />
                   <div className="flex h-[26px] items-center gap-[38px] pt-[2px] text-(--color-app-muted)">
                     <span>工作区</span>
-                    <span>{environment.workspaceKind}</span>
+                    <Badge variant="outline">{environment.workspaceKind}</Badge>
                   </div>
                 </div>
               )}
@@ -161,7 +163,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
               )}
               {section === "agent" && (
                 <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-(--color-app-muted)">
-                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<span className="ml-auto ">{statusLabel(agent.status)}</span></div>
+                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<Badge variant="secondary" className="ml-auto">{statusLabel(agent.status)}</Badge></div>
                   {childAgents.map((child) => (
                     <Button
                       key={child.childId}
@@ -173,7 +175,7 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                     >
                       <Bot size={11} className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{child.description || "子智能体"}</span>
-                      <span className="shrink-0 ">{statusLabel(child.status)}</span>
+                      <Badge variant="secondary" className="shrink-0">{statusLabel(child.status)}</Badge>
                     </Button>
                   ))}
                 </div>

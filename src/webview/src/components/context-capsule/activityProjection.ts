@@ -80,20 +80,24 @@ export function agentActivityFromWorkspace(input: {
   subagents?: readonly SubagentActivityView[];
   onOpenSubagent?: (childId: string) => void;
 }): AgentActivityProjection {
-  // Git 段始终渲染：有任务时取任务分支/种类；无任务时回落工作区级信息
-  // （分支可能为 null→"未检测"），确保胶囊 Git 工具面板在所有会话都可见。
+  // Git 段只在真实 git 工作区渲染：种类取任务（无任务回落工作区级兜底）。
+  // snapshot/非 git 项目不输出 environment，胶囊随之隐藏整个 Git 工具段，
+  // 避免在无 git 项目里展示"分支/提交/推送"等无意义信息。
   const branch = input.task?.gitBranch ?? input.workspaceBranch ?? null;
   const workspaceKind = input.task?.workspaceKind ?? input.workspaceKindFallback ?? "git";
+  const hasGit = workspaceKind === "git";
   const hasTerminal = input.terminal.backgroundTasks > 0;
   return {
-    environment: {
-      branch,
-      changedFiles: input.changedFiles.length,
-      additions: input.changeSummary.added,
-      deletions: input.changeSummary.removed,
-      workspaceKind,
-      ...(input.task ? { onCompare: input.onCompare } : { onCompare: input.onCompare }),
-    },
+    ...(hasGit ? {
+      environment: {
+        branch,
+        changedFiles: input.changedFiles.length,
+        additions: input.changeSummary.added,
+        deletions: input.changeSummary.removed,
+        workspaceKind,
+        onCompare: input.onCompare,
+      },
+    } : {}),
     ...(input.process ? {
       process: { ...input.process, ...(input.onOpenProcess ? { onOpen: input.onOpenProcess } : {}) },
     } : {}),

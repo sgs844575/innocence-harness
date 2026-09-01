@@ -211,6 +211,22 @@ describe("processActivityFromMessages", () => {
       onCompare: expect.any(Function),
     });
   });
+  it("hides the Git panel entirely when the workspace has no git (snapshot)", () => {
+    const projection = agentActivityFromWorkspace({
+      task: { gitBranch: null, workspaceKind: "snapshot" },
+      changedFiles: [],
+      changeSummary: { added: 0, removed: 0 },
+      process: undefined,
+      terminal: { durationMs: 0, backgroundTasks: 0 },
+      agentName: "default",
+      streaming: true,
+      onCompare: () => undefined,
+    });
+
+    expect(projection.environment).toBeUndefined();
+    expect(projection.agent).toBeTruthy();
+  });
+
   it("combines existing task, review, terminal, chat, and settings state without owning them", () => {
     const onCompare = () => undefined;
     expect(agentActivityFromWorkspace({
@@ -277,14 +293,7 @@ describe("processActivityFromMessages", () => {
     expect(agentActivityFromWorkspace({ ...base, sessionStatus: "waiting-permission" }).agent.status).toBe("waiting-permission");
     expect(agentActivityFromWorkspace(base).agent.status).toBe("failed");
     expect(agentActivityFromWorkspace({ ...base, sessionStatus: "archived" }).agent.status).toBe("archived");
-    // Git 段始终渲染：分支可检测 + 0 变更 → environment 段存在、additions/deletions=0
-    expect(agentActivityFromWorkspace(base).environment).toEqual({
-      branch: "main",
-      changedFiles: 0,
-      additions: 0,
-      deletions: 0,
-      workspaceKind: "snapshot",
-      onCompare: expect.any(Function),
-    });
+    // 无 git（snapshot）→ 不输出 environment，胶囊隐藏整个 Git 工具段
+    expect(agentActivityFromWorkspace(base).environment).toBeUndefined();
   });
 });
