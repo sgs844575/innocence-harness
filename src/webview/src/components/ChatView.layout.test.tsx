@@ -116,7 +116,7 @@ describe("ChatView shared responsive layout", () => {
     renderChat();
 
     act(() => resizeContainer?.(900));
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("419px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("491px");
 
     act(() => resizeContainer?.(520));
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("520px");
@@ -124,20 +124,20 @@ describe("ChatView shared responsive layout", () => {
 
   it("uses the same content track for the permission card and composer", () => {
     renderChat({ permission, width: 1440 });
-    expect(screen.getByRole("alertdialog").parentElement?.style.maxWidth).toBe("888px");
-    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
+    expect(screen.getByRole("alertdialog").parentElement?.style.maxWidth).toBe("1003px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1003px");
   });
   it("keeps the contracted width model while the capsule is collapsed", () => {
     renderChat({ width: 1440 });
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
-    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1003px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1003px");
     expect(screen.getByLabelText("上下文数量").textContent).toContain("0");
     expect(screen.getByLabelText("Agent 活动胶囊").className).toContain("agent-capsule-floating");
 
     fireEvent.click(screen.getByRole("button", { name: "折叠活动胶囊" }));
 
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
-    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1003px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1003px");
     expect(screen.getByLabelText("当前进程胶囊")).toBeTruthy();
   });
 
@@ -157,7 +157,7 @@ describe("ChatView shared responsive layout", () => {
       return () => {};
     });
     renderChat({ width: 1440 });
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1003px");
 
     act(() => notify?.(false));
     await waitFor(() => expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1120px"));
@@ -166,13 +166,13 @@ describe("ChatView shared responsive layout", () => {
   it("recomputes the reading column from the chat container width, not the window width", () => {
     renderChat();
     expect(window.innerWidth).toBe(1440);
-    // 1175 最大化：左 94、右 337+94=431、列 = 1175-94-431 = 650
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("650px");
+    // 1175 最大化：左 94、右 337、列 = 1175-94-337 = 744
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("744px");
 
-    // 侧栏收起后容器涨到窗口宽、窗口宽度不变：列必须按容器重算。
+    // 侧栏收起后容器涨到窗口宽、窗口宽度不变：列必须按容器重算（余量进列）。
     act(() => resizeContainer?.(1440));
     expect(window.innerWidth).toBe(1440);
-    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("888px");
-    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("888px");
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1003px");
+    expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1003px");
   });
 });

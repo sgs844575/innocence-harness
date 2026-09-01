@@ -133,18 +133,17 @@ export interface WorkspaceLayout {
   /** 滚动区左留白：最大化时 8% 呼吸（24..100px，容纳 ChatDashes 12px 槽）；
       非最大化时与右留白等大，保证聊天主体居中。 */
   contentGutter: number;
-  /** 滚动区右留白：最大化时 337 + 8% 视窗呼吸（clamp 337..500，容纳 319px
-      胶囊 + 18px 边距）；非最大化时与左留白等大，详见 contentGutter。 */
+  /** 滚动区右留白：最大化时固定 337（319px 胶囊 + 18px 边距），列吃满余量；
+      非最大化时与左留白等大，详见 contentGutter。 */
   contentRightGutter: number;
   capsulePlacement: CapsulePlacement;
 }
 
-/** 胶囊宽 319 + 18px 边距 = 337，最大化右留白公式下限。 */
+/** 胶囊宽 319 + 18px 边距 = 337，最大化右留白（只给胶囊位，不再额外堆 8%）。 */
 export const CHAT_CONTENT_MAX_WIDTH = 1120;
 const CHAT_GUTTER_MIN = 24;
 const CHAT_GUTTER_MAX = 100;
-const CHAT_RIGHT_GUTTER_BASE = 337; // 胶囊 + 18px 边距，永不压列
-const CHAT_RIGHT_GUTTER_MAX = 500;
+const CHAT_RIGHT_GUTTER_BASE = 337;
 
 export function workspaceLayoutForWidth(viewportWidth: number, maximized: boolean): WorkspaceLayout {
   // viewportWidth 是聊天容器实宽（侧栏/工作台停靠后的余量），不是窗口宽度。
@@ -157,10 +156,10 @@ export function workspaceLayoutForWidth(viewportWidth: number, maximized: boolea
     };
   }
   if (maximized) {
-    // 不对称左锚：左 8% 呼吸给 ChatDashes，右 = 337 + 8% 视窗呼吸专给胶囊；
-    // 列封顶 1120，左锚——列右缘 ≤ 胶囊左缘，永不压列。
+    // 左锚：左 8% 呼吸给 ChatDashes；右只留胶囊位 337，列吃满余量（封顶 1120）。
+    // 侧栏收起后容器变宽，余量进列而不是堆到右边。
     const leftGutter = Math.min(CHAT_GUTTER_MAX, Math.max(CHAT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
-    const rightGutter = Math.min(CHAT_RIGHT_GUTTER_MAX, Math.max(CHAT_RIGHT_GUTTER_BASE, CHAT_RIGHT_GUTTER_BASE + Math.round(viewportWidth * 0.08)));
+    const rightGutter = CHAT_RIGHT_GUTTER_BASE;
     return {
       contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - leftGutter - rightGutter),
       contentGutter: leftGutter,
