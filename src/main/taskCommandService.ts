@@ -217,9 +217,12 @@ export function createTaskCommandService(deps: TaskCommandServiceDeps): TaskComm
     return null;
   };
 
+  /** The durable task view shape from the core service (start responses). */
+  type CoreTaskView = Awaited<ReturnType<CoreTaskCommandService["get"]>>;
+
   /** The task view + live route binding for the session's active task. */
-  const startResponseOf = async (taskId: string): Promise<TaskStartResponse> => {
-    const view = await service.get(taskId);
+  const startResponseOf = async (taskId: string, preloaded?: CoreTaskView): Promise<TaskStartResponse> => {
+    const view = preloaded ?? await service.get(taskId);
     const routeId = deps.bridge.get(taskId)?.routeId ?? view.activeRouteId;
     deps.onSessionTaskRoute?.(view.sessionId, taskId, routeId);
     return { ...view, routeId, gitBranch: null };
@@ -229,16 +232,18 @@ export function createTaskCommandService(deps: TaskCommandServiceDeps): TaskComm
     startTask: async (request) => {
       const existing = await findTaskOfSession(request.sessionId);
       if (existing !== null) {
-        if (!deps.bridge.get(existing)) {
-          // Not live (restart recovery has not covered it): recover Git tasks
-          // now so sends re-enter the P1 loop. The bridge cannot re-live
-          // snapshot tasks (baseline.json is Git-only) — their views still
-          // read from disk, only live capture stays off (known limitation).
+        const view = await service.get(existing);
+        // Not live (restart recovery has not covered it): recover Git tasks
+        // now so sends re-enter the P1 loop. Snapshot tasks are skipped —
+        // the bridge cannot re-live them (baseline.json is Git-only) — their
+        // views still read from disk, only live capture stays off (known
+        // limitation).
+        if (!deps.bridge.get(existing) && view.workspaceKind === "git") {
           await service.recover(existing).catch((error) =>
             log("warn", "session task recovery on start failed", { taskId: existing, error: String(error) }),
           );
         }
-        return startResponseOf(existing);
+        return startResponseOf(existing, view);
       }
       if (request.create === false) return null;
       const workspaceRoot = await deps.resolveSessionRoot(request.sessionId);

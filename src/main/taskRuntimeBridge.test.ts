@@ -552,6 +552,23 @@ describe("taskRuntimeBridge lifecycle", () => {
     void snapshot;
   });
 
+  it("exists reports persisted tasks without opening storage for unknown ids", async () => {
+    const plain = await tempDir("ic-bridge-exists-");
+    const { bridge, storageDir } = await makeBridge();
+    const snapshot = await bridge.start({ mode: "baseline", workspaceRoot: plain });
+
+    // Live and released tasks both have a durable event log on disk.
+    expect(await bridge.exists(snapshot.taskId)).toBe(true);
+    await bridge.releaseTask(snapshot.taskId);
+    expect(bridge.get(snapshot.taskId)).toBeUndefined();
+    expect(await bridge.exists(snapshot.taskId)).toBe(true);
+
+    // Unknown and unsafe ids probe the log path without creating storage.
+    expect(await bridge.exists("never_started")).toBe(false);
+    expect(await bridge.exists("../escape")).toBe(false);
+    await expect(fs.access(path.join(storageDir, "tasks", "never_started"))).rejects.toThrow();
+  });
+
   it("resolveTaskWorkspaceRoot prefers the session-bound root over the settings fallback", () => {
     expect(
       resolveTaskWorkspaceRoot("s1", {

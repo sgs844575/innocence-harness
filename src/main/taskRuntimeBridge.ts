@@ -108,6 +108,12 @@ export interface TaskRuntimeBridge {
   get(taskId: string): TaskHandle | undefined;
   getRoute(taskId: string, routeId: string): TaskHandle | undefined;
   listTasks(): string[];
+  /**
+   * Durability probe: a persisted event log exists for the id. Non-creating —
+   * unlike listEvents/openTaskRepository it must never materialize storage
+   * for an unknown id, so read paths can validate ids without side effects.
+   */
+  exists(taskId: string): Promise<boolean>;
   /** Event log of one task (the single log: core + plugin events). */
   listEvents(taskId: string): Promise<readonly CoreTaskEvent[]>;
   forkRoute(input: ForkRouteInput): Promise<Route & { prompt: string }>;
@@ -389,6 +395,15 @@ export function createTaskRuntimeBridge(options: TaskRuntimeBridgeOptions): Task
     get: (taskId) => live.get(taskId)?.handle,
     getRoute: (taskId, routeId) => live.get(taskId)?.routes.get(routeId)?.handle,
     listTasks: () => [...live.keys()],
+    async exists(taskId) {
+      if (!TASK_ID_PATTERN.test(taskId)) return false;
+      try {
+        await fs.stat(path.join(options.taskStorageDir, "tasks", taskId, "events.jsonl"));
+        return true;
+      } catch {
+        return false;
+      }
+    },
     async listEvents(taskId) {
       const task = live.get(taskId);
       if (task) return task.repository.list();

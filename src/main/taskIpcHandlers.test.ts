@@ -47,12 +47,15 @@ function fakeAttributionConflict(paths: string[]): TaskEvent {
 interface FakeBridgeState {
   handle: TaskHandle | undefined;
   events: TaskEvent[];
+  /** Task ids with a durable event log (persisted on disk, possibly not live). */
+  persisted: string[];
 }
 
 function fakeBridge(state: FakeBridgeState): TaskRuntimeBridge {
   return {
-    get: () => state.handle,
+    get: (taskId: string) => (state.handle?.taskId === taskId ? state.handle : undefined),
     listTasks: () => (state.handle ? [state.handle.taskId] : []),
+    exists: async (taskId: string) => state.persisted.includes(taskId),
     listEvents: async () => state.events,
     start: async () => state.handle!,
     onTaskEvent: () => () => {},
@@ -208,6 +211,7 @@ describe("TaskIpcHandlers", () => {
     bridgeState = {
       handle: fakeHandle(),
       events: [fakeCreatedEvent()],
+      persisted: ["t1"],
     };
     handlers = buildHandlers();
   });
@@ -273,6 +277,7 @@ describe("TaskIpcHandlers", () => {
   it("changes validates route ownership like the other handlers", async () => {
     await expect(handlers.changes({ taskId: "t1", routeId: "ghost" })).rejects.toThrow("route");
     bridgeState.handle = undefined;
+    bridgeState.persisted = [];
     handlers = buildHandlers();
     await expect(handlers.changes({ taskId: "t1", routeId: "main" })).rejects.toThrow("task not found");
   });
@@ -289,6 +294,23 @@ describe("TaskIpcHandlers", () => {
     await expect(handlers.getTask({ taskId: "nonexistent" })).rejects.toThrow(
       "task not found",
     );
+  });
+
+  it("getTask and listRoutes resolve from the durable log for a persisted-but-not-live task", async () => {
+    // Released/restarted snapshot task: no live handle, event log still on
+    // disk — read views must not require runtime liveness.
+    bridgeState.handle = undefined;
+    handlers = buildHandlers();
+    const task = await handlers.getTask({ taskId: "t1" });
+    expect(task.taskId).toBe("t1");
+    expect(task.sessionId).toBe("s1");
+    const { routes } = await handlers.listRoutes({ taskId: "t1" });
+    expect(routes.map((route) => route.routeId)).toEqual(["main"]);
+  });
+
+  it("getTask throws for ids with neither a live handle nor a durable log", async () => {
+    bridgeState.persisted = [];
+    await expect(handlers.getTask({ taskId: "ghost" })).rejects.toThrow("task not found: ghost");
   });
 
   it("listRoutes returns route DTOs for existing task", async () => {

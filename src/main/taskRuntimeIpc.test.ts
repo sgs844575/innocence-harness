@@ -49,6 +49,7 @@ function fakeBridge(overrides?: {
   return {
     get: () => undefined,
     listTasks: () => [],
+    exists: async () => false,
     listEvents: async () => [] as TaskEvent[],
     onTaskEvent: () => () => {},
     recoverTask: overrides?.recoverTask ?? (async () => reduceTask([])),

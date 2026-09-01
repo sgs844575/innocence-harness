@@ -3,7 +3,8 @@
 // TaskRuntimeBridge (live task handles + event log) and the command port.
 //
 // Validation chain per handler:
-//   1. Resolve taskId -> existing TaskHandle via bridge
+//   1. Resolve taskId -> TaskState via the bridge (live handle OR durable
+//      event log — released/restarted tasks stay readable from disk)
 //   2. Reduce event log -> TaskState (routes, turns, status)
 //   3. Resolve routeId -> valid Route for that task
 //   4. (review) Resolve hunkRef -> Hunk belonging to task/route
@@ -126,8 +127,14 @@ export class TaskIpcHandlers {
   // -- Validation helpers --------------------------------------------------
 
   private async resolveTask(taskId: string): Promise<TaskState> {
-    const handle = this.bridge.get(taskId);
-    if (!handle) throw new Error(`task not found: ${taskId}`);
+    // Live handle OR durable log: released/restarted tasks (notably snapshot
+    // tasks, which recovery cannot re-live — baseline.json is Git-only) stay
+    // readable from disk. Runtime liveness is enforced only where actually
+    // required (forks, capture). The exists() probe keeps unknown ids from
+    // materializing storage through listEvents' openTaskRepository.
+    if (!this.bridge.get(taskId) && !(await this.bridge.exists(taskId))) {
+      throw new Error(`task not found: ${taskId}`);
+    }
     const events = await this.bridge.listEvents(taskId);
     return reduceTask(events);
   }

@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTaskRuntimeBridge } from "./taskRuntimeBridge";
 import { createTaskCommandService } from "./taskCommandService";
+import { TaskIpcHandlers } from "./taskIpcHandlers";
 
 const execFileAsync = promisify(execFile);
 
@@ -92,5 +93,46 @@ describe("task:start (C1)", () => {
     expect(recovered?.taskId).toBe(started!.taskId);
     expect(bridge2.listTasks()).toEqual([started!.taskId]);
     expect(bindings2).toEqual([{ sessionId: "s1", taskId: started!.taskId, routeId: "main" }]);
+  }, 120_000);
+
+  it("a snapshot task survives a restart readable: start returns it and getTask/listRoutes resolve from disk", async () => {
+    // Regression: task:get/task:list-routes threw "task not found" for
+    // persisted-but-not-live tasks (snapshot tasks can never re-live —
+    // recovery is Git-only), spamming the renderer on every session switch.
+    const plain = await tempDir("ic-task-start-plain-");
+    await fs.writeFile(path.join(plain, "notes.txt"), "plain workspace\n", "utf8");
+    const storageDir = await tempDir("ic-task-start-store2-");
+    const bridge = createTaskRuntimeBridge({ taskStorageDir: storageDir });
+    cleanups.push(() => bridge.disposeAll());
+    const service = createTaskCommandService({
+      bridge,
+      taskStorageDir: storageDir,
+      resolveSessionRoot: async (sessionId) => (sessionId === "s1" ? plain : undefined),
+      onSessionTaskRoute: () => {},
+      onEvent: () => {},
+    });
+    const started = await service.startTask({ sessionId: "s1", mode: "baseline", create: true });
+    expect(started?.workspaceKind).toBe("snapshot");
+
+    // Restart: fresh bridge over the same storage. Recovery is Git-only, so
+    // the snapshot task stays not-live — reads must still work from disk.
+    const bridge2 = createTaskRuntimeBridge({ taskStorageDir: storageDir });
+    cleanups.push(() => bridge2.disposeAll());
+    const service2 = createTaskCommandService({
+      bridge: bridge2,
+      taskStorageDir: storageDir,
+      resolveSessionRoot: async () => plain,
+      onSessionTaskRoute: () => {},
+      onEvent: () => {},
+    });
+    const found = await service2.startTask({ sessionId: "s1", create: false });
+    expect(found?.taskId).toBe(started!.taskId);
+    expect(bridge2.listTasks()).toEqual([]); // snapshot recovery impossible by design
+
+    const handlers = new TaskIpcHandlers({ bridge: bridge2, commandPort: service2 });
+    const task = await handlers.getTask({ taskId: started!.taskId });
+    expect(task).toMatchObject({ taskId: started!.taskId, sessionId: "s1", status: "ready" });
+    const { routes } = await handlers.listRoutes({ taskId: started!.taskId });
+    expect(routes.map((route) => route.routeId)).toEqual(["main"]);
   }, 120_000);
 });
