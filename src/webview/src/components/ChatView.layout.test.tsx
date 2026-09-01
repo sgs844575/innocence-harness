@@ -174,5 +174,9 @@ describe("ChatView shared responsive layout", () => {
     expect(window.innerWidth).toBe(1440);
     expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1003px");
     expect(screen.getByTestId("chat-composer").style.maxWidth).toBe("1003px");
+
+    // 超宽容器：列封顶 1120 后余量平分两侧（居中），不再堆到右边。
+    act(() => resizeContainer?.(1980));
+    expect(screen.getByTestId("chat-timeline").style.maxWidth).toBe("1120px");
   });
 });

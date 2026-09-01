@@ -50,10 +50,18 @@ describe("workspace presentation state", () => {
       contentRightGutter: 16,
       capsulePlacement: "sheet",
     });
-    // 最大化 2100：列封顶 1120，右仍只留胶囊位 337
+    // 最大化 1600：列封顶但居中余量 240 < 337，右留白保 337、列稍偏左
+    expect(workspaceLayoutForWidth(1600, true)).toEqual({
+      contentMaxWidth: 1120,
+      contentGutter: 143,
+      contentRightGutter: 337,
+      capsulePlacement: "floating",
+    });
+    // 最大化 2100：列封顶且余量充足 → 左右等大居中 (2100-1120)/2 = 490
     expect(workspaceLayoutForWidth(2100, true)).toMatchObject({
       contentMaxWidth: 1120,
-      contentRightGutter: 337,
+      contentGutter: 490,
+      contentRightGutter: 490,
     });
   });
 

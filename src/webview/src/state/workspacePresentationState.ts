@@ -156,13 +156,23 @@ export function workspaceLayoutForWidth(viewportWidth: number, maximized: boolea
     };
   }
   if (maximized) {
-    // 左锚：左 8% 呼吸给 ChatDashes；右只留胶囊位 337，列吃满余量（封顶 1120）。
-    // 侧栏收起后容器变宽，余量进列而不是堆到右边。
+    // 窄容器左锚：左 8% 呼吸给 ChatDashes；右只留胶囊位 337，列吃满余量。
     const leftGutter = Math.min(CHAT_GUTTER_MAX, Math.max(CHAT_GUTTER_MIN, Math.round(viewportWidth * 0.08)));
-    const rightGutter = CHAT_RIGHT_GUTTER_BASE;
+    const contentMaxWidth = Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - leftGutter - CHAT_RIGHT_GUTTER_BASE);
+    if (contentMaxWidth < CHAT_CONTENT_MAX_WIDTH) {
+      return {
+        contentMaxWidth,
+        contentGutter: leftGutter,
+        contentRightGutter: CHAT_RIGHT_GUTTER_BASE,
+        capsulePlacement: "floating",
+      };
+    }
+    // 宽容器（列封顶）：余量平分两侧让聊天主体居中；右留白不低于胶囊位 337，
+    // 中间宽度段列稍偏左但永不压胶囊。
+    const rightGutter = Math.max(CHAT_RIGHT_GUTTER_BASE, Math.round((viewportWidth - CHAT_CONTENT_MAX_WIDTH) / 2));
     return {
-      contentMaxWidth: Math.min(CHAT_CONTENT_MAX_WIDTH, viewportWidth - leftGutter - rightGutter),
-      contentGutter: leftGutter,
+      contentMaxWidth: CHAT_CONTENT_MAX_WIDTH,
+      contentGutter: viewportWidth - CHAT_CONTENT_MAX_WIDTH - rightGutter,
       contentRightGutter: rightGutter,
       capsulePlacement: "floating",
     };
