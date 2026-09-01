@@ -145,6 +145,26 @@ describe("ReviewPanel", () => {
     });
   });
 
+  it("pending hunk restore is the review action (writes already landed; review only reverts)", () => {
+    const onRestore = vi.fn();
+    render(
+      <ReviewPanel
+        files={[fileWithHunks("pending")]}
+        taskId="t1"
+        routeId="r1"
+        expectedVersion="v7"
+        onRestore={onRestore}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "撤回" }));
+    expect(onRestore).toHaveBeenCalledWith({
+      taskId: "t1",
+      routeId: "r1",
+      hunkRef: "t1:0",
+      expectedVersion: "v7",
+    });
+  });
+
   it("hunk restore carries expectedVersion", () => {
     const onRestore = vi.fn();
     render(
@@ -156,7 +176,7 @@ describe("ReviewPanel", () => {
         onRestore={onRestore}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "还原" }));
+    fireEvent.click(screen.getByRole("button", { name: "撤回" }));
     expect(onRestore).toHaveBeenCalledWith({
       taskId: "t1",
       routeId: "r1",

@@ -86,6 +86,17 @@ describe("tool cards registry", () => {
     expect(screen.getByText("src/app.ts")).toBeTruthy();
     expect(screen.getByText(/hello/)).toBeTruthy();
   });
+  it("Write 卡展开显示写入内容（persistArgs 不落盘正文，展开必须读 call.args.content）", () => {
+    renderCard("Write", {
+      call: call("Write", { path: "src/a.ts", content: "export const n = 1;\n" }),
+      result: res("已写入 src/a.ts（20 字符）"),
+      open: true,
+      onToggle: () => {},
+    });
+    expect(screen.getByText("写入")).toBeTruthy();
+    expect(screen.getByText("src/a.ts")).toBeTruthy();
+    expect(screen.getByText(/export const n = 1;/)).toBeTruthy();
+  });
   it("Task 卡展示任务摘要与 agentType 徽标", () => {
     renderCard("Task", {
       call: call("Task", { agentType: "general", description: "调研构建链", prompt: "自包含任务" }),

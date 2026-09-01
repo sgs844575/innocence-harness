@@ -28,9 +28,11 @@ export function FileTool({ call, result, open, onToggle }: ToolCardProps): React
       running={!result}
       error={result?.isError}
     >
-      {result && (
+      {call.toolName === "Write" && typeof call.args.content === "string" ? (
+        <pre className="scrollbar-thin max-h-48 overflow-auto font-mono leading-relaxed">{call.args.content}</pre>
+      ) : result ? (
         <pre className="scrollbar-thin max-h-48 overflow-auto font-mono leading-relaxed text-(--color-app-muted)">{result.content}</pre>
-      )}
+      ) : null}
     </ToolLine>
   );
 }

@@ -1,6 +1,7 @@
 // HunkRow — ReviewPanel 的单个 hunk 行（Task 10）。
-// 冲突 hunk 永不渲染为已接受：接受按钮禁用并显示「冲突」状态。
-// 行体可点选（onSelect → 注入 Composer 请求）；接受/还原按钮阻止冒泡。
+// 冲突 hunk 永不渲染为已接受：撤回按钮禁用并显示「冲突」状态。
+// 写入已落地，审查主操作是撤回（restore）；接受只记 ledger。
+// 行体可点选（onSelect → 注入 Composer 请求）；撤回/接受按钮阻止冒泡。
 import { Check, RotateCcw } from "lucide-react";
 import { zhCN } from "../../lib/i18n";
 import { countLines, type TaskHunk } from "./taskViewModel";
@@ -62,10 +63,10 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
         <span className="font-mono text-emerald-600">+{added}</span>
         <span className="font-mono text-red-600">−{removed}</span>
         <div className="ml-auto flex items-center gap-1">
-          {hunk.status === "accepted" && (
+          {(hunk.status === "pending" || hunk.status === "accepted") && (
             <button
               type="button"
-              disabled={!onRestore}
+              disabled={conflicted || !onRestore}
               onClick={(event) => {
                 event.stopPropagation();
                 onRestore?.(hunk.ref);
@@ -75,17 +76,19 @@ export function HunkRow({ hunk, t = tZh, onAccept, onRestore, onSelect }: HunkRo
               <RotateCcw size={12} /> {t("task.review.restore")}
             </button>
           )}
-          <button
-            type="button"
-            disabled={conflicted || hunk.status === "accepted" || !onAccept}
-            onClick={(event) => {
-              event.stopPropagation();
-              onAccept?.(hunk.ref);
-            }}
-            className="flex h-6 items-center gap-1 rounded px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
-          >
-            <Check size={12} /> {t("task.review.accept")}
-          </button>
+          {hunk.status === "pending" && onAccept && (
+            <button
+              type="button"
+              disabled={conflicted}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAccept(hunk.ref);
+              }}
+              className="flex h-6 items-center gap-1 rounded px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble) disabled:opacity-50"
+            >
+              <Check size={12} /> {t("task.review.accept")}
+            </button>
+          )}
         </div>
       </div>
       <div className="border-t border-(--color-app-hairline) py-1">
