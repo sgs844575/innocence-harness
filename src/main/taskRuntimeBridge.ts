@@ -125,6 +125,14 @@ export interface TaskRuntimeBridge {
   releaseTask(taskId: string): Promise<void>;
   /** Explicit task deletion: destroys the worktree and releases everything. */
   deleteTask(taskId: string): Promise<void>;
+  /**
+   * Authoritative route workspace root: the live handle when the task is
+   * running, otherwise the persisted route state — tasks the restart recovery
+   * has not re-livened (snapshot tasks) still resolve for read surfaces
+   * (code reader / search / external editor / terminals). Never materializes
+   * storage for unknown ids.
+   */
+  durableRouteRoot(taskId: string, routeId: string): Promise<string | undefined>;
   /** App quit path: releases every task (worktrees survive restarts). */
   disposeAll(): Promise<void>;
 }
@@ -390,26 +398,57 @@ export function createTaskRuntimeBridge(options: TaskRuntimeBridgeOptions): Task
     }
   }
 
+  /**
+   * Durability probe: a persisted event log exists for the id. Non-creating —
+   * unlike listEvents/openTaskRepository it must never materialize storage
+   * for an unknown id, so read paths can validate ids without side effects.
+   */
+  const existsPersisted = async (taskId: string): Promise<boolean> => {
+    if (!TASK_ID_PATTERN.test(taskId)) return false;
+    try {
+      await fs.stat(path.join(options.taskStorageDir, "tasks", taskId, "events.jsonl"));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** Event log straight from disk (fresh process / after release). */
+  const listPersisted = async (taskId: string): Promise<CoreTaskEvent[]> => {
+    const repository = await openTaskRepository(options.taskStorageDir, taskId);
+    return repository.list();
+  };
+
+  /**
+   * Authoritative route root: live handle first, then the persisted state —
+   * restart recovery skips snapshot tasks, but their read surfaces (code
+   * panel, search, external editor, terminals) must still resolve the route
+   * workspace after a restart. Unknown ids stay side-effect free.
+   */
+  const routeWorkspaceRoot = async (taskId: string, routeId: string): Promise<string | undefined> => {
+    const liveHandle = live.get(taskId)?.routes.get(routeId)?.handle;
+    if (liveHandle) return liveHandle.workspaceRoot;
+    if (!(await existsPersisted(taskId))) return undefined;
+    try {
+      return reduceTask(await listPersisted(taskId)).routes.get(routeId)?.workspaceRoot;
+    } catch {
+      // Unreadable/corrupt log yields no trustworthy root.
+      return undefined;
+    }
+  };
+
   return {
     start: startTask,
     get: (taskId) => live.get(taskId)?.handle,
     getRoute: (taskId, routeId) => live.get(taskId)?.routes.get(routeId)?.handle,
     listTasks: () => [...live.keys()],
-    async exists(taskId) {
-      if (!TASK_ID_PATTERN.test(taskId)) return false;
-      try {
-        await fs.stat(path.join(options.taskStorageDir, "tasks", taskId, "events.jsonl"));
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    exists: existsPersisted,
+    durableRouteRoot: routeWorkspaceRoot,
     async listEvents(taskId) {
       const task = live.get(taskId);
       if (task) return task.repository.list();
       // Not live: read from disk (fresh process / after release).
-      const repository = await openTaskRepository(options.taskStorageDir, taskId);
-      return repository.list();
+      return listPersisted(taskId);
     },
     async forkRoute(input) {
       const task = live.get(input.taskId);

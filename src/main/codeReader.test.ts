@@ -38,12 +38,13 @@ const routes = (): Record<string, string | undefined> => ({
 });
 
 function makeReader(overrides?: {
-  resolveRouteRoot?: (taskId: string, routeId: string) => string | undefined;
+  resolveRouteRoot?: (taskId: string, routeId: string) => Promise<string | undefined>;
   readBytes?: (absolute: string) => Promise<Uint8Array>;
 }) {
   const map = routes();
   const resolveRouteRoot =
-    overrides?.resolveRouteRoot ?? vi.fn((taskId: string, routeId: string) => map[`${taskId}/${routeId}`]);
+    overrides?.resolveRouteRoot ??
+    vi.fn(async (taskId: string, routeId: string) => map[`${taskId}/${routeId}`]);
   return { resolveRouteRoot, reader: createCodeReader({ resolveRouteRoot, readBytes: overrides?.readBytes }) };
 }
 

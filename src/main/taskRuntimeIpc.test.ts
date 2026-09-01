@@ -69,7 +69,7 @@ async function makeHarness(bridge: TaskRuntimeBridge, storageDir: string): Promi
   const deps: TaskRuntimeIpcDeps = {
     bridge,
     taskStorageDir: storageDir,
-    resolveRouteRoot: () => undefined,
+    resolveRouteRoot: async () => undefined,
     resolveSessionRoot: async () => undefined,
     getEditorCommand: () => "",
     send: (channel, payload) => {

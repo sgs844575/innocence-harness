@@ -22,8 +22,9 @@ export type RgSpawn = (
 ) => RgProcess;
 
 export interface CodeSearchDeps {
-  /** Authoritative route root from the task runtime bridge's route handle. */
-  resolveRouteRoot(taskId: string, routeId: string): string | undefined;
+  /** Authoritative route root from the task runtime bridge (live handle
+   *  first, persisted state fallback for tasks restart recovery skipped). */
+  resolveRouteRoot(taskId: string, routeId: string): Promise<string | undefined>;
   /** Spawn override (tests); defaults to node:child_process spawn. */
   spawn?: RgSpawn;
   /** rg executable; defaults to "rg" resolved from PATH. */
@@ -63,7 +64,7 @@ export function createCodeSearch(deps: CodeSearchDeps): CodeSearchService {
     async search(request): Promise<CodeSearchMatch[]> {
       const query = request.query.trim();
       if (!query) throw new Error("code search: query is required");
-      const root = deps.resolveRouteRoot(request.taskId, request.routeId);
+      const root = await deps.resolveRouteRoot(request.taskId, request.routeId);
       if (!root) {
         throw new Error(`code search: unknown task/route: ${request.taskId}/${request.routeId}`);
       }

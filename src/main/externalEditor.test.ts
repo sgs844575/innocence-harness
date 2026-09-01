@@ -72,7 +72,7 @@ beforeEach(() => {
 
 function makeEditor(overrides?: { command?: string; root?: string }) {
   return createExternalEditor({
-    resolveRouteRoot: vi.fn(() => overrides?.root ?? path.join(storage, "route")),
+    resolveRouteRoot: vi.fn(async () => overrides?.root ?? path.join(storage, "route")),
     getEditorCommand: vi.fn(() => overrides?.command ?? "code"),
     spawn: spawnFn,
   });
@@ -148,7 +148,7 @@ describe("externalEditor validation", () => {
 
   it("rejects an unknown task/route (ownership)", async () => {
     const editor = createExternalEditor({
-      resolveRouteRoot: vi.fn(() => undefined),
+      resolveRouteRoot: vi.fn(async () => undefined),
       getEditorCommand,
       spawn: spawnFn,
     });

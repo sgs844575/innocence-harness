@@ -569,6 +569,24 @@ describe("taskRuntimeBridge lifecycle", () => {
     await expect(fs.access(path.join(storageDir, "tasks", "never_started"))).rejects.toThrow();
   });
 
+  it("durableRouteRoot resolves persisted routes after a restart (fresh bridge, same storage)", async () => {
+    const plain = await tempDir("ic-bridge-durable-");
+    const first = await makeBridge();
+    const handle = await first.bridge.start({ mode: "baseline", workspaceRoot: plain });
+    await first.bridge.disposeAll();
+
+    // Fresh bridge over the same storage = restart: the task is persisted
+    // but NOT live (snapshot tasks are never re-livened by recovery).
+    const restarted = createTaskRuntimeBridge({ taskStorageDir: first.storageDir });
+    expect(restarted.get(handle.taskId)).toBeUndefined();
+    expect(await restarted.durableRouteRoot(handle.taskId, "main")).toBe(handle.workspaceRoot);
+    expect(await restarted.durableRouteRoot(handle.taskId, "ghost")).toBeUndefined();
+    // Unknown and unsafe ids resolve to undefined WITHOUT materializing storage.
+    expect(await restarted.durableRouteRoot("never_started", "main")).toBeUndefined();
+    expect(await restarted.durableRouteRoot("../escape", "main")).toBeUndefined();
+    await expect(fs.access(path.join(first.storageDir, "tasks", "never_started"))).rejects.toThrow();
+  });
+
   it("resolveTaskWorkspaceRoot prefers the session-bound root over the settings fallback", () => {
     expect(
       resolveTaskWorkspaceRoot("s1", {

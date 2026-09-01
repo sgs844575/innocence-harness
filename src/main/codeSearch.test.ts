@@ -50,7 +50,7 @@ class FakeRg implements RgProcess {
 
 let spawns: FakeRg[];
 let spawnFn: Mock<RgSpawn>;
-let resolveRouteRoot: Mock<(taskId: string, routeId: string) => string | undefined>;
+let resolveRouteRoot: Mock<(taskId: string, routeId: string) => Promise<string | undefined>>;
 
 beforeEach(() => {
   spawns = [];
@@ -59,7 +59,7 @@ beforeEach(() => {
     spawns.push(proc);
     return proc;
   });
-  resolveRouteRoot = vi.fn(() => "D:/worktrees/t1/r1");
+  resolveRouteRoot = vi.fn(async () => "D:/worktrees/t1/r1");
 });
 
 function makeSearch() {
@@ -70,6 +70,7 @@ describe("codeSearch rg invocation", () => {
   it("searches and opens only files in the active route", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1)); // root resolution is async now
     const proc = spawns[0];
     proc.emitStdout("src/a.ts:12:5:const needle = 1;\n");
     proc.emitClose(0);
@@ -81,6 +82,7 @@ describe("codeSearch rg invocation", () => {
   it("spawns rg with an argument array and no shell, scoped to the route root", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1));
     spawns[0].emitClose(1); // no matches
     await pending;
     expect(spawnFn).toHaveBeenCalledTimes(1);
@@ -96,7 +98,7 @@ describe("codeSearch rg invocation", () => {
 
   it("rejects an unknown task/route and an empty query before spawning", async () => {
     const search = createCodeSearch({
-      resolveRouteRoot: vi.fn(() => undefined),
+      resolveRouteRoot: vi.fn(async () => undefined),
       spawn: spawnFn,
     });
     await expect(search.search({ taskId: "t1", routeId: "r9", query: "x" })).rejects.toThrow(
@@ -109,6 +111,7 @@ describe("codeSearch rg invocation", () => {
   it("degrades to a clear error when rg is not on PATH (no fallback)", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1));
     spawns[0].emitError(Object.assign(new Error("spawn rg ENOENT"), { code: "ENOENT" }));
     await expect(pending).rejects.toThrow(/rg .*not available/i);
   });
@@ -116,6 +119,7 @@ describe("codeSearch rg invocation", () => {
   it("caps results at 200 matches", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1));
     const proc = spawns[0];
     const lines: string[] = [];
     for (let i = 1; i <= 500; i += 1) lines.push(`src/f${i}.ts:${i}:1:needle`);
@@ -128,6 +132,7 @@ describe("codeSearch rg invocation", () => {
   it("kills rg once the output cap is exceeded", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1));
     const proc = spawns[0];
     let guard = 0;
     while (!proc.killed && guard < 200) {
@@ -142,6 +147,7 @@ describe("codeSearch rg invocation", () => {
   it("parses path/line/column/preview from vimgrep output", async () => {
     const search = makeSearch();
     const pending = search.search({ taskId: "t1", routeId: "r1", query: "needle" });
+    await vi.waitFor(() => expect(spawns.length).toBe(1));
     spawns[0].emitStdout("src/deep/dir/b.ts:3:7:  const needle: number = 2;\n");
     spawns[0].emitClose(0);
     const matches = await pending;

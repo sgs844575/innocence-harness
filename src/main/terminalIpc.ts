@@ -47,10 +47,11 @@ export interface TerminalIpcService {
 
 export interface TerminalIpcDeps {
   /**
-   * Authoritative route workspace root from the task runtime bridge's route
-   * handle. Returning undefined means "no live task/route" -> create rejects.
+   * Authoritative route workspace root from the task runtime bridge (live
+   * handle first, persisted state fallback). Returning undefined means "no
+   * known task/route" -> create rejects.
    */
-  resolveRouteCwd(taskId: string, routeId: string): string | undefined;
+  resolveRouteCwd(taskId: string, routeId: string): Promise<string | undefined>;
   /** Renderer push port (webContents.send wrapper for the main window). */
   send(channel: string, payload: unknown): void;
   /** Manager factory override (tests); defaults to the real node-pty manager. */
@@ -98,7 +99,7 @@ export function createTerminalIpcService(deps: TerminalIpcDeps): TerminalIpcServ
     async create(request) {
       const taskId = assertId(request?.taskId, "taskId");
       const routeId = assertId(request?.routeId, "routeId");
-      const cwd = deps.resolveRouteCwd(taskId, routeId);
+      const cwd = await deps.resolveRouteCwd(taskId, routeId);
       if (!cwd) {
         throw new Error(`terminal ipc: unknown task/route: ${taskId}/${routeId}`);
       }

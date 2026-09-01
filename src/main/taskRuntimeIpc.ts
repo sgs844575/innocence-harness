@@ -31,8 +31,9 @@ export interface TaskRuntimeIpcDeps {
   bridge: TaskRuntimeBridge;
   /** Private task storage base (userData/tasks in the host; temp in tests). */
   taskStorageDir: string;
-  /** Authoritative route root from the bridge's route handle. */
-  resolveRouteRoot(taskId: string, routeId: string): string | undefined;
+  /** Authoritative route root: the bridge's live handle first, then the
+   *  persisted task state (tasks restart recovery did not re-liven). */
+  resolveRouteRoot(taskId: string, routeId: string): Promise<string | undefined>;
   /** Authoritative per-session workspace root (task:start resolves it). */
   resolveSessionRoot(sessionId: string): Promise<string | undefined>;
   /**

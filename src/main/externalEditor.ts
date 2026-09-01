@@ -23,8 +23,9 @@ export type EditorSpawn = (
 ) => EditorProcess;
 
 export interface ExternalEditorDeps {
-  /** Authoritative route root from the task runtime bridge's route handle. */
-  resolveRouteRoot(taskId: string, routeId: string): string | undefined;
+  /** Authoritative route root from the task runtime bridge (live handle
+   *  first, persisted state fallback for tasks restart recovery skipped). */
+  resolveRouteRoot(taskId: string, routeId: string): Promise<string | undefined>;
   /** User-configured editor command (settings.externalEditorCommand). */
   getEditorCommand(): string | undefined;
   /** Spawn override (tests); defaults to node:child_process spawn. */
@@ -64,7 +65,7 @@ export function createExternalEditor(deps: ExternalEditorDeps): ExternalEditorSe
       if (!command) {
         throw new Error("external editor: editor command is not configured (settings.externalEditorCommand)");
       }
-      const root = deps.resolveRouteRoot(request.taskId, request.routeId);
+      const root = await deps.resolveRouteRoot(request.taskId, request.routeId);
       if (!root) {
         throw new Error(`external editor: unknown task/route: ${request.taskId}/${request.routeId}`);
       }

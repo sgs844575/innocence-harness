@@ -31,8 +31,9 @@ export interface CodeReaderService extends CodeReader {
 }
 
 export interface CodeReaderDeps {
-  /** Authoritative route root from the task runtime bridge's route handle. */
-  resolveRouteRoot(taskId: string, routeId: string): string | undefined;
+  /** Authoritative route root from the task runtime bridge (live handle
+   *  first, persisted state fallback for tasks restart recovery skipped). */
+  resolveRouteRoot(taskId: string, routeId: string): Promise<string | undefined>;
   /** Byte-source override (tests observe "no read for oversized files"). */
   readBytes?: (absolute: string) => Promise<Uint8Array>;
 }
@@ -133,15 +134,15 @@ export function createCodeReader(deps: CodeReaderDeps): CodeReaderService {
   const readBytes =
     deps.readBytes ?? ((absolute: string) => fs.readFile(absolute).then((buffer) => new Uint8Array(buffer)));
 
-  function routeRoot(taskId: string, routeId: string): string {
-    const root = deps.resolveRouteRoot(taskId, routeId);
+  async function routeRoot(taskId: string, routeId: string): Promise<string> {
+    const root = await deps.resolveRouteRoot(taskId, routeId);
     if (!root) throw new Error(`code reader: unknown task/route: ${taskId}/${routeId}`);
     return root;
   }
 
   return {
     async readFile({ taskId, routeId, relativePath }): Promise<CodeFileContent> {
-      const root = routeRoot(taskId, routeId);
+      const root = await routeRoot(taskId, routeId);
       // Stat gate FIRST: oversized files never enter a byte read — metadata
       // only (no memory spike from large worktree artifacts).
       const { absolute, size } = await assertRouteFile(root, relativePath);
@@ -166,7 +167,7 @@ export function createCodeReader(deps: CodeReaderDeps): CodeReaderService {
     },
 
     async listFiles({ taskId, routeId }): Promise<CodeListFilesResponse> {
-      const root = routeRoot(taskId, routeId);
+      const root = await routeRoot(taskId, routeId);
       const files = await listRelativeFiles(root).catch((error) => {
         throw new Error(`code reader: listing failed: ${String(error)}`);
       });

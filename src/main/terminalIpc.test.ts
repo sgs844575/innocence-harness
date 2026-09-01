@@ -95,11 +95,11 @@ class FakeManager implements PtyManager {
 
 let manager: FakeManager;
 let send: Mock<(channel: string, payload: unknown) => void>;
-let resolveRouteCwd: Mock<(taskId: string, routeId: string) => string | undefined>;
+let resolveRouteCwd: Mock<(taskId: string, routeId: string) => Promise<string | undefined>>;
 
 beforeEach(() => {
   send = vi.fn();
-  resolveRouteCwd = vi.fn(() => "C:/worktrees/t1/r1");
+  resolveRouteCwd = vi.fn(async () => "C:/worktrees/t1/r1");
   manager = new FakeManager();
 });
 
@@ -108,7 +108,7 @@ function buildService(overrides?: { routes?: Record<string, string | undefined> 
   const resolver =
     routes === undefined
       ? resolveRouteCwd
-      : vi.fn((taskId: string, routeId: string) => routes[`${taskId}/${routeId}`]);
+      : vi.fn(async (taskId: string, routeId: string) => routes[`${taskId}/${routeId}`]);
   return {
     resolver,
     service: createTerminalIpcService({
