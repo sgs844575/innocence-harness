@@ -162,8 +162,8 @@ export function AgentActivityCapsule({ open, onToggleOpen, expandedSections, onT
                 </div>
               )}
               {section === "agent" && (
-                <div className="flex flex-col gap-[7px] pb-[4px] pt-[6px] text-(--color-app-muted)">
-                  <div className="flex items-center gap-[11px]"><Bot size={13} />{agent.name}<Badge variant="secondary" className="ml-auto">{statusLabel(agent.status)}</Badge></div>
+                <div className="flex flex-col gap-[11px] pb-[4px] pt-[6px] pl-[26px] text-(--color-app-muted)">
+                  <div className={gpRow}><Bot size={15} strokeWidth={1.1} className="shrink-0 text-(--color-app-muted)" />{agent.name}<Badge variant="secondary" className="ml-auto">{statusLabel(agent.status)}</Badge></div>
                   {childAgents.map((child) => (
                     <Button
                       key={child.childId}
