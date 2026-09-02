@@ -1,9 +1,18 @@
 // 预构建参与分发的包并组装 staging 树：
 //   build/dist/resources/node_modules/@innocenceharness/<name>/{dist/,package.json}
 //   build/dist/resources/plugins/<id>/{dist/,package.json}
+// 增量纪律（dev 启动加速）：build/dist/.plugins-cache.json 记录两类内容指纹——
+// 每个工作区包（源码树 + 两级 tsconfig + 根 tsconfig.base.json + package.json +
+// 工作区依赖的传递哈希）与外部运行时依赖闭包（各成员 package.json）。指纹未变
+// 且 staged 产物在位的包跳过 tsc 与拷贝；变更包经并行工作池重建（直接以
+// process.execPath 起 tsc，绕开 npx/cmd 解析开销）。staged 树只会在单包成功
+// 构建后被整体替换，失败中断不落半成品。PLUGINS_BUILD_CLEAN=1 强制全量重建
+// （怀疑缓存失真或打包前想从零验证时使用）。
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { join, relative, resolve } from "node:path";
+import os from "node:os";
 
 const LIBS = [
   "vendor/kernel",
@@ -28,6 +37,10 @@ const LIBS = [
   // 改编子代理预设库：plugin-subagent dist 对它的运行时导入经 staging
   // node_modules 解析（同为 LIBS 条目，产物先落 @innocenceharness/agent-presets）。
   "packages/agent-presets",
+  // tools-archive dist 值导入 @innocenceharness/tools-fs（resolveWithin）：
+  // 该包同时是 plugins/fs 插件，这里补一份 staging node_modules 解析位，
+  // 否则打包应用内裸说明符只在开发态经仓库根 node_modules 偶然可达。
+  "packages/tools-fs",
 ];
 // 内置清单（boot 侧 toggle 解析的描述符来源）：id + core 标记 + 依赖关系，
 // 随 staging 产出 manifest.json；可开关标记（toggleable）由 core 派生
@@ -58,9 +71,9 @@ const LIBS = [
 // id），向 tools 服务注册只读工具 web_fetch——公网正文抓取（环境代理
 // 感知传输，同构自模型请求侧形态），SSRF 基线内网/环回字面量拒绝 +
 // 重定向每跳重验 + 文本类响应 8KB 截断 + 20s 总时限。
-// planflow 为计划提交流插件（B4A 规划工具链）：默认导出即插件对象
-// （name 同 id），静态形态走通用装载链——注册 plan_submit 工具、监听
-// 权限决议事件（ask 级 allow 即计划批准）、在消息侧注入批准/拒绝提醒。
+// planflow 为计划提交流插件（B4A 规划工具链）：默认导出即插件对象（name 同
+// id），静态形态走通用装载链——注册 plan_submit 工具、监听权限决议事件
+// （ask 级 allow 即计划批准）、在消息侧注入批准/拒绝提醒。
 // memory 为双根记忆存储插件（B4B 记忆批次）：默认导出是工厂（同
 // creation/reminders 形态），由宿主 factoryPlugin 装配并传入用户/项目两
 // 个记忆根 getter——注册写列读三工具，条目落 <root>/memory/<id>.md，
@@ -143,17 +156,36 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "@ai-sdk/anthropic",
   "@ai-sdk/google",
   // 插件 dist 的运行时裸导入：plugin-skills→yaml、harness-ai-runtime→undici、
-  // tools-ssh→ssh2、plugin-mcp→ws，与根 package.json 声明保持一致。
+  // tools-ssh→ssh2、plugin-mcp→ws、tools-archive→yazl+node-forge、
+  // tools-fs(read-pdf)→pdfjs-dist（legacy 构建动态导入），与根 package.json
+  // 声明保持一致。
   "yaml",
   "undici",
   "ssh2",
   "ws",
+  "yazl",
+  "node-forge",
+  "pdfjs-dist",
 ];
+// 缓存文件位于 resources/ 之外：extraResource 与 packager ignore 都不会带走它。
+const CACHE_FILE = "build/dist/.plugins-cache.json";
+// 构建/变换逻辑演进时 bump，强制所有缓存键失效。
+const CACHE_TOOL_VERSION = 3;
+// 编译器与类型环境参与缓存键：npm install 升级 typescript/@types/node 不触碰
+// 任何源文件，不加进来就会出现"变了输入却全缓存"的欠失效。
+const COMPILER_INPUTS = ["typescript", "@types/node"]
+  .map((name) => {
+    const pkg = JSON.parse(readFileSync(join("node_modules", ...name.split("/"), "package.json"), "utf8"));
+    return `${name}@${pkg.version}`;
+  })
+  .join(",");
+// 并行 tsc 工作池大小：单进程编译器各自单线程，留一核给系统。
+const WORKERS = Math.max(2, Math.min(8, os.cpus().length - 1));
+const TSC_ENTRY = resolve("node_modules", "typescript", "lib", "tsc.js");
 
 // 运行时 manifest：源 manifest 的 main/exports 指向 src（开发态源码直引），
 // staging 副本改指 dist 产物。
-function runtimeManifest(pkgDir) {
-  const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+function runtimeManifest(pkg) {
   return {
     name: pkg.name,
     version: pkg.version,
@@ -212,55 +244,276 @@ function fixDist(pkgDir) {
   walk(join(pkgDir, "dist"));
 }
 
-function build(pkgDir) {
-  rmSync(join(pkgDir, "dist"), { recursive: true, force: true });
-  // Windows 上 npx 是 .cmd，spawnSync 必须经 shell 才能找到（参数为固定字面量）。
-  const tsc = spawnSync("npx", ["tsc", "-p", join(pkgDir, "tsconfig.build.json")], { stdio: "inherit", shell: true });
-  if (tsc.status !== 0) { console.error(`build failed: ${pkgDir}`); process.exit(1); }
-  fixDist(pkgDir);
-}
-
-function copyRuntimeDependency(name, copied = new Set()) {
-  if (copied.has(name) || name.startsWith(`${WORKSPACE_SCOPE}/`)) return;
-  copied.add(name);
-  const source = join("node_modules", ...name.split("/"));
-  if (!existsSync(source)) {
-    console.error(`staging dependency missing from node_modules: ${name}`);
-    process.exit(1);
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
   }
-  const target = join(STAGING, "node_modules", ...name.split("/"));
-  cpSync(source, target, { recursive: true });
-  const manifest = JSON.parse(readFileSync(join(source, "package.json"), "utf8"));
-  const dependencies = {
-    ...(manifest.dependencies ?? {}),
-    ...(manifest.optionalDependencies ?? {}),
-  };
-  for (const dependency of Object.keys(dependencies)) copyRuntimeDependency(dependency, copied);
 }
 
-rmSync("build/dist", { recursive: true, force: true });
-const copiedRuntimeDependencies = new Set();
-for (const dependency of EXTERNAL_RUNTIME_PACKAGES) {
-  copyRuntimeDependency(dependency, copiedRuntimeDependencies);
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-for (const dir of LIBS) {
-  build(dir);
-  const pkg = runtimeManifest(dir);
-  assertWorkspacePackageMetadata(join(dir, "package.json"), pkg.name);
-  const name = pkg.name.replace(new RegExp(`^${WORKSPACE_SCOPE.replace("@", "\\@")}\\/`), "");
-  const target = join(STAGING, "node_modules", WORKSPACE_SCOPE, name);
-  mkdirSync(target, { recursive: true });
-  cpSync(join(dir, "dist"), join(target, "dist"), { recursive: true });
-  writeFileSync(join(target, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
+
+// 目录内容指纹：相对路径（/ 归一）+ 文件字节，顺序稳定。
+function hashTree(hash, root) {
+  if (!existsSync(root)) return;
+  const walk = (dir) => {
+    for (const name of readdirSync(dir).sort()) {
+      const file = join(dir, name);
+      if (statSync(file).isDirectory()) { walk(file); continue; }
+      hash.update(relative(root, file).replaceAll("\\", "/") + "\0");
+      hash.update(readFileSync(file));
+      hash.update("\0");
+    }
+  };
+  walk(root);
 }
-for (const { dir, id } of PLUGINS) {
-  build(dir);
-  const pkg = runtimeManifest(dir);
-  assertWorkspacePackageMetadata(join(dir, "package.json"), pkg.name);
-  const target = join(STAGING, "plugins", id);
-  mkdirSync(target, { recursive: true });
-  cpSync(join(dir, "dist"), join(target, "dist"), { recursive: true });
-  writeFileSync(join(target, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
+
+// ---- 包条目与工作区元数据 ----------------------------------------------------
+
+const packageEntries = [];
+for (const dir of LIBS) packageEntries.push({ dir, kind: "lib", key: `lib:${dir}` });
+for (const { dir, id } of PLUGINS) packageEntries.push({ dir, kind: "plugin", id, key: `plugin:${dir}` });
+
+const workspaceDirByName = new Map();
+for (const entry of packageEntries) {
+  const file = join(entry.dir, "package.json");
+  const pkg = JSON.parse(readFileSync(file, "utf8"));
+  assertWorkspacePackageMetadata(file, pkg.name);
+  entry.name = pkg.name;
+  entry.bareName = pkg.name.slice(WORKSPACE_SCOPE.length + 1);
+  entry.manifest = runtimeManifest(pkg);
+  entry.dependencies = Object.keys({
+    ...(pkg.dependencies ?? {}),
+    ...(pkg.devDependencies ?? {}),
+    ...(pkg.optionalDependencies ?? {}),
+    ...(pkg.peerDependencies ?? {}),
+  });
+  workspaceDirByName.set(pkg.name, entry.dir);
+}
+// 扫描逐条登记，名册要等全量读完后才齐——这里统一过滤出工作区内依赖。
+for (const entry of packageEntries) {
+  entry.dependencies = entry.dependencies.filter((name) => workspaceDirByName.has(name));
+}
+
+function stagedTarget(entry) {
+  return entry.kind === "plugin"
+    ? join(STAGING, "plugins", entry.id)
+    : join(STAGING, "node_modules", WORKSPACE_SCOPE, entry.bareName);
+}
+
+// ---- 内容指纹：自身输入 + 工作区依赖传递哈希 ---------------------------------
+// tsc 经 workspace 链接按 src 解析依赖类型，被依赖包源码变化必须令下游失效，
+// 因此有效哈希折叠全部工作区依赖（含传递）。环状 devDependency 回边跳过。
+
+const rawHashByDir = new Map();
+const effectiveHashByDir = new Map();
+const hashingDirs = new Set();
+
+function rawHash(entry) {
+  if (rawHashByDir.has(entry.key)) return rawHashByDir.get(entry.key);
+  const hash = createHash("sha256");
+  hash.update(`tool:${CACHE_TOOL_VERSION}\0compilers:${COMPILER_INPUTS}\0pkg:${entry.dir}\0kind:${entry.kind}\0`);
+  if (entry.kind === "plugin") hash.update(`id:${entry.id}\0`);
+  hash.update(`base:${readFileSync("tsconfig.base.json")}\0`);
+  for (const config of ["tsconfig.build.json", "tsconfig.json", "package.json"]) {
+    hash.update(`${config}:${readFileSync(join(entry.dir, config))}\0`);
+  }
+  hashTree(hash, join(entry.dir, "src"));
+  const digest = hash.digest("hex");
+  rawHashByDir.set(entry.key, digest);
+  return digest;
+}
+
+function effectiveHash(entry) {
+  const cached = effectiveHashByDir.get(entry.key);
+  if (cached) return cached;
+  if (hashingDirs.has(entry.key)) return ""; // 环状回边：不折叠，双方各自保持自身指纹
+  hashingDirs.add(entry.key);
+  const hash = createHash("sha256");
+  hash.update(rawHash(entry));
+  for (const name of entry.dependencies) {
+    const dir = workspaceDirByName.get(name);
+    if (!dir) continue;
+    const byDir = packageEntries.find((other) => other.dir === dir);
+    if (byDir) hash.update(`${name}:${effectiveHash(byDir)}\0`);
+  }
+  hashingDirs.delete(entry.key);
+  const digest = hash.digest("hex");
+  effectiveHashByDir.set(entry.key, digest);
+  return digest;
+}
+
+for (const entry of packageEntries) effectiveHash(entry);
+
+// ---- 外部运行时依赖闭包（拷贝集 = 哈希集，含 optional 传递边） ----------------
+
+function externalDependencyClosure() {
+  const names = [];
+  const seen = new Set();
+  const walk = (name) => {
+    if (seen.has(name) || name.startsWith(`${WORKSPACE_SCOPE}/`)) return;
+    // 缺席的可选依赖按 npm 语义跳过（如未装原生构建链机器上的 cpu-features/
+    // nan）；显式根条目缺席仍由拷贝循环的 existsSync 自检报错。
+    if (!existsSync(join("node_modules", ...name.split("/"), "package.json"))) return;
+    seen.add(name);
+    names.push(name);
+    const manifest = JSON.parse(readFileSync(join("node_modules", ...name.split("/"), "package.json"), "utf8"));
+    const dependencies = {
+      ...(manifest.dependencies ?? {}),
+      ...(manifest.optionalDependencies ?? {}),
+    };
+    for (const dependency of Object.keys(dependencies)) walk(dependency);
+  };
+  for (const root of EXTERNAL_RUNTIME_PACKAGES) walk(root);
+  return names.sort();
+}
+
+function externalDependenciesHash(closure) {
+  const hash = createHash("sha256");
+  hash.update(`tool:${CACHE_TOOL_VERSION}\0`);
+  for (const name of closure) {
+    hash.update(`${name}:${readFileSync(join("node_modules", ...name.split("/"), "package.json"))}\0`);
+  }
+  return hash.digest("hex");
+}
+
+// ---- 主流程 ------------------------------------------------------------------
+
+const cleanBuild = process.env.PLUGINS_BUILD_CLEAN === "1";
+if (cleanBuild) rmSync("build/dist", { recursive: true, force: true });
+const cache = (() => {
+  const loaded = readJson(CACHE_FILE, null);
+  if (!isPlainObject(loaded)) return { packages: {}, runtimeDeps: { hash: "", copiedDirs: [] } };
+  return {
+    packages: isPlainObject(loaded.packages) ? loaded.packages : {},
+    runtimeDeps: isPlainObject(loaded.runtimeDeps) && typeof loaded.runtimeDeps.hash === "string" && Array.isArray(loaded.runtimeDeps.copiedDirs)
+      ? loaded.runtimeDeps
+      : { hash: "", copiedDirs: [] },
+  };
+})();
+
+// 外部运行时依赖：闭包指纹变化（或 staged 副本被删）才整棵重拷。
+const closure = externalDependencyClosure();
+const closureSet = new Set(closure);
+if (externalDependenciesHash(closure) !== cache.runtimeDeps.hash ||
+    cache.runtimeDeps.copiedDirs.some((dir) => !existsSync(join(STAGING, "node_modules", ...dir.split("/"), "package.json")))) {
+  for (const dir of cache.runtimeDeps.copiedDirs) {
+    if (!closureSet.has(dir)) rmSync(join(STAGING, "node_modules", ...dir.split("/")), { recursive: true, force: true });
+  }
+  for (const name of closure) {
+    const source = join("node_modules", ...name.split("/"));
+    if (!existsSync(source)) {
+      console.error(`staging dependency missing from node_modules: ${name}`);
+      process.exit(1);
+    }
+    cpSync(source, join(STAGING, "node_modules", ...name.split("/")), { recursive: true });
+  }
+  cache.runtimeDeps = { hash: externalDependenciesHash(closure), copiedDirs: closure };
+} else {
+  console.log(`staging runtime dependencies up to date (${closure.length} packages)`);
+}
+
+// 包构建计划：指纹未变且 staged dist 在位（入口产物存在）才跳过。
+const stale = [];
+const packageHashes = {};
+for (const entry of packageEntries) {
+  const digest = effectiveHashByDir.get(entry.key);
+  packageHashes[entry.key] = digest;
+  const stagedEntry = join(stagedTarget(entry), "dist", "index.js");
+  if (cache.packages[entry.key] === digest && existsSync(stagedEntry)) continue;
+  stale.push(entry);
+}
+// 同一包目录可能对应多个 staging 目标（如 tools-fs 既是 plugins/fs 又是 lib）：
+// tsc 按目录去重只跑一次，成功后落到它的全部目标，避免并发写同一 dist。
+const staleUnits = [];
+for (const entry of stale) {
+  const unit = staleUnits.find((candidate) => candidate.dir === entry.dir);
+  if (unit) unit.entries.push(entry);
+  else staleUnits.push({ dir: entry.dir, entries: [entry] });
+}
+
+function stagePackage(entry) {
+  const target = stagedTarget(entry);
+  rmSync(target, { recursive: true, force: true });
+  cpSync(join(entry.dir, "dist"), join(target, "dist"), { recursive: true });
+  writeFileSync(join(target, "package.json"), JSON.stringify(entry.manifest, null, 2) + "\n", "utf8");
+}
+
+// 并行构建池：进程失败不落 staging（staged 树保持上一好版本），全量跑完后
+// 统一报告失败并退出；成功者就地补扩展名后拷入 staging。
+function buildStale(units) {
+  return new Promise((resolvePromise) => {
+    const failures = [];
+    let cursor = 0;
+    let active = 0;
+    const launch = () => {
+      while (active < WORKERS && cursor < units.length) {
+        const unit = units[cursor++];
+        active++;
+        console.log(`  building ${unit.dir} (${cursor}/${units.length})`);
+        const child = spawn(process.execPath, [TSC_ENTRY, "-p", join(unit.dir, "tsconfig.build.json")], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let output = "";
+        child.stdout.on("data", (chunk) => { output += chunk; });
+        child.stderr.on("data", (chunk) => { output += chunk; });
+        const settle = () => {
+          active--;
+          if (active === 0 && cursor >= units.length) resolvePromise(failures);
+          else launch();
+        };
+        child.on("error", (error) => {
+          failures.push({ dir: unit.dir, output: error.message });
+          settle();
+        });
+        child.on("close", (code) => {
+          if (code === 0) {
+            try {
+              fixDist(unit.dir);
+              for (const entry of unit.entries) stagePackage(entry);
+            } catch (error) {
+              failures.push({ dir: unit.dir, output: `${error}` });
+            }
+          } else {
+            failures.push({ dir: unit.dir, output });
+          }
+          settle();
+        });
+      }
+      if (active === 0 && cursor >= units.length) resolvePromise(failures);
+    };
+    launch();
+  });
+}
+
+for (const unit of staleUnits) rmSync(join(unit.dir, "dist"), { recursive: true, force: true });
+const failures = await buildStale(staleUnits);
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`build failed: ${failure.dir}\n${failure.output}`);
+  }
+  process.exit(1);
+}
+
+// 对账：清单之外的陈旧 staged 目录（包被移除/改名后遗留）清掉。
+const pluginIds = new Set(PLUGINS.map(({ id }) => id));
+const pluginsRoot = join(STAGING, "plugins");
+if (existsSync(pluginsRoot)) {
+  for (const name of readdirSync(pluginsRoot)) {
+    if (name === "manifest.json" || pluginIds.has(name)) continue;
+    rmSync(join(pluginsRoot, name), { recursive: true, force: true });
+  }
+}
+const libNames = new Set(packageEntries.filter((entry) => entry.kind === "lib").map((entry) => entry.bareName));
+const libsRoot = join(STAGING, "node_modules", WORKSPACE_SCOPE);
+if (existsSync(libsRoot)) {
+  for (const name of readdirSync(libsRoot)) {
+    if (libNames.has(name)) continue;
+    rmSync(join(libsRoot, name), { recursive: true, force: true });
+  }
 }
 
 // 内置清单：boot 读取的插件 id 列表 + core 标记 + 依赖 + 中性展示名（包
@@ -291,10 +544,8 @@ writeFileSync(
 
 // 自检：staging 内 kernel 库与各清单插件的入口产物必须真实存在。
 const selfCheck = [join(STAGING, "node_modules", WORKSPACE_SCOPE, "kernel", "dist", "index.js")];
-for (const dir of LIBS) {
-  if (dir.startsWith("packages/")) {
-    selfCheck.push(join(STAGING, "node_modules", WORKSPACE_SCOPE, dir.slice("packages/".length), "dist", "index.js"));
-  }
+for (const entry of packageEntries) {
+  if (entry.kind === "lib") selfCheck.push(join(stagedTarget(entry), "dist", "index.js"));
 }
 selfCheck.push(join(STAGING, "plugins", "manifest.json"));
 for (const { id } of PLUGINS) selfCheck.push(join(STAGING, "plugins", id, "dist", "index.js"));
@@ -329,4 +580,11 @@ for (const entry of manifest.plugins) {
     process.exit(1);
   }
 }
-console.log(`staging assembled at ${STAGING}`);
+
+mkdirSync("build/dist", { recursive: true });
+writeFileSync(
+  CACHE_FILE,
+  JSON.stringify({ packages: packageHashes, runtimeDeps: cache.runtimeDeps }, null, 2) + "\n",
+  "utf8",
+);
+console.log(`staging assembled at ${STAGING} (${stale.length} rebuilt, ${packageEntries.length - stale.length} cached)`);
