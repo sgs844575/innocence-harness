@@ -5,7 +5,7 @@ import { useCallback, useEffect, useReducer } from "react";
 import type { SubagentLifecycleEvent } from "../../../shared/ipc";
 import { api, hasBridge } from "../lib/ipc";
 import {
-  filterHydrationEntries,
+  hydrateSubagentRuns,
   initialSubagentRunsState,
   reduceSubagentRuns,
   type SubagentRunsState,
@@ -25,17 +25,12 @@ export interface SubagentRunsController {
 export function useSubagentRuns(
   onStarted?: (event: SubagentLifecycleEvent) => void,
 ): SubagentRunsController {
-  // 复合 action 在 reducer 内部完成回放折叠：过滤以 reducer 的 current 为
-  // 准（hydrate 闭包里的 state 是渲染快照，批处理下会过期），started 的
-  // 幂等防御再兜同批重复。
+  // 复合 action 在 reducer 内部完成回放折叠（hydrateSubagentRuns：过滤 +
+  // 归约 + 中断对账，以 reducer 的 current 为准——hydrate 闭包里的 state 是
+  // 渲染快照，批处理下会过期）。
   const [state, dispatch] = useReducer(
     (current: SubagentRunsState, action: RunsAction): SubagentRunsState =>
-      "hydrate" in action
-        ? filterHydrationEntries(current, action.hydrate).reduce(
-            (acc, entry) => reduceSubagentRuns(acc, entry.event, entry.at),
-            current,
-          )
-        : reduceSubagentRuns(current, action, action.at ?? Date.now()),
+      "hydrate" in action ? hydrateSubagentRuns(current, action.hydrate) : reduceSubagentRuns(current, action, action.at ?? Date.now()),
     initialSubagentRunsState,
   );
   const hydrate = useCallback((entries: readonly { at: number; event: SubagentLifecycleEvent }[]) => {

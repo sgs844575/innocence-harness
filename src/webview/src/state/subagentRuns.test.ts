@@ -3,6 +3,7 @@ import type { SubagentLifecycleEvent } from "../../../shared/ipc";
 import {
   filterHydrationEntries,
   formatRunDuration,
+  hydrateSubagentRuns,
   initialSubagentRunsState,
   pairedRunTools,
   reduceSubagentRuns,
@@ -116,6 +117,26 @@ describe("filterHydrationEntries", () => {
       { at: 5000, event: { ...started, childId: "c2", status: "completed" as const, final: "另一报告" } },
     ];
     expect(filterHydrationEntries(state, entries)).toEqual([entries[1]]);
+  });
+});
+
+describe("hydrateSubagentRuns", () => {
+  it("完整事件流回放建档（终态原样），实况档案不被历史覆盖", () => {
+    const live = reduceSubagentRuns(initialSubagentRunsState, { ...started, childId: "live" }, 900);
+    const state = hydrateSubagentRuns(live, [
+      { at: 1000, event: started },
+      { at: 5000, event: { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" } },
+    ]);
+    expect(state["c1"]).toMatchObject({ status: "completed", final: "报告", endedAt: 5000 });
+    expect(state["live"]).toBe(live["live"]);
+  });
+
+  it("以非终态收尾的流（进程退出时中断）对账为 cancelled，锚定最后事件时刻", () => {
+    const state = hydrateSubagentRuns(initialSubagentRunsState, [
+      { at: 1000, event: started },
+      { at: 1300, event: { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "call" } } },
+    ]);
+    expect(state["c1"]).toMatchObject({ status: "cancelled", endedAt: 1300 });
   });
 });
 

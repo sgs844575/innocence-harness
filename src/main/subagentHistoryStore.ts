@@ -18,11 +18,19 @@ export function subagentHistoryFile(storeDir: string | null, id: string): string
   return storeDir ? path.join(storeDir, "transcripts", `${id}.subagents.jsonl`) : null;
 }
 
-/** 追加一条事件（delta 事件不落盘：正文以终态 final/error 呈现）；best-effort。 */
+/** 已确保存在的目录（避免转发热路径上每次 append 都 mkdirSync）。 */
+const ensuredDirs = new Set<string>();
+
+/** 追加一条事件（delta 事件不落盘：正文以终态 final/error 呈现；空会话 id
+ *  不落盘：无主事件只会汇入永不被读回/清理的垃圾档案）；best-effort。 */
 export function appendSubagentHistoryEvent(file: string | null, event: SubagentLifecycleEvent, at: number): void {
-  if (!file || event.delta !== undefined) return;
+  if (!file || event.delta !== undefined || event.parentSessionId === "") return;
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const dir = path.dirname(file);
+    if (!ensuredDirs.has(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      ensuredDirs.add(dir);
+    }
     fs.appendFileSync(file, `${JSON.stringify({ at, event })}\n`, "utf8");
   } catch {
     // 档案写失败不阻断事件转发与聊天轮次。

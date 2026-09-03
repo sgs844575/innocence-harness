@@ -58,6 +58,12 @@ describe("subagentHistoryStore", () => {
     expect(entries).toEqual([{ at: 1000, event: started }]);
   });
 
+  it("空 parentSessionId 事件不落盘（无主事件不汇入垃圾档案）", () => {
+    const file = subagentHistoryFile(dir, "")!;
+    appendSubagentHistoryEvent(file, { childId: "c0", parentSessionId: "", description: "", status: "started" }, 1000);
+    expect(existsSync(file)).toBe(false);
+  });
+
   it("删除档案（force）；null 路径无操作", () => {
     const file = subagentHistoryFile(dir, "s1")!;
     appendSubagentHistoryEvent(file, started, 1000);

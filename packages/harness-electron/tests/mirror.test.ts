@@ -12,10 +12,16 @@ import {
   type McpImportResultMirror,
   type McpServerEntryMirror,
   type ProviderKind as SharedProviderKind,
+  type SubagentLifecycleEvent as SharedSubagentLifecycleEvent,
+  type SubagentStatus as SharedSubagentStatus,
 } from "../../../src/shared/ipc";
 import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
 import type { PermissionResource } from "@innocenceharness/harness-permissions";
+import type {
+  SubagentLifecycleEvent as AgentSubagentLifecycleEvent,
+  SubagentStatus as AgentSubagentStatus,
+} from "@innocenceharness/harness-agent";
 import {
   DEFAULT_SETTINGS,
   MOCK_MODEL as PKG_MOCK_MODEL,
@@ -130,8 +136,8 @@ describe("shared MCP 导入 DTO 镜像对齐 main mcpImport", () => {
 });
 
 describe("ChatPermissionEvent.resource 对齐 harness-permissions PermissionResource", () => {
-  // 脱敏持久化形状：host 桥只透传 kind/action/scope（metadata 为后续
-  // schema 脱敏预留的可选面），shared 不 import 包，靠双向赋值防漂移。
+  // host 桥只透传 kind/action/scope（metadata 为预留的可选面），
+  // shared 不 import 包，靠双向赋值防漂移。
   const event: ChatPermissionEvent = {
     sessionId: "s1",
     messageId: "m1",
@@ -152,5 +158,39 @@ describe("ChatPermissionEvent.resource 对齐 harness-permissions PermissionReso
     const mirror: ChatPermissionEvent["resource"] = core;
     expect(core).toEqual({ action: "write", kind: "file", scope: "src/a.ts" });
     expect(mirror.scope).toBe("src/a.ts");
+  });
+});
+
+describe("shared SubagentLifecycleEvent 镜像对齐 harness-agent domain 事件", () => {
+  // shared 不 import 包，事件 DTO 手工镜像（tool 载荷的 title/result 等）：
+  // 任一侧增删字段或改可选性而忘了同步另一侧时，双向赋值与状态值枚举
+  // 会让 typecheck 失败（漂移不再静默）。
+  const sample: SharedSubagentLifecycleEvent = {
+    childId: "c1",
+    parentSessionId: "s1",
+    description: "任务",
+    status: "running",
+    parentInvocationId: "inv-1",
+    agentType: "explore",
+    prompt: "去查",
+    delta: "增量",
+    tool: { name: "Grep", phase: "call", isError: false, title: "pattern", result: "out" },
+    final: "报告",
+    error: "失败",
+  };
+
+  it("类型漂移守卫：shared 镜像与包内事件双向兼容", () => {
+    const domain: AgentSubagentLifecycleEvent = sample;
+    const back: SharedSubagentLifecycleEvent = domain;
+    expect(back.tool).toEqual({ name: "Grep", phase: "call", isError: false, title: "pattern", result: "out" });
+  });
+
+  it("状态值枚举双向对齐（两侧联合独立定义）", () => {
+    const statuses: readonly SharedSubagentStatus[] = ["started", "running", "completed", "failed", "cancelled"];
+    for (const status of statuses) {
+      const domain: AgentSubagentStatus = status;
+      const back: SharedSubagentStatus = domain;
+      expect(back).toBe(status);
+    }
   });
 });

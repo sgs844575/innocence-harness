@@ -96,6 +96,33 @@ export function filterHydrationEntries(
   return entries.filter((entry) => state[entry.event.childId] === undefined);
 }
 
+/**
+ * 回放折叠（复合 action 的 reducer 内实现，以最新 state 为准）：过滤 → 逐条
+ * 归约 → 中断对账——回放建档后仍无终态的 run 必是上次进程退出时被打断
+ *（落盘流以非终态收尾），补 cancelled 终态（时长锚在该流最后事件时刻），
+ * 面板/胶囊不再出现永远转圈的幽灵运行。实况档案（回放前已存在）不动。
+ */
+export function hydrateSubagentRuns(
+  state: SubagentRunsState,
+  entries: readonly { at: number; event: SubagentLifecycleEvent }[],
+): SubagentRunsState {
+  const existingIds = new Set(Object.keys(state));
+  const lastAt = new Map<string, number>();
+  let next = filterHydrationEntries(state, entries).reduce((acc, entry) => {
+    lastAt.set(entry.event.childId, Math.max(lastAt.get(entry.event.childId) ?? 0, entry.at));
+    return reduceSubagentRuns(acc, entry.event, entry.at);
+  }, state);
+  for (const [childId, run] of Object.entries(next)) {
+    if (existingIds.has(childId) || run.endedAt !== undefined) continue;
+    next = reduceSubagentRuns(
+      next,
+      { childId, parentSessionId: run.parentSessionId, description: "", status: "cancelled" },
+      lastAt.get(childId) ?? run.startedAt,
+    );
+  }
+  return next;
+}
+
 /** 运行时长 mm:ss（运行中传 now 取活值，终态传 endedAt 定值）。 */
 export function formatRunDuration(startedAt: number, end: number): string {
   const total = Math.max(0, Math.round((end - startedAt) / 1000));

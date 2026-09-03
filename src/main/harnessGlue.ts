@@ -499,8 +499,10 @@ const runtime = new HarnessRuntime({
     ...createRuntimeHooks(pendingAsks),
     onSubagentLifecycle: (event) => {
       // 广播实况的同时落盘档案（delta 不落盘，见 subagentHistoryStore）——
-      // 渲染层重启后按会话回放建档，历史运行才可再查看。
-      appendSubagentHistoryEvent(subagentHistoryFile(transcriptsDir(), event.parentSessionId), event, Date.now());
+      // 渲染层重启后按会话回放建档，历史运行才可再查看。store 根与
+      // initSessionStore 同源（userData；subagentHistoryFile 自拼 transcripts
+      // 段，传 transcriptsDir() 会得到双层嵌套、读回恒空）。
+      appendSubagentHistoryEvent(subagentHistoryFile(app.getPath("userData"), event.parentSessionId), event, Date.now());
       const win = getMainWindow();
       if (win && !win.isDestroyed()) win.webContents.send(IPC.subagentLifecycle, event);
     },
