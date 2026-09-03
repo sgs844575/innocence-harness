@@ -134,9 +134,23 @@ export function createSpawnerChildSession(
     }
     return {
       run: (prompt, signal, identity, onEvent?: SubagentChildEventListener) => {
+        // toolResult 事件只带 toolCallId：局部记录调用名以补全 result 的工具名。
+        const toolNames = new Map<string, string>();
         const unsubscribe = child.on((event: HarnessEvent) => {
           if (event.type === "token") onEvent?.({ type: "text", text: event.text });
-          else if (event.type === "error" && event.fatal) onEvent?.({ type: "error", error: event.message });
+          else if (event.type === "toolCall") {
+            toolNames.set(event.id, event.call.toolName);
+            // Args reach the spawner for one-line title projection; the
+            // lifecycle events never carry raw args onward.
+            onEvent?.({ type: "toolCall", name: event.call.toolName, args: event.call.args });
+          } else if (event.type === "toolResult") {
+            onEvent?.({
+              type: "toolResult",
+              name: toolNames.get(event.toolCallId) ?? event.toolCallId,
+              isError: event.isError === true,
+              result: event.content,
+            });
+          } else if (event.type === "error" && event.fatal) onEvent?.({ type: "error", error: event.message });
         });
         return child.run(prompt, signal, identity).then((result) => ({
           finalText: result.finalText,

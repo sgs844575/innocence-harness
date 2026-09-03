@@ -7,12 +7,36 @@ import type { Message } from "@innocenceharness/harness-session";
 
 export type SubagentStatus = "started" | "running" | "completed" | "failed" | "cancelled";
 
+/**
+ * One tool activity inside a child run. The call phase carries a one-line
+ * human summary of the arguments (`title`, derived by tool-summary); the
+ * result phase carries a bounded excerpt of the tool output (`result`).
+ * Raw args never leave the child session.
+ */
+export interface SubagentToolActivity {
+  name: string;
+  phase: "call" | "result";
+  isError?: boolean;
+  /** Call-phase argument summary (file name / pattern / command head). */
+  title?: string;
+  /** Result-phase output excerpt, bounded by {@link TOOL_RESULT_EXCERPT_LIMIT}. */
+  result?: string;
+}
+
 export interface SubagentLifecycleEvent {
   childId: string;
   parentSessionId: string;
   description: string;
   status: SubagentStatus;
+  /** Correlation key of the spawning Task invocation (binds a run to the
+   *  parent timeline's toolCall part); present when the loop bound a scope. */
+  parentInvocationId?: string;
+  /** Agent preset id and task prompt, present on the started event only. */
+  agentType?: string;
+  prompt?: string;
   delta?: string;
+  /** Tool activity inside the child, on running events. */
+  tool?: SubagentToolActivity;
   final?: string;
   error?: string;
 }
@@ -25,6 +49,8 @@ export type SubagentLifecycleListener = (event: SubagentLifecycleEvent) => void;
 
 export type SubagentChildEvent =
   | { type: "text"; text: string }
+  | { type: "toolCall"; name: string; args?: Record<string, unknown> }
+  | { type: "toolResult"; name: string; isError: boolean; result?: string }
   | { type: "error"; error: string };
 
 export type SubagentChildEventListener = (event: SubagentChildEvent) => void;
@@ -35,6 +61,8 @@ export interface SubagentOptions {
   tools: string[] | "readOnly" | "all";
   /** Maximum loop turns for the child (default 20). */
   maxTurns?: number;
+  /** Agent preset id spawning this child (shown in lifecycle projections). */
+  agentType?: string;
   prompt: string;
   description?: string;
   signal?: AbortSignal;
@@ -118,8 +146,52 @@ export interface SubagentResult {
   completion?: TurnCompletion;
 }
 
+/** Snapshot of one spawned run in the session registry (live or terminal). */
+export interface SubagentRunInfo {
+  runId: string;
+  agentType?: string;
+  description: string;
+  status: SubagentStatus;
+  startedAt: number;
+  finishedAt?: number;
+  /** Final turn count, filled when the run settles. */
+  turns?: number;
+  /** Tool calls observed so far (call + result events). */
+  toolCalls: number;
+  /** One-line latest activity, e.g. "tool Glob result". */
+  lastActivity?: string;
+  /** Final report text once completed. */
+  final?: string;
+  /** Failure message once failed. */
+  error?: string;
+}
+
+/** Handle of a detached spawn: id now, outcome via done / runs() / wait(). */
+export interface SubagentRunHandle {
+  runId: string;
+  /** Settles with the run result; rejections are captured in the registry
+   *  entry (status failed/cancelled) instead of throwing here. */
+  done: Promise<SubagentResult>;
+}
+
 export interface SubagentSpawner {
   run(options: SubagentOptions): Promise<SubagentResult>;
+  /**
+   * Detached spawn: returns immediately; the run keeps going after the
+   * spawning tool call returns. Cancellation comes from session teardown or
+   * an explicit cancel — the executor's per-call signal does not outlive the
+   * call. Optional: hosts without a run registry omit it and callers degrade.
+   */
+  start?(options: SubagentOptions): SubagentRunHandle;
+  /** Snapshot of this session's run registry (newest last). */
+  runs?(): readonly SubagentRunInfo[];
+  /**
+   * Blocks until the run reaches a terminal status and resolves with its
+   * info. `timeoutMs` omitted = wait indefinitely (repo rule: no default
+   * timeout when waiting on subagents); on timeout resolves with the live
+   * snapshot instead of rejecting. Unknown runId rejects.
+   */
+  wait?(runId: string, timeoutMs?: number): Promise<SubagentRunInfo>;
 }
 
 /**
@@ -134,13 +206,23 @@ export function bindSubagentSpawner(
   scope: ExecutionScope,
   history?: () => readonly Message[],
 ): SubagentSpawner {
+  const bindOptions = (options: SubagentOptions): SubagentOptions => {
+    const inherited =
+      options.inheritContext === true && history
+        ? { inheritHistory: inheritHistoryTail(history()) }
+        : {};
+    return { ...options, parentScope: scope, ...inherited };
+  };
   return {
-    run: (options) => {
-      const inherited =
-        options.inheritContext === true && history
-          ? { inheritHistory: inheritHistoryTail(history()) }
-          : {};
-      return spawner.run({ ...options, parentScope: scope, ...inherited });
-    },
+    run: (options) => spawner.run(bindOptions(options)),
+    // Registry faces forward as-is when present; start gets the same
+    // scope/history binding as run so detached children inherit identity too.
+    ...(spawner.start
+      ? { start: (options: SubagentOptions) => spawner.start!(bindOptions(options)) }
+      : {}),
+    ...(spawner.runs ? { runs: () => spawner.runs!() } : {}),
+    ...(spawner.wait
+      ? { wait: (runId: string, timeoutMs?: number) => spawner.wait!(runId, timeoutMs) }
+      : {}),
   };
 }

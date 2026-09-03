@@ -7,6 +7,10 @@ import type { HarnessSettingsPatch } from "./settingsPatch";
 
 export const IPC = {
   appInfo: "app:info",
+  /** 顶栏应用菜单「进程监视器」：app.getAppMetrics 的投影。 */
+  appMetrics: "app:metrics",
+  /** 顶栏应用菜单「导出日志」：选目录后复制 userData/logs 全部日志文件。 */
+  appExportLogs: "app:export-logs",
   themeGet: "theme:get",
   themeSet: "theme:set",
   themeChanged: "theme:changed",
@@ -26,6 +30,8 @@ export const IPC = {
   sessionsChanged: "sessions:changed",
   messagesList: "messages:list",
   chatSend: "chat:send",
+  /** 编辑重发（替换语义）：截断 fromMessageId 起的消息后以新文本重开一轮。 */
+  chatResend: "chat:resend",
   chatStop: "chat:stop",
   chatDelta: "chat:delta",
   chatDone: "chat:done",
@@ -37,6 +43,32 @@ export const IPC = {
   chatThinking: "chat:thinking",
   subagentLifecycle: "subagent:lifecycle",
   workspacePick: "workspace:pick",
+  /** 落地页分支胶囊：探测任意项目根的 Git 分支（非仓库/失败 → null）。 */
+  workspaceGitBranch: "workspace:git-branch",
+  /** Git 面板更改统计：工作区相对 HEAD 的 diff 概览（非仓库/失败 → null）。 */
+  workspaceGitChanges: "workspace:git-changes",
+  /** 分支面板：本地分支列表 + 当前分支（非仓库/失败 → null）。 */
+  workspaceGitBranches: "workspace:git-branches",
+  /** 分支面板：切换或新建并检出分支（用户从分支面板显式触发）。 */
+  workspaceGitCheckout: "workspace:git-checkout",
+  /** 侧栏文件树：单级目录列举（懒加载）。 */
+  workspaceListDir: "workspace:list-dir",
+  /** 侧栏文件树：受限文本读取（大小/二进制闸门）。 */
+  workspaceReadFile: "workspace:read-file",
+  /** 侧栏文件树搜索：全量文件清单（忽略 .git/node_modules，有上限）。 */
+  workspaceListFiles: "workspace:list-files",
+  /** 审查面板：改动文件列表（unstaged/staged；非仓库 → null）。 */
+  workspaceGitReviewFiles: "workspace:git-review-files",
+  /** 审查面板：单文件 unified diff（未跟踪文件返回全文；非仓库/失败 → null）。 */
+  workspaceGitReviewDiff: "workspace:git-review-diff",
+  /** dock 浏览器标签：访客页设备度量仿真（Emulation.setDeviceMetricsOverride）。 */
+  browserEmulate: "browser:emulate",
+  /** 会话「…」菜单：在系统文件管理器中打开目录。 */
+  hostRevealPath: "host:reveal-path",
+  /** 会话「…」菜单：打开外部链接（仅 http/https）。 */
+  hostOpenExternal: "host:open-external",
+  /** 会话「…」菜单：会话产物路径（任务转录文件/当前日志文件）。 */
+  sessionPaths: "session:paths",
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   settingsModelsList: "settings:models-list",
@@ -68,6 +100,15 @@ export interface AppInfo {
   locale: string;
 }
 
+/** 进程监视器的一行（app.getAppMetrics 的渲染层投影；内存已从 KB 折算 MB）。 */
+export interface AppProcessMetric {
+  pid: number;
+  /** Electron 进程类别名（Browser/Tab/GPU/Utility…），原样展示。 */
+  type: string;
+  cpuPercent: number;
+  memoryMB: number;
+}
+
 export interface TextPart { type: "text"; text: string }
 export interface ThinkingPart { type: "thinking"; text: string }
 export interface ToolCallPart {
@@ -75,6 +116,8 @@ export interface ToolCallPart {
   id: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** Per-invocation id, when the runtime forwarded one (joins subagent runs). */
+  invocationId?: string;
 }
 export interface ToolResultPart {
   type: "toolResult";
@@ -82,6 +125,8 @@ export interface ToolResultPart {
   content: string;
   isError: boolean;
   durationMs?: number;
+  /** Matches the toolCall part of the same invocation, when known. */
+  invocationId?: string;
 }
 export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
 
@@ -141,6 +186,45 @@ export interface Session {
   workspaceRoot?: string;
   /** M1 会话 fork 血缘：父会话与切口消息（信息性；旧索引缺省）。 */
   forkedFrom?: { sessionId: string; messageId?: string };
+  /** 右侧 dock 辅助对话会话：不进侧边栏会话列表（dock 自管理生命周期）。 */
+  aux?: boolean;
+}
+
+/** 审查面板作用域：未暂存（工作区 vs index）/ 已暂存（index vs HEAD）。 */
+export type ReviewScope = "unstaged" | "staged";
+
+/** 审查面板文件条目（untracked = 未跟踪新文件）。 */
+export interface ReviewFileEntry {
+  path: string;
+  additions: number;
+  deletions: number;
+  untracked?: boolean;
+}
+
+/** 单文件 diff：patch = git unified diff 文本；untracked = 新文件全文。 */
+export type ReviewFileDiffResult = { kind: "patch"; patch: string } | { kind: "untracked"; text: string } | null;
+
+/** dock 浏览器设备仿真请求：width/height 为 null = 清除覆盖（适应窗口）。 */
+export interface BrowserEmulateRequest {
+  /** <webview> 访客 id（webview.getWebContentsId()）。 */
+  guestId: number;
+  width: number | null;
+  height: number | null;
+  mobile: boolean;
+}
+
+/** 侧栏文件树的目录条目（rel 为工作区相对路径，"/" 分隔）。 */
+export interface WorkspaceDirEntry {
+  name: string;
+  rel: string;
+  isDir: boolean;
+}
+
+/** 侧栏文件树的文件内容（二进制不返回内容）。 */
+export interface WorkspaceFileContent {
+  content: string;
+  truncated: boolean;
+  binary: boolean;
 }
 
 export interface ChatDeltaEvent {
@@ -180,7 +264,14 @@ export interface SubagentLifecycleEvent {
   parentSessionId: string;
   description: string;
   status: SubagentStatus;
+  /** Correlation key of the spawning Task invocation, when scope was bound. */
+  parentInvocationId?: string;
+  /** Agent preset id and task prompt (started event only). */
+  agentType?: string;
+  prompt?: string;
   delta?: string;
+  /** Tool activity inside the child run (arg title on call, bounded result excerpt). */
+  tool?: { name: string; phase: "call" | "result"; isError?: boolean; title?: string; result?: string };
   final?: string;
   error?: string;
 }
@@ -278,6 +369,8 @@ export interface ModelInfo {
   maxInput?: number;
   maxOutput?: number;
   vision?: boolean;
+  /** 视频输入能力标记（展示用）。 */
+  video?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   reasoningEfforts?: string[];
@@ -290,15 +383,15 @@ export interface ModelInfo {
 // 镜像契约：以下资源类型镜像 packages/harness-permissions/src/policy.ts 的
 // PermissionResource（shared 不 import 包），修改任何一侧时必须同步另一侧
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-/** 脱敏持久化资源：工具调用作用的对象摘要，raw 值永不进入。 */
+/** 持久化资源：工具调用作用的对象摘要（与 persistArgs 同粒度）。 */
 export interface PermissionResourceInfo {
   /** 资源类别（path/command/url…）。 */
   kind: string;
   /** 资源上的动作（read/write/execute…）。 */
   action: string;
-  /** 稳定作用域（工作区相对路径、命令摘要、脱敏 URL…）。 */
+  /** 稳定作用域（工作区相对路径、完整命令、URL…）。 */
   scope: string;
-  /** 后续 schema 脱敏预留的附加元数据（P2/P3）。 */
+  /** 附加元数据（P2/P3 预留）。 */
   metadata?: Record<string, unknown>;
 }
 
@@ -308,7 +401,7 @@ export interface ChatPermissionEvent {
   requestId: string;
   toolName: string;
   args: Record<string, unknown>;
-  /** 本次调用作用的脱敏资源摘要（来自持久化的 PermissionRequest）。 */
+  /** 本次调用作用的资源摘要（来自持久化的 PermissionRequest）。 */
   resource: PermissionResourceInfo;
 }
 
@@ -343,6 +436,14 @@ export interface HarnessSettings {
   /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容
    *  注入 --font-size-code，与 harness-electron 同步持久化。 */
   codeFontSize?: number;
+  /** 浅色界面的代码高亮主题（shiki bundled 名，默认 github-light）。 */
+  codeThemeLight?: string;
+  /** 深色界面的代码高亮主题（默认 github-dark）。 */
+  codeThemeDark?: string;
+  /** 代码块显示行号；默认开。 */
+  codeLineNumbers?: boolean;
+  /** 代码内容长行自动换行；默认关（横向滚动）。 */
+  codeWordWrap?: boolean;
   /** Preferred UI language; "" follows the system locale. */
   locale?: "zh-CN" | "en-US" | "";
   /** 思考档位（""=跟随模型默认；off/low/medium/high/max）。与 harness-electron 同步。 */
@@ -394,6 +495,10 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
 
 export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   getAppInfo(): Promise<AppInfo>;
+  /** 进程监视器：当前各进程 CPU/内存快照（顶栏应用菜单）。 */
+  getAppMetrics(): Promise<AppProcessMetric[]>;
+  /** 导出日志：选目录后复制全部日志文件；返回复制数，取消/无日志 → null。 */
+  exportLogs(): Promise<{ exported: number } | null>;
   getTheme(): Promise<{ mode: ThemeMode; resolved: ResolvedTheme }>;
   setTheme(mode: ThemeMode): Promise<void>;
   onThemeChanged(cb: (mode: ThemeMode, resolved: ResolvedTheme) => void): () => void;
@@ -403,7 +508,7 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   isWindowMaximized(): Promise<boolean>;
   onWindowMaximizedChanged(cb: (maximized: boolean) => void): () => void;
   listSessions(): Promise<Session[]>;
-  createSession(options?: { title?: string; workspaceRoot?: string }): Promise<Session>;
+  createSession(options?: { title?: string; workspaceRoot?: string; aux?: boolean }): Promise<Session>;
   deleteSession(id: string): Promise<void>;
   /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。
    *  worktree=true 为工作树分叉（父 Git 工作区自 HEAD 建分离工作树并绑定为
@@ -421,7 +526,13 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   /** Fired after every session-store mutation (create/delete/append/retitle). */
   onSessionsChanged(cb: (list: Session[]) => void): () => void;
   listMessages(sessionId: string): Promise<ChatMessage[]>;
-  sendMessage(sessionId: string, text: string): Promise<{ messageId: string }>;
+  /** userMessageId：渲染层乐观用户气泡的 id，主进程落账沿用同一 id，
+   *  保证后续编辑重发的截断能在存储中找到这条消息。 */
+  sendMessage(sessionId: string, text: string, userMessageId?: string): Promise<{ messageId: string }>;
+  /** 编辑重发：替换 fromMessageId（含）之后的消息并以 text 重开一轮；
+   *  运行中/任务绑定会话或未知消息 id 时主进程抛错由渲染层提示。
+   *  newMessageId 为乐观新用户气泡的 id，落账沿用（同 sendMessage）。 */
+  resendMessage(sessionId: string, fromMessageId: string, text: string, newMessageId?: string): Promise<{ messageId: string }>;
   stopMessage(sessionId: string, messageId: string): Promise<void>;
   onChatDelta(cb: (e: ChatDeltaEvent) => void): () => void;
   onChatDone(cb: (e: ChatDoneEvent) => void): () => void;
@@ -432,6 +543,32 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   onChatPermission(cb: (e: ChatPermissionEvent) => void): () => void;
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;
+  /** 探测项目根的当前 Git 分支；非 Git 仓库或探测失败返回 null（胶囊隐藏）。 */
+  workspaceGitBranch(root: string): Promise<string | null>;
+  /** 工作区相对 HEAD 的 diff 概览（更改文件数/增删行）；非 Git 或失败返回 null。 */
+  workspaceGitChanges(root: string): Promise<{ changedFiles: number; additions: number; deletions: number } | null>;
+  /** 本地分支列表与当前分支；非 Git 仓库或失败返回 null。 */
+  workspaceGitBranches(root: string): Promise<{ current: string | null; branches: string[] } | null>;
+  /** 切换分支（create=true 时新建并检出）；失败返回 error 摘要。 */
+  workspaceGitCheckout(root: string, branch: string, create?: boolean): Promise<{ ok: boolean; branch?: string; error?: string }>;
+  /** 侧栏文件树：单级目录列举（目录在前、按名排序）。 */
+  listWorkspaceDir(root: string, relDir: string): Promise<WorkspaceDirEntry[]>;
+  /** 侧栏文件树：读取文本文件（超限截断；二进制只回标记）。 */
+  readWorkspaceFile(root: string, rel: string): Promise<WorkspaceFileContent>;
+  /** 侧栏文件树搜索：全量文件相对路径清单（忽略 .git/node_modules，封顶 2000）。 */
+  listWorkspaceFiles(root: string): Promise<string[]>;
+  /** 审查面板：改动文件列表；非 Git 仓库或失败返回 null（空态）。 */
+  workspaceGitReviewFiles(root: string, scope: ReviewScope): Promise<{ files: ReviewFileEntry[] } | null>;
+  /** 审查面板：单文件 diff（patch = unified diff 文本；untracked = 新文件全文）。 */
+  workspaceGitReviewDiff(root: string, scope: ReviewScope, path: string): Promise<ReviewFileDiffResult>;
+  /** dock 浏览器：设备度量仿真（null 尺寸 = 适应窗口）；仅接受本窗口的 webview 访客。 */
+  browserEmulate(request: BrowserEmulateRequest): Promise<{ ok: boolean; error?: string }>;
+  /** 在系统文件管理器中打开目录（失败静默）。 */
+  revealPath(path: string): Promise<void>;
+  /** 打开外部 http(s) 链接（其余 scheme 拒绝）。 */
+  openExternal(url: string): Promise<void>;
+  /** 会话产物路径：任务转录文件与当前日志文件（不存在 → null）。 */
+  getSessionPaths(id: string): Promise<{ taskPath: string | null; logPath: string | null }>;
   getHarnessSettings(): Promise<HarnessSettings>;
   /** Applies a settings patch to the latest committed host settings and returns its redacted projection. */
   setHarnessSettings(settings: HarnessSettingsPatch): Promise<HarnessSettings>;

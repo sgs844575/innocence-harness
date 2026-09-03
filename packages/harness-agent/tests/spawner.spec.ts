@@ -2,7 +2,6 @@ import {
   bindSubagentSpawner,
   createSpawnerPlugin,
   INHERIT_HISTORY_LIMIT,
-  SUBAGENT_CONCURRENCY,
   type SpawnerChildMaterials,
   type SpawnerChildSession,
   type SpawnerDeps,
@@ -167,6 +166,55 @@ describe("spawner lifecycle port", () => {
     expect(lifecycle[1]).toMatchObject({ status: "running" });
     expect(lifecycle).toContainEqual(expect.objectContaining({ status: "running", delta: "真实增量" }));
     expect(lifecycle.at(-1)).toMatchObject({ status: "completed", final: "子代理报告" });
+  });
+
+  it("carries agentType/prompt on started and parentInvocationId on every event, forwarding child tool activity", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({
+      childEvents: [
+        { type: "toolCall", name: "Read", args: { file_path: "D:/repo/src/a.ts" } },
+        { type: "toolResult", name: "Read", isError: false, result: "文件内容摘录" },
+        { type: "text", text: "结论" },
+      ],
+    });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+    const parentScope = createExecutionScope("Task", "inv-42", { sessionId: "sess-7" });
+
+    const pending = ctx.spawner.run({
+      ...baseInput,
+      agentType: "explore",
+      description: "定位渲染",
+      parentScope,
+    });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await pending;
+
+    expect(lifecycle[0]).toMatchObject({
+      status: "started",
+      agentType: "explore",
+      prompt: "去查",
+      parentInvocationId: "inv-42",
+      parentSessionId: "sess-7",
+    });
+    // agentType/prompt 只在 started 上；parentInvocationId 每个事件都有。
+    expect(lifecycle.at(-1)).toMatchObject({ status: "completed", parentInvocationId: "inv-42" });
+    expect(lifecycle.at(-1)?.agentType).toBeUndefined();
+    expect(lifecycle).toContainEqual(
+      expect.objectContaining({
+        status: "running",
+        tool: { name: "Read", phase: "call", title: "a.ts" },
+      }),
+    );
+    expect(lifecycle).toContainEqual(
+      expect.objectContaining({
+        status: "running",
+        tool: { name: "Read", phase: "result", isError: false, result: "文件内容摘录" },
+      }),
+    );
   });
 
   it("emits exactly one failed terminal status when the child reports a fatal error", async () => {
@@ -341,7 +389,7 @@ describe("spawner child plugin set construction", () => {
 });
 
 describe("spawner run semantics", () => {
-  it("runs the child prompt and signal under the parent-derived identity", async () => {
+  it("runs the child prompt under the parent-derived identity, propagating parent abort", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory });
     const parentScope = createExecutionScope("Task", "inv-9", {
@@ -349,12 +397,20 @@ describe("spawner run semantics", () => {
       taskId: "task-9",
       routeId: "route-4",
     });
-    const signal = new AbortController().signal;
+    const parent = new AbortController();
 
-    await runOne(ctx, gates, { ...baseInput, parentScope, signal });
-    expect(children[0]!.runs).toHaveLength(1);
+    const pending = ctx.spawner.run({ ...baseInput, parentScope, signal: parent.signal });
+    await vi.waitFor(() => expect(gates.length).toBeGreaterThanOrEqual(1));
+    // The child runs on the run's own derived controller (cancel reaches it
+    // after the spawning call is gone); the parent signal propagates into it.
+    const childSignal = children[0]!.runs[0]!.signal;
+    expect(childSignal).toBeDefined();
+    expect(childSignal!.aborted).toBe(false);
+    parent.abort();
+    expect(childSignal!.aborted).toBe(true);
+    gates.shift()!();
+    await pending;
     expect(children[0]!.runs[0]!.prompt).toBe("去查");
-    expect(children[0]!.runs[0]!.signal).toBe(signal);
     expect(children[0]!.runs[0]!.identity).toEqual({
       sessionId: "sess-1",
       taskId: "task-9",
@@ -381,7 +437,7 @@ describe("spawner run semantics", () => {
 });
 
 describe("spawner concurrency cap", () => {
-  it("caps concurrent spawns and frees the slot once a child settles", async () => {
+  it("caps concurrent spawns; excess spawns queue FIFO until a slot frees", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory });
 
@@ -389,14 +445,14 @@ describe("spawner concurrency cap", () => {
     const second = ctx.spawner.run(baseInput);
     const third = ctx.spawner.run(baseInput);
     await vi.waitFor(() => expect(children).toHaveLength(3));
-    await expect(ctx.spawner.run(baseInput)).rejects.toThrow(
-      `子代理并发已达上限（${SUBAGENT_CONCURRENCY}），请稍后再派生`,
-    );
+    // At the cap the fourth spawn waits for a slot instead of failing.
+    const fourth = ctx.spawner.run(baseInput);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(children).toHaveLength(3);
 
     gates[0]!();
     await first;
-    // The settled child released its slot: a fourth spawn is admitted.
-    const fourth = ctx.spawner.run(baseInput);
+    // The settled child released its slot: the queued spawn is admitted.
     await vi.waitFor(() => expect(children).toHaveLength(4));
     gates[1]!();
     gates[2]!();
@@ -411,13 +467,16 @@ describe("spawner concurrency cap", () => {
 
     const first = ctx.spawner.run(baseInput);
     await vi.waitFor(() => expect(children).toHaveLength(1));
-    await expect(ctx.spawner.run(baseInput)).rejects.toThrow(
-      "子代理并发已达上限（1），请稍后再派生",
-    );
+    const second = ctx.spawner.run(baseInput);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Queued, not failed: no second child while the first holds the slot.
+    expect(children).toHaveLength(1);
 
     gates[0]!();
     await first;
-    expect(children).toHaveLength(1);
+    await vi.waitFor(() => expect(children).toHaveLength(2));
+    gates[1]!();
+    await second;
   });
 
   it("releases the slot when the child run fails", async () => {
@@ -481,6 +540,45 @@ describe("context inheritance (S2b)", () => {
     await bound.run({ systemPrompt: "s", tools: "all", prompt: "p", inheritContext: true });
     expect(calls[0]!.inheritHistory).toBeUndefined();
     expect(calls[0]!.inheritContext).toBe(true);
+  });
+
+  it("forwards start/runs/wait with the same scope and history binding", async () => {
+    const started: Array<Record<string, unknown>> = [];
+    const scope = createExecutionScope("Task");
+    const inner: SubagentSpawner = {
+      run: async () => ({ finalText: "ok", turns: 1 }),
+      start: (options) => {
+        started.push(options as unknown as Record<string, unknown>);
+        return { runId: "r1", done: Promise.resolve({ finalText: "ok", turns: 1 }) };
+      },
+      runs: () => [],
+      wait: async (runId) => ({
+        runId,
+        description: "",
+        status: "completed",
+        startedAt: 0,
+        toolCalls: 0,
+      }),
+    };
+    const bound = bindSubagentSpawner(inner, scope, () => [
+      { role: "user", parts: [{ type: "text", text: "父消息" }] },
+    ]);
+    const handle = bound.start!({
+      systemPrompt: "s",
+      tools: "all",
+      prompt: "p",
+      inheritContext: true,
+    });
+    expect(handle.runId).toBe("r1");
+    expect(started[0]!.parentScope).toBe(scope);
+    expect(started[0]!.inheritHistory).toHaveLength(1);
+    expect(bound.runs!()).toEqual([]);
+    await expect(bound.wait!("r1")).resolves.toMatchObject({ runId: "r1" });
+    // A spawner without the registry faces stays run-only when bound.
+    const runOnly = bindSubagentSpawner({ run: inner.run }, scope);
+    expect(runOnly.start).toBeUndefined();
+    expect(runOnly.runs).toBeUndefined();
+    expect(runOnly.wait).toBeUndefined();
   });
 
   it("service passes seedHistory into materials and prefixes the briefing to the prompt", async () => {
@@ -639,5 +737,136 @@ describe("spawner service lifecycle on the kernel", () => {
     await vi.waitFor(() => expect(gates).toHaveLength(1));
     gates[0]!();
     await expect(pending).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+  });
+
+  it("unwinding the plugin aborts every live run (detached children never leak)", async () => {
+    const ctx = new Context();
+    const { factory, children, gates } = makeFactory();
+    const fiber = await ctx.plugin(
+      createSpawnerPlugin({
+        sessionFactory: factory,
+        provider: echoProvider,
+        permission: allowEngine(),
+        tools: [],
+      }),
+    );
+    const handle = ctx.spawner.start(baseInput);
+    await vi.waitFor(() => expect(children).toHaveLength(1));
+    await fiber.dispose();
+    // The per-run controller aborted: the parked child sees it once released.
+    expect(children[0]!.runs[0]!.signal?.aborted).toBe(true);
+    gates[0]!();
+    await handle.done;
+  });
+});
+
+describe("spawner run registry", () => {
+  it("start detaches: returns a runId immediately and tracks the run to completion", async () => {
+    const { factory, children, gates } = makeFactory({
+      childEvents: [
+        { type: "toolCall", name: "Glob" },
+        { type: "toolResult", name: "Glob", isError: false },
+      ],
+    });
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const handle = ctx.spawner.start({ ...baseInput, description: "列目录" });
+    expect(handle.runId).toMatch(/^child_/);
+    await vi.waitFor(() => expect(children).toHaveLength(1));
+    await vi.waitFor(() => expect(ctx.spawner.runs()[0]?.status).toBe("running"));
+    expect(ctx.spawner.runs()[0]).toMatchObject({
+      runId: handle.runId,
+      description: "列目录",
+      status: "running",
+    });
+
+    gates[0]!();
+    await expect(handle.done).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+    const info = await ctx.spawner.wait(handle.runId);
+    expect(info.status).toBe("completed");
+    expect(info.final).toBe("子代理报告");
+    expect(info.turns).toBe(1);
+    expect(info.toolCalls).toBe(1);
+    expect(info.lastActivity).toBe("tool Glob result");
+    expect(info.finishedAt).toBeTypeOf("number");
+  });
+
+  it("blocking runs queue no progress notes; detached runs do, latest-wins", async () => {
+    const { factory, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const blocking = ctx.spawner.run(baseInput);
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await blocking;
+    expect(ctx.spawner.drainProgress()).toEqual([]);
+
+    const handle = ctx.spawner.start({ ...baseInput, description: "后台" });
+    await vi.waitFor(() => expect(gates).toHaveLength(2));
+    const early = ctx.spawner.drainProgress();
+    expect(early).toHaveLength(1);
+    expect(early[0]).toContain("started");
+    expect(early[0]).toContain("后台");
+
+    gates[1]!();
+    await handle.done;
+    const late = ctx.spawner.drainProgress();
+    expect(late).toHaveLength(1);
+    expect(late[0]).toContain("completed");
+    expect(late[0]).toContain("子代理报告");
+    // Drained notes are cleared.
+    expect(ctx.spawner.drainProgress()).toEqual([]);
+  });
+
+  it("wait blocks until terminal; a deadline resolves with the live snapshot", async () => {
+    const { factory, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const handle = ctx.spawner.start(baseInput);
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    const timedOut = await ctx.spawner.wait(handle.runId, 20);
+    expect(timedOut.status).not.toBe("completed");
+
+    const parked = ctx.spawner.wait(handle.runId);
+    gates[0]!();
+    const info = await parked;
+    expect(info.status).toBe("completed");
+    await handle.done;
+    await expect(ctx.spawner.wait("missing")).rejects.toThrow("未知的子代理运行");
+  });
+
+  it("cancel aborts a live run; terminal or unknown runs are safe no-ops/errors", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const handle = ctx.spawner.start(baseInput);
+    await vi.waitFor(() => expect(children).toHaveLength(1));
+    ctx.spawner.cancel(handle.runId);
+    expect(children[0]!.runs[0]!.signal?.aborted).toBe(true);
+    gates[0]!();
+    await handle.done;
+    expect(ctx.spawner.runs()[0]!.status).toBe("cancelled");
+    // Cancelling a terminal run does not throw; unknown ids do.
+    expect(ctx.spawner.cancel(handle.runId).status).toBe("cancelled");
+    expect(() => ctx.spawner.cancel("missing")).toThrow("未知的子代理运行");
+  });
+
+  it("drops inheritToSubagents:false processors from the child set", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const parentOnly: MessageProcessor = {
+      ...fakeProcessor("parent-only"),
+      inheritToSubagents: false,
+    };
+    const shared = fakeProcessor("shared");
+    const pending = ctx.spawner.run({
+      ...baseInput,
+      inherit: { processors: [parentOnly, shared], middlewares: [] },
+    });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await pending;
+    expect(children[0]!.materials.processors.map((p) => p.name)).toEqual(["shared"]);
   });
 });

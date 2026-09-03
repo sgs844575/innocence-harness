@@ -1,0 +1,338 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { RightDock } from "./RightDock";
+import {
+  clampDockWidth,
+  dockTabTitle,
+  relativeTabTime,
+  DOCK_MAX_WIDTH,
+  DOCK_MIN_WIDTH,
+  type DockTabInstance,
+} from "../state/dockTabs";
+import type { SubagentRun } from "../state/subagentRuns";
+
+afterEach(cleanup);
+
+const t = (key: string) => key;
+
+const subagentsTab: DockTabInstance = { id: "subagents", kind: "subagents", createdAt: 1000 };
+const auxTab: DockTabInstance = { id: "aux:sess1", kind: "aux", sessionId: "sess1", createdAt: 2000 };
+const auxTab2: DockTabInstance = { id: "aux:sess2", kind: "aux", sessionId: "sess2", createdAt: 3000 };
+
+const baseProps = {
+  runs: [] as SubagentRun[],
+  renderAuxTab: (tab: DockTabInstance) => <div data-testid="aux-stub">{tab.sessionId}</div>,
+  renderReviewTab: () => <div data-testid="review-stub" />,
+  renderTerminalTab: (tab: DockTabInstance) => <div data-testid="term-stub">{tab.id}</div>,
+  renderBrowserTab: (tab: DockTabInstance) => <div data-testid="browser-stub">{tab.id}</div>,
+  onActivateTab: () => {},
+  onCloseTab: () => {},
+  onNewTab: () => {},
+};
+
+const runningRun: SubagentRun = {
+  childId: "c1",
+  parentSessionId: "s1",
+  parentInvocationId: "inv-1",
+  agentType: "explore",
+  description: "定位 Write 渲染",
+  prompt: "去查代码",
+  status: "running",
+  text: "正在读取文件……",
+  tools: [{ name: "Read", phase: "call", at: 1100 }],
+  startedAt: 1000,
+};
+
+const doneRun: SubagentRun = {
+  ...runningRun,
+  childId: "c2",
+  status: "completed",
+  final: "结论全文",
+  tools: [
+    { name: "Read", phase: "call", at: 1100 },
+    { name: "Read", phase: "result", isError: false, at: 1200 },
+  ],
+  endedAt: 5000,
+};
+
+describe("clampDockWidth / relativeTabTime / dockTabTitle", () => {
+  it("宽度夹在最小/最大之间并取整", () => {
+    expect(clampDockWidth(100)).toBe(DOCK_MIN_WIDTH);
+    expect(clampDockWidth(9999)).toBe(DOCK_MAX_WIDTH);
+    expect(clampDockWidth(341.6)).toBe(342);
+  });
+
+  it("相对时间：刚刚 / N 分钟前 / HH:MM", () => {
+    const now = 1_000_000_000_000;
+    expect(relativeTabTime(t, now - 30_000, now)).toBe("dock.time.justNow");
+    // identity t 无 {n} 占位可替换：校验 minutesAgo 键路径即可。
+    expect(relativeTabTime(t, now - 5 * 60_000, now)).toBe("dock.time.minutesAgo");
+    expect(relativeTabTime(t, 1000, now)).toBe(new Date(1000).toTimeString().slice(0, 5));
+  });
+
+  it("标签标题：子代理/审查用字典键；辅助对话按存活 aux 标签动态编号", () => {
+    expect(dockTabTitle(t, subagentsTab, [subagentsTab])).toBe("dock.subagents");
+    expect(dockTabTitle(t, { id: "review", kind: "review", createdAt: 1 }, [])).toBe("dock.tile.review");
+    // 单个 aux 默认 1；两个并存按顺序 1/2；关掉第一个后第二个递补为 1。
+    expect(dockTabTitle(t, auxTab, [auxTab])).toBe("dock.tile.chat 1");
+    expect(dockTabTitle(t, auxTab, [auxTab, auxTab2])).toBe("dock.tile.chat 1");
+    expect(dockTabTitle(t, auxTab2, [auxTab, auxTab2])).toBe("dock.tile.chat 2");
+    expect(dockTabTitle(t, auxTab2, [auxTab2])).toBe("dock.tile.chat 1");
+    // 终端标签用创建时固定的目录名标题，缺省回退字典键。
+    expect(dockTabTitle(t, { id: "term_1", kind: "terminal", title: "InnocenceCode", createdAt: 1 }, [])).toBe("InnocenceCode");
+    expect(dockTabTitle(t, { id: "term_2", kind: "terminal", createdAt: 2 }, [])).toBe("dock.tile.terminal");
+  });
+
+  it("标签标题：文件标签取路径末段，缺载荷回落字典键", () => {
+    const fileTab: DockTabInstance = {
+      id: "file:src/styles/app.css",
+      kind: "file",
+      file: { path: "src/styles/app.css" },
+      createdAt: 1,
+    };
+    expect(dockTabTitle(t, fileTab, [fileTab])).toBe("app.css");
+    expect(dockTabTitle(t, { id: "file:x", kind: "file", createdAt: 1 }, [])).toBe("dock.tile.file");
+  });
+});
+
+describe("RightDock 首页（无激活标签）", () => {
+  it("打开标签页：辅助对话/子代理/审查/终端/浏览器全部可用", () => {
+    const onNewTab = vi.fn();
+    render(<RightDock {...baseProps} t={t} tabs={[]} activeTabId={null} onNewTab={onNewTab} />);
+    expect(screen.getByText("dock.home.title")).toBeTruthy();
+    fireEvent.click(screen.getByText("dock.tile.chat"));
+    expect(onNewTab).toHaveBeenCalledWith("aux");
+    fireEvent.click(screen.getByText("dock.subagents"));
+    expect(onNewTab).toHaveBeenCalledWith("subagents");
+    fireEvent.click(screen.getByText("dock.tile.review"));
+    expect(onNewTab).toHaveBeenCalledWith("review");
+    fireEvent.click(screen.getByText("dock.tile.terminal"));
+    expect(onNewTab).toHaveBeenCalledWith("terminal");
+    fireEvent.click(screen.getByText("dock.tile.browser"));
+    expect(onNewTab).toHaveBeenCalledWith("browser");
+  });
+
+  it("拖拽把手：pointerdown 回调给 App", () => {
+    const onResizeStart = vi.fn();
+    render(<RightDock {...baseProps} t={t} tabs={[]} activeTabId={null} onResizeStart={onResizeStart} />);
+    fireEvent.pointerDown(screen.getByTestId("right-dock-resize-handle"), { clientX: 500 });
+    expect(onResizeStart).toHaveBeenCalledOnce();
+  });
+});
+
+describe("RightDock 标签条", () => {
+  it("chip 横排：点击激活、X 关闭", () => {
+    const onActivateTab = vi.fn();
+    const onCloseTab = vi.fn();
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab, auxTab]} activeTabId="subagents"
+        onActivateTab={onActivateTab} onCloseTab={onCloseTab} />,
+    );
+    fireEvent.click(screen.getByText("dock.tile.chat 1"));
+    expect(onActivateTab).toHaveBeenCalledWith("aux:sess1");
+    fireEvent.click(screen.getAllByLabelText("dock.closeTab")[0]!);
+    expect(onCloseTab).toHaveBeenCalledWith("subagents");
+  });
+
+  it("ˇ 弹出打开的标签页列表：搜索过滤、点击激活、行内 X 关闭", () => {
+    const onActivateTab = vi.fn();
+    const onCloseTab = vi.fn();
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab, auxTab]} activeTabId="subagents"
+        onActivateTab={onActivateTab} onCloseTab={onCloseTab} />,
+    );
+    fireEvent.click(screen.getByLabelText("dock.tabs.open"));
+    // 两行都在（带相对时间），搜索 "chat" 后只剩辅助对话行
+    expect(screen.getAllByText("dock.tile.chat 1").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("dock.tabs.search"), { target: { value: "chat" } });
+    expect(screen.queryByText("dock.subagents", { selector: "li span" })).toBeNull();
+    const row = screen.getByText("dock.tile.chat 1", { selector: "li span" });
+    fireEvent.click(row);
+    expect(onActivateTab).toHaveBeenCalledWith("aux:sess1");
+  });
+
+  it("＋ 弹出类型菜单：五种类型全部可开", () => {
+    const onNewTab = vi.fn();
+    render(<RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" onNewTab={onNewTab} />);
+    fireEvent.click(screen.getByLabelText("dock.home.title"));
+    fireEvent.click(screen.getByText("dock.tile.browser"));
+    expect(onNewTab).toHaveBeenCalledWith("browser");
+  });
+});
+
+describe("RightDock 子代理标签", () => {
+  it("空态文案", () => {
+    render(<RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" />);
+    expect(screen.getByText("dock.empty")).toBeTruthy();
+  });
+
+  it("列表视图：预设徽章 + 描述 + 状态与时长 + 尾部预览 + 活跃计数", () => {
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[runningRun]} />,
+    );
+    expect(screen.getByText("explore")).toBeTruthy();
+    expect(screen.getByText("定位 Write 渲染")).toBeTruthy();
+    expect(screen.getByText(/dock\.status\.running/)).toBeTruthy();
+    expect(container.querySelector(".line-clamp-2")?.textContent).toContain("正在读取文件");
+    expect(screen.getByText("1")).toBeTruthy();
+  });
+
+  it("点击卡片进入对话视图；对话视图含 Markdown 正文 + prompt + 工具轨迹，返回钮回列表", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[doneRun]} selectedChildId="c2" onSelect={onSelect} />,
+    );
+    expect(container.textContent).toContain("结论全文");
+    expect(screen.getByText("去查代码")).toBeTruthy();
+    // 工具轨迹动词走 i18n（verbKeyFor），不再裸显原始工具名。
+    expect(screen.getByText("tool.verb.read")).toBeTruthy();
+    expect(screen.queryByText("Read")).toBeNull();
+    fireEvent.click(screen.getByLabelText("dock.back"));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it("工具轨迹：动词 + 参数摘要；点击行展开结果摘录", () => {
+    const run: SubagentRun = {
+      ...doneRun,
+      tools: [
+        { name: "Grep", phase: "call", title: "pairedRunTools", at: 1100 },
+        { name: "Grep", phase: "result", isError: false, result: "src/a.ts:10", at: 1200 },
+      ],
+    };
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c2" />,
+    );
+    expect(screen.getByText("tool.verb.grep")).toBeTruthy();
+    expect(screen.getByText("pairedRunTools")).toBeTruthy();
+    // acc-panel 为 CSS 高度动画（内容常驻 DOM），展开态经 aria-expanded 断言；
+    // 结果摘录在 DOM 中且点击后行进入展开态。
+    const row = screen.getByRole("button", { name: /tool\.verb\.grep/ });
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("src/a.ts:10")).toBeTruthy();
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("对话视图失败态：错误块 + 失败状态", () => {
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[{ ...doneRun, childId: "c3", status: "failed", final: undefined, error: "模型失败" }]}
+        selectedChildId="c3" />,
+    );
+    expect(container.textContent).toContain("模型失败");
+    expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
+  });
+
+  it("selectedChildId 无匹配运行时回落到列表视图", () => {
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[doneRun]} selectedChildId="missing" />,
+    );
+    expect(screen.getByText("定位 Write 渲染")).toBeTruthy();
+    expect(screen.queryByLabelText("dock.back")).toBeNull();
+  });
+});
+
+describe("RightDock 辅助对话标签", () => {
+  it("经 renderAuxTab 注入会话内容", () => {
+    render(<RightDock {...baseProps} t={t} tabs={[auxTab]} activeTabId="aux:sess1" />);
+    expect(screen.getByTestId("aux-stub").textContent).toBe("sess1");
+  });
+});
+
+describe("RightDock 审查标签", () => {
+  it("经 renderReviewTab 注入审查内容", () => {
+    render(
+      <RightDock {...baseProps} t={t}
+        tabs={[{ id: "review", kind: "review", createdAt: 1 }]} activeTabId="review" />,
+    );
+    expect(screen.getByTestId("review-stub")).toBeTruthy();
+  });
+});
+
+describe("RightDock 文件标签", () => {
+  const diffTab: DockTabInstance = {
+    id: "file:src/styles/app.css",
+    kind: "file",
+    file: { path: "src/styles/app.css", diff: { removed: "旧行", added: "新行" } },
+    createdAt: 1,
+  };
+
+  it("修改内容载荷：路径头 + 红绿 diff 行块", () => {
+    const { container } = render(<RightDock {...baseProps} t={t} tabs={[diffTab]} activeTabId={diffTab.id} />);
+    expect(screen.getByTitle("src/styles/app.css")).toBeTruthy();
+    expect(screen.getByText("旧行")).toBeTruthy();
+    expect(screen.getByText("新行")).toBeTruthy();
+    expect(container.querySelector(".diff-line-del")).toBeTruthy();
+    expect(container.querySelector(".diff-line-add")).toBeTruthy();
+  });
+
+  it("原文载荷：渲染读取结果；空载荷给「无输出」", () => {
+    const textTab: DockTabInstance = {
+      id: "file:src/a.ts",
+      kind: "file",
+      file: { path: "src/a.ts", originalText: "文件正文" },
+      createdAt: 2,
+    };
+    const { rerender } = render(<RightDock {...baseProps} t={t} tabs={[textTab]} activeTabId={textTab.id} />);
+    expect(screen.getByText("文件正文")).toBeTruthy();
+    rerender(
+      <RightDock {...baseProps} t={t}
+        tabs={[{ id: "file:src/b.ts", kind: "file", file: { path: "src/b.ts" }, createdAt: 3 }]}
+        activeTabId="file:src/b.ts" />,
+    );
+    expect(screen.getByText("tool.status.empty")).toBeTruthy();
+  });
+});
+
+describe("RightDock 终端标签", () => {
+  const terminalTab: DockTabInstance = { id: "term_1", kind: "terminal", title: "InnocenceCode", cwd: "D:/proj", createdAt: 4 };
+
+  it("经 renderTerminalTab 注入终端内容；标题取目录名", () => {
+    render(<RightDock {...baseProps} t={t} tabs={[terminalTab]} activeTabId="term_1" />);
+    expect(screen.getByTestId("term-stub")).toBeTruthy();
+    expect(screen.getAllByText("InnocenceCode").length).toBeGreaterThan(0);
+  });
+
+  it("aux/terminal 标签常驻挂载：非激活仅隐藏，内容不卸载", () => {
+    const { rerender } = render(
+      <RightDock {...baseProps} t={t} tabs={[auxTab, terminalTab]} activeTabId="aux:sess1" />,
+    );
+    // 两个内容都在文档中（常驻），终端容器隐藏。
+    const termStub = screen.getByTestId("term-stub");
+    const auxStub = screen.getByTestId("aux-stub");
+    expect(termStub.parentElement?.className).toContain("hidden");
+    expect(auxStub.parentElement?.className).not.toContain("hidden");
+    // 切到终端标签：可见性翻转，两者仍挂载。
+    rerender(<RightDock {...baseProps} t={t} tabs={[auxTab, terminalTab]} activeTabId="term_1" />);
+    expect(screen.getByTestId("term-stub").parentElement?.className).not.toContain("hidden");
+    expect(screen.getByTestId("aux-stub").parentElement?.className).toContain("hidden");
+  });
+});
+
+describe("RightDock 浏览器标签", () => {
+  const browserTab: DockTabInstance = { id: "browser_1", kind: "browser", title: "示例页", createdAt: 5 };
+
+  it("经 renderBrowserTab 注入内容；标题取页面回写值", () => {
+    render(<RightDock {...baseProps} t={t} tabs={[browserTab]} activeTabId="browser_1" />);
+    expect(screen.getByTestId("browser-stub")).toBeTruthy();
+    expect(screen.getAllByText("示例页").length).toBeGreaterThan(0);
+  });
+
+  it("favicon 存在时 chip 显示图标图片", () => {
+    const { container } = render(
+      <RightDock {...baseProps} t={t}
+        tabs={[{ ...browserTab, favicon: "data:image/png;base64,x" }]} activeTabId="browser_1" />,
+    );
+    expect(container.querySelector("img[src^='data:image']")).toBeTruthy();
+  });
+
+  it("非激活浏览器标签用 invisible 常驻（不卸载访客插件）", () => {
+    render(<RightDock {...baseProps} t={t} tabs={[auxTab, browserTab]} activeTabId="aux:sess1" />);
+    const wrapper = screen.getByTestId("browser-stub").parentElement!;
+    expect(wrapper.className).toContain("invisible");
+    expect(wrapper.className).not.toContain("hidden");
+  });
+});

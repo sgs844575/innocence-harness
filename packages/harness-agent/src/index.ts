@@ -6,8 +6,11 @@ export type {
   SubagentLifecyclePort,
   SubagentOptions,
   SubagentResult,
+  SubagentRunHandle,
+  SubagentRunInfo,
   SubagentSpawner,
   SubagentStatus,
+  SubagentToolActivity,
 } from "./subagent";
 export {
   bindSubagentSpawner,
@@ -16,6 +19,17 @@ export {
   inheritHistoryTail,
   sanitizeInheritedHistory,
 } from "./subagent";
+export {
+  clipToolResult,
+  summarizeToolTitle,
+  TOOL_RESULT_EXCERPT_LIMIT,
+} from "./tool-summary";
+export {
+  createRunRegistry,
+  FINISHED_RECORD_LIMIT,
+  type SubagentRunRecord,
+  type SubagentRunRegistry,
+} from "./run-registry";
 export { AgentsPlugin, type AgentDef, type AgentsService } from "./agents";
 export {
   SUBAGENT_CONCURRENCY,
