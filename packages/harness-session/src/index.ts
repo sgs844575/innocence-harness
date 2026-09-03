@@ -6,6 +6,7 @@ export type {
   TextPart,
   ThinkingPart,
   ToolCallPart,
+  ToolResultImage,
   ToolResultPart,
 } from "./types";
 export { textMessage, isPlainText, messageText, toTranscript } from "./types";

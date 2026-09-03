@@ -20,6 +20,13 @@ export interface MessageProcessorContext {
 export interface MessageProcessor {
   name: string;
   order: number;
+  /**
+   * False = parent-session only: the spawner drops it from the processor set
+   * inherited by subagent children. Parent-scoped processors (for example a
+   * subagent progress drain) must opt out — a child's first input would
+   * otherwise consume the parent's pending notes.
+   */
+  inheritToSubagents?: boolean;
   process(message: Message, context: MessageProcessorContext): Promise<Message>;
 }
 

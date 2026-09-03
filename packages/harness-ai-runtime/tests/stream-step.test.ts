@@ -127,7 +127,7 @@ describe("streamOneHarnessStep", () => {
       temperature: 0.2,
       maxOutputTokens: 4096,
       providerOptions: {
-        openai: { reasoningEffort: "high" },
+        "configured-profile": { reasoningEffort: "high" },
       },
     });
     expect(model.doStreamCalls[0]?.tools?.every((tool) => tool.type === "function")).toBe(true);
@@ -151,6 +151,7 @@ describe("streamOneHarnessStep", () => {
     });
     const carrier = createModelFactory({
       createOpenAI: () => ({ chat: () => model }),
+      createOpenAICompatible: () => ({ chatModel: () => model }),
     }).create({
       providerId: "compatible-profile",
       protocol: "openai-compatible",
@@ -169,7 +170,7 @@ describe("streamOneHarnessStep", () => {
     );
 
     expect(model.doStreamCalls[0]).toMatchObject({
-      providerOptions: { openai: { reasoningEffort: "xhigh" } },
+      providerOptions: { "compatible-profile": { reasoningEffort: "xhigh" } },
     });
     expect(JSON.stringify(model.doStreamCalls[0])).not.toContain('"max"');
     expect(JSON.stringify(events)).not.toContain("xhigh");

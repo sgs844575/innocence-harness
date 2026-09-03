@@ -27,7 +27,8 @@ describe("createModelFactory", () => {
   it("preserves the neutral metadata and custom base URL for compatible models", () => {
     const model = { opaque: true };
     const createOpenAI = vi.fn(() => ({ chat: vi.fn(() => model) }));
-    const factory = createModelFactory({ createOpenAI });
+    const createOpenAICompatible = vi.fn(() => ({ chatModel: vi.fn(() => model) }));
+    const factory = createModelFactory({ createOpenAI, createOpenAICompatible });
 
     const result = factory.create({
       providerId: "gateway",
@@ -38,7 +39,9 @@ describe("createModelFactory", () => {
       capabilities: { tools: true },
     });
 
-    expect(createOpenAI).toHaveBeenCalledWith({
+    // 兼容协议走 openai-compatible 通道（reasoning_content → 思考流事件）。
+    expect(createOpenAI).not.toHaveBeenCalled();
+    expect(createOpenAICompatible).toHaveBeenCalledWith({
       apiKey: "secret",
       baseURL: "https://example.invalid/v1",
       name: "gateway",

@@ -9,6 +9,7 @@ export type {
   TextPart,
   ThinkingPart,
   ToolCallPart,
+  ToolResultImage,
   ToolResultPart,
   TurnCompletion,
   TurnMetadata,

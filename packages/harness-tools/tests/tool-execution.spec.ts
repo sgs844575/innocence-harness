@@ -182,6 +182,19 @@ describe("executeToolInvocation", () => {
     expect(aborted).toBe(true);
   });
 
+  it("runs without a deadline when timeoutMs is not positive and finite", async () => {
+    for (const timeoutMs of [0, Number.POSITIVE_INFINITY]) {
+      const result = await executeToolInvocation(fakeInvocation(), [], {
+        timeoutMs,
+        execute: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { content: "done" };
+        },
+      });
+      expect(result.content).toBe("done");
+    }
+  });
+
   it("still reports timeout when the body settles successfully after the abort", async () => {
     await expect(
       executeToolInvocation(fakeInvocation(), [], {

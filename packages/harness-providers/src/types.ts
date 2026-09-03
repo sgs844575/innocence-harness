@@ -73,10 +73,18 @@ export interface ToolCallPart {
   args: Record<string, unknown>;
 }
 
+/** 工具结果携带的图像：base64 裸数据（无 data: 前缀），模型可见（视觉闭环）。 */
+export interface ToolResultImage {
+  mediaType: string;
+  data: string;
+}
+
 export interface ToolResultPart {
   type: "toolResult";
   toolCallId: string;
   content: string;
+  /** 随工具结果进历史并映射到 provider 的图像；事件/UI 面不携带。 */
+  images?: ToolResultImage[];
   isError?: boolean;
 }
 

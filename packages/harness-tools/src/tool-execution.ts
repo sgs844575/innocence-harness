@@ -53,7 +53,12 @@ export interface ToolExecutionMiddleware {
 export type ToolBody = (signal: AbortSignal, ctx: ToolContext) => Promise<ToolResult>;
 
 export interface ToolExecutionOptions {
-  /** Hard deadline for the WHOLE middleware chain, middleware included. */
+  /**
+   * Hard deadline for the WHOLE middleware chain, middleware included.
+   * A non-positive or non-finite value disables the deadline entirely
+   * (delegated long-running tools such as subagent runs use this); the
+   * parent-abort propagation and the abort-grace window still apply.
+   */
   timeoutMs: number;
   /** Extra wait after the timeout abort before declaring TOOL_UNSTABLE. */
   abortGraceMs?: number;
@@ -195,12 +200,17 @@ export function executeToolInvocation(
     controller.signal.addEventListener("abort", onDerivedAbort, { once: true });
     if (controller.signal.aborted) armGraceWindow();
 
-    deadline = setTimeout(() => {
-      timeoutError = new ToolExecutionError(TOOL_TIMEOUT, timeoutMessage(options.timeoutMs));
-      // True abort first (the listener above arms the grace window), then the
-      // standardized timeout error once the chain settles.
-      controller.abort(timeoutError);
-    }, options.timeoutMs);
+    // A positive finite timeoutMs arms the deadline; 0/Infinity means the
+    // caller (e.g. a delegated subagent run) owns its own budget and only
+    // parent aborts can stop the chain.
+    if (options.timeoutMs > 0 && Number.isFinite(options.timeoutMs)) {
+      deadline = setTimeout(() => {
+        timeoutError = new ToolExecutionError(TOOL_TIMEOUT, timeoutMessage(options.timeoutMs));
+        // True abort first (the listener above arms the grace window), then the
+        // standardized timeout error once the chain settles.
+        controller.abort(timeoutError);
+      }, options.timeoutMs);
+    }
 
     // Plugin middleware may throw synchronously; route that through settle so
     // timers and the parent listener are cleaned up immediately.

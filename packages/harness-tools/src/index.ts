@@ -10,13 +10,8 @@ export {
   type ExecutionScope,
   type ExecutionScopeIdentity,
 } from "./execution-scope";
-export type { Tool, ToolContext, ToolResult, ToolSideEffect } from "./tool";
-export {
-  redactCommand,
-  redactCommandSummary,
-  redactUrl,
-  sha256Hex,
-} from "./tool";
+export type { Tool, ToolContext, ToolImage, ToolResult, ToolSideEffect } from "./tool";
+export { sha256Hex } from "./tool";
 export {
   DEFAULT_ABORT_GRACE_MS,
   TOOL_TIMEOUT,

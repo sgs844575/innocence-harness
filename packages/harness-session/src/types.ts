@@ -22,13 +22,25 @@ export interface ToolCallPart {
   id: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** Per-invocation id (ctx.scope.invocationId), when the loop emitted one. */
+  invocationId?: string;
+}
+
+/** 工具结果携带的图像：base64 裸数据（无 data: 前缀），模型可见（视觉闭环）。 */
+export interface ToolResultImage {
+  mediaType: string;
+  data: string;
 }
 
 export interface ToolResultPart {
   type: "toolResult";
   toolCallId: string;
   content: string;
+  /** 随工具结果进历史并映射到 provider 的图像；事件/UI 面不携带。 */
+  images?: ToolResultImage[];
   isError?: boolean;
+  /** Matches the toolCall part of the same invocation, when known. */
+  invocationId?: string;
 }
 
 export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
@@ -73,7 +85,7 @@ export function toTranscript(messages: Message[]): string {
             case "thinking":
               return `[思考] ${p.text.slice(0, 400)}`;
             case "toolCall":
-              return `[调用工具 ${p.toolName}，参数 ${JSON.stringify(p.args)}]`;
+              return `[调用工具 ${p.toolName}，参数 ${boundedArgs(p.args)}]`;
             case "toolResult":
               return `[工具结果${p.isError ? "（出错）" : ""}：${p.content.slice(0, 400)}]`;
           }
@@ -82,4 +94,15 @@ export function toTranscript(messages: Message[]): string {
       return `${who}：${body}`;
     })
     .join("\n\n");
+}
+
+/** 工具参数序列化进压缩摘要时有界（Edit/Write 正文封顶后仍可能很长）。 */
+function boundedArgs(args: Record<string, unknown>, limit = 1200): string {
+  let json: string;
+  try {
+    json = JSON.stringify(args);
+  } catch {
+    return "{…}";
+  }
+  return json.length <= limit ? json : `${json.slice(0, limit - 1)}…`;
 }

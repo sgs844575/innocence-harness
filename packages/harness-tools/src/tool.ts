@@ -6,8 +6,16 @@ import type { SubagentSpawner } from "./subagent";
 
 export type { ToolSideEffect };
 
+/** 工具结果携带的图像：base64 裸数据（无 data: 前缀），模型可见（视觉闭环）。 */
+export interface ToolImage {
+  mediaType: string;
+  data: string;
+}
+
 export interface ToolResult {
   content: string;
+  /** 模型可见图像；随结果进历史并映射到 provider，事件/UI 面不携带。 */
+  images?: ToolImage[];
   isError?: boolean;
 }
 
@@ -47,8 +55,8 @@ export interface Tool {
   validateArgs?(args: Record<string, unknown>): void | Promise<void>;
 
   /**
-   * Canonical, persistence-safe resource this call acts on. Built from raw
-   * args, but `scope`/metadata must never contain raw secret-bearing values.
+   * Canonical resource this call acts on (policy rules and session grants
+   * match on it). Built from raw args.
    */
   permissionResource(
     args: Record<string, unknown>,
@@ -56,76 +64,25 @@ export interface Tool {
   ): PermissionResource | Promise<PermissionResource>;
 
   /**
-   * Persisted copy of the args: the ONLY shape that may enter history,
-   * events, permission requests, audit and transcripts. Required for every
-   * tool regardless of side effects (fail-closed SPI) — the registry rejects
+   * Persisted copy of the args: the shape that enters history, events,
+   * permission requests, audit and transcripts. Tools keep the full values
+   * needed for display (commands, file bodies); declared credential fields
+   * (passwords, private keys) never persist. Required for every tool
+   * regardless of side effects (fail-closed SPI) — the registry rejects
    * registrations missing it.
    */
   persistArgs(args: Record<string, unknown>): Record<string, unknown>;
 
   /**
    * Runs the tool. Thrown/reported error messages flow into history and
-   * audit UNREDACTED, so they must never embed raw argument values — report
-   * the failing argument's NAME, not its content.
+   * audit, so they should report the failing argument's NAME rather than
+   * echoing oversized payloads.
    */
   execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult>;
 }
 
-/** Stable SHA-256 hex digest — the standard replacement for persisted content. */
+/** Stable SHA-256 hex digest. */
 export function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-/**
- * Command summary safe to persist: the program word only, and only when it
- * looks like a plain command name (≤16 chars of [A-Za-z0-9_.-], starting
- * with a letter). Anything else (long tokens, flags-with-values, secrets,
- * paths) collapses to a placeholder. The full command NEVER survives
- * redaction — pair with sha256Hex for change detection.
- */
-export function redactCommand(command: string): string {
-  const first = command.trim().split(/\s+/)[0] ?? "";
-  return isCommandWord(first) ? first : "[redacted]";
-}
-
-/**
- * Persisted command SUMMARY for Bash-like tools (what they store in
- * args.command for project-rule matching AND put in the resource scope, so
- * session grants carry the same granularity): the program word plus the
- * FOLLOWING subcommand tokens, each individually passing the same
- * command-word shape check. The walk stops at the first token that could
- * carry a value — flags, `=` assignments, quoted strings, paths, URLs, long
- * tokens — so argument values and secrets never survive. Capped at 8
- * tokens. Pair with sha256Hex for exact change detection of the raw command.
- */
-export function redactCommandSummary(command: string): string {
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
-  const kept: string[] = [];
-  for (const token of tokens) {
-    if (kept.length >= 8 || !isCommandWord(token)) break;
-    kept.push(token);
-  }
-  return kept.length > 0 ? kept.join(" ") : "[redacted]";
-}
-
-/** A command-shaped word: letter start, ≤16 chars of [A-Za-z0-9_.-], no spaces. */
-function isCommandWord(token: string): boolean {
-  return /^[A-Za-z][A-Za-z0-9_.\-]{0,15}$/.test(token);
-}
-
-/**
- * URL safe to persist: user-info, query and fragment are stripped; anything
- * unparseable collapses to a placeholder (fail closed).
- */
-export function redactUrl(raw: string): string {
-  try {
-    const url = new URL(raw);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return "[invalid-url]";
-  }
-}

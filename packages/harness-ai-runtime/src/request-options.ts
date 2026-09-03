@@ -28,7 +28,9 @@ export function toSdkRequestOptions(model: ProviderModel): {
   if (!options) return {};
 
   const protocol = modelProtocolOf(model.value);
-  const providerOptions = protocol ? toProviderOptions(protocol, options) : undefined;
+  // providerOptions 键必须等于工厂创建模型时用的 name（即 providerId），
+  // 自定义命名的档案用字面协议名作键会被 SDK 静默丢弃。
+  const providerOptions = protocol ? toProviderOptions(protocol, options, model.providerId) : undefined;
   return {
     ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
     ...(options.maxTokens !== undefined ? { maxOutputTokens: options.maxTokens } : {}),
@@ -49,11 +51,12 @@ function protocolFor(value: unknown): ProviderProtocol | undefined {
 function toProviderOptions(
   protocol: ProviderProtocol,
   options: ModelRequestOptions,
+  providerId: string,
 ): SharedV3ProviderOptions | undefined {
   switch (protocol) {
     case "openai":
     case "openai-compatible":
-      return optionsForCompatibleProtocol(options);
+      return optionsForCompatibleProtocol(options, providerId);
     case "anthropic":
       return optionsForMessagesProtocol(options);
     case "google":
@@ -63,10 +66,10 @@ function toProviderOptions(
   }
 }
 
-function optionsForCompatibleProtocol(options: ModelRequestOptions): SharedV3ProviderOptions | undefined {
+function optionsForCompatibleProtocol(options: ModelRequestOptions, providerId: string): SharedV3ProviderOptions | undefined {
   const reasoningEffort = options.reasoningEffort === "max" ? "xhigh" : options.reasoningEffort;
   return reasoningEffort && reasoningEffort !== "off"
-    ? { openai: { reasoningEffort } }
+    ? { [providerId]: { reasoningEffort } }
     : undefined;
 }
 

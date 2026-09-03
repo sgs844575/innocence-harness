@@ -16,6 +16,29 @@ export function toSdkMessages(messages: readonly Message[]): ModelMessage[] {
     const results = toolResults(message.parts, toolNames);
     if (results.length > 0) mapped.push({ role: "tool", content: results });
 
+    // 视觉闭环：工具结果携带的图像以紧跟的 user 消息送达。各 chat
+    // completions 兼容端点的 tool 消息只收文本，user 图像是所有 provider
+    // 都支持的最大公约数路径。
+    const images = message.parts.flatMap((part) =>
+      part.type === "toolResult" ? (part.images ?? []) : [],
+    );
+    if (images.length > 0) {
+      mapped.push({
+        role: "user",
+        content: [
+          ...images.map((image) => ({
+            type: "image" as const,
+            image: image.data,
+            mediaType: image.mediaType,
+          })),
+          {
+            type: "text" as const,
+            text: "The image(s) above were returned by the tool calls in this turn.",
+          },
+        ],
+      });
+    }
+
     const text = message.parts
       .filter((part): part is Extract<MessagePart, { type: "text" }> => part.type === "text")
       .map((part) => part.text)

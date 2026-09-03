@@ -19,7 +19,7 @@ import {
   type ToolOutcome,
 } from "@innocenceharness/harness-tools";
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
-import type { Tool, ToolContext, ToolsService } from "@innocenceharness/harness-tools";
+import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 
@@ -429,11 +429,19 @@ export async function runLoop(
               invocationId: item.ctx?.scope.invocationId,
             });
         const invocationId = item.ctx?.scope.invocationId;
-        const finish = (content: string, isError: boolean, outcome: ToolOutcome) => {
+        const finish = (
+          content: string,
+          isError: boolean,
+          outcome: ToolOutcome,
+          images?: ToolImage[],
+        ) => {
+          // 图像只进历史（provider 映射消费），事件保持精简：UI/IPC 面
+          // 不承载几百 KB 的 base64。
           resultParts.push({
             type: "toolResult",
             toolCallId: part.id,
             content,
+            ...(images && images.length > 0 ? { images } : {}),
             isError: isError || undefined,
           });
           onEvent({
@@ -527,6 +535,7 @@ export async function runLoop(
             result.content,
             result.isError === true,
             result.isError === true ? "error" : "success",
+            result.images,
           );
         } catch (err) {
           // Tool failures feed back to the model instead of killing the loop.

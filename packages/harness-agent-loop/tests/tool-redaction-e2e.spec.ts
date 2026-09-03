@@ -660,4 +660,87 @@ describe("tool persisted args carry full originals (no redaction)", () => {
     expect(call.args).toEqual({});
     expect(JSON.stringify(history)).not.toContain("PREP-SECRET-11");
   });
+
+  it("tool-returned images enter history and the model prompt; events stay lean", async () => {
+    // "VISUALPAYLOAD11" 的 base64——SDK 校验图像数据必须是合法 base64。
+    const images = [{ mediaType: "image/png", data: "VklTVUFMUEFZTE9BRDEx" }];
+    const prompts: unknown[] = [];
+    let turn = 0;
+    const model = new MockLanguageModelV3({
+      provider: "sdk-test",
+      modelId: "sdk-model",
+      async doStream(params) {
+        turn += 1;
+        prompts.push(params.prompt);
+        const events: MockStreamPart[] = turn === 1
+          ? [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "sdk-call-0",
+                toolName: "Snap",
+                input: JSON.stringify({}),
+              },
+              {
+                type: "finish",
+                usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } },
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              },
+            ]
+          : [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "done" },
+              { type: "text-delta", id: "done", delta: "seen" },
+              {
+                type: "finish",
+                usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } },
+                finishReason: { unified: "stop", raw: "stop" },
+              },
+            ];
+        return { stream: convertArrayToReadableStream(events) };
+      },
+    });
+    const provider: Provider & { model: ProviderModel } = {
+      id: "sdk-test",
+      model: { value: model, providerId: "sdk-test", modelId: "sdk-model" },
+      async *chat(): AsyncIterable<Delta> {
+        throw new Error("legacy provider path must not run");
+      },
+    };
+    const snap: Tool = {
+      name: "Snap",
+      description: "snap",
+      readOnly: true,
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "read", kind: "computer", scope: "screen" }),
+      persistArgs: () => ({}),
+      async execute() {
+        return { content: "Screenshot saved (1280x720).", images };
+      },
+    };
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    kernel.tools.register(snap);
+    const events: HarnessEvent[] = [];
+    const history: Message[] = [];
+    await runLoop(history, textMessage("user", "look"), {
+      provider,
+      tools: kernel.tools,
+      permission: new PermissionEngine({ mode: "auto", decider: { ask: async () => "deny" } }),
+      systemPrompt: "s",
+      workspaceRoot: "/tmp/ws",
+      onEvent: (e) => events.push(e),
+    });
+
+    // History carries the images for the provider mapping...
+    const result = history
+      .flatMap((m) => m.parts)
+      .find((p) => p.type === "toolResult") as { images?: unknown };
+    expect(result.images).toEqual(images);
+    // ...the event surface stays lean (no base64 payloads to UI/IPC)...
+    expect(JSON.stringify(events)).not.toContain("VklTVUFMUEFZTE9BRDEx");
+    // ...and the follow-up model turn receives the image.
+    expect(JSON.stringify(prompts[1])).toContain("VklTVUFMUEFZTE9BRDEx");
+    expect(JSON.stringify(prompts[1])).toContain("image/png");
+  });
 });
