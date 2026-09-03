@@ -520,6 +520,35 @@ describe("spawner concurrency cap", () => {
     await third;
   });
 
+  it("a cancelled run releases its slot and settles even when the child's dispose never resolves", async () => {
+    // dispose 永不落地的替身：曾经的连锁事故是槽位+运行 promise 一起被
+    // 拖死（后续派发永久排队、父轮次 allSettled 永等）。
+    const factory: SpawnerSessionFactory = async () => ({
+      run: (_prompt: string, signal: AbortSignal | undefined) =>
+        new Promise<SubagentResult>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      dispose: () => new Promise<void>(() => {}),
+    });
+    const ctx = await withSpawner({ sessionFactory: factory, concurrency: 1 });
+
+    const controller = new AbortController();
+    const first = ctx.spawner.run({ ...baseInput, signal: controller.signal });
+    await vi.waitFor(() => expect(ctx.spawner.runs()[0]?.status).toBe("running"));
+    controller.abort();
+    // 运行 promise 照常落定（不等 dispose）。
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+
+    // 槽位已随运行落定释放：下一个派发立即获准执行。
+    const secondController = new AbortController();
+    const second = ctx.spawner.run({ ...baseInput, signal: secondController.signal });
+    await vi.waitFor(() =>
+      expect(ctx.spawner.runs().filter((info) => info.status === "running")).toHaveLength(1),
+    );
+    secondController.abort();
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("honors an injected concurrency cap", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory, concurrency: 1 });

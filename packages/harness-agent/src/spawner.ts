@@ -540,14 +540,18 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
           },
         });
       } finally {
+        // 并发槽位于运行落定瞬间同步释放，清理（park/dispose）完全不阻塞
+        // 运行结果：dispose 挂起曾同时拖死槽位与运行 promise（父轮次
+        // allSettled 永等 → 路由永久 running → 后续消息被拒）。清理失败
+        // 经 disposeQuietly 内部日志回收。
+        releaseSlot();
+        input.signal?.removeEventListener("abort", linkParent);
         if (child) {
-          await settleChild(childId, child, {
+          void settleChild(childId, child, {
             ...(input.agentType ? { agentType: input.agentType } : {}),
             description: input.description ?? "",
           }, record);
         }
-        input.signal?.removeEventListener("abort", linkParent);
-        releaseSlot();
       }
     })();
     return { record, promise };
@@ -602,7 +606,8 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
         await acquireSlot(signal);
       } catch (error) {
         emit({ status: "cancelled" });
-        await disposeQuietly(entry.child);
+        // 清理不阻塞（挂起的 dispose 不拖住运行 promise）。
+        void disposeQuietly(entry.child);
         throw error;
       }
       try {
@@ -620,9 +625,11 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
           },
         });
       } finally {
-        await settleChild(input.runId, entry.child, entry, record);
-        input.signal?.removeEventListener("abort", linkParent);
+        // 与 spawn 同律：槽位同步释放、清理不阻塞（dispose 挂起不得占用
+        // 并发预算，也不得拖住运行 promise）。
         releaseSlot();
+        input.signal?.removeEventListener("abort", linkParent);
+        void settleChild(input.runId, entry.child, entry, record);
       }
     })();
   };
