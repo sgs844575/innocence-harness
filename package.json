@@ -22,6 +22,7 @@
     "start": "electron-forge start",
     "prestart": "npm run build:plugins",
     "dev": "electron-forge start",
+    "dev-npm": "npm run dev",
     "predev": "npm run build:plugins",
     "build:plugins": "node scripts/build-plugins.mjs",
     "prepackage": "npm run package:preflight && npm run build:plugins",
@@ -34,7 +35,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:packages": "npm run typecheck --workspaces --if-present",
     "lint": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests --maxWorkers=1",
+    "test": "vitest run --passWithNoTests --maxWorkers=10",
     "test:watch": "vitest"
   },
   "devDependencies": {
@@ -77,6 +78,7 @@
     "@xterm/xterm": "^6.0.0",
     "ai": "6.0.159",
     "class-variance-authority": "^0.7.1",
+    "diff": "^9.0.0",
     "lucide-react": "^0.545.0",
     "module-details-from-path": "^1.0.4",
     "node-forge": "^1.4.0",

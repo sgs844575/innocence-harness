@@ -13,6 +13,15 @@ AGENTS.md
 CLAUDE.md
 .playwright-mcp/
 documentation/
+.agents
+.claude
+.commandcode
+.factory
+.hermes
+.minimax
+.pi
+.qoder
+.grok
 
 # Documentation is local-only except for AGENTS.md and README.md files.
 *.md
@@ -35,3 +44,4 @@ documentation/
 
 # derivable icon artifact (npm run icons:icns)
 assets/icon.icns
+skills-lock.json
