@@ -896,4 +896,113 @@ describe("runLoop", () => {
     ).toBe("aborted");
     expect(result.aborted).toBe(true);
   });
+
+  it("delegated calls of one turn run in parallel (barrier handshake)", async () => {
+    let aStarted!: () => void;
+    let bStarted!: () => void;
+    const aStart = new Promise<void>((resolve) => {
+      aStarted = resolve;
+    });
+    const bStart = new Promise<void>((resolve) => {
+      bStarted = resolve;
+    });
+    const delegated = (name: string, onStart: () => void, peer: Promise<void>): Tool => ({
+      name,
+      description: name,
+      readOnly: false,
+      sideEffect: "delegated",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "spawn", kind: "agent", scope: name }),
+      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
+      // Resolves only when the peer is ALSO in flight — a serial executor
+      // deadlocks here and fails this test by timeout.
+      async execute(): Promise<ToolResult> {
+        onStart();
+        await peer;
+        return { content: name };
+      },
+    });
+    const provider = scriptedProvider([
+      { toolCalls: [{ toolName: "AgentA" }, { toolName: "AgentB" }] },
+      { text: "done" },
+    ]);
+    const { history, run } = await setup(
+      [delegated("AgentA", aStarted, bStart), delegated("AgentB", bStarted, aStart)],
+      provider,
+    );
+    await run("x");
+    const results = history[2].parts as Array<{ content: string }>;
+    expect(results.map((part) => part.content)).toEqual(["AgentA", "AgentB"]);
+  });
+
+  it("results keep call order regardless of completion order", async () => {
+    const shared = (name: string, delayMs: number): Tool => ({
+      name,
+      description: name,
+      readOnly: true,
+      sideEffect: "none",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "read", kind: "test", scope: name }),
+      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
+      async execute(): Promise<ToolResult> {
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return { content: name };
+      },
+    });
+    const provider = scriptedProvider([
+      { toolCalls: [{ toolName: "Slow" }, { toolName: "Fast" }] },
+      { text: "done" },
+    ]);
+    const { history, run } = await setup([shared("Slow", 25), shared("Fast", 0)], provider);
+    await run("x");
+    // Fast settles first, but the persisted result order follows the call order.
+    const results = history[2].parts as Array<{ content: string }>;
+    expect(results.map((part) => part.content)).toEqual(["Slow", "Fast"]);
+  });
+
+  it("write-class calls are exclusive: they wait for shared calls and run alone", async () => {
+    let readerSettled = false;
+    const started: string[] = [];
+    const reader = (name: string, delayMs: number): Tool => ({
+      name,
+      description: name,
+      readOnly: true,
+      sideEffect: "none",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "read", kind: "test", scope: name }),
+      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
+      async execute(): Promise<ToolResult> {
+        started.push(name);
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (name === "Peek") readerSettled = true;
+        return { content: name };
+      },
+    });
+    let writerSawReaderSettled = false;
+    const writer: Tool = {
+      name: "Mutate",
+      description: "Mutate",
+      readOnly: false,
+      sideEffect: "paths",
+      parameters: { type: "object" },
+      permissionResource: () => ({ action: "write", kind: "test", scope: "Mutate" }),
+      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
+      async execute(): Promise<ToolResult> {
+        started.push("Mutate");
+        writerSawReaderSettled = readerSettled;
+        return { content: "mutated" };
+      },
+    };
+    const provider = scriptedProvider([
+      { toolCalls: [{ toolName: "Peek" }, { toolName: "Mutate" }, { toolName: "Peek2" }] },
+      { text: "done" },
+    ]);
+    const { history, run } = await setup([reader("Peek", 25), writer, reader("Peek2", 0)], provider);
+    await run("x");
+    // Mutate started only after Peek settled, and Peek2 only after Mutate.
+    expect(writerSawReaderSettled).toBe(true);
+    expect(started).toEqual(["Peek", "Mutate", "Peek2"]);
+    const results = history[2].parts as Array<{ content: string }>;
+    expect(results.map((part) => part.content)).toEqual(["Peek", "mutated", "Peek2"]);
+  });
 });

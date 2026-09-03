@@ -260,11 +260,14 @@ function addUsage(total: UsageMetadata | undefined, next: UsageMetadata | undefi
 }
 
 /**
- * The synchronous, readable agent loop: stream one model step, gate every tool
- * call through the permission engine, feed results back, repeat until the
- * model answers without tool calls. The input is the canonical user message
- * (already skill-expanded and processor-run by the session); tool-result user
- * turns pushed by the loop itself never pass through processors.
+ * The readable agent loop: stream one model step, gate every tool call
+ * through the permission engine (one ask at a time, in call order), execute
+ * the calls of a turn under the shared/exclusive policy (read-only and
+ * delegated calls overlap; write-class calls run alone), feed results back in
+ * call order, and repeat until the model answers without tool calls. The
+ * input is the canonical user message (already skill-expanded and
+ * processor-run by the session); tool-result user turns pushed by the loop
+ * itself never pass through processors.
  */
 export async function runLoop(
   history: Message[],
@@ -413,8 +416,14 @@ export async function runLoop(
 
       if (calls.length === 0) break;
 
+      // 同轮并行执行策略（读写锁）：只读与 delegated（子代理）调用彼此重叠
+      // 并行——多条 Task 同轮发出即真并行（spawner 侧自限并发）；写类调用
+      // 独占——启动前等全部在飞调用落定，落定期间停止同样失败关闭。启动阶段
+      // 本身保持调用顺序：权限询问一次只浮出一张卡（webview 单卡 UI），工具
+      // 结果仍按调用序入账（finish 按下标落位，事件按完成时刻流出）。
       const resultParts: ToolResultPart[] = [];
-      for (const part of calls) {
+      const inflight: Promise<void>[] = [];
+      for (const [index, part] of calls.entries()) {
         const item = prepared.get(part.id)!;
         const started = Date.now();
         const toolTrace = part.toolName.startsWith("mcp__")
@@ -437,13 +446,13 @@ export async function runLoop(
         ) => {
           // 图像只进历史（provider 映射消费），事件保持精简：UI/IPC 面
           // 不承载几百 KB 的 base64。
-          resultParts.push({
+          resultParts[index] = {
             type: "toolResult",
             toolCallId: part.id,
             content,
             ...(images && images.length > 0 ? { images } : {}),
             isError: isError || undefined,
-          });
+          };
           onEvent({
             type: "toolResult",
             toolCallId: part.id,
@@ -520,35 +529,58 @@ export async function runLoop(
         // stopped by the run signal, never by a wall-clock guess (repo rule:
         // no default timeout while waiting on subagents).
         const invocationTimeoutMs = item.tool.sideEffect === "delegated" ? 0 : toolTimeoutMs;
-        try {
-          const result = await executeToolInvocation(
-            {
-              toolName: item.tool.name,
-              persistedArgs: item.persistedArgs,
-              ctx: item.ctx!,
-              parentSignal: signal,
-            },
-            tools.middlewares(),
-            {
-              timeoutMs: invocationTimeoutMs,
-              abortGraceMs: opts.abortGraceMs,
-              execute: (_signal, ctx) => item.tool!.execute(part.args, ctx),
-            },
-          );
-          finish(
-            result.content,
-            result.isError === true,
-            result.isError === true ? "error" : "success",
-            result.images,
-          );
-        } catch (err) {
-          // Tool failures feed back to the model instead of killing the loop.
-          // With the run stopped, any failure shape counts as aborted. Do not
-          // persist executor diagnostics: real tools received raw args.
-          const outcome = toolErrorOutcome(err, { parentAborted: signal?.aborted === true });
-          finish(safeToolFailureMessage(outcome), true, outcome);
+        // 写类（非只读且非 none/delegated 副作用）独占执行：等所有在飞的
+        // 共享调用落定再启动，等待期间停止则失败关闭（停止不得再开新工具）。
+        const exclusive =
+          !item.tool.readOnly &&
+          item.tool.sideEffect !== "none" &&
+          item.tool.sideEffect !== "delegated";
+        if (exclusive) {
+          await Promise.allSettled(inflight.splice(0));
+          if (signal?.aborted) {
+            finish("运行已中止", true, "aborted");
+            continue;
+          }
+        }
+        const execution = (async () => {
+          try {
+            const result = await executeToolInvocation(
+              {
+                toolName: item.tool!.name,
+                persistedArgs: item.persistedArgs,
+                ctx: item.ctx!,
+                parentSignal: signal,
+              },
+              tools.middlewares(),
+              {
+                timeoutMs: invocationTimeoutMs,
+                abortGraceMs: opts.abortGraceMs,
+                execute: (_signal, ctx) => item.tool!.execute(part.args, ctx),
+              },
+            );
+            finish(
+              result.content,
+              result.isError === true,
+              result.isError === true ? "error" : "success",
+              result.images,
+            );
+          } catch (err) {
+            // Tool failures feed back to the model instead of killing the loop.
+            // With the run stopped, any failure shape counts as aborted. Do not
+            // persist executor diagnostics: real tools received raw args.
+            const outcome = toolErrorOutcome(err, { parentAborted: signal?.aborted === true });
+            finish(safeToolFailureMessage(outcome), true, outcome);
+          }
+        })();
+        // 独占调用在此直接等落定（启动阶段顺序推进 = 后续调用不会插进来）；
+        // 共享调用挂起在飞，循环末尾统一等齐。
+        if (exclusive) {
+          await execution;
+        } else {
+          inflight.push(execution);
         }
       }
+      await Promise.allSettled(inflight);
       history.push({ role: "user", parts: resultParts });
     }
   } catch (err) {
