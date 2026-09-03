@@ -73,6 +73,9 @@ export interface SubagentOptions {
   prompt: string;
   description?: string;
   signal?: AbortSignal;
+  /** Optional lifecycle observer local to this spawn (childId capture for
+   *  callers like the Task tool; same events as the session-level port). */
+  onLifecycle?: SubagentLifecycleListener;
   /**
    * Kernel-injected identity of the invocation spawning this child (the loop
    * binds it via `bindSubagentSpawner`). The child session inherits

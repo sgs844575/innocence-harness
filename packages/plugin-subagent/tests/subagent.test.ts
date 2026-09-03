@@ -12,6 +12,7 @@ import {
 import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import type { HarnessEvent, Message } from "@innocenceharness/harness-session";
 import { BUILTIN_PRESETS, SubagentPlugin, createTaskTool, SUBAGENT_THREAD_NOTES, withThreadNotes } from "../src";
+import type { SubagentOptions } from "@innocenceharness/harness-agent";
 import { adaptedPresets } from "@innocenceharness/agent-presets";
 
 // The preset-driven Task tool replaces the former hard-coded taskTool export.
@@ -123,8 +124,8 @@ describe("Task tool via session spawner", () => {
   });
 
   it("appends the [run:...] marker when the spawner reports the started childId", async () => {
-    const run = vi.fn(async (options: { onLifecycle?: (event: { childId: string; status: string }) => void }) => {
-      options.onLifecycle?.({ childId: "child_abc", status: "started" });
+    const run = vi.fn(async (options: SubagentOptions) => {
+      options.onLifecycle?.({ childId: "child_abc", parentSessionId: "s", description: "", status: "started" });
       return { finalText: "结论", turns: 1 };
     });
 
@@ -420,7 +421,7 @@ describe("Task tool via session spawner", () => {
     expect(first.finalText).toBe("首段结论");
     expect(childId).toBeDefined();
 
-    const second = await session.spawner.resume({ runId: childId!, prompt: "继续查" });
+    const second = await session.spawner.resume!({ runId: childId!, prompt: "继续查" });
     expect(second.finalText).toBe("续段结论");
     // 同一子会话：第二次请求带着首段对话（历史增长，含首段 prompt 与结论）。
     expect(childRequests).toHaveLength(2);
