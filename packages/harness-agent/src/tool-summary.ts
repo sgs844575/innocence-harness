@@ -7,6 +7,9 @@
 /** Result excerpts are capped so lifecycle projections stay lightweight. */
 export const TOOL_RESULT_EXCERPT_LIMIT = 2000;
 
+/** Per-value cap of the bounded args projection (lifecycle call payloads). */
+export const TOOL_ARG_VALUE_LIMIT = 8000;
+
 /** Titles are single-line; longer argument values are clipped. */
 const TITLE_LIMIT = 120;
 
@@ -62,4 +65,23 @@ export function clipToolResult(result: string | undefined): string | undefined {
   return result.length > TOOL_RESULT_EXCERPT_LIMIT
     ? `${result.slice(0, TOOL_RESULT_EXCERPT_LIMIT)}…`
     : result;
+}
+
+/**
+ * Bounded args projection for lifecycle events: a shallow copy whose string
+ * values are capped at {@link TOOL_ARG_VALUE_LIMIT} (head kept, ellipsis
+ * marks the cut); non-string values pass through unchanged. This is the one
+ * place raw child args may cross into a lifecycle payload — hosts replay
+ * them through the main timeline's tool-row format, and the per-value cap
+ * keeps that payload bounded.
+ */
+export function clipToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const clipped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    clipped[key] =
+      typeof value === "string" && value.length > TOOL_ARG_VALUE_LIMIT
+        ? `${value.slice(0, TOOL_ARG_VALUE_LIMIT)}…`
+        : value;
+  }
+  return clipped;
 }

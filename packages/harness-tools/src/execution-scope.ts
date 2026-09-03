@@ -32,10 +32,16 @@ let invocationSeq = 0;
 let sessionSeq = 0;
 let routeSeq = 0;
 
-/** Monotonic, process-unique invocation id (invocation ids are never persisted). */
+// Per-boot token for invocation ids: they DO leak into persisted surfaces
+// (transcript toolCall parts, subagent history `parentInvocationId`), so a
+// plain process counter would collide with ids recorded before a restart —
+// a stale Task row could then open a fresh, unrelated subagent run.
+const bootToken = Date.now().toString(36);
+
+/** Monotonic, boot-unique invocation id. */
 export function nextInvocationId(): string {
   invocationSeq += 1;
-  return `inv-${invocationSeq}`;
+  return `inv-${bootToken}-${invocationSeq}`;
 }
 
 /** Monotonic session id, minted once per AgentSession. */

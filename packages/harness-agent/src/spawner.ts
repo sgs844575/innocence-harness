@@ -18,7 +18,7 @@ import type {
   SubagentRunInfo,
 } from "./subagent";
 import { INHERITED_CONTEXT_BRIEFING, sanitizeInheritedHistory } from "./subagent";
-import { clipToolResult, summarizeToolTitle } from "./tool-summary";
+import { clipToolArgs, clipToolResult, summarizeToolTitle } from "./tool-summary";
 import { createRunRegistry, type SubagentRunRecord } from "./run-registry";
 
 // Services are typed on `Context` through declaration merging by their
@@ -85,7 +85,8 @@ export interface SpawnerSessionInput {
   tools: string[] | "readOnly" | "all";
   /** Parent state the child re-registers: processors and tool middlewares as-is, in order. */
   inherit: { processors: MessageProcessor[]; middlewares: ToolExecutionMiddleware[] };
-  /** Maximum loop turns for the child (default 20). */
+  /** Maximum loop turns for the child (default: unlimited — the loop ends when
+   *  the model stops calling tools, on abort, or on error). */
   maxTurns?: number;
   /** Short human-readable task summary shown in lifecycle projections. */
   description?: string;
@@ -135,7 +136,7 @@ export interface SpawnerChildMaterials {
   /** Permission engine shared with the spawning session: same rules, grants and mode. */
   permission: PermissionEngine;
   systemPrompt: string;
-  /** Child turn cap; `maxTurns ?? 20` already applied. */
+  /** Child turn cap; the unlimited default (`maxTurns ?? Infinity`) already applied. */
   maxTurns: number;
   logger: SpawnerLogger;
   signal?: AbortSignal;
@@ -382,14 +383,59 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     const { emit, record, child, prompt, signal, identity } = params;
     emit({ status: "running" });
     let childFailed = false;
+    // Assistant text since the last boundary: deltas stream out as they
+    // arrive, but the segment is also closed as a persisted textSegment
+    // before any tool activity and before terminal/error events, so hosts
+    // can interleave the body with the tool trail (history replay included).
+    let pendingText = "";
+    const closePendingText = (): void => {
+      if (!pendingText) return;
+      emit({ status: "running", textSegment: pendingText });
+      pendingText = "";
+    };
+    // Reasoning gets the same treatment: thinkingDelta streams for the live
+    // preview, and the closed segment is emitted as a persisted
+    // thinkingSegment when reasoning ends — before the first following text
+    // delta, before tool activity, and before terminal/error events — so
+    // history replay keeps the thinking rows (deltas are never persisted).
+    let pendingThinking = "";
+    const closePendingThinking = (): void => {
+      if (!pendingThinking) return;
+      emit({ status: "running", thinkingSegment: pendingThinking });
+      pendingThinking = "";
+    };
+    // Boundary close order mirrors the conversation chronology: text that
+    // arrived before later reasoning closes first.
+    const closePendingSegments = (): void => {
+      closePendingText();
+      closePendingThinking();
+    };
     const childEvent: SubagentChildEventListener = (event) => {
-      if (event.type === "text" && event.text) emit({ status: "running", delta: event.text });
-      if (event.type === "thinking" && event.text) emit({ status: "running", thinkingDelta: event.text });
+      if (event.type === "text" && event.text) {
+        // Reasoning that preceded this text closes first (entry order).
+        closePendingThinking();
+        pendingText += event.text;
+        emit({ status: "running", delta: event.text });
+      }
+      if (event.type === "thinking" && event.text) {
+        pendingThinking += event.text;
+        emit({ status: "running", thinkingDelta: event.text });
+      }
       if (event.type === "toolCall") {
+        closePendingSegments();
         const title = summarizeToolTitle(event.name, event.args);
-        emit({ status: "running", tool: { name: event.name, phase: "call", ...(title ? { title } : {}) } });
+        emit({
+          status: "running",
+          tool: {
+            name: event.name,
+            phase: "call",
+            ...(title ? { title } : {}),
+            ...(event.args ? { args: clipToolArgs(event.args) } : {}),
+          },
+        });
       }
       if (event.type === "toolResult") {
+        closePendingSegments();
         const result = clipToolResult(event.result);
         emit({
           status: "running",
@@ -398,6 +444,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
       }
       if (event.type === "error") {
         childFailed = true;
+        closePendingSegments();
         emit({ status: "failed", error: event.error });
       }
     };
@@ -405,10 +452,13 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
       const result = await child.run(prompt, signal, identity, childEvent);
       record.info.turns = result.turns;
       if (signal.aborted) {
+        closePendingSegments();
         emit({ status: "cancelled" });
       } else if (childFailed || result.completion?.finishReason === "error") {
+        closePendingSegments();
         emit({ status: "failed", ...(result.completion?.finishReason === "error" ? { error: "子代理运行失败" } : {}) });
       } else {
+        closePendingSegments();
         emit({ status: "completed", final: result.finalText });
       }
       return {
@@ -422,6 +472,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      closePendingSegments();
       emit({ status: signal.aborted ? "cancelled" : "failed", error: message });
       throw error;
     }
@@ -499,7 +550,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
             provider: deps.provider,
             permission: deps.permission, // shared rules, grants and mode
             systemPrompt: input.systemPrompt,
-            maxTurns: input.maxTurns ?? 20,
+            maxTurns: input.maxTurns ?? Number.POSITIVE_INFINITY,
             logger,
             signal,
             ...(seedHistory?.length ? { seedHistory } : {}),

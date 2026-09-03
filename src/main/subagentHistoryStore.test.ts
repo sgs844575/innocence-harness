@@ -38,15 +38,35 @@ describe("subagentHistoryStore", () => {
     expect(subagentHistoryFile(null, "s1")).toBeNull();
   });
 
-  it("追加事件按序落盘并可读回；delta 事件不落盘", () => {
+  it("追加事件按序落盘并可读回；delta/thinkingDelta 事件不落盘，textSegment/thinkingSegment 落盘", () => {
     const file = subagentHistoryFile(dir, "s1")!;
     appendSubagentHistoryEvent(file, started, 1000);
     appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "流式增量" }, 1100);
+    appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "推理增量" }, 1150);
+    appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", textSegment: "已闭合正文段" }, 1200);
+    appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingSegment: "已闭合思考段" }, 1250);
+    appendSubagentHistoryEvent(
+      file,
+      { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "src/a.ts" } } },
+      1300,
+    );
     appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" }, 5000);
     const entries = readSubagentHistory(file);
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(5);
     expect(entries[0]).toEqual({ at: 1000, event: started });
-    expect(entries[1]).toEqual({ at: 5000, event: { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" } });
+    expect(entries[1]).toEqual({
+      at: 1200,
+      event: { childId: "c1", parentSessionId: "s1", description: "", status: "running", textSegment: "已闭合正文段" },
+    });
+    expect(entries[2]).toEqual({
+      at: 1250,
+      event: { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingSegment: "已闭合思考段" },
+    });
+    expect(entries[3]).toEqual({
+      at: 1300,
+      event: { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "src/a.ts" } } },
+    });
+    expect(entries[4]).toEqual({ at: 5000, event: { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" } });
   });
 
   it("缺文件返回空；坏行/不完整行跳过，好行仍可回放", () => {

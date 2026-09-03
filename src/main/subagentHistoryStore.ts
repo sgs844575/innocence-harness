@@ -1,8 +1,9 @@
 // 子代理运行档案的持久化半边（会话外观的存储职责拆分）：lifecycle 事件按
 // 会话追加到 transcripts 目录旁的 sidecar（<id>.subagents.jsonl），启动后按
 // 会话读回回放建档——面板历史由此跨进程重启存活。流式 delta 不落盘（正文
-// 以终态 final/error 为准，工具轨迹与状态才是档案骨架）；读写均防御式，
-// 坏行跳过不阻断启动。本模块不依赖 Electron（Node 可测）。
+// 以终态 final/error 与已闭合的 textSegment 分段回放，思考以已闭合的
+// thinkingSegment 回放，工具轨迹与状态也是档案骨架）；读写均防御式，坏行
+// 跳过不阻断启动。本模块不依赖 Electron（Node 可测）。
 import fs from "node:fs";
 import path from "node:path";
 import type { SubagentLifecycleEvent } from "../shared/ipc";
@@ -21,9 +22,10 @@ export function subagentHistoryFile(storeDir: string | null, id: string): string
 /** 已确保存在的目录（避免转发热路径上每次 append 都 mkdirSync）。 */
 const ensuredDirs = new Set<string>();
 
-/** 追加一条事件（delta/thinkingDelta 流式事件不落盘：正文以终态
- *  final/error 呈现；空会话 id 不落盘：无主事件只会汇入永不被读回/清理的
- *  垃圾档案）；best-effort。 */
+/** 追加一条事件（delta/thinkingDelta 流式事件不落盘：流式正文以终态
+ *  final/error 与已闭合 textSegment 呈现，思考以已闭合 thinkingSegment
+ *  呈现；空会话 id 不落盘：无主事件只会汇入永不被读回/清理的垃圾档案）；
+ *  best-effort。 */
 export function appendSubagentHistoryEvent(file: string | null, event: SubagentLifecycleEvent, at: number): void {
   if (!file || event.parentSessionId === "" || event.delta !== undefined || event.thinkingDelta !== undefined) return;
   try {

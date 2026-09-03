@@ -9,9 +9,11 @@ export type SubagentStatus = "started" | "running" | "completed" | "failed" | "c
 
 /**
  * One tool activity inside a child run. The call phase carries a one-line
- * human summary of the arguments (`title`, derived by tool-summary); the
- * result phase carries a bounded excerpt of the tool output (`result`).
- * Raw args never leave the child session.
+ * human summary of the arguments (`title`, derived by tool-summary) plus a
+ * bounded args projection (`args`, clipped by tool-summary's clipToolArgs)
+ * so hosts can replay the main timeline's tool-row format; the result phase
+ * carries a bounded excerpt of the tool output (`result`). Raw args leave
+ * the child session only through these bounded projections.
  */
 export interface SubagentToolActivity {
   name: string;
@@ -19,6 +21,8 @@ export interface SubagentToolActivity {
   isError?: boolean;
   /** Call-phase argument summary (file name / pattern / command head). */
   title?: string;
+  /** Call-phase bounded args projection (per-value cap: TOOL_ARG_VALUE_LIMIT). */
+  args?: Record<string, unknown>;
   /** Result-phase output excerpt, bounded by {@link TOOL_RESULT_EXCERPT_LIMIT}. */
   result?: string;
 }
@@ -41,6 +45,17 @@ export interface SubagentLifecycleEvent {
   delta?: string;
   /** Streaming reasoning text (same cadence as delta; not persisted). */
   thinkingDelta?: string;
+  /** Closed reasoning segment (running events): emitted when reasoning ends —
+   *  before the first following text delta, before any tool activity, and
+   *  before terminal/error events. Unlike thinkingDelta it is persisted, so
+   *  history replay rebuilds the thinking rows. */
+  thinkingSegment?: string;
+  /** Closed assistant text segment (running events): emitted at tool-activity
+   *  boundaries and before terminal/error events so the body can render
+   *  interleaved with the tool trail instead of stacking at the end. Unlike
+   *  delta it carries no streaming cadence and is persisted (history replay
+   *  rebuilds the same segmented view). */
+  textSegment?: string;
   /** Tool activity inside the child, on running events. */
   tool?: SubagentToolActivity;
   final?: string;
@@ -66,7 +81,8 @@ export interface SubagentOptions {
   systemPrompt: string;
   /** Tool names the child may use; "readOnly" = every readOnly tool; "all" = everything (Task itself is always excluded). */
   tools: string[] | "readOnly" | "all";
-  /** Maximum loop turns for the child (default 20). */
+  /** Maximum loop turns for the child (default: unlimited — the loop ends when
+   *  the model stops calling tools, on abort, or on error). */
   maxTurns?: number;
   /** Agent preset id spawning this child (shown in lifecycle projections). */
   agentType?: string;

@@ -279,8 +279,25 @@ export interface SubagentLifecycleEvent {
   delta?: string;
   /** Streaming reasoning text (same cadence as delta; not persisted). */
   thinkingDelta?: string;
+  /** Closed reasoning segment (running events): emitted when reasoning ends —
+   *  before the first following text delta, before any tool activity, and
+   *  before terminal/error events. Unlike thinkingDelta it is persisted, so
+   *  history replay rebuilds the thinking rows. */
+  thinkingSegment?: string;
+  /** Closed assistant text segment (running events): emitted at tool-activity
+   *  boundaries and before terminal/error events so the body renders
+   *  interleaved with the tool trail; unlike delta it is persisted. */
+  textSegment?: string;
   /** Tool activity inside the child, on running events. */
-  tool?: { name: string; phase: "call" | "result"; isError?: boolean; title?: string; result?: string };
+  tool?: {
+    name: string;
+    phase: "call" | "result";
+    isError?: boolean;
+    title?: string;
+    /** Call-phase bounded args projection (harness-agent clipToolArgs). */
+    args?: Record<string, unknown>;
+    result?: string;
+  };
   final?: string;
   error?: string;
 }

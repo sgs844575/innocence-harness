@@ -209,7 +209,7 @@ describe("spawner lifecycle port", () => {
     expect(lifecycle).toContainEqual(
       expect.objectContaining({
         status: "running",
-        tool: { name: "Read", phase: "call", title: "a.ts" },
+        tool: { name: "Read", phase: "call", title: "a.ts", args: { file_path: "D:/repo/src/a.ts" } },
       }),
     );
     expect(lifecycle).toContainEqual(
@@ -218,6 +218,114 @@ describe("spawner lifecycle port", () => {
         tool: { name: "Read", phase: "result", isError: false, result: "文件内容摘录" },
       }),
     );
+    // 尾部正文在终态事件前闭合为 textSegment（可持久化分段）。
+    const completedIndex = lifecycle.findIndex((event) => event.status === "completed");
+    expect(lifecycle[completedIndex - 1]).toMatchObject({ status: "running", textSegment: "结论" });
+  });
+
+  it("closes assistant text into textSegment at tool-activity boundaries (args bounded)", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({
+      childEvents: [
+        { type: "text", text: "先说" },
+        { type: "text", text: "两句" },
+        { type: "toolCall", name: "Edit", args: { file_path: "src/a.ts", old_string: "a", new_string: "b" } },
+        { type: "text", text: "中段" },
+        { type: "toolResult", name: "Edit", isError: false, result: "ok" },
+        { type: "text", text: "收尾" },
+      ],
+    });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const pending = ctx.spawner.run({ ...baseInput, sessionId: "parent-seg" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await pending;
+
+    // delta 仍逐条照发；textSegment 在 tool call/result 边界与终态前闭合。
+    expect(lifecycle).toContainEqual(expect.objectContaining({ status: "running", delta: "先说" }));
+    const toolCallIndex = lifecycle.findIndex((event) => event.tool?.phase === "call");
+    const toolResultIndex = lifecycle.findIndex((event) => event.tool?.phase === "result");
+    const completedIndex = lifecycle.findIndex((event) => event.status === "completed");
+    expect(lifecycle[toolCallIndex - 1]).toMatchObject({ status: "running", textSegment: "先说两句" });
+    expect(lifecycle[toolCallIndex]).toMatchObject({
+      tool: { name: "Edit", phase: "call", args: { file_path: "src/a.ts", old_string: "a", new_string: "b" } },
+    });
+    expect(lifecycle[toolResultIndex - 1]).toMatchObject({ status: "running", textSegment: "中段" });
+    expect(lifecycle[completedIndex - 1]).toMatchObject({ status: "running", textSegment: "收尾" });
+    // textSegment 事件不携带 delta 字段（落盘判定依赖这一点）。
+    for (const event of lifecycle.filter((item) => item.textSegment !== undefined)) {
+      expect(event.delta).toBeUndefined();
+    }
+  });
+
+  it("closes pending text before error and terminal statuses on failure paths", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({
+      childEvents: [
+        { type: "text", text: "半截话" },
+        { type: "error", error: "模型失败" },
+      ],
+      runResult: { finalText: "", turns: 1, completion: { finishReason: "error", aborted: false } },
+    });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const pending = ctx.spawner.run({ ...baseInput, sessionId: "parent-err" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await pending;
+
+    const failedIndex = lifecycle.findIndex((event) => event.status === "failed");
+    expect(lifecycle[failedIndex - 1]).toMatchObject({ status: "running", textSegment: "半截话" });
+  });
+
+  it("closes reasoning into thinkingSegment at text/tool/terminal boundaries", async () => {
+    const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
+    const { factory, gates } = makeFactory({
+      childEvents: [
+        { type: "thinking", text: "先想" },
+        { type: "thinking", text: "一下" },
+        { type: "text", text: "正文" },
+        { type: "thinking", text: "再想想" },
+        { type: "toolCall", name: "Read", args: { file_path: "src/a.ts" } },
+        { type: "toolResult", name: "Read", isError: false, result: "内容" },
+        { type: "thinking", text: "收尾想" },
+      ],
+    });
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const pending = ctx.spawner.run({ ...baseInput, sessionId: "parent-think" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await pending;
+
+    // thinkingDelta 仍逐条照发（实况预览）；thinkingSegment 在边界闭合（可落盘）。
+    expect(lifecycle).toContainEqual(expect.objectContaining({ status: "running", thinkingDelta: "先想" }));
+    const firstDeltaIndex = lifecycle.findIndex((event) => event.delta === "正文");
+    const toolCallIndex = lifecycle.findIndex((event) => event.tool?.phase === "call");
+    const toolResultIndex = lifecycle.findIndex((event) => event.tool?.phase === "result");
+    const completedIndex = lifecycle.findIndex((event) => event.status === "completed");
+    // 思考→正文边界：闭合思考段先于首个正文 delta。
+    expect(lifecycle[firstDeltaIndex - 1]).toMatchObject({ status: "running", thinkingSegment: "先想一下" });
+    // 正文→思考→工具边界：先闭合正文段再闭合思考段（对话时间顺序）。
+    expect(lifecycle[toolCallIndex - 2]).toMatchObject({ status: "running", textSegment: "正文" });
+    expect(lifecycle[toolCallIndex - 1]).toMatchObject({ status: "running", thinkingSegment: "再想想" });
+    expect(toolResultIndex).toBeGreaterThan(toolCallIndex);
+    // 终态前闭合残余思考段。
+    expect(lifecycle[completedIndex - 1]).toMatchObject({ status: "running", thinkingSegment: "收尾想" });
+    // thinkingSegment 事件不携带 thinkingDelta 字段（落盘判定依赖这一点）。
+    for (const event of lifecycle.filter((item) => item.thinkingSegment !== undefined)) {
+      expect(event.thinkingDelta).toBeUndefined();
+    }
   });
 
   it("emits exactly one failed terminal status when the child reports a fatal error", async () => {
@@ -372,12 +480,12 @@ describe("spawner child plugin set construction", () => {
     expect(children[0]!.materials.permission).toBe(permission);
   });
 
-  it("defaults the child maxTurns to 20 and honors an explicit cap", async () => {
+  it("defaults the child maxTurns to unlimited and honors an explicit cap", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory });
 
     await runOne(ctx, gates);
-    expect(children[0]!.materials.maxTurns).toBe(20);
+    expect(children[0]!.materials.maxTurns).toBe(Number.POSITIVE_INFINITY);
     await runOne(ctx, gates, { ...baseInput, maxTurns: 7 });
     expect(children[1]!.materials.maxTurns).toBe(7);
   });
