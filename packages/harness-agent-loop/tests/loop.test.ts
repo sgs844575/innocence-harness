@@ -506,7 +506,7 @@ describe("runLoop", () => {
     expect(toolResult && toolResult.type === "toolResult" && toolResult.outcome).toBe("timeout");
   });
 
-  it("enforces outer max turns for SDK steps", async () => {
+  it("enforces outer max turns for SDK steps (plus one tools-free wrap-up)", async () => {
     const loop = fakeTool("Loop", async () => ({ content: "again" }));
     const { provider, model } = sdkProviderForTurns([
       [
@@ -519,7 +519,7 @@ describe("runLoop", () => {
         sdkToolCall("loop-2", "Loop", {}),
         sdkFinish("tool-calls"),
       ],
-      [...sdkText("unreachable"), sdkFinish()],
+      [...sdkText("wrap-up"), sdkFinish()],
     ]);
     const { run } = await setup([loop], provider);
 
@@ -527,7 +527,9 @@ describe("runLoop", () => {
 
     expect(result.turns).toBe(2);
     expect(loop.calls).toHaveLength(2);
-    expect(model.doStreamCalls).toHaveLength(2);
+    // 轮次封顶后恰好一次收尾步（无工具定义）：第 3 次模型调用逼出文本结论。
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(result.finalText).toBe("wrap-up");
   });
 
   it("does not ask permission for remaining SDK calls after a stop", async () => {
@@ -633,6 +635,38 @@ describe("runLoop", () => {
     const result = await run("go", { maxTurns: 3 });
     expect(result.turns).toBe(3);
     expect(loop.calls).toHaveLength(3);
+  });
+
+  it("maxTurns exhaustion forces a tools-free wrap-up step (no silent no-conclusion)", async () => {
+    const loop = fakeTool("Loop", async () => ({ content: "again" }));
+    const provider = scriptedProvider([
+      { toolCalls: [{ toolName: "Loop" }] },
+      { toolCalls: [{ toolName: "Loop" }] },
+      { text: "最终结论" },
+    ]);
+    const { history, run } = await setup([loop], provider);
+    const result = await run("go", { maxTurns: 2 });
+    // 轮次封顶：工具只执行了两轮，收尾步不计数。
+    expect(result.turns).toBe(2);
+    expect(loop.calls).toHaveLength(2);
+    // 收尾步逼出文本结论，落在工具结果轮之后。
+    expect(result.finalText).toBe("最终结论");
+    const tail = history[history.length - 1];
+    expect(tail?.role).toBe("assistant");
+    expect(tail?.parts[0]).toMatchObject({ type: "text", text: "最终结论" });
+  });
+
+  it("no wrap-up step when the run already ended with a text answer", async () => {
+    let chatCalls = 0;
+    const provider = scriptedProvider([{ text: "答案" }], () => {
+      chatCalls += 1;
+    });
+    const { run } = await setup([], provider);
+    const result = await run("go", { maxTurns: 2 });
+    expect(result.finalText).toBe("答案");
+    expect(result.turns).toBe(1);
+    // 文本结论轮后未再请求模型（无收尾步）。
+    expect(chatCalls).toBe(1);
   });
 
   it("multiple tool calls in one turn each get a result", async () => {

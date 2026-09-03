@@ -583,6 +583,46 @@ export async function runLoop(
       await Promise.allSettled(inflight);
       history.push({ role: "user", parts: resultParts });
     }
+
+    // 轮次耗尽兜底（「跑满轮次不出结论」）：末轮仍是工具结果、模型还没给
+    // 文本结论时，追加一次无工具的收尾步——没有工具定义，模型只能作答。
+    // 中止/终态错误/已有文本结论（末轮非工具结果轮）都不触发。
+    const tail = history[history.length - 1];
+    if (
+      !aborted &&
+      !terminalError &&
+      !signal?.aborted &&
+      turns === maxTurns &&
+      tail?.role === "user" &&
+      tail.parts.some((part) => part.type === "toolResult")
+    ) {
+      const epilogue = await runModelStep({
+        provider,
+        system: systemPrompt,
+        messages: history,
+        tools: [],
+        signal,
+        onEvent,
+        telemetry,
+      });
+      if (epilogue.metadata) {
+        stepMetadata.push(epilogue.metadata);
+        usage = addUsage(usage, epilogue.metadata.usage);
+        finishReason = epilogue.metadata.finishReason;
+      }
+      if (epilogue.aborted) {
+        aborted = true;
+      } else if (!epilogue.error) {
+        // 收尾步只取文本/思考；模型在无工具定义下仍执意发的调用轮被丢弃。
+        const textParts = epilogue.parts.filter(
+          (part) => part.type === "text" || part.type === "thinking",
+        );
+        if (textParts.length > 0) {
+          history.push({ role: "assistant", parts: mergeTextParts(textParts) });
+          onEvent({ type: "assistantMessage", parts: mergeTextParts(textParts) });
+        }
+      }
+    }
   } catch (err) {
     if (isAbortError(err)) {
       aborted = true;
