@@ -4,7 +4,7 @@
 // 动作行（复制 + 时间戳）、流式等待行。
 import { useEffect, useRef } from "react";
 import { Bot, ChevronLeft, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
-import { formatRunDuration, groupRunsByLiveness, pairedRunTools, type SubagentRun } from "../../state/subagentRuns";
+import { formatRunDuration, groupRunsByLiveness, pairedRunTools, runConversationChunks, type SubagentRun } from "../../state/subagentRuns";
 import { runToolsToTimelineRows } from "../chat/toolRows";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
 import { ThinkingRow } from "../chat/ThinkingRow";
@@ -67,7 +67,8 @@ export function RunCard({
 }
 
 /** 对话视图：选中运行的完整对话——与主聊天时间线同一表现：prompt 用户气泡
- *  （hover 复制）、思考幽灵行、ToolRow 工具轨迹、Markdown 正文（运行中流式
+ *  （hover 复制）、思考幽灵行与工具轨迹按事件顺序穿插（思考被工具活动打断
+ *  即分段，不再并成一行）、ToolRow 工具行、Markdown 正文（运行中流式
  *  光标，完成后悬停复制 + 时间戳）、等待行与错误块。 */
 export function RunConversation({
   t,
@@ -84,6 +85,8 @@ export function RunConversation({
   const body = run.final ?? run.text;
   const stamp = new Date(run.endedAt ?? run.startedAt);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chunks = runConversationChunks(run.entries);
+  const lastIndex = chunks.length - 1;
   const thinkingLive = running && !body;
 
   // 运行中且用户贴底（<48px）时保持钉底，上滚即释放——与时间线同规则。
@@ -91,7 +94,7 @@ export function RunConversation({
     const el = scrollRef.current;
     if (!el || !running) return;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
-  }, [running, run.text, run.final, run.thinking, run.tools.length]);
+  }, [running, run.text, run.final, run.entries]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-hairline) px-2">
@@ -116,8 +119,8 @@ export function RunConversation({
       <div className="min-h-0 flex-1">
         <div ref={scrollRef} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
           {/* 消息渲染与主聊天同语言同节奏（32px 消息间距）：prompt = 用户气泡
-              （右对齐、3px 尾角、hover 复制），thinking = 幽灵行，工具 = 同一
-              ToolRow 时间线，正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀
+              （右对齐、3px 尾角、hover 复制），chunks = 思考幽灵行与工具时间线
+              按事件顺序穿插，正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀
               正文行，空等 = 轮换耐心提示。 */}
           <div className="space-y-8 px-3 py-4">
             {run.prompt && (
@@ -130,8 +133,13 @@ export function RunConversation({
                 </div>
               </div>
             )}
-            {run.thinking && <ThinkingRow t={t} text={run.thinking} live={thinkingLive} />}
-            {run.tools.length > 0 && <ToolTimeline t={t} rows={runToolsToTimelineRows(pairedRunTools(run.tools))} />}
+            {chunks.map((chunk, index) =>
+              chunk.kind === "thinking" ? (
+                <ThinkingRow key={`think-${index}`} t={t} text={chunk.text} live={thinkingLive && index === lastIndex} />
+              ) : (
+                <ToolTimeline key={`tools-${index}`} t={t} rows={runToolsToTimelineRows(pairedRunTools(chunk.tools))} />
+              ),
+            )}
             {body && (
               <div className="rise-in group/assistant-row flex flex-col gap-4">
                 <div className="min-h-6">
@@ -148,7 +156,7 @@ export function RunConversation({
                 )}
               </div>
             )}
-            {!body && thinkingLive && !run.thinking && <WaitingRow t={t} />}
+            {!body && running && chunks.length === 0 && <WaitingRow t={t} />}
             {run.error && <div className="leading-relaxed break-words text-(--color-foreground)">⚠ {run.error}</div>}
           </div>
         </div>

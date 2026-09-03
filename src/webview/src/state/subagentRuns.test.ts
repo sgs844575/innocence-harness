@@ -9,6 +9,7 @@ import {
   pairedRunTools,
   reduceSubagentRuns,
   runByInvocation,
+  runConversationChunks,
   runsForSession,
   type SubagentRun,
   type SubagentRunsState,
@@ -25,7 +26,7 @@ const started: SubagentLifecycleEvent = {
 };
 
 describe("reduceSubagentRuns", () => {
-  it("started 建档：预设/prompt/关联键入档，文本与工具轨迹为空", () => {
+  it("started 建档：预设/prompt/关联键入档，文本与对话时间线为空", () => {
     const state = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     expect(state["c1"]).toMatchObject({
       childId: "c1",
@@ -35,7 +36,7 @@ describe("reduceSubagentRuns", () => {
       prompt: "去查",
       status: "started",
       text: "",
-      tools: [],
+      entries: [],
       startedAt: 1000,
     });
   });
@@ -51,35 +52,44 @@ describe("reduceSubagentRuns", () => {
     expect(state).toEqual({});
   });
 
-  it("running 事件累加文本、追加工具轨迹", () => {
+  it("running 事件累加文本、追加工具条目", () => {
     let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running" }, 1100);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "正在" }, 1200);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "读取", tool: { name: "Read", phase: "call" } }, 1300);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "result", isError: false } }, 1400);
     expect(state["c1"]).toMatchObject({ status: "running", text: "正在读取" });
-    expect(state["c1"]!.tools).toEqual([
-      { name: "Read", phase: "call", at: 1300 },
-      { name: "Read", phase: "result", isError: false, at: 1400 },
+    expect(state["c1"]!.entries).toEqual([
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1300 } },
+      { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 1400 } },
     ]);
   });
 
-  it("工具轨迹携带参数摘要与结果摘录", () => {
+  it("工具条目携带参数摘要与结果摘录", () => {
     let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Grep", phase: "call", title: "pairedRunTools" } }, 1300);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Grep", phase: "result", isError: true, result: "无匹配" } }, 1400);
-    expect(state["c1"]!.tools).toEqual([
-      { name: "Grep", phase: "call", title: "pairedRunTools", at: 1300 },
-      { name: "Grep", phase: "result", isError: true, result: "无匹配", at: 1400 },
+    expect(state["c1"]!.entries).toEqual([
+      { kind: "tool", tool: { name: "Grep", phase: "call", title: "pairedRunTools", at: 1300 } },
+      { kind: "tool", tool: { name: "Grep", phase: "result", isError: true, result: "无匹配", at: 1400 } },
     ]);
   });
 
-  it("thinkingDelta 累积推理文本（与正文分通道）", () => {
+  it("连续 thinkingDelta 延续同一段；工具活动打断后开新段（与正文分通道）", () => {
     let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "先看" }, 1100);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "入口" }, 1200);
-    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "正文" }, 1300);
-    expect(state["c1"]).toMatchObject({ thinking: "先看入口", text: "正文" });
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "call" } }, 1300);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "result", isError: false } }, 1400);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "再看" }, 1500);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "正文" }, 1600);
+    expect(state["c1"]).toMatchObject({ text: "正文" });
+    expect(state["c1"]!.entries.map((entry) => (entry.kind === "thinking" ? `think:${entry.text}` : `tool:${entry.tool.name}/${entry.tool.phase}`))).toEqual([
+      "think:先看入口",
+      "tool:Read/call",
+      "tool:Read/result",
+      "think:再看",
+    ]);
   });
 
   it("终态记 endedAt 与 final/error，之后的事件不再改动", () => {
@@ -126,8 +136,7 @@ describe("groupRunsByLiveness", () => {
     description: childId,
     status,
     text: "",
-    thinking: "",
-    tools: [],
+    entries: [],
     startedAt,
   });
 
@@ -220,6 +229,38 @@ describe("pairedRunTools", () => {
   it("迟到 result（无未决 call）单独立行", () => {
     const rows = pairedRunTools([{ name: "Read", phase: "result", isError: false, result: "内容", at: 9 }]);
     expect(rows).toEqual([{ name: "Read", done: true, result: "内容", at: 9 }]);
+  });
+});
+
+describe("runConversationChunks", () => {
+  it("思考段与连续工具条目组成的工具组按事件顺序交替", () => {
+    const chunks = runConversationChunks([
+      { kind: "thinking", text: "先看入口" },
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1 } },
+      { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 2 } },
+      { kind: "thinking", text: "再查调用方" },
+      { kind: "tool", tool: { name: "Grep", phase: "call", title: "chunk", at: 3 } },
+    ]);
+    expect(chunks).toEqual([
+      { kind: "thinking", text: "先看入口" },
+      { kind: "tools", tools: [
+        { name: "Read", phase: "call", at: 1 },
+        { name: "Read", phase: "result", isError: false, at: 2 },
+      ] },
+      { kind: "thinking", text: "再查调用方" },
+      { kind: "tools", tools: [{ name: "Grep", phase: "call", title: "chunk", at: 3 }] },
+    ]);
+  });
+
+  it("连续思考段不被合并（各自独立幽灵行）；空时间线给空分段", () => {
+    expect(runConversationChunks([
+      { kind: "thinking", text: "段一" },
+      { kind: "thinking", text: "段二" },
+    ])).toEqual([
+      { kind: "thinking", text: "段一" },
+      { kind: "thinking", text: "段二" },
+    ]);
+    expect(runConversationChunks([])).toEqual([]);
   });
 });
 

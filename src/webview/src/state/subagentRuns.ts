@@ -1,6 +1,7 @@
 // 子代理运行面板的数据源（纯模块，可单测）：把 subagent:lifecycle 事件流折叠成
-// 按 childId 索引的运行记录——delta 累加为 text、tool 载荷追加 tools 轨迹、
-// 终态记 endedAt。进程内实况（子会话随跑随弃，不持久化）。
+// 按 childId 索引的运行记录——delta 累加为 text、thinkingDelta/tool 载荷按事件
+// 顺序追加 entries 对话时间线（思考段被工具活动打断即分段）、终态记 endedAt。
+// 进程内实况（子会话随跑随弃，不持久化）。
 import type { SubagentLifecycleEvent, SubagentStatus } from "../../../shared/ipc";
 
 export interface SubagentRunTool {
@@ -14,6 +15,11 @@ export interface SubagentRunTool {
   at: number;
 }
 
+/** 对话时间线条目：一段思考文本或一次工具活动（call/result 各自成条）。 */
+export type SubagentRunEntry =
+  | { kind: "thinking"; text: string }
+  | { kind: "tool"; tool: SubagentRunTool };
+
 export interface SubagentRun {
   childId: string;
   parentSessionId: string;
@@ -25,9 +31,8 @@ export interface SubagentRun {
   status: SubagentStatus;
   /** 运行中累加的子代理文本输出。 */
   text: string;
-  /** 运行中累加的推理（thinking）文本——与主时间线的幽灵行同源。 */
-  thinking: string;
-  tools: SubagentRunTool[];
+  /** 对话时间线（按事件顺序）：思考段与工具活动穿插成段。 */
+  entries: SubagentRunEntry[];
   final?: string;
   error?: string;
   startedAt: number;
@@ -39,6 +44,27 @@ export type SubagentRunsState = Readonly<Record<string, SubagentRun>>;
 export const initialSubagentRunsState: SubagentRunsState = {};
 
 const TERMINAL: ReadonlySet<SubagentStatus> = new Set(["completed", "failed", "cancelled"]);
+
+/** 事件 → 对话时间线：thinkingDelta 只延续紧邻的思考条目（其余任何事件都
+ *  已把末位换走，天然分段）；tool 载荷按 call/result 独立成条追加。 */
+function applyRunEntries(
+  entries: SubagentRunEntry[],
+  event: SubagentLifecycleEvent,
+  at: number,
+): SubagentRunEntry[] {
+  let next = entries;
+  if (event.thinkingDelta) {
+    const last = entries[entries.length - 1];
+    next =
+      last?.kind === "thinking"
+        ? [...entries.slice(0, -1), { kind: "thinking", text: last.text + event.thinkingDelta }]
+        : [...entries, { kind: "thinking", text: event.thinkingDelta }];
+  }
+  if (event.tool) {
+    next = [...next, { kind: "tool", tool: { ...event.tool, at } }];
+  }
+  return next;
+}
 
 export function reduceSubagentRuns(
   state: SubagentRunsState,
@@ -58,8 +84,7 @@ export function reduceSubagentRuns(
       ...(event.prompt ? { prompt: event.prompt } : {}),
       status: event.status,
       text: "",
-      thinking: "",
-      tools: [],
+      entries: [],
       startedAt: at,
     };
     return { ...state, [event.childId]: run };
@@ -70,8 +95,7 @@ export function reduceSubagentRuns(
     ...existing,
     status: event.status,
     text: event.delta ? existing.text + event.delta : existing.text,
-    thinking: event.thinkingDelta ? existing.thinking + event.thinkingDelta : existing.thinking,
-    tools: event.tool ? [...existing.tools, { ...event.tool, at }] : existing.tools,
+    entries: applyRunEntries(existing.entries, event, at),
     ...(event.final !== undefined ? { final: event.final } : {}),
     ...(event.error !== undefined ? { error: event.error } : {}),
     ...(TERMINAL.has(event.status) ? { endedAt: at } : {}),
@@ -190,4 +214,24 @@ export function pairedRunTools(tools: readonly SubagentRunTool[]): SubagentRunTo
     }
   }
   return rows;
+}
+
+/** 渲染分段：思考段与「连续工具条目」组成的工具组按事件顺序交替——
+ *  思考被工具活动打断即成独立幽灵行，工具不跨思考段合组。 */
+export type SubagentRunChunk =
+  | { kind: "thinking"; text: string }
+  | { kind: "tools"; tools: SubagentRunTool[] };
+
+export function runConversationChunks(entries: readonly SubagentRunEntry[]): SubagentRunChunk[] {
+  const chunks: SubagentRunChunk[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "thinking") {
+      chunks.push({ kind: "thinking", text: entry.text });
+      continue;
+    }
+    const last = chunks[chunks.length - 1];
+    if (last?.kind === "tools") last.tools.push(entry.tool);
+    else chunks.push({ kind: "tools", tools: [entry.tool] });
+  }
+  return chunks;
 }

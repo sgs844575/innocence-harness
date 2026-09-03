@@ -40,8 +40,7 @@ const runningRun: SubagentRun = {
   prompt: "去查代码",
   status: "running",
   text: "正在读取文件……",
-  thinking: "",
-  tools: [{ name: "Read", phase: "call", at: 1100 }],
+  entries: [{ kind: "tool", tool: { name: "Read", phase: "call", at: 1100 } }],
   startedAt: 1000,
 };
 
@@ -50,9 +49,9 @@ const doneRun: SubagentRun = {
   childId: "c2",
   status: "completed",
   final: "结论全文",
-  tools: [
-    { name: "Read", phase: "call", at: 1100 },
-    { name: "Read", phase: "result", isError: false, at: 1200 },
+  entries: [
+    { kind: "tool", tool: { name: "Read", phase: "call", at: 1100 } },
+    { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 1200 } },
   ],
   endedAt: 5000,
 };
@@ -237,9 +236,9 @@ describe("RightDock 子代理标签", () => {
   it("工具轨迹：动词 + 参数摘要；点击行展开结果摘录", () => {
     const run: SubagentRun = {
       ...doneRun,
-      tools: [
-        { name: "Grep", phase: "call", title: "pairedRunTools", at: 1100 },
-        { name: "Grep", phase: "result", isError: false, result: "src/a.ts:10", at: 1200 },
+      entries: [
+        { kind: "tool", tool: { name: "Grep", phase: "call", title: "pairedRunTools", at: 1100 } },
+        { kind: "tool", tool: { name: "Grep", phase: "result", isError: false, result: "src/a.ts:10", at: 1200 } },
       ],
     };
     render(
@@ -260,7 +259,7 @@ describe("RightDock 子代理标签", () => {
     const thinkingRun: SubagentRun = {
       ...runningRun,
       text: "",
-      thinking: "先看入口",
+      entries: [{ kind: "thinking", text: "先看入口" }],
     };
     const { rerender } = render(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[thinkingRun]} selectedChildId="c1" />,
@@ -274,10 +273,31 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByLabelText("chat.copy")).toBeTruthy();
     rerender(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
-        runs={[{ ...runningRun, thinking: "", text: "" }]} selectedChildId="c1" />,
+        runs={[{ ...runningRun, entries: [], text: "" }]} selectedChildId="c1" />,
     );
-    // 无思考无正文的空等：轮换耐心提示的等待行。
+    // 无思考无工具无正文的空等：轮换耐心提示的等待行。
     expect(screen.getByTestId("chat-waiting")).toBeTruthy();
+  });
+
+  it("思考分段：工具活动打断的思考各成幽灵行，与工具组按事件顺序穿插", () => {
+    const run: SubagentRun = {
+      ...doneRun,
+      entries: [
+        { kind: "thinking", text: "第一段思考" },
+        { kind: "tool", tool: { name: "Read", phase: "call", at: 1100 } },
+        { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 1200 } },
+        { kind: "thinking", text: "第二段思考" },
+      ],
+    };
+    render(<RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c2" />);
+    // 已完成：两段思考各渲染一行「思考」标签（不再并成一行）。
+    const labels = screen.getAllByText("chat.thinking.label");
+    expect(labels.length).toBe(2);
+    // 顺序：段一 → 工具动词 → 段二（文档顺序断言穿插关系）。
+    const order = [screen.getAllByText("第一段思考")[0]!, screen.getByText("tool.verb.read"), screen.getAllByText("第二段思考")[0]!];
+    for (let index = 0; index < order.length - 1; index += 1) {
+      expect(order[index]!.compareDocumentPosition(order[index + 1]!) & 4).toBeTruthy();
+    }
   });
 
   it("对话视图失败态：错误块 + 失败状态", () => {
