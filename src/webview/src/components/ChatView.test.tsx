@@ -1,299 +1,152 @@
 // @vitest-environment jsdom
-// C3 (final review): the chat surface consumes the review view model.
-//   - taskChanges (task:changes -> summarizeChanges) renders TaskChangeCard
-//     on the keyed message, and the 审查 action fires onOpenTaskReview.
-//   - onForkMessage renders the message fork affordances (user: 编辑并创建
-//     路线; assistant: 重试并创建路线) with the message id as the turn id.
-//   - the fork entry mounts ForkRouteDialog through the App-shaped wiring
-//     (state -> dialog -> createRoute/onSwitchRoute).
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../../shared/ipc";
-import type { TaskForkRouteRequest } from "../../../shared/taskIpc";
 import { ChatView } from "./ChatView";
-import { ForkRouteDialog } from "./task/ForkRouteDialog";
-import type { ForkMessageCommand } from "./MessageItem";
+import { zhCN } from "../lib/i18n";
 
-// jsdom has no layout: the bottom-anchor scroll is a no-op in tests.
+// jsdom 无布局：贴底滚动（scrollTo/scrollIntoView）打桩为 no-op。
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
+  Element.prototype.scrollTo = () => {};
 });
-
-import { zhCN } from "../lib/i18n";
-const t = (key: string) => zhCN[key] ?? key;
-
-function message(overrides: Partial<ChatMessage> & { id: string; role: "user" | "assistant" }): ChatMessage {
-  return {
-    parts: [{ type: "text", text: "hello" }],
-    createdAt: 1,
-    ...overrides,
-  } as ChatMessage;
-}
-
-const messages: ChatMessage[] = [
-  message({ id: "msg_user_1", role: "user" }),
-  message({ id: "msg_asst_1", role: "assistant", streaming: false }),
-];
 
 afterEach(cleanup);
 
-describe("ChatView review wiring (C3)", () => {
-  it("renders the InnocenceHarness product name on the landing surface", () => {
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={[]}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-      />,
-    );
-    expect(screen.getByText(/InnocenceHarness/)).toBeTruthy();
-  });
+const t = (key: string) => zhCN[key] ?? key;
 
-  it("passes projected child agents and their open callback into the activity capsule", () => {
-    const onOpenSubagent = vi.fn();
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-        activity={{
-          agent: {
-            name: "default",
-            status: "running",
-            subagents: [{ childId: "child-1", description: "研究子会话", status: "running", text: "读取中" }],
-            onOpenSubagent,
-          },
-        }}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /智能体/ }));
-    fireEvent.click(screen.getByRole("button", { name: /研究子会话/ }));
-    expect(onOpenSubagent).toHaveBeenCalledWith("child-1");
-  });
+function message(overrides: Partial<ChatMessage> & { id: string; role: "user" | "assistant" }): ChatMessage {
+  return { parts: [{ type: "text", text: "hello" }], createdAt: 1, ...overrides } as ChatMessage;
+}
 
-  it("renders TaskChangeCard for the keyed message and fires the review action", () => {
-    const onOpenTaskReview = vi.fn();
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-        taskChanges={{
-          msg_asst_1: {
-            summary: { fileCount: 2, added: 7, removed: 3, accepted: 1, pending: 1, restored: 0, conflicts: 0, unreviewed: 1 },
-            checkpointId: "ckpt_1",
-            validation: null,
-          },
-        }}
-        onOpenTaskReview={onOpenTaskReview}
-      />,
-    );
-    // The change card renders on the keyed assistant message: 2 个文件 (+7/−3)
-    // and the checkpoint id from the view model.
-    expect(screen.getByText("2 个文件")).toBeTruthy();
-    expect(screen.getByText("+7")).toBeTruthy();
-    expect(screen.getByText("−3")).toBeTruthy();
-    expect(screen.getByText("ckpt_1")).toBeTruthy();
-    // The 审查 button is enabled and reports the keyed message.
-    fireEvent.click(screen.getByRole("button", { name: "审查" }));
-    expect(onOpenTaskReview).toHaveBeenCalledWith("msg_asst_1");
-  });
+const capsule = { branch: "main", isGitRepo: true, changes: { changedFiles: 2, additions: 7, deletions: 3 }, todos: [] };
 
-
-  it("renders fork affordances through onForkMessage with the message id as turn id", () => {
-    const onForkMessage = vi.fn();
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-        onForkMessage={onForkMessage}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "编辑并创建路线" }));
-    expect(onForkMessage).toHaveBeenCalledWith({
-      turnId: "msg_user_1",
-      mode: "edit-user",
-      text: "hello",
-    } satisfies ForkMessageCommand);
-    fireEvent.click(screen.getByRole("button", { name: "重试并创建路线" }));
-    expect(onForkMessage).toHaveBeenCalledWith({
-      turnId: "msg_asst_1",
-      mode: "retry-assistant",
-      text: "hello",
-    } satisfies ForkMessageCommand);
-    // Without the callback the affordances never render.
-    cleanup();
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "编辑并创建路线" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "重试并创建路线" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "从这里分叉会话" })).toBeNull();
-  });
-
-  it("renders the session-fork affordance on user messages through onForkSession", () => {
-    const onForkSession = vi.fn();
-    render(
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-        onForkSession={onForkSession}
-      />,
-    );
-    // 只在用户消息上出现，携带该消息 id（切口=用户消息）。
-    fireEvent.click(screen.getByRole("button", { name: "从这里分叉会话" }));
-    expect(onForkSession).toHaveBeenCalledWith("msg_user_1");
-  });
-});
-
-/** App-shaped fork wiring: onForkMessage -> state -> ForkRouteDialog. */
-function ForkHarness() {
-  const [fork, setFork] = useState<{ request: TaskForkRouteRequest; checkpointId: string } | null>(null);
-  const [switched, setSwitched] = useState<string | null>(null);
-  const onForkMessage = (next: ForkMessageCommand) => {
-    setFork({
-      request: {
-        sessionId: "s1",
-        taskId: "t1",
-        sourceRouteId: "main",
-        sourceTurnId: next.turnId,
-        mode: next.mode,
-        ...(next.mode === "edit-user" ? { editedText: next.text } : {}),
-        routeName: next.mode === "edit-user" ? `Edit ${next.turnId}` : `Retry ${next.turnId}`,
-      },
-      checkpointId: "ckpt_1",
-    });
-  };
-  return (
-    <div>
-      <ChatView
-        t={t}
-        appName="InnocenceHarness"
-        messages={messages}
-        streaming={false}
-        settings={null}
-        permission={null}
-        onSettingsChange={() => {}}
-        onPermissionRespond={() => {}}
-        onSend={() => {}}
-        onStop={() => {}}
-        landing={false}
-        pendingProject=""
-        onPickProject={() => {}}
-        recentProjects={[]}
-        onOpenProjectDir={() => {}}
-        onForkMessage={onForkMessage}
-      />
-      {fork && (
-        <ForkRouteDialog
-          open
-          request={fork.request}
-          checkpointId={fork.checkpointId}
-          onClose={() => setFork(null)}
-          createRoute={async (request) => ({
-            routeId: "route_fork",
-            parentRouteId: "main",
-            forkTurnId: request.sourceTurnId,
-            checkpointId: "ckpt_fork",
-            workspaceKind: "git",
-            prompt: "forked prompt",
-          })}
-          onSwitchRoute={(routeId, prompt) => setSwitched(`${routeId}:${prompt}`)}
-        />
-      )}
-      {switched && <div data-testid="switched">{switched}</div>}
-    </div>
+function renderChat(messages: ChatMessage[], extra: Partial<Parameters<typeof ChatView>[0]> = {}) {
+  return render(
+    <ChatView
+      t={t}
+      messages={messages}
+      streaming={false}
+      permission={null}
+      settings={null}
+      onPatchSettings={() => {}}
+      onSend={() => {}}
+      onEditResend={() => {}}
+      onStop={() => {}}
+      onPermissionRespond={() => {}}
+      capsule={capsule}
+      {...extra}
+    />,
   );
 }
 
-describe("fork entry to ForkRouteDialog (C3)", () => {
-  it("mounts the dialog from the message entry and drives create -> switch", async () => {
-    render(<ForkHarness />);
-    fireEvent.click(screen.getByRole("button", { name: "重试并创建路线" }));
-    expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByText("main")).toBeTruthy(); // parent route row
-    fireEvent.click(screen.getByRole("button", { name: "创建路线" }));
-    expect((await screen.findByTestId("switched")).textContent).toBe("route_fork:forked prompt");
-    // The dialog closes after a successful create.
-    expect(screen.queryByRole("dialog")).toBeNull();
+describe("ChatView", () => {
+  it("渲染用户气泡、助手正文与工具时间线", () => {
+    const messages: ChatMessage[] = [
+      message({ id: "u1", role: "user" }),
+      {
+        ...message({ id: "a1", role: "assistant", streaming: false }),
+        parts: [
+          { type: "thinking", text: "想一想" },
+          { type: "toolCall", id: "c1", toolName: "Edit", args: { file_path: "D:/x/app.css", old_string: "a", new_string: "b" } },
+          { type: "toolResult", toolCallId: "c1", content: "ok", isError: false },
+          { type: "text", text: "完成了" },
+        ],
+        completion: { finishReason: "stop", aborted: false },
+      } as ChatMessage,
+    ];
+    renderChat(messages);
+    expect(screen.getByText("hello")).toBeTruthy();
+    expect(screen.getByText("完成了")).toBeTruthy();
+    expect(screen.getByText("app.css")).toBeTruthy();
+    expect(screen.getByText("思考")).toBeTruthy();
+    expect(screen.getByText("持续了几秒")).toBeTruthy();
+    // Git 浮动面板
+    expect(screen.getByText("Git 工具")).toBeTruthy();
+    expect(screen.getByText("+7")).toBeTruthy();
+  });
+
+  it("末轮中断（无 completion）显示「继续」pill 并发送续跑提示词", () => {
+    const onSend = vi.fn();
+    renderChat(
+      [message({ id: "u1", role: "user" }), message({ id: "a1", role: "assistant", streaming: false })],
+      { onSend },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(onSend).toHaveBeenCalledWith(zhCN["chat.continue.prompt"]);
+  });
+
+  it("最近一条用户消息编辑重发走 onEditResend（携带消息 id），不走普通发送", () => {
+    const onSend = vi.fn();
+    const onEditResend = vi.fn();
+    renderChat(
+      [
+        message({ id: "u1", role: "user" }),
+        message({ id: "a1", role: "assistant", streaming: false }),
+        message({ id: "u2", role: "user", parts: [{ type: "text", text: "改我" }] }),
+      ],
+      { onSend, onEditResend },
+    );
+    fireEvent.click(screen.getByRole("button", { name: zhCN["chat.edit"] }));
+    const area = screen.getByRole("textbox", { name: zhCN["chat.edit"] }) as HTMLTextAreaElement;
+    fireEvent.change(area, { target: { value: "改好了" } });
+    fireEvent.click(screen.getByRole("button", { name: zhCN["chat.edit.send"] }));
+    expect(onEditResend).toHaveBeenCalledWith("u2", "改好了");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("末轮完成或流式中不显示「继续」pill", () => {
+    renderChat([
+      message({ id: "u1", role: "user" }),
+      { ...message({ id: "a1", role: "assistant", streaming: false }), completion: { finishReason: "stop", aborted: false } },
+    ]);
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+    cleanup();
+    renderChat([message({ id: "u1", role: "user" })], { streaming: true });
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+  });
+
+  it("流式时时间线最底部渲染等待行（转圈 + 耐心等待提示）", () => {
+    renderChat([message({ id: "u1", role: "user" })], { streaming: true });
+    expect(screen.getByTestId("chat-waiting")).toBeTruthy();
+    expect(screen.getByText(zhCN["chat.waiting.0"])).toBeTruthy();
+  });
+
+  it("非流式不渲染等待行", () => {
+    renderChat([message({ id: "u1", role: "user" })]);
+    expect(screen.queryByTestId("chat-waiting")).toBeNull();
+  });
+
+  it("胶囊默认不出现：非 Git 且无待办/智能体/终端时不渲染", () => {
+    renderChat([message({ id: "u1", role: "user" })], {
+      capsule: { branch: null, isGitRepo: false, todos: [] },
+    });
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByText("Git 工具")).toBeNull();
+  });
+
+  it("仅有待办清单（非 Git）时胶囊出现", () => {
+    renderChat([message({ id: "u1", role: "user" })], {
+      capsule: { branch: null, isGitRepo: false, todos: [{ content: "任务一", status: "pending" }] },
+    });
+    expect(screen.getByText("活动")).toBeTruthy();
+    expect(screen.getByText("任务一")).toBeTruthy();
+  });
+
+  it("权限请求渲染批准卡并响应", () => {
+    const onPermissionRespond = vi.fn();
+    renderChat([message({ id: "u1", role: "user" })], {
+      permission: {
+        sessionId: "s1",
+        messageId: "m1",
+        requestId: "r1",
+        toolName: "Edit",
+        args: {},
+        resource: { kind: "path", action: "write", scope: "a.ts" },
+      },
+      onPermissionRespond,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "允许一次" }));
+    expect(onPermissionRespond).toHaveBeenCalledWith("r1", "allow");
   });
 });

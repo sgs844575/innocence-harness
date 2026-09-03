@@ -1,99 +1,49 @@
-import { useRef, useState } from "react";
-import { ShieldQuestion } from "lucide-react";
+// 权限批准卡：工具调用需要确认时嵌在输入卡上方同轨道。
 import type { ChatPermissionEvent, PermissionChoice } from "../../../shared/ipc";
 
-interface Props {
+export function PermissionCard({
+  t,
+  request,
+  onRespond,
+}: {
   t: (key: string) => string;
   request: ChatPermissionEvent;
-  onRespond: (requestId: string, choice: PermissionChoice) => void | Promise<void>;
-}
-
-/** Approval card shown while the agent waits for a tool-call decision. */
-export function PermissionCard({ t, request, onRespond }: Props): React.JSX.Element {
-  const argsText = JSON.stringify(request.args, null, 2);
-  const { resource } = request;
-  const [responding, setResponding] = useState(false);
-  const respondingRef = useRef(false);
-
-  const respond = (choice: PermissionChoice) => {
-    if (respondingRef.current) return;
-    respondingRef.current = true;
-    setResponding(true);
-    try {
-      const result = onRespond(request.requestId, choice);
-      if (!result || typeof result.then !== "function") {
-        respondingRef.current = false;
-        setResponding(false);
-        return;
-      }
-      void result.then(
-        () => { respondingRef.current = false; setResponding(false); },
-        () => { respondingRef.current = false; setResponding(false); },
-      );
-    } catch {
-      respondingRef.current = false;
-      setResponding(false);
-    }
-  };
-
+  onRespond: (requestId: string, choice: PermissionChoice) => void;
+}): React.JSX.Element {
   return (
     <div
       role="alertdialog"
       aria-label={t("permission.card.title")}
-      className="mx-auto mb-2 w-full rounded-[10px] border border-(--color-tool-warn)/40 bg-(--color-app-panel) px-4 py-3 shadow-(--shadow-card)"
+      className="rounded-(--radius-card) border border-(--color-border) bg-(--color-raised) p-3 shadow-(--shadow-card)"
     >
-      <div className="flex items-center gap-2 font-medium text-(--color-app-text)">
-        <ShieldQuestion size={16} className="shrink-0 text-(--color-tool-warn)" />
-        {t("permission.card.title")}
-        <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5 font-mono ">
-          {request.toolName}
-        </code>
+      <div className="font-medium text-(--color-foreground-strong)">{t("permission.card.title")}</div>
+      <div className="mt-1 text-(--color-muted)">
+        <span className="font-mono">{request.toolName}</span>
+        <span className="ml-2 text-(--color-faint)">
+          {request.resource.action} · {request.resource.scope}
+        </span>
       </div>
-      {/* 稳定资源摘要：kind/action/scope 均为脱敏持久化 token（raw 值
-          不出 core），一眼看清这次批准到底放行了什么。 */}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-(--color-app-text)">
-        <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5">{resource.action}</code>
-        <code className="rounded-full bg-(--color-app-bubble) px-2 py-0.5">{resource.kind}</code>
-        <code
-          className="min-w-0 flex-1 basis-24 truncate rounded-md bg-(--color-app-bubble) px-2 py-0.5 text-(--color-app-muted)"
-          title={resource.scope}
-          data-testid="permission-resource-scope"
-        >
-          {resource.scope}
-        </code>
-      </div>
-      <details className="mt-2">
-        <summary className="cursor-pointer select-none text-(--color-app-muted) transition-colors hover:text-(--color-app-text)">
-          {t("permission.card.args")}
-        </summary>
-        <pre className="scrollbar-thin mt-2 max-h-32 overflow-auto rounded-xl bg-(--color-app-bubble) p-2 font-mono text-(--color-app-muted)">
-          {argsText}
-        </pre>
-      </details>
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+      <div className="mt-3 flex gap-2">
         <button
           type="button"
-          onClick={() => respond("deny")}
-          disabled={responding}
-          className="rounded-full bg-(--color-app-bubble) px-3.5 py-1.5 text-(--color-app-muted) transition-colors hover:bg-(--color-app-border) hover:text-(--color-app-text) disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onRespond(request.requestId, "allow")}
+          className="h-7 rounded-md bg-(--color-foreground-strong) px-3 text-(--color-background) hover:opacity-90"
         >
-          {t("permission.card.deny")}
+          {t("permission.card.allow")}
         </button>
         <button
           type="button"
-          onClick={() => respond("allowSession")}
-          disabled={responding}
-          className="rounded-full border border-(--color-app-border) px-3.5 py-1.5 text-(--color-app-text) transition-colors hover:bg-(--color-app-bubble) disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onRespond(request.requestId, "allowSession")}
+          className="h-7 rounded-md border border-(--color-border) px-3 text-(--color-foreground) hover:bg-(--color-hover)"
         >
           {t("permission.card.allowSession")}
         </button>
         <button
           type="button"
-          onClick={() => respond("allow")}
-          disabled={responding}
-          className="rounded-full bg-(--color-app-accent) px-3.5 py-1.5 font-medium text-(--color-app-accent-fg) shadow-md transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onRespond(request.requestId, "deny")}
+          className="h-7 rounded-md border border-(--color-border) px-3 text-(--color-tool-err) hover:bg-(--color-hover)"
         >
-          {t("permission.card.allow")}
+          {t("permission.card.deny")}
         </button>
       </div>
     </div>

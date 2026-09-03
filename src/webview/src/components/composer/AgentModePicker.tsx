@@ -1,53 +1,67 @@
+// Agent 模式选择器：与权限选择器同构（弹层列表 + 勾选当前项），标题下带描述行。
+// 内置模式 id 走 i18n（agentMode.<id>[.desc]）；用户安装的模式无对应键时回落
+// 目录原文（title/description）。弹层限高滚动，模式多时不顶出窗口。
 import { Bot, Check, ChevronDown } from "lucide-react";
+import type { AgentModeInfo } from "../../../../shared/ipc";
+import { dictHas } from "../../lib/i18n";
 import { Popover } from "../ui/Popover";
 
-export interface AgentModeOption { id: string; title: string; description?: string; }
-
-/** 内建模式 id（staging 清单的 agent-mode 条目）：label 与 desc 均走 i18n。 */
-const BUILTIN_MODE_IDS = new Set(["default", "creation", "plan", "focus", "minimal", "learning", "auto", "coordinator"]);
-
-/** 内置模式用 i18n 显示；用户自建模式显示元数据 title。 */
-export function labelFor(t: (k: string) => string, id: string, options: AgentModeOption[]): string {
-  if (BUILTIN_MODE_IDS.has(id)) return t(`agentMode.${id}`);
-  return options.find((o) => o.id === id)?.title ?? id;
+function modeTitle(t: (key: string) => string, mode: AgentModeInfo | undefined): string {
+  if (!mode) return t("agentMode.default");
+  const key = `agentMode.${mode.id}`;
+  return dictHas(key) ? t(key) : mode.title;
 }
 
-/** 模式描述（选项悬浮提示）：内置模式（同一内建集合）走 i18n 描述键；用户模式回落元数据 description，无则空串（不渲染 title）。 */
-export function descFor(t: (k: string) => string, id: string, options: AgentModeOption[]): string {
-  if (BUILTIN_MODE_IDS.has(id)) return t(`agentMode.${id}.desc`);
-  return options.find((o) => o.id === id)?.description ?? "";
+function modeDescription(t: (key: string) => string, mode: AgentModeInfo): string | undefined {
+  const key = `agentMode.${mode.id}.desc`;
+  return dictHas(key) ? t(key) : mode.description;
 }
 
 export function AgentModePicker({
-  t, value, options, onChange,
+  t,
+  modes,
+  value,
+  onChange,
 }: {
   t: (key: string) => string;
+  modes: AgentModeInfo[];
   value: string;
-  options: AgentModeOption[];
-  onChange: (v: string) => void;
+  onChange: (id: string) => void;
 }): React.JSX.Element {
-  const triggerDesc = descFor(t, value, options);
+  // 选中项不在目录（模式插件已移除）时按 main 的回落语义展示 default。
+  const active = modes.find((mode) => mode.id === value) ?? modes[0];
   return (
     <Popover
-      contentClassName="w-36 p-1"
+      contentClassName="scrollbar-thin max-h-80 w-64 overflow-y-auto p-1"
       trigger={
-        <button type="button" aria-label={t("agentMode.select")}
-          title={triggerDesc || undefined}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-(--color-app-text) hover:bg-(--color-app-hover)">
-          <Bot size={14} className="shrink-0 text-(--color-app-muted)" />
-          <span>{labelFor(t, value, options)}</span>
-          <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
+        <button
+          type="button"
+          aria-label={t("agentMode")}
+          title={t("agentMode")}
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-(--color-foreground) outline-none hover:bg-(--color-hover)"
+        >
+          <Bot size={14} />
+          <span>{modeTitle(t, active)}</span>
+          <ChevronDown size={11} className="text-(--color-faint)" />
         </button>
       }
     >
-      {options.map((o) => {
-        const desc = descFor(t, o.id, options);
+      {modes.map((mode) => {
+        const description = modeDescription(t, mode);
         return (
-          <button key={o.id} type="button" onClick={() => onChange(o.id)}
-            title={desc || undefined}
-            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-(--color-app-hover) ${o.id === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}>
-            <span>{labelFor(t, o.id, options)}</span>
-            {o.id === value && <Check size={12} className="ml-auto shrink-0" />}
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => onChange(mode.id)}
+            className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-hover) ${
+              mode.id === value ? "text-(--color-foreground)" : "text-(--color-muted)"
+            }`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block">{modeTitle(t, mode)}</span>
+              {description && <span className="block text-(--color-faint)">{description}</span>}
+            </span>
+            {mode.id === value && <Check size={13} className="mt-1 shrink-0 text-(--color-accent)" />}
           </button>
         );
       })}

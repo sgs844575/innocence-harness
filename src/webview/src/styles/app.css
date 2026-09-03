@@ -1,232 +1,550 @@
 @import "tailwindcss";
 @import "streamdown/styles.css";
-@import "./tokens/palette.css";
-@import "./tokens/semantic.css";
-@import "./tokens/product.css";
-@import "./motion.css";
+/* streamdown 组件类名只出现在其 dist 里（node_modules 默认不进扫描），
+   显式 @source 让其按钮/代码块的工具类生成；色系经下方别名桥到本地 token。 */
+@source "../../../../node_modules/streamdown/dist";
 
-/* 全局等宽字体标识：界面、代码、芯片共用一套 mono 栈（CJK 落到雅黑）。 */
+/* 暗色由 .dark 类驱动（对齐参考设计的类切换方式），不用媒体查询。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 原生表单控件（select/option、checkbox）随主题着色。 */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
 @theme {
-  --font-sans:
-    "Maple Mono", "Maple Mono SC", "Cascadia Code", "Cascadia Mono", Consolas,
-    "Microsoft YaHei", monospace;
-  --font-mono:
-    "Maple Mono", "Maple Mono SC", "Cascadia Code", "Cascadia Mono", Consolas,
-    "Microsoft YaHei", monospace;
+  /* 中性灰阶——所有表面色的基底。 */
+  --color-neutral-50: oklch(98.5% 0 0);
+  --color-neutral-100: oklch(97% 0 0);
+  --color-neutral-200: oklch(92.2% 0 0);
+  --color-neutral-300: oklch(87% 0 0);
+  --color-neutral-400: oklch(70.8% 0 0);
+  --color-neutral-500: oklch(55.6% 0 0);
+  --color-neutral-600: oklch(43.9% 0 0);
+  --color-neutral-700: oklch(37.1% 0 0);
+  --color-neutral-800: oklch(26.9% 0 0);
+  --color-neutral-900: oklch(20.5% 0 0);
+  --color-neutral-950: oklch(14.5% 0 0);
+
+  /* 字体身份：界面系统黑体，代码等宽。 */
+  --font-sans: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Maple Mono NF CN", "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+
+  /* 语义 token（浅色默认，.dark 下覆盖）。文字三级：foreground / muted(subtle) / faint(subtlest)。 */
+  --color-background: #f8f8f8; /* 主区画布 */
+  --color-sidebar: #ececee; /* 页面底/侧栏 */
+  --color-raised: #ffffff; /* 输入卡、芯片（对齐参考的 input/card 面） */
+  --color-popup: #ffffff; /* 弹层 */
+  --color-panel: #ffffff; /* 面板（终端卡等） */
+  --color-surface: #0d0d0d08; /* 用户气泡底 */
+  --color-hover: #0d0d0d0d;
+  --color-selected: #0d0d0d0d;
+  --color-foreground: var(--color-neutral-800);
+  --color-foreground-strong: #0d0d0d;
+  --color-muted: #26262699;
+  --color-faint: #26262666;
+  --color-inverse: #ffffff; /* 品牌钮上的文字 */
+  --color-brand: #000000; /* 发送钮底 */
+  --color-border: #0d0d0d1a;
+  --color-border-hover: #0d0d0d26;
+  --color-hairline: #0d0d0d0f;
+  --color-accent: #2f7ddb;
+  --color-mode-accent: #c26a1b; /* 权限「完全访问」橙 */
+  --color-diff-add: #1e8a3e;
+  --color-diff-del: #e03131;
+  --color-tool-ok: #1e8a3e;
+  --color-tool-err: #e03131;
+  --color-tool-warn: #e07b00;
+  --color-inline-code: #e6e6e6;
+  /* 分组颜色（用户内容着色；灰阶取 muted 色系，彩色浅底可读）。 */
+  --color-group-gray: #6b7280;
+  --color-group-red: #dc2626;
+  --color-group-orange: #ea580c;
+  --color-group-yellow: #ca8a04;
+  --color-group-green: #16a34a;
+  --color-group-blue: #2563eb;
+  --color-group-purple: #9333ea;
+  --gradient-text-strong: #000000;
+  --gradient-text-soft: #00000038;
+
+  --radius-card: 16px; /* 输入卡 */
+  --radius-pop: 12px; /* 弹层 */
+  --shadow-pop: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.18);
+
+  /* streamdown（shadcn 色系）→ 本地语义 token 桥接：缺这些别名时其按钮在浅色下无色。 */
+  --color-muted-foreground: var(--color-muted);
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: var(--color-inverse);
+}
+
+/* 深色主形态：页面/侧栏为灰，主区为黑（主区左侧圆角浮在灰色页面上）。 */
+.dark {
+  --color-background: #0d0d0d;
+  --color-sidebar: #1e1e1e;
+  --color-raised: #2b2b2b;
+  --color-popup: #2b2b2b;
+  --color-panel: #202020;
+  --color-surface: #ffffff0d;
+  --color-hover: #ffffff0d;
+  --color-selected: #ffffff1a;
+  --color-foreground: var(--color-neutral-300);
+  --color-foreground-strong: #f0f0f0;
+  --color-muted: #d4d4d499;
+  --color-faint: #d4d4d44d;
+  --color-inverse: #000000;
+  --color-brand: #ffffff;
+  --color-border: #ffffff1a;
+  --color-border-hover: #ffffff26;
+  --color-hairline: #ffffff0d;
+  --color-accent: #3a8edb;
+  --color-mode-accent: #f0872f;
+  --color-diff-add: #46bf72;
+  --color-diff-del: #ff5c5c;
+  --color-tool-ok: #46bf72;
+  --color-tool-err: #ff5c5c;
+  --color-tool-warn: #ff8a30;
+  --color-inline-code: #3f3f3f;
+  --color-group-gray: #9ca3af;
+  --color-group-red: #f87171;
+  --color-group-orange: #fb923c;
+  --color-group-yellow: #facc15;
+  --color-group-green: #4ade80;
+  --color-group-blue: #60a5fa;
+  --color-group-purple: #c084fc;
+  --gradient-text-strong: #ffffff;
+  --gradient-text-soft: #ffffff38;
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* 暗色界面里内嵌的浅色作用域（代码预览的浅色卡）：重新声明浅色 token。
+   与 @theme 的浅色默认值同步（新增语义 token 时两侧都要加）。 */
+.light-scope {
+  --color-background: #f8f8f8;
+  --color-sidebar: #ececee;
+  --color-raised: #ffffff;
+  --color-popup: #ffffff;
+  --color-panel: #ffffff;
+  --color-surface: #0d0d0d08;
+  --color-hover: #0d0d0d0d;
+  --color-selected: #0d0d0d0d;
+  --color-foreground: var(--color-neutral-800);
+  --color-foreground-strong: #0d0d0d;
+  --color-muted: #26262699;
+  --color-faint: #26262666;
+  --color-inverse: #ffffff;
+  --color-brand: #000000;
+  --color-border: #0d0d0d1a;
+  --color-border-hover: #0d0d0d26;
+  --color-hairline: #0d0d0d0f;
+  --color-accent: #2f7ddb;
+  --color-mode-accent: #c26a1b;
+  --color-diff-add: #1e8a3e;
+  --color-diff-del: #e03131;
+  --color-tool-ok: #1e8a3e;
+  --color-tool-err: #e03131;
+  --color-tool-warn: #e07b00;
+  --color-inline-code: #e6e6e6;
+  --color-group-gray: #6b7280;
+  --color-group-red: #dc2626;
+  --color-group-orange: #ea580c;
+  --color-group-yellow: #ca8a04;
+  --color-group-green: #16a34a;
+  --color-group-blue: #2563eb;
+  --color-group-purple: #9333ea;
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: var(--color-inverse);
+  --gradient-text-strong: #000000;
+  --gradient-text-soft: #00000038;
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.18);
 }
 
 @layer base {
-  html,
-  body {
-    height: 100%;
-    background: var(--color-app-bg);
-    color: var(--color-app-text);
-    font-family: var(--font-sans);
-    font-size: var(--font-size-ui);
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+  :root {
+    /* 界面/代码字号（外观设置注入 documentElement 内联值覆盖）。 */
+    --font-size-ui: 14px;
+    --font-size-code: 14px;
+    /* 动效 token 标尺（transitions.dev 体系）：所有动画/过渡只引用这些变量，不硬编码 ms。 */
+    --duration-stagger: 40ms; /* 逐级错峰间隔 */
+    --duration-micro: 80ms; /* 微延迟 */
+    --duration-quick: 150ms; /* 弹层/模态关闭、文字交换 */
+    --duration-fast: 250ms; /* 图标交换、弹层/模态打开、页面级位移 */
+    --duration-medium: 350ms; /* toast 关闭 */
+    --duration-slow: 400ms; /* 面板打开 */
+    --duration-very-slow: 500ms; /* 强调时刻、错落进场 */
+    --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1); /* 开合/位移/缩放的默认曲线 */
+    --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1); /* 弹性落入 */
+    --distance-micro: 4px; /* 文字交换 */
+    --distance-base: 8px; /* 消息/页面级位移 */
+    --distance-medium: 12px; /* 错落进场 */
+    --distance-toast: 16px; /* toast 升起 */
+    --scale-large: 0.96; /* 模态开合 */
+    --scale-medium: 0.97; /* 弹层打开 */
+    --scale-tiny: 0.99; /* 弹层关闭 */
+    --blur-small: 2px; /* 交叉模糊 */
+    --blur-medium: 3px; /* 错落进场 */
+    --shimmer-dur: 2400ms; /* 「正在思考」渐变扫掠周期 */
   }
 
-  ::selection {
-    background: color-mix(in srgb, var(--color-app-accent) 30%, transparent);
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-ui, 14px);
+    line-height: 1.5;
+  }
+
+  #root {
+    height: 100dvh;
+    overflow: hidden;
   }
 }
 
 @layer components {
+  /* 细滚动条（聊天区/侧栏/弹层列表）。 */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* 助手正文段：14px、1.75 行高、宽字距（对齐参考的 markdown 根）。 */
+  .msg-body {
+    color: var(--color-foreground);
+    font-size: 14px;
+    line-height: 1.75;
+    letter-spacing: 0.025em;
+  }
+  /* 段间距由 MessageItem 的 flex gap-4 承担，不再用兄弟 margin。 */
+
+  /* markdown 排版映射（参考规格）：标题/列表/引用/行内代码。 */
+  .msg-body h1,
+  .msg-body h2,
+  .msg-body h3,
+  .msg-body h4,
+  .msg-body h5,
+  .msg-body h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+  }
+  .msg-body h1 { font-size: 18px; }
+  .msg-body h2 { font-size: 16px; }
+  .msg-body h5 { font-weight: 500; }
+  .msg-body h6 { font-weight: 400; }
+  .msg-body ul {
+    margin: 12px 0;
+    list-style: disc outside;
+    padding-left: 20px;
+  }
+  .msg-body ul li { padding-left: 4px; margin-top: 6px; }
+  .msg-body ul li::marker { color: var(--color-faint); }
+  .msg-body ol {
+    margin: 12px 0;
+    list-style: decimal inside;
+  }
+  .msg-body ol li { margin-top: 6px; }
+  .msg-body blockquote {
+    margin: 16px 0;
+    border-left: 2px solid var(--color-border);
+    padding-left: 12px;
+    color: var(--color-muted);
+  }
+  .msg-body :not(pre) > code {
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-inline-code) 50%, transparent);
+    margin: 0 2px;
+    padding: 2px 6px;
+    font-family: var(--font-mono);
+    font-size: calc(var(--font-size-code, 14px) - 2px);
+  }
+  /* 代码块字号（外观·代码字号）；长行换行由 .code-wrap（根类）切换。 */
+  .msg-body pre {
+    font-size: var(--font-size-code, 14px);
+  }
+  .code-wrap .msg-body pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* 工具行 diff/终端/结果块随代码字号。 */
+  .code-text {
+    font-size: var(--font-size-code, 14px);
+  }
+
+  /* 流式「正在思考」渐变文字（参考的 animated-gradient-text）。 */
+  .animated-gradient-text {
+    background: linear-gradient(
+      90deg,
+      var(--gradient-text-strong) 0%,
+      var(--gradient-text-strong) 34%,
+      var(--gradient-text-soft) 50%,
+      var(--gradient-text-strong) 66%,
+      var(--gradient-text-strong) 100%
+    );
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: gradient-flow var(--shimmer-dur) linear infinite;
+  }
+  @keyframes gradient-flow {
+    from { background-position: 100% 0; }
+    to { background-position: 0% 0; }
+  }
+
+  /* 落地页水印 logo：深色原样（暗瓷砖融入黑底、蓝色 chevron 隐约可见）；
+     浅色反转让暗瓷砖融入浅底，避免灰盒感。 */
+  .watermark-logo {
+    opacity: 0.06;
+    filter: invert(1);
+  }
+  .dark .watermark-logo {
+    filter: none;
+  }
+
+  /* diff 展开行：14% 着色底 + 内嵌 3px 色条（参考的补丁行样式）。 */
+  .diff-line-add {
+    background: color-mix(in srgb, var(--color-diff-add) 14%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-diff-add);
+  }
+  .diff-line-del {
+    background: color-mix(in srgb, var(--color-diff-del) 14%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-diff-del);
+  }
+
+
+  /* 可点击控件默认手型光标（:where 零优先级，组件内显式 cursor-* 仍可覆盖）。 */
+  :where(button, summary, select, a[href], [role="button"], [role="menuitem"], [role="switch"], [role="tab"]):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
+
+  /* 窗口拖拽区（无边框标题栏）与交互控件豁免。 */
   .app-drag {
     -webkit-app-region: drag;
   }
-
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
 
-  /* 浮起卡片：画布（panel）之上的 raised 表面 + 强一档描边——
-     设置分组、消息卡、建议卡。 */
-  .card {
-    background: var(--color-app-raised);
-    border: 1px solid var(--color-app-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
+  /* 弹层开合（dropdown 片段）：从触发点方向长出，origin 由 Radix 注入；
+     开 250ms scale 0.97→1，关 150ms scale→0.99（Radix Presence 播完关动画才卸载）。 */
+  .dropdown-in {
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-popover-content-transform-origin, top));
   }
-
-  /* Overlay surfaces only (drawers, toasts) — same fill, deeper shadow so
-     they read as floating above the shell. */
-  .card-strong {
-    background: var(--color-app-raised);
-    border: 1px solid var(--color-app-border);
-    border-radius: var(--radius-pop);
-    box-shadow: var(--shadow-pop);
+  .dropdown-in[data-state="open"] {
+    animation: dropdown-open var(--duration-fast) var(--ease-smooth-out);
   }
-
-  /* Transparent title-bar strip — 左段背景色由 TitleBar 左段元素自身随
-     侧栏显隐切换（侧栏色/透明）；这里只保留框顶发丝线。 */
-  .titlebar {
-    border-bottom: 1px solid var(--color-app-hairline);
+  .dropdown-in[data-state="closed"] {
+    animation: dropdown-close var(--duration-quick) var(--ease-smooth-out);
   }
-
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-app-border) transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: var(--color-app-border);
-    border-radius: 3px;
-  }
-
-  /* Blinking caret shown while an assistant message streams in. */
-  .stream-caret {
-    display: inline-block;
-    width: 7px;
-    height: 1.05em;
-    margin-left: 2px;
-    vertical-align: text-bottom;
-    background: var(--color-app-accent);
-    animation: caret-blink 900ms steps(1) infinite;
-  }
-
-  @keyframes caret-blink {
-    50% {
+  @keyframes dropdown-open {
+    from {
       opacity: 0;
+      transform: scale(var(--scale-medium));
     }
-  }
-
-  /* Live thinking preview: a light band sweeping across the text
-     (ThinkingBlock live header). */
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      var(--color-app-muted) 40%,
-      var(--color-app-text) 50%,
-      var(--color-app-muted) 60%
-    );
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: shimmer-sweep 1.6s linear infinite;
-  }
-
-  @keyframes shimmer-sweep {
     to {
-      background-position: -200% 0;
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes dropdown-close {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: scale(var(--scale-tiny));
     }
   }
 
-  /* 思考预览：多行换行 + 限高渐隐（shimmer 作用于整块文字）。 */
-  .think-preview {
-    display: block;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    max-height: 5.2em; /* ~3 行 */
+  /* 模态开合（modal 片段）：居中缩放，开慢关快。 */
+  .modal-in[data-state="open"] {
+    animation: modal-open var(--duration-fast) var(--ease-smooth-out);
+  }
+  .modal-in[data-state="closed"] {
+    animation: modal-close var(--duration-quick) var(--ease-smooth-out);
+  }
+  @keyframes modal-open {
+    from {
+      opacity: 0;
+      transform: scale(var(--scale-large));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes modal-close {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: scale(var(--scale-large));
+    }
+  }
+
+  /* toast 升起（toast 片段）：下方 16px 升起 + 交叉模糊。 */
+  .toast-in {
+    animation: toast-open var(--duration-medium) var(--ease-smooth-out);
+  }
+  @keyframes toast-open {
+    from {
+      opacity: 0;
+      transform: translateY(var(--distance-toast));
+      filter: blur(var(--blur-small));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+  }
+
+  /* 消息进场：升起 + 去模糊（texts reveal 的轻量版）。 */
+  .rise-in {
+    animation: rise-in var(--duration-fast) var(--ease-smooth-out);
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--distance-base));
+      filter: blur(var(--blur-small));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+  }
+
+  /* 错落进场（texts reveal 片段）：子项按 --i 逐级延迟，模糊升起。 */
+  .stagger-in {
+    animation: stagger-in var(--duration-very-slow) var(--ease-smooth-out) both;
+    animation-delay: calc(var(--i, 0) * var(--duration-stagger));
+  }
+  @keyframes stagger-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--distance-medium));
+      filter: blur(var(--blur-medium));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+  }
+
+  /* 手风琴展开（accordion 片段）：grid 轨道 0fr↔1fr；padding 只放 inner，避免残留高度。 */
+  .acc-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--duration-fast) var(--ease-smooth-out);
+  }
+  .acc-panel[data-open="true"] {
+    grid-template-rows: 1fr;
+  }
+  .acc-panel-inner {
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    min-height: 0;
   }
 
-  /* 聊天主列（消息列表 + 输入框共用）：左锚收缩模型——宽度由
-     外层滚动区 padding（左 100px 虚线槽）+ 1120px 封顶约束。 */
-  .chat-column {
-    width: 100%;
+  /* 文字原位交换（text states swap 片段）：按 key 重挂载触发，模糊上下错位。 */
+  .text-swap {
+    animation: text-swap var(--duration-quick) ease-in-out;
+  }
+  @keyframes text-swap {
+    from {
+      opacity: 0;
+      transform: translateY(var(--distance-micro));
+      filter: blur(var(--blur-small));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
   }
 
-  /* 助手正文段（参考稿 .msg）：界面字号半粗、块间 24px 节奏。 */
-  .msg-body {
-    color: var(--color-app-text);
-    font-size: var(--font-size-ui);
-    font-weight: 600;
-    line-height: 1.7;
-    letter-spacing: 0.005em;
+  /* 图标交换（icon swap 片段）：同槽两图标交叉，缩放 + 模糊。 */
+  .icon-swap {
+    animation: icon-swap var(--duration-fast) ease-in-out;
+  }
+  @keyframes icon-swap {
+    from {
+      opacity: 0;
+      transform: scale(0.25);
+      filter: blur(var(--blur-small));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
   }
 
-  .msg-body + .msg-body {
-    margin-top: 32px;
-  }
-
-  .chat-workspace-body {
-    position: relative;
-  }
-
-  /* 单色品牌图标（currentColor 资产经 <img> 渲染为黑）：暗色主题反色为白。 */
-  .electron-dark .brand-mono {
-    filter: invert(1);
-  }
-
-  /* 参考稿 Git 浮层：raised 灰面 + 强描边 + 10px 圆角，悬浮/抽底两形态。
-     悬浮态绝对定位于滚动区右上（top/right 18px），覆盖在聊天表面之上，
-     不占布局列——滚动条得以贴窗口最右缘。 */
-  .agent-capsule {
-    z-index: 10;
-    overflow: hidden;
-    border: 1px solid var(--color-app-border);
-    border-radius: var(--radius-pop);
-    background: var(--color-app-raised);
-    box-shadow: var(--shadow-pop);
-    color: var(--color-app-text);
-  }
-
-  .agent-capsule-floating {
-    position: absolute;
-    top: 18px;
-    right: 18px;
-    width: min(319px, calc(100% - 36px));
-  }
-
-  .agent-capsule-sheet {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    border-radius: 10px 10px 0 0;
-  }
-
-  .agent-capsule-collapsed {
-    width: 100%;
-  }
-
-  .agent-capsule-collapsed-compact {
-    width: min(319px, calc(100% - 36px));
-  }
-
-  /* 运行中的工具卡/工作行：一道 accent 光带从左到右循环扫过（执行中反馈）。 */
+  /* 运行中工具行扫光。 */
   .tool-sweep {
     position: relative;
     overflow: hidden;
   }
-
-  .tool-sweep::before {
+  .tool-sweep::after {
     content: "";
     position: absolute;
     inset: 0;
-    pointer-events: none;
-    background: linear-gradient(
-      100deg,
-      transparent 25%,
-      color-mix(in srgb, var(--color-app-accent) 13%, transparent) 50%,
-      transparent 75%
-    );
-    transform: translateX(-100%);
+    background: linear-gradient(100deg, transparent 30%, var(--color-hover) 50%, transparent 70%);
     animation: tool-sweep 1.6s ease-in-out infinite;
   }
-
   @keyframes tool-sweep {
+    from {
+      transform: translateX(-100%);
+    }
     to {
       transform: translateX(100%);
     }
   }
 
-  /* Narrow-window sidebar drawer + scrim entrance. */
-  @keyframes drawer-in {
+  /* 侧栏分组拖拽：accent 落点指示线（上/下缘由组件定位）+ 落定位移动画。 */
+  .drop-indicator {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--color-accent);
+    pointer-events: none;
+  }
+  .drop-settle {
+    animation: drop-settle var(--duration-fast) var(--ease-smooth-out);
+  }
+  @keyframes drop-settle {
     from {
-      opacity: 0;
-      transform: translateX(-12px);
+      opacity: 0.4;
+      transform: translateY(var(--distance-micro));
     }
     to {
       opacity: 1;
@@ -234,119 +552,81 @@
     }
   }
 
-  .drawer-in {
-    animation: drawer-in 180ms ease-out;
+  /* 流式光标。 */
+  .stream-caret {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    margin-left: 2px;
+    vertical-align: -2px;
+    border-radius: 2px;
+    background: var(--color-foreground);
+    animation: caret-blink 1s steps(2) infinite;
   }
-
-  /* Right-side Drawer entrance — same pattern as .drawer-in, sliding from
-     the right edge instead of the left. */
-  @keyframes drawer-right {
-    from {
-      opacity: 0;
-      transform: translateX(12px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  .drawer-right {
-    animation: drawer-right 180ms ease-out;
-  }
-
-  @keyframes fade-in {
-    from {
+  @keyframes caret-blink {
+    50% {
       opacity: 0;
     }
-    to {
-      opacity: 1;
-    }
   }
+}
 
-  .fade-in {
-    animation: fade-in 160ms ease-out;
-  }
+/* streamdown 给行内代码挂了 bg-muted（@layer utilities），层级压过上文
+   @layer components 里的 .msg-body 规则；背景声明提到层外（无层样式优先于所有层）
+   才能真正生效：深色下垫 #262626 的暗色胶囊，而非 muted 灰。 */
+.msg-body :not(pre) > code {
+  background: color-mix(in srgb, var(--color-inline-code) 50%, transparent);
+}
 
-  @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translate(-50%, 8px);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-  }
+/* 代码块底色消费高亮插件下发的双主题槽变量（浅槽 --sdm-bg / 深槽 --shiki-dark-bg）。
+   深色规则必须在此显式声明：代码块组件的深色底色工具类字符串缺右括号，
+   Tailwind 不会为其生成样式；插件侧也已移除内联主题色（内联会压过本规则）。 */
+.msg-body pre {
+  background-color: var(--sdm-bg, inherit);
+}
+.dark .msg-body pre {
+  background-color: var(--shiki-dark-bg, var(--sdm-bg, inherit));
+}
 
-  .toast-in {
-    animation: toast-in 180ms ease-out;
+/* 会话行标题悬停轮播：超长文本缓慢来回滚动（距离/时长由组件内联变量注入）。 */
+@keyframes marquee-x {
+  from {
+    transform: translateX(0);
   }
+  to {
+    transform: translateX(var(--marquee-x, 0px));
+  }
+}
+.marquee-title {
+  animation: marquee-x var(--marquee-duration, 6s) ease-in-out 0.4s infinite alternate;
+}
 
-  /* Markdown body typography for rendered assistant messages (MarkdownView). */
-  .md-body > :first-child { margin-top: 0; }
-  .md-body > :last-child { margin-bottom: 0; }
-  .md-body p { margin: 0.5em 0; }
-  .md-body pre { margin: 0.5em 0; }
-  .md-body ul, .md-body ol { margin: 0.5em 0; padding-left: 1.4em; }
-  .md-body h1, .md-body h2, .md-body h3 { font-weight: 600; margin: 0.8em 0 0.4em; }
-  .md-body blockquote { border-left: 2px solid var(--color-app-border); padding-left: 0.75em; color: var(--color-app-muted); margin: 0.5em 0; }
-  .code-block .code-html pre { margin: 0; background: transparent; color: var(--shiki-light); }
-  .code-block .code-html span {
-    --shiki-light-bg: transparent;
-    --shiki-dark-bg: transparent;
-    color: var(--shiki-light);
-    background-color: var(--shiki-light-bg);
-    font-style: var(--shiki-light-font-style);
-    font-weight: var(--shiki-light-font-weight);
-    text-decoration: var(--shiki-light-text-decoration);
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-in,
+  .modal-in,
+  .toast-in,
+  .rise-in,
+  .stagger-in,
+  .text-swap,
+  .icon-swap,
+  .drop-settle {
+    animation: none;
   }
-  .electron-dark .code-block .code-html pre { color: var(--shiki-dark); }
-  .electron-dark .code-block .code-html span {
-    color: var(--shiki-dark);
-    background-color: var(--shiki-dark-bg);
-    font-style: var(--shiki-dark-font-style);
-    font-weight: var(--shiki-dark-font-weight);
-    text-decoration: var(--shiki-dark-text-decoration);
+  .acc-panel {
+    transition: none;
   }
-  .code-fade { max-height: 264px; position: relative; overflow: hidden; }
-  .code-fade::after { content: ""; position: absolute; inset-inline: 0; bottom: 0; height: 36px; background: linear-gradient(transparent, var(--color-code-bg)); }
-
-  @media (prefers-reduced-motion: reduce) {
-    .titlebar,
-    .drawer-in,
-    .drawer-right,
-    .fade-in,
-    .toast-in,
-    .pop-in,
-    .rise-in,
-    .shimmer,
-    .animate-spin {
-      animation: none;
-      transition: none;
-    }
-    /* 流式文字淡入（streamdown [data-sd-animate]）同样尊重减弱动效偏好 */
-    [data-sd-animate] {
-      animation: none;
-    }
-    .tool-sweep::before {
-      animation: none;
-      opacity: 0;
-    }
-    .orbs i,
-    .burst-spin {
-      animation: none;
-    }
-    .orbs i {
-      transform: none;
-      opacity: 0.8;
-    }
-    .beam::after {
-      animation: none;
-      opacity: 0;
-    }
-    .stream-caret {
-      animation: none;
-    }
+  .tool-sweep::after {
+    animation: none;
+    content: none;
+  }
+  .stream-caret {
+    animation: none;
+  }
+  .animated-gradient-text {
+    animation: none;
+    background: none;
+    color: var(--color-foreground);
+  }
+  .marquee-title {
+    animation: none;
   }
 }

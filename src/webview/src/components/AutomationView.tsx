@@ -1,120 +1,95 @@
-import { ArrowLeft, Clock3, Play, Plus, Sparkles, Workflow } from "lucide-react";
+// 自动化页（简版）：列出已存自动化（名称/触发器/启停/删除）。
 import { useEffect, useState } from "react";
+import { ArrowLeft, Trash2, Workflow } from "lucide-react";
 import type { AutomationCandidate, AutomationDefinition } from "../../../shared/automationIpc";
-import { api } from "../lib/ipc";
+import { api, hasBridge } from "../lib/ipc";
 
-interface AutomationViewProps {
+export function AutomationView({
+  t,
+  onBack,
+}: {
+  t: (key: string) => string;
   onBack: () => void;
-  sessionId?: string;
-  taskId?: string;
-  routeId?: string;
-}
-
-export function AutomationView({ onBack, sessionId = "", taskId, routeId = "main" }: AutomationViewProps): React.JSX.Element {
-  const [creating, setCreating] = useState(false);
-  const [prompt, setPrompt] = useState("");
-  const [name, setName] = useState("");
-  const [candidate, setCandidate] = useState<AutomationCandidate | null>(null);
-  const [definitions, setDefinitions] = useState<AutomationDefinition[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+}): React.JSX.Element {
+  const [items, setItems] = useState<AutomationDefinition[]>([]);
 
   useEffect(() => {
-    let active = true;
-    void api.listAutomations().then(
-      (items) => { if (active) setDefinitions(items); },
-      () => { if (active) setError("无法加载自动化定义"); },
-    ).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    if (!hasBridge()) return;
+    void api.listAutomations().then(setItems).catch(() => undefined);
   }, []);
 
-  const generate = async (): Promise<void> => {
-    const normalized = prompt.trim();
-    if (!normalized) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      setCandidate(await api.generateAutomationCandidate(normalized));
-    } catch {
-      setError("无法生成有效的自动化候选");
-    } finally {
-      setSubmitting(false);
-    }
+  const toggle = async (item: AutomationDefinition) => {
+    await api
+      .updateAutomation({
+        id: item.id,
+        // 持久化的宽松形态（trigger 省略 everyMs/idleForMs）回传时按原样透传。
+        candidate: item.candidate as AutomationCandidate,
+        name: item.name,
+        targetSessionId: item.targetSessionId,
+        enabled: !item.enabled,
+      })
+      .catch(() => undefined);
+    setItems(await api.listAutomations().catch(() => items));
   };
 
-  const confirm = async (): Promise<void> => {
-    if (!candidate || !name.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const definition = await api.confirmAutomation({ candidate, name: name.trim(), ...(sessionId ? { targetSessionId: sessionId } : {}) });
-      setDefinitions((items) => [...items.filter((item) => item.id !== definition.id), definition]);
-      setCreating(false);
-      setCandidate(null);
-      setPrompt("");
-      setName("");
-    } catch {
-      setError("无法保存自动化定义");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const trigger = async (definition: AutomationDefinition): Promise<void> => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await api.triggerAutomation({
-        id: definition.id,
-        trigger: "manual",
-        sessionId,
-        ...(taskId ? { taskId } : {}),
-        routeId,
-      });
-    } catch {
-      setError("无法启动自动化任务");
-    } finally {
-      setSubmitting(false);
-    }
+  const remove = async (id: string) => {
+    await api.deleteAutomation(id).catch(() => undefined);
+    setItems((current) => current.filter((item) => item.id !== id));
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-(--color-app-hairline) px-4">
-        <button type="button" onClick={onBack} aria-label="返回聊天" className="grid size-7 place-items-center rounded-full text-(--color-app-muted) hover:bg-(--color-app-bubble)"><ArrowLeft size={14} /></button>
-        <h1 className="font-semibold">自动化</h1>
-      </header>
-      <div className="flex flex-1 flex-col overflow-auto p-6">
-        {error && <p role="alert" className="mx-auto mb-3 max-w-lg text-(--color-tool-err)">{error}</p>}
-        {!creating && (
-          <div className="mx-auto w-full max-w-lg">
-            <div className="text-center">
-              <span className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl border border-(--color-app-border) bg-(--color-app-bubble) text-(--color-app-accent)"><Workflow size={22} /></span>
-              <h2 className="font-semibold">创建自动化任务</h2>
-              <p className="mt-2 leading-relaxed text-(--color-app-muted)">使用自然语言描述定时或闲时任务；候选配置经审查并确认后才会保存和执行。</p>
-              <button type="button" onClick={() => setCreating(true)} className="mx-auto mt-4 inline-flex items-center gap-1.5 rounded-full bg-(--color-app-accent) px-3 py-1.5 text-(--color-app-accent-fg)"><Plus size={13} />新建自动化</button>
-              <div className="mt-3 flex items-center justify-center gap-1 text-(--color-app-muted)"><Clock3 size={11} />支持定时与闲时触发</div>
-            </div>
-            <section aria-label="已保存自动化" className="mt-8 grid gap-2">
-              {loading ? <p className="text-center text-(--color-app-muted)">正在加载自动化…</p> : definitions.length === 0 ? <p className="text-center text-(--color-app-muted)">尚无已确认的自动化</p> : definitions.map((definition) => (
-                <article key={definition.id} className="rounded-xl border border-(--color-app-hairline) bg-(--color-app-bg) p-3 ">
-                  <div className="flex items-center gap-2"><h3 className="font-semibold">{definition.name}</h3><span className="text-(--color-app-muted)">{definition.candidate.trigger.kind === "idle" ? "闲时" : "定时"}</span></div>
-                  <p className="mt-1 text-(--color-app-muted)">{definition.candidate.reviewSummary}</p>
-                  <button type="button" disabled={submitting || !definition.enabled || !sessionId} onClick={() => void trigger(definition)} aria-label={`立即执行 ${definition.name}`} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-(--color-app-border) px-2 py-1 disabled:opacity-40"><Play size={11} />立即执行</button>
-                </article>
-              ))}
-            </section>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 border-b border-(--color-hairline) px-5 py-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={t("automation.back")}
+          className="grid size-7 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <h1 className="font-bold text-(--color-foreground-strong)">{t("automation.title")}</h1>
+      </div>
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-5">
+        {items.length === 0 && (
+          <div className="flex flex-col items-center gap-2 pt-16 text-(--color-muted)">
+            <Workflow size={20} strokeWidth={1.3} />
+            {t("automation.empty")}
           </div>
         )}
-        {creating && (
-          <section className="mx-auto w-full max-w-lg rounded-2xl border border-(--color-app-border) bg-(--color-app-panel) p-5 shadow-(--shadow-card)">
-            <h2 className="flex items-center gap-2 font-semibold"><Sparkles size={15} className="text-(--color-app-accent)" />生成自动化候选</h2>
-            <label className="mt-4 flex flex-col gap-1.5 text-(--color-app-muted)">自动化需求<textarea aria-label="自动化需求" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：每天整理未完成任务" rows={4} className="resize-y rounded-lg border border-(--color-app-border) bg-(--color-app-bg) p-2.5 text-(--color-app-text) outline-none focus:border-(--color-app-accent)" /></label>
-            <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={submitting} onClick={() => { setCreating(false); setCandidate(null); }} className="rounded-lg border border-(--color-app-border) px-3 py-1.5 ">取消</button><button type="button" disabled={submitting || prompt.trim() === ""} onClick={() => void generate()} className="rounded-lg bg-(--color-app-accent) px-3 py-1.5 text-(--color-app-accent-fg) disabled:opacity-40">{submitting ? "生成中…" : "生成候选"}</button></div>
-            {candidate && <div className="mt-4 rounded-xl border border-(--color-app-hairline) bg-(--color-app-bg) p-3 "><h3 className="font-semibold">候选方案</h3><dl className="mt-2 grid gap-2 text-(--color-app-muted)"><div><dt className="font-medium text-(--color-app-text)">触发条件</dt><dd>{candidate.trigger.kind}: {candidate.trigger.expression}</dd></div><div><dt className="font-medium text-(--color-app-text)">操作</dt><dd>{candidate.actions.map((action) => action.command).join("；")}</dd></div><div><dt className="font-medium text-(--color-app-text)">约束</dt><dd>{candidate.constraints.join("；")}</dd></div></dl><label className="mt-3 flex flex-col gap-1 text-(--color-app-muted)">名称<input aria-label="自动化名称" value={name} onChange={(event) => setName(event.target.value)} className="rounded-lg border border-(--color-app-border) bg-(--color-app-panel) px-2 py-1 text-(--color-app-text)" /></label><button type="button" disabled={submitting || !name.trim()} onClick={() => void confirm()} className="mt-3 rounded-lg bg-(--color-app-accent) px-3 py-1.5 text-(--color-app-accent-fg) disabled:opacity-40">提交自动化</button></div>}
-          </section>
-        )}
+        <ul className="mx-auto max-w-[760px] space-y-2">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className="flex items-center gap-3 rounded-(--radius-pop) border border-(--color-border) bg-(--color-raised) px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-(--color-foreground)">{item.name}</div>
+                <div className="truncate text-(--color-faint)">{item.candidate.reviewSummary || item.candidate.trigger.expression}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void toggle(item)}
+                aria-pressed={item.enabled}
+                className={`h-5 w-9 shrink-0 rounded-full transition-colors ${item.enabled ? "bg-(--color-accent)" : "bg-(--color-border)"}`}
+              >
+                <span
+                  className={`block size-4 rounded-full bg-(--color-foreground-strong) transition-transform ${
+                    item.enabled ? "translate-x-[18px]" : "translate-x-[2px]"
+                  }`}
+                />
+              </button>
+              <button
+                type="button"
+                aria-label={t("sidebar.delete")}
+                onClick={() => void remove(item.id)}
+                className="grid size-7 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-tool-err)"
+              >
+                <Trash2 size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

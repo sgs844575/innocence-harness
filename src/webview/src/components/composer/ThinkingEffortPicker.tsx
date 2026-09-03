@@ -3,17 +3,15 @@ import { Popover } from "../ui/Popover";
 
 export type EffortValue = "" | "off" | "low" | "medium" | "high" | "max";
 
+/** 三档菜单（对齐参考界面）：低 / 高 / 最高；后端 reasoningEffort 取 low/high/max。 */
 const OPTIONS: { value: EffortValue; key: string }[] = [
-  { value: "", key: "reasoning.effort.default" },
-  { value: "off", key: "reasoning.effort.off" },
   { value: "low", key: "reasoning.effort.low" },
-  { value: "medium", key: "reasoning.effort.medium" },
   { value: "high", key: "reasoning.effort.high" },
   { value: "max", key: "reasoning.effort.max" },
 ];
 
-/** 思考强度下拉（composer 工具栏）：默认/关闭/低/中/高，选中项带对勾。
- *  档位对所有模型可见——中转站模型元数据缺失时也能设置。 */
+/** 思考强度下拉：低/高/最高三档，选中项带对勾。
+ *  存量设置值（默认/关闭/中）不在菜单内时，chip 仍按原档位文案显示。 */
 export function ThinkingEffortPicker({
   t,
   value,
@@ -31,12 +29,13 @@ export function ThinkingEffortPicker({
         <button
           type="button"
           aria-label={t("reasoning.effort")}
+          title={t("reasoning.effort")}
           data-thinking-label={label}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-(--color-app-text) hover:bg-(--color-app-hover)"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-(--color-foreground) outline-none hover:bg-(--color-hover)"
         >
-          <BrainCircuit size={14} className="shrink-0 text-(--color-app-muted)" />
+          <BrainCircuit size={14} className="shrink-0 text-(--color-muted)" />
           <span>{label}</span>
-          <ChevronDown size={11} className="shrink-0 text-(--color-app-faint)" />
+          <ChevronDown size={11} className="shrink-0 text-(--color-faint)" />
         </button>
       }
     >
@@ -45,10 +44,12 @@ export function ThinkingEffortPicker({
           key={v}
           type="button"
           onClick={() => onChange(v)}
-          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-(--color-app-hover) ${v === value ? "text-(--color-app-accent)" : "text-(--color-app-muted)"}`}
+          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-(--color-hover) ${
+            v === value ? "text-(--color-foreground)" : "text-(--color-muted)"
+          }`}
         >
           <span>{t(key)}</span>
-          {v === value && <Check size={12} className="ml-auto shrink-0" />}
+          {v === value && <Check size={12} className="ml-auto shrink-0 text-(--color-accent)" />}
         </button>
       ))}
     </Popover>

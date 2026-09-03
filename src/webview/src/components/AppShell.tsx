@@ -1,227 +1,122 @@
-// AppShell — 响应式导航/布局外壳（Task 12 从 App.tsx 拆出）。
-// 三段式导航：宽窗（≥1024）停靠整列侧栏（或完全隐藏）；中窗（640-1023）
-// 恒显图标轨 + 覆盖式抽屉；窄窗（<640）仅抽屉。视图切换（chat/settings）、
-// 抽屉/轨模式、工作台面板布局都归这里；内容节点由 App 以渲染属性注入，
-// 布局回调（openSettings/backToChat/closeDrawerOnNavigate 等）随 nav 透出。
-// bindNav 把 nav 句柄交给宿主，供渲染属性之外的原生菜单等入口使用。
+// 应用外壳：顶栏 + 侧栏列（265px，可折叠消失）+ 主区（chat/settings/automation）。
+// 视图切换与 Ctrl+K / Ctrl+N / Ctrl+O 快捷键归这里；内容节点由 App 注入。
 import { useCallback, useEffect, useState } from "react";
-import type { SettingsSection } from "./SettingsNav";
-import { WorkbenchShell, useWorkbenchLayout } from "./workbench/WorkbenchShell";
-import type { WorkbenchTabId } from "./workbench/WorkbenchTabs";
-import { useMediaQuery } from "../lib/useMediaQuery";
+
+export type ShellView = "chat" | "settings" | "automation";
 
 export interface AppShellNav {
-  view: "chat" | "settings" | "automation";
-  section: SettingsSection;
-  isWide: boolean;
-  /** 标题栏折叠按钮当前语义下的侧栏开合（宽屏 = 整列，其余 = 抽屉）。 */
+  view: ShellView;
   sidebarOpen: boolean;
+  toggleSidebar: () => void;
   openSettings: () => void;
   openAutomation: () => void;
-  openSearch: () => void;
-  closeSearch: () => void;
-  searchOpen: boolean;
   backToChat: () => void;
-  selectSection: (section: SettingsSection) => void;
-  toggleSidebar: () => void;
-  /** 图标轨「展开侧栏」：宽屏退出轨模式，其余开抽屉。 */
-  expandNav: () => void;
-  /** 任意导航选择后调用：overlay 模式下收起抽屉。 */
-  closeDrawerOnNavigate: () => void;
-  workbench: ReturnType<typeof useWorkbenchLayout>;
 }
 
-export interface AppShellProps {
-  t: (key: string) => string;
-  /** 标题栏（拿到 workbench 开关与终端入口）。 */
+interface Props {
   titleBar: (nav: AppShellNav) => React.ReactNode;
-  /** 整列导航内容（聊天侧栏 / 设置菜单）。 */
-  sidebar: (nav: AppShellNav) => React.ReactNode;
-  /** 聊天主列（WorkbenchShell 内部）。 */
-  chat: React.ReactNode;
-  /** 自动化 presentation surface；业务状态仍由未来 capability 注入。 */
-  automation?: React.ReactNode;
-  /** Shell-level global search surface, fed by typed view models from the host composition. */
-  search?: (nav: AppShellNav) => React.ReactNode;
-  /** 设置主列（渲染属性：section 归 AppShell）；null = 未加载设置。 */
-  settings: (nav: AppShellNav) => React.ReactNode | null;
-  /** 辅助面板各页签内容。 */
-  panels: Partial<Record<WorkbenchTabId, React.ReactNode>>;
-  /** 恢复告警横幅（App 组装文案与按钮）。 */
-  banner?: React.ReactNode;
+  sidebar: React.ReactNode;
+  main: (nav: AppShellNav) => React.ReactNode;
+  /** Ctrl+N 新建任务（App 层接线到 newSession）。 */
+  onNewSession: () => void;
+  /** Ctrl+K 打开搜索。 */
+  onOpenSearch: () => void;
+  /** Ctrl+O 打开工作区（顶栏应用菜单同款动作）；缺省 = 快捷键不生效。 */
+  onOpenWorkspace?: () => void;
+  /** 受控视图（缺省内部状态）；设置页/自动化页入口由 App 驱动。 */
+  view?: ShellView;
+  onViewChange?: (view: ShellView) => void;
+  /** 右侧 dock 内容（子代理面板等）；缺省不渲染。 */
+  dock?: React.ReactNode;
+  /** dock 开合（宽度裁剪动画与侧栏同模式）。 */
+  dockOpen?: boolean;
+  /** dock 宽度（拖拽可调）；缺省 340。 */
+  dockWidth?: number;
+  /** 拖拽调宽期间 = 关闭宽度过渡（跟随指针，不留动画残影）。 */
+  dockResizing?: boolean;
+  /** 搜索对话框等浮层节点。 */
+  overlay?: React.ReactNode;
   /** 错误提示 toast（4s 自动消失由 App 管理）。 */
   toast?: string | null;
-  /** 挂载时交付 nav 句柄（原生菜单等渲染属性之外的入口用）。 */
-  bindNav?: (nav: AppShellNav) => void;
 }
 
-export function AppShell({
-  t,
-  titleBar,
-  sidebar,
-  chat,
-  automation,
-  search,
-  settings,
-  panels,
-  banner,
-  toast,
-  bindNav,
-}: AppShellProps): React.JSX.Element {
-  const [view, setView] = useState<"chat" | "settings" | "automation">("chat");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [section, setSection] = useState<SettingsSection>("models");
+export function AppShell({ titleBar, sidebar, main, onNewSession, onOpenSearch, onOpenWorkspace, view: controlledView, onViewChange, dock, dockOpen, dockWidth = 340, dockResizing = false, overlay, toast }: Props): React.JSX.Element {
+  const [uncontrolledView, setUncontrolledView] = useState<ShellView>("chat");
+  const view = controlledView ?? uncontrolledView;
+  const changeView = useCallback(
+    (next: ShellView) => {
+      onViewChange?.(next);
+      if (controlledView === undefined) setUncontrolledView(next);
+    },
+    [controlledView, onViewChange],
+  );
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const isWide = useMediaQuery("(min-width: 1024px)");
-  // 宽屏收起 = 侧边栏整体消失（标题栏左段保留 logo/箭头/新会话）；
-  // 窄屏 = 覆盖式抽屉。不再有窄条 rail 形态。
-  const [sidebarHidden, setSidebarHidden] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const backToChat = useCallback(() => changeView("chat"), [changeView]);
+  const openSettings = useCallback(() => changeView("settings"), [changeView]);
+  const openAutomation = useCallback(() => changeView("automation"), [changeView]);
+  const toggleSidebar = useCallback(() => setSidebarOpen((value) => !value), []);
 
-  // The overlay drawer only exists below the wide breakpoint.
-  useEffect(() => {
-    if (isWide) setDrawerOpen(false);
-  }, [isWide]);
-
-  const workbench = useWorkbenchLayout();
-
-  const closeDrawerOnNavigate = useCallback(() => {
-    if (!isWide) setDrawerOpen(false);
-  }, [isWide]);
-
-  const openSettings = useCallback(() => {
-    setView("settings");
-    closeDrawerOnNavigate();
-  }, [closeDrawerOnNavigate]);
-
-  const openAutomation = useCallback(() => {
-    setView("automation");
-    closeDrawerOnNavigate();
-  }, [closeDrawerOnNavigate]);
-
-  const backToChat = useCallback(() => setView("chat"), []);
-  const openSearch = useCallback(() => {
-    closeDrawerOnNavigate();
-    setSearchOpen(true);
-  }, [closeDrawerOnNavigate]);
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const nav: AppShellNav = { view, sidebarOpen, toggleSidebar, openSettings, openAutomation, backToChat };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "k") {
         event.preventDefault();
-        closeDrawerOnNavigate();
-        setSearchOpen(true);
+        onOpenSearch();
+      } else if (key === "n") {
+        event.preventDefault();
+        backToChat();
+        onNewSession();
+      } else if (key === "o" && onOpenWorkspace) {
+        event.preventDefault();
+        onOpenWorkspace();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeDrawerOnNavigate]);
-
-  const selectSection = useCallback(
-    (next: SettingsSection) => {
-      setSection(next);
-      closeDrawerOnNavigate();
-    },
-    [closeDrawerOnNavigate],
-  );
-
-  const toggleSidebar = useCallback(() => {
-    if (isWide) setSidebarHidden((v) => !v);
-    else setDrawerOpen((v) => !v);
-  }, [isWide]);
-
-  const expandNav = useCallback(() => {
-    if (isWide) setSidebarHidden(false);
-    else setDrawerOpen(true);
-  }, [isWide]);
-
-  const nav: AppShellNav = {
-    view,
-    section,
-    isWide,
-    sidebarOpen: isWide ? !sidebarHidden : drawerOpen,
-    openSettings,
-    openAutomation,
-    openSearch,
-    closeSearch,
-    searchOpen,
-    backToChat,
-    selectSection,
-    toggleSidebar,
-    expandNav,
-    closeDrawerOnNavigate,
-    workbench,
-  };
-  bindNav?.(nav);
-
-  const inSettings = view === "settings";
-  const navFull = sidebar(nav);
-  const settingsNode = settings(nav);
-  const sidebarVisible = isWide && !sidebarHidden;
+  }, [onNewSession, onOpenSearch, onOpenWorkspace, backToChat]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-(--color-app-bg) text-(--color-app-text)">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-(--color-sidebar) text-(--color-foreground)">
       {titleBar(nav)}
-      {banner}
-      {/* 标题栏之下：侧边栏整列（常驻挂载、宽度动画收展——收起即整体
-          消失）+ 主区。展开时主区左缘 12px 圆角浮起，收起时满幅直角。 */}
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-(--color-app-bg)">
-        {isWide && (
-          <div
-            className={`shrink-0 overflow-hidden bg-(--color-app-sidebar) transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-              sidebarVisible ? "w-[265px]" : "w-0"
-            }`}
-          >
-            {navFull}
-          </div>
-        )}
-        <main
-          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-(--color-app-panel) transition-[border-radius] duration-200 ease-out motion-reduce:transition-none ${
-            sidebarVisible ? "rounded-tl-[12px] rounded-bl-[12px]" : "rounded-none"
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* 侧栏与页面同为灰色（无描边）；主区黑色，左缘 12px 圆角浮起。
+            内层固定 265px：宽度动画只裁剪、不重排（重排会在动画中挤压文字变形）。 */}
+        <div
+          className={`shrink-0 overflow-hidden transition-[width] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${
+            sidebarOpen ? "w-[265px]" : "w-0"
           }`}
         >
-          {inSettings && settingsNode !== null ? (
-            settingsNode
-          ) : view === "automation" && automation ? (
-            automation
-          ) : (
-            <WorkbenchShell
-              open={workbench.open}
-              activeTab={workbench.tab}
-              onTabChange={workbench.setTab}
-              onClose={() => workbench.setOpen(false)}
-              panels={panels}
-              t={t}
-            >
-              {chat}
-            </WorkbenchShell>
-          )}
-        </main>
-      </div>
-
-      {/* Narrow windows: overlay drawer with a scrim, flush against
-          the left edge below the title bar. */}
-      {!isWide && drawerOpen && (
-        <div className="fixed inset-x-0 bottom-0 top-12 z-40">
-          <button
-            type="button"
-            aria-label={t("sidebar.close")}
-            onClick={() => setDrawerOpen(false)}
-            className="fade-in absolute inset-0 bg-black/25"
-          />
-          <div className="drawer-in absolute bottom-0 left-0 top-0 w-[clamp(240px,72vw,300px)] bg-(--color-app-sidebar) shadow-(--shadow-pop)">
-            {navFull}
-          </div>
+          <div className="h-full w-[265px]">{sidebar}</div>
         </div>
-      )}
-
-      {search?.(nav)}
-
+        <main
+          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-(--color-background) transition-[border-radius] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${
+            sidebarOpen ? "rounded-bl-[12px]" : "rounded-none"
+          }`}
+        >
+          {main(nav)}
+        </main>
+        {/* 右侧 dock（子代理面板等）：与侧栏同模式——外层宽度变化只裁剪，
+            内层定宽不重排；拖拽调宽期间关过渡。 */}
+        {dock !== undefined && (
+          <div
+            style={{ width: dockOpen ? dockWidth : 0 }}
+            className={`shrink-0 overflow-hidden ${
+              dockResizing ? "" : "transition-[width] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none"
+            }`}
+          >
+            <div className="h-full" style={{ width: dockWidth }}>{dock}</div>
+          </div>
+        )}
+      </div>
+      {overlay}
       {toast && (
         <div
           role="alert"
-          className="toast-in card-strong fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 "
+          className="toast-in fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-(--color-border) bg-(--color-popup) px-4 py-2 shadow-(--shadow-pop)"
         >
           {toast}
         </div>

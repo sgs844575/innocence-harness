@@ -1,12 +1,6 @@
 import { Check, ChevronDown, FolderOpen, Folder } from "lucide-react";
 import { Popover } from "../ui/Popover";
-import { projectName } from "../sidebar/groupSessions";
-
-export interface RecentProject {
-  path: string;
-  /** 该项目的会话数。 */
-  count: number;
-}
+import { projectName, type RecentProject } from "../../state/useSessions";
 
 interface Props {
   t: (key: string) => string;
@@ -14,12 +8,11 @@ interface Props {
   value: string;
   recent: RecentProject[];
   onSelect: (workspaceRoot: string) => void;
-  /** 「打开项目…」——系统目录选择器（复用 pickWorkspace）。 */
+  /** 「打开项目…」——系统目录选择器。 */
   onOpenProject: () => void;
 }
 
-/** 落地态输入面板顶行的项目选择（仅新建会话时出现）：
- *  不在项目中工作 / 打开项目… / 近期聊天的项目 三选一。 */
+/** 落地态输入面板顶行的项目选择：不在项目中 / 打开项目… / 近期项目。 */
 export function ProjectPicker({ t, value, recent, onSelect, onOpenProject }: Props): React.JSX.Element {
   const label = value ? projectName(value) : t("workspace.pick");
   return (
@@ -30,27 +23,43 @@ export function ProjectPicker({ t, value, recent, onSelect, onOpenProject }: Pro
         <button
           type="button"
           aria-label={t("workspace.pick")}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-(--color-app-muted) hover:bg-(--color-app-bubble)/60 hover:text-(--color-app-text)"
+          title={t("workspace.pick")}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
         >
-          <Folder size={13} className={value ? "text-(--color-app-accent)" : ""} />
-          <span className={value ? "text-(--color-app-text)" : ""}>{label}</span>
+          <Folder size={13} className={value ? "text-(--color-accent)" : ""} />
+          <span className={value ? "text-(--color-foreground)" : ""}>{label}</span>
           <ChevronDown size={11} />
         </button>
       }
     >
-      <PickRow selected={value === ""} title={t("project.none")} onClick={() => onSelect("")} />
+      <button
+        type="button"
+        onClick={() => onSelect("")}
+        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-hover) ${
+          value === "" ? "text-(--color-foreground)" : "text-(--color-muted)"
+        }`}
+      >
+        <span
+          className={`grid size-3.5 shrink-0 place-items-center rounded-full border ${
+            value === "" ? "border-(--color-accent)" : "border-(--color-border)"
+          }`}
+        >
+          {value === "" && <span className="size-1.5 rounded-full bg-(--color-accent)" />}
+        </span>
+        {t("project.none")}
+      </button>
       <button
         type="button"
         onClick={onOpenProject}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-(--color-app-muted) hover:bg-(--color-app-bubble)/60 hover:text-(--color-app-text)"
+        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
       >
         <FolderOpen size={13} />
         {t("project.open")}
       </button>
       {recent.length > 0 && (
         <>
-          <div className="mx-1.5 my-1 h-px bg-(--color-app-hairline)" />
-          <div className="px-2.5 pb-1 pt-1.5 font-semibold uppercase tracking-wider text-(--color-app-muted)/70">
+          <div className="mx-1.5 my-1 h-px bg-(--color-hairline)" />
+          <div className="px-2.5 pb-1 pt-1.5 font-semibold uppercase tracking-wider text-(--color-muted)/70">
             {t("project.recent")}
           </div>
           {recent.map((p) => (
@@ -58,35 +67,22 @@ export function ProjectPicker({ t, value, recent, onSelect, onOpenProject }: Pro
               key={p.path}
               type="button"
               onClick={() => onSelect(p.path)}
-              className={`flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-app-bubble)/60 ${value === p.path ? "bg-(--color-app-accent-soft)" : ""}`}
+              className={`flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-hover) ${
+                value === p.path ? "bg-(--color-selected)" : ""
+              }`}
             >
-              <span className="flex w-full items-center gap-2 text-(--color-app-text)">
+              <span className="flex w-full items-center gap-2 text-(--color-foreground)">
                 <span className="truncate">{projectName(p.path)}</span>
-                <span className="ml-auto shrink-0 text-(--color-app-muted)">
+                <span className="ml-auto shrink-0 text-(--color-muted)">
                   {t("project.sessions").replace("{n}", String(p.count))}
                 </span>
-                {value === p.path && <Check size={12} className="shrink-0 text-(--color-app-accent)" />}
+                {value === p.path && <Check size={12} className="shrink-0 text-(--color-accent)" />}
               </span>
-              <span className="w-full truncate font-mono text-(--color-app-muted)/70">{p.path}</span>
+              <span className="w-full truncate font-mono text-(--color-muted)/70">{p.path}</span>
             </button>
           ))}
         </>
       )}
     </Popover>
-  );
-}
-
-function PickRow({ selected, title, onClick }: { selected: boolean; title: string; onClick: () => void }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-app-bubble)/60 ${selected ? "bg-(--color-app-accent-soft) text-(--color-app-text)" : "text-(--color-app-muted)"}`}
-    >
-      <span className={`grid size-3.5 shrink-0 place-items-center rounded-full border ${selected ? "border-(--color-app-accent)" : "border-(--color-app-border)"}`}>
-        {selected && <span className="size-1.5 rounded-full bg-(--color-app-accent)" />}
-      </span>
-      {title}
-    </button>
   );
 }

@@ -1,79 +1,70 @@
+// 输入卡：raised 面 + 16px 圆角。落地态带项目/分支顶行；底行 = 「+」上下文
+// 菜单、权限模式、模型两级选择器、思考强度、发送/停止反色方形钮。
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Plus, Square, ArrowUp, Files, Play, LoaderCircle } from "lucide-react";
-import {
-  MOCK_MODEL,
-  MOCK_PROFILE_ID,
-  type HarnessSettings,
-  type ProviderProfile,
-} from "../../../shared/ipc";
+import { Plus, Square, ArrowUp, AtSign, Paperclip, Slash } from "lucide-react";
+import type { HarnessSettings, PermissionMode } from "../../../shared/ipc";
 import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
-import { AgentModePicker, type AgentModeOption } from "./composer/AgentModePicker";
-import { ThinkingEffortPicker } from "./composer/ThinkingEffortPicker";
+import { AgentModePicker } from "./composer/AgentModePicker";
+import { ThinkingEffortPicker, type EffortValue } from "./composer/ThinkingEffortPicker";
+import { DropdownMenu, DropdownMenuItem } from "./ui/DropdownMenu";
+import { useAgentModes } from "../state/useAgentModes";
+
+/** 外部注入的草稿（落地页快捷动作填入）：nonce 变化时整体替换并聚焦。 */
+export interface ComposerDraft {
+  text: string;
+  nonce: number;
+}
 
 interface Props {
   t: (key: string) => string;
-  /** landing shows project selection and contextual input guidance; existing is compact follow-up mode. */
-  mode?: "landing" | "existing";
-  contextCount?: number;
-  /** 输入盒宽度封顶（与消息列同轨道：流体吃满余量、1120px 封顶）。 */
-  contentMaxWidth?: number;
-  /** 左右留白（与消息列同轨道；落地态居中由父层负责）。 */
-  gutterLeft?: number;
-  gutterRight?: number;
+  /** landing = 落地页居中卡（顶行项目选择）；existing = 会话底部输入栏。 */
+  mode: "landing" | "existing";
   streaming: boolean;
   settings: HarnessSettings | null;
-  /** agent 模式目录（缺省回落仅内置 default，App 层经 useAgentModes 注入）。 */
-  agentModes?: AgentModeOption[];
-  onSettingsChange: (patch: Partial<HarnessSettings>) => void;
+  onPatchSettings: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
   onStop: () => void;
-  /** S1 后台运行入口：同段输入改走后台作业；缺省不渲染按钮。 */
-  onBackgroundRun?: (text: string) => void;
-  /** 面板首行（落地态的项目选择器；聊天态不传 = 无此行）。 */
+  /** 面板首行（落地态的项目/分支选择器）；聊天态不传 = 无此行。 */
   header?: ReactNode;
+  /** 快捷动作注入的草稿。 */
+  draft?: ComposerDraft;
+  /** 模型选择器「管理模型」入口（跳设置模型分区）。 */
+  onManageModels?: () => void;
 }
 
-/** 参考稿输入盒：raised 灰盒 + 12px 圆角；运行时边框光束（beam）循环游走。 */
 export function Composer({
   t,
   mode,
-  contextCount = 0,
-  contentMaxWidth,
-  gutterLeft = 0,
-  gutterRight = 0,
   streaming,
   settings,
-  agentModes,
-  onSettingsChange,
+  onPatchSettings,
   onSend,
   onStop,
-  onBackgroundRun,
   header,
+  draft,
+  onManageModels,
 }: Props): React.JSX.Element {
-  const composerMode = mode ?? (header ? "landing" : "existing");
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const agentModes = useAgentModes();
 
-  // 自适应高度跟随值变化（onChange 之外的值变更没有输入事件，必须在这里补）。
   useEffect(() => {
     const el = ref.current;
     if (el) autosize(el);
   }, [value]);
 
+  // 快捷动作草稿注入：nonce 变化时整体替换文本并聚焦。
+  useEffect(() => {
+    if (!draft) return;
+    setValue(draft.text);
+    requestAnimationFrame(() => ref.current?.focus());
+  }, [draft]);
+
   const submit = (): void => {
     const text = value.trim();
     if (!text || streaming) return;
     onSend(text);
-    setValue("");
-    requestAnimationFrame(() => ref.current?.focus());
-  };
-
-  // S1 后台运行：同一段输入走后台作业（新会话 + 机器身份触发 + 状态通知）。
-  const submitBackground = (): void => {
-    const text = value.trim();
-    if (!text || streaming || !onBackgroundRun) return;
-    onBackgroundRun(text);
     setValue("");
     requestAnimationFrame(() => ref.current?.focus());
   };
@@ -85,148 +76,119 @@ export function Composer({
     }
   };
 
-  const canSend = value.trim().length > 0 && !streaming;
-  // Mock 是虚拟厂家（不在 settings.profiles 中）——组装层注入伪 profile，
-  // 保持旧 select 的能力：chip 显示「本地 Mock」，且可从面板切回 mock。
-  const pickerSettings: HarnessSettings | null = settings
-    ? {
-        ...settings,
-        profiles: settings.profiles.some((p) => p.id === MOCK_PROFILE_ID)
-          ? settings.profiles
-          : [mockProfile(t), ...settings.profiles],
-      }
-    : null;
+  // 「+」菜单：把 @ / / 前导符写入输入框并聚焦（已带前导符则不重复）。
+  const insertPrefix = (prefix: string): void => {
+    setValue((current) => (current.startsWith(prefix) ? current : `${prefix}${current}`));
+    requestAnimationFrame(() => ref.current?.focus());
+  };
 
-  // 反色方形动作钮（参考稿 stop-btn）：暗底上亮块 / 亮底上墨块。
+  const canSend = value.trim().length > 0 && !streaming;
+
+  // 反色圆角动作钮（参考规格）：品牌底（暗色=白）+ 反色图标。
   const squareButton =
-    "grid size-5 shrink-0 place-items-center rounded-[6px] bg-(--color-app-strong) text-(--color-app-panel) transition-transform active:scale-90 disabled:opacity-30";
+    "grid size-7 shrink-0 place-items-center rounded-lg bg-(--color-brand) text-(--color-inverse) transition-opacity hover:opacity-80 active:scale-95 disabled:opacity-30";
 
   return (
-    <div
-      className="shrink-0 pb-[clamp(10px,1.5vw,16px)]"
-      style={{ paddingLeft: gutterLeft, paddingRight: gutterRight }}
-    >
-      {/* 既有会话与消息列同轨道左锚；落地态居中。 */}
-      <div
-        data-testid="chat-composer"
-        className={`chat-column w-full ${composerMode === "landing" ? "mx-auto" : ""}`}
-        style={{ maxWidth: contentMaxWidth }}
-      >
-        <div
-          className={`flex min-h-[105px] flex-col justify-between rounded-[12px] border border-(--color-app-border) bg-(--color-app-raised) transition-colors focus-within:border-(--color-app-accent) ${streaming ? "beam" : ""}`}
-        >
-          {composerMode === "landing" && header && <div className="px-3 pt-3">{header}</div>}
-          <textarea
-            ref={ref}
-            value={value}
-            onChange={(e) => {
-              setValue(e.target.value);
-              autosize(e.target);
-            }}
-            onKeyDown={onKeyDown}
-            placeholder={t(composerMode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
-            rows={1}
-            className="scrollbar-thin max-h-44 min-h-9 w-full flex-1 resize-none bg-transparent px-3 pt-3.5 leading-relaxed outline-none placeholder:text-(--color-app-muted) disabled:opacity-50"
-          />
-          {composerMode === "landing" && (
-            <div className="flex flex-wrap gap-x-3 px-3 pt-1 text-(--color-app-faint)">
-              <span>使用 @ 添加上下文</span>
-              <span>使用 / 选择命令或能力</span>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center gap-4 px-3 pb-2.5 pt-1.5 text-(--color-app-muted)">
-            <button
-              type="button"
-              aria-label="添加附件"
-              aria-description="当前会话不支持附件上下文"
-              disabled
-              className="grid size-7 shrink-0 cursor-not-allowed place-items-center rounded-md opacity-45"
-            >
-              <Plus size={17} strokeWidth={1.5} />
-            </button>
-            <PermissionModePicker
-              t={t}
-              value={settings?.permissionMode ?? "ask"}
-              onChange={(mode) => onSettingsChange({ permissionMode: mode })}
-            />
-            <AgentModePicker
-              t={t}
-              value={settings?.activeAgentMode ?? "default"}
-              options={agentModes ?? [{ id: "default", title: "Default" }]}
-              onChange={(mode) => onSettingsChange({ activeAgentMode: mode })}
-            />
-            {composerMode === "existing" && (
-              <span className="inline-flex items-center gap-1 text-(--color-app-muted)" aria-label="上下文数量">
-                <Files size={12} />{contextCount}
+    <div data-testid="chat-composer" className="w-full">
+      <div className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-raised) p-3 transition-colors hover:border-(--color-border-hover) focus-within:border-(--color-border-hover)">
+        {mode === "landing" && header && <div className="px-0.5 pt-0.5">{header}</div>}
+        <textarea
+          ref={ref}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            autosize(e.target);
+          }}
+          onKeyDown={onKeyDown}
+          placeholder={t(mode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
+          rows={1}
+          className="scrollbar-thin max-h-40 min-h-10 w-full flex-1 resize-none bg-transparent px-1 pt-1 leading-relaxed outline-none placeholder:text-(--color-faint) disabled:opacity-50"
+        />
+        <div className="flex flex-wrap items-center gap-3 text-(--color-muted)">
+          {/* 「+」添加上下文菜单：附件暂不可用（禁用项带原因说明）。 */}
+          <DropdownMenu
+            contentClassName="w-52"
+            trigger={
+              <button
+                type="button"
+                aria-label={t("composer.addContext")}
+                title={t("composer.addContext")}
+                className="grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--color-hover)"
+              >
+                <Plus size={17} strokeWidth={1.5} />
+              </button>
+            }
+          >
+            <DropdownMenuItem disabled description={t("composer.attachUnavailable")}>
+              <span className="flex items-center gap-2">
+                <Paperclip size={13} className="text-(--color-muted)" />
+                {t("composer.attach")}
               </span>
-            )}
-            <div className="flex-1" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => insertPrefix("@")}>
+              <span className="flex items-center gap-2">
+                <AtSign size={13} className="text-(--color-muted)" />
+                {t("chat.hint.at")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => insertPrefix("/")}>
+              <span className="flex items-center gap-2">
+                <Slash size={13} className="text-(--color-muted)" />
+                {t("chat.hint.slash")}
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenu>
 
-            {streaming && <LoaderCircle size={14} className="shrink-0 animate-spin" aria-label="streaming" />}
+          <PermissionModePicker
+            t={t}
+            value={settings?.permissionMode ?? "ask"}
+            onChange={(mode: PermissionMode) => onPatchSettings({ permissionMode: mode })}
+          />
 
-            {pickerSettings ? (
-              <ModelPicker
-                settings={pickerSettings}
-                activeProfileId={pickerSettings.activeProfileId}
-                activeModel={pickerSettings.activeModel}
-                onSelect={(profileId, modelId) =>
-                  onSettingsChange({ activeProfileId: profileId, activeModel: modelId })
-                }
-              />
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="flex max-w-[200px] items-center gap-1 font-medium"
-              >
-                <span className="truncate">{t("provider.mock")}</span>
-              </button>
-            )}
+          <AgentModePicker
+            t={t}
+            modes={agentModes}
+            value={settings?.activeAgentMode ?? "default"}
+            onChange={(id) => onPatchSettings({ activeAgentMode: id })}
+          />
 
-            {composerMode === "existing" && (
-              <ThinkingEffortPicker
-                t={t}
-                value={settings?.reasoningEffort ?? ""}
-                onChange={(effort) => onSettingsChange({ reasoningEffort: effort })}
-              />
-            )}
+          <div className="flex-1" />
 
-            {!streaming && onBackgroundRun && (
-              <button
-                type="button"
-                onClick={submitBackground}
-                disabled={!canSend}
-                aria-label={t("chat.backgroundRun")}
-                title={t("chat.backgroundRun")}
-                className="grid size-5 shrink-0 place-items-center rounded-[6px] bg-(--color-app-bubble) transition-transform active:scale-90 disabled:opacity-30"
-              >
-                <Play size={11} />
-              </button>
-            )}
+          {settings ? (
+            <ModelPicker
+              t={t}
+              settings={settings}
+              activeProfileId={settings.activeProfileId}
+              activeModel={settings.activeModel}
+              onSelect={(profileId, modelId) => onPatchSettings({ activeProfileId: profileId, activeModel: modelId })}
+              onManageModels={onManageModels}
+            />
+          ) : (
+            <button type="button" disabled className="flex max-w-[200px] items-center gap-1 font-medium">
+              <span className="truncate">{t("provider.mock")}</span>
+            </button>
+          )}
 
+          <ThinkingEffortPicker
+            t={t}
+            value={(settings?.reasoningEffort ?? "") as EffortValue}
+            onChange={(effort) => onPatchSettings({ reasoningEffort: effort })}
+          />
+
+          <button
+            type="button"
+            onClick={streaming ? onStop : submit}
+            disabled={!streaming && !canSend}
+            aria-label={streaming ? t("chat.stop") : t("chat.send")}
+            title={streaming ? t("chat.stop") : t("chat.send")}
+            className={squareButton}
+          >
             {streaming ? (
-              <button
-                type="button"
-                onClick={onStop}
-                aria-label={t("chat.stop")}
-                title={t("chat.stop")}
-                className={squareButton}
-              >
-                <Square size={10} fill="currentColor" strokeWidth={0} />
-              </button>
+              <Square key="stop" size={16} fill="currentColor" strokeWidth={0} className="icon-swap size-4" />
             ) : (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={!canSend}
-                aria-label={t("chat.send")}
-                title={t("chat.send")}
-                className={squareButton}
-              >
-                <ArrowUp size={12} strokeWidth={2} />
-              </button>
+              <ArrowUp key="send" size={16} strokeWidth={2} className="icon-swap size-4" />
             )}
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -236,16 +198,4 @@ export function Composer({
 function autosize(el: HTMLTextAreaElement): void {
   el.style.height = "auto";
   el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
-}
-
-function mockProfile(t: (key: string) => string): ProviderProfile {
-  return {
-    id: MOCK_PROFILE_ID,
-    name: t("provider.mock"),
-    kind: "openai",
-    apiKey: "",
-    baseURL: "",
-    enabled: true,
-    models: [{ id: MOCK_MODEL, name: t("provider.mock"), source: "preset" }],
-  };
 }
