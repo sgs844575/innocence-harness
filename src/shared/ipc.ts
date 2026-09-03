@@ -272,7 +272,9 @@ export interface SubagentLifecycleEvent {
   agentType?: string;
   prompt?: string;
   delta?: string;
-  /** Tool activity inside the child run (arg title on call, bounded result excerpt). */
+  /** Streaming reasoning text (same cadence as delta; not persisted). */
+  thinkingDelta?: string;
+  /** Tool activity inside the child, on running events. */
   tool?: { name: string; phase: "call" | "result"; isError?: boolean; title?: string; result?: string };
   final?: string;
   error?: string;

@@ -383,6 +383,7 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
           let childFailed = false;
           const childEvent: SubagentChildEventListener = (event) => {
             if (event.type === "text" && event.text) emit({ status: "running", delta: event.text });
+            if (event.type === "thinking" && event.text) emit({ status: "running", thinkingDelta: event.text });
             if (event.type === "toolCall") {
               const title = summarizeToolTitle(event.name, event.args);
               emit({ status: "running", tool: { name: event.name, phase: "call", ...(title ? { title } : {}) } });

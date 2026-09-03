@@ -40,6 +40,7 @@ const runningRun: SubagentRun = {
   prompt: "去查代码",
   status: "running",
   text: "正在读取文件……",
+  thinking: "",
   tools: [{ name: "Read", phase: "call", at: 1100 }],
   startedAt: 1000,
 };
@@ -213,6 +214,30 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByText("src/a.ts:10")).toBeTruthy();
     fireEvent.click(row);
     expect(row.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("对话视图与主聊天同语言：思考幽灵行 + 等待行 + prompt hover 复制", () => {
+    const thinkingRun: SubagentRun = {
+      ...runningRun,
+      text: "",
+      thinking: "先看入口",
+    };
+    const { rerender } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[thinkingRun]} selectedChildId="c1" />,
+    );
+    // 运行中无正文：thinking 幽灵行 live（渐变「正在思考」+ 尾随预览；
+    // 预览与展开全文常驻 DOM，用 getAllByText 断言存在）。
+    expect(screen.getByText("chat.thinking.live")).toBeTruthy();
+    expect(screen.getAllByText(/先看入口/).length).toBeGreaterThan(0);
+    // prompt 用户气泡渲染，hover 复制钮存在（aria-label 用 chat.copy 键）。
+    expect(screen.getByText("去查代码")).toBeTruthy();
+    expect(screen.getByLabelText("chat.copy")).toBeTruthy();
+    rerender(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[{ ...runningRun, thinking: "", text: "" }]} selectedChildId="c1" />,
+    );
+    // 无思考无正文的空等：轮换耐心提示的等待行。
+    expect(screen.getByTestId("chat-waiting")).toBeTruthy();
   });
 
   it("对话视图失败态：错误块 + 失败状态", () => {

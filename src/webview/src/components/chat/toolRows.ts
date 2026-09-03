@@ -139,6 +139,31 @@ export interface TodoItem {
   status: "pending" | "in_progress" | "completed";
 }
 
+/** 面板轨迹行的最小形状（state/subagentRuns 的 SubagentRunToolRow 同构，
+ *  结构化入参避免本模块反向依赖 state 层）。 */
+export interface RunToolRowInput {
+  name: string;
+  done: boolean;
+  isError?: boolean;
+  title?: string;
+  result?: string;
+  at: number;
+}
+
+/** 子代理运行的轨迹 → 时间线工具行模型（与主聊天同一 ToolRow 渲染）：
+ *  摘要作标题、未配对 = 运行中、result 摘录作展开内容。 */
+export function runToolsToTimelineRows(tools: readonly RunToolRowInput[]): ToolRowModel[] {
+  return tools.map((tool, index) => ({
+    id: `run-tool-${index}`,
+    toolName: tool.name,
+    verbKey: verbKeyFor(tool.name),
+    title: tool.title ?? "",
+    running: !tool.done,
+    isError: tool.isError === true,
+    ...(tool.result !== undefined ? { resultText: tool.result } : {}),
+  }));
+}
+
 /** 进程段数据源：消息里最近一次 todo 工具调用的清单。 */
 export function latestTodos(messages: readonly { parts: MessagePart[] }[]): TodoItem[] {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

@@ -205,7 +205,8 @@ function UserBubble({
   );
 }
 
-function CopyButton({ t, text }: { t: (key: string) => string; text: string }): React.JSX.Element {
+/** 悬停复制钮（用户气泡/助手动作行共用；dock 子代理对话视图复用）。 */
+export function CopyButton({ t, text }: { t: (key: string) => string; text: string }): React.JSX.Element {
   const [copied, setCopied] = useState(false);
   return (
     <button

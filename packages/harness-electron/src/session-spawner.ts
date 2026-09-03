@@ -138,6 +138,7 @@ export function createSpawnerChildSession(
         const toolNames = new Map<string, string>();
         const unsubscribe = child.on((event: HarnessEvent) => {
           if (event.type === "token") onEvent?.({ type: "text", text: event.text });
+          else if (event.type === "thinking") onEvent?.({ type: "thinking", text: event.text });
           else if (event.type === "toolCall") {
             toolNames.set(event.id, event.call.toolName);
             // Args reach the spawner for one-line title projection; the

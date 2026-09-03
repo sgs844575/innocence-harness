@@ -35,6 +35,8 @@ export interface SubagentLifecycleEvent {
   agentType?: string;
   prompt?: string;
   delta?: string;
+  /** Streaming reasoning text (same cadence as delta; not persisted). */
+  thinkingDelta?: string;
   /** Tool activity inside the child, on running events. */
   tool?: SubagentToolActivity;
   final?: string;
@@ -49,6 +51,7 @@ export type SubagentLifecycleListener = (event: SubagentLifecycleEvent) => void;
 
 export type SubagentChildEvent =
   | { type: "text"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "toolCall"; name: string; args?: Record<string, unknown> }
   | { type: "toolResult"; name: string; isError: boolean; result?: string }
   | { type: "error"; error: string };

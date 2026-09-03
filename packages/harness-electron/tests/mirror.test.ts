@@ -174,6 +174,7 @@ describe("shared SubagentLifecycleEvent 镜像对齐 harness-agent domain 事件
     agentType: "explore",
     prompt: "去查",
     delta: "增量",
+    thinkingDelta: "推理增量",
     tool: { name: "Grep", phase: "call", isError: false, title: "pattern", result: "out" },
     final: "报告",
     error: "失败",

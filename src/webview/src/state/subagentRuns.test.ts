@@ -72,6 +72,14 @@ describe("reduceSubagentRuns", () => {
     ]);
   });
 
+  it("thinkingDelta 累积推理文本（与正文分通道）", () => {
+    let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "先看" }, 1100);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "入口" }, 1200);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "正文" }, 1300);
+    expect(state["c1"]).toMatchObject({ thinking: "先看入口", text: "正文" });
+  });
+
   it("终态记 endedAt 与 final/error，之后的事件不再改动", () => {
     let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" }, 5000);

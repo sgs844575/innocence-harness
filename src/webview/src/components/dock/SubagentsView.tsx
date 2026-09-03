@@ -1,22 +1,17 @@
-// 「子代理」标签的内容视图（从 RightDock 按职责拆出）：列表 ↔ 对话双视图、
-// 状态图标与工具轨迹。工具轨迹与主时间线同语言——动词（i18n）+ 参数摘要
-//（mono）+ 尾部状态；行点击展开结果摘录（错误红），与 ToolRow 的展开一致。
+// 「子代理」标签的内容视图（从 RightDock 按职责拆出）：列表 ↔ 对话双视图。
+// 对话视图与主聊天时间线同一表现语言——用户气泡（hover 复制）、思考幽灵行、
+// 同一 ToolRow 工具轨迹（动词/图标/摘要/展开详情）、Markdown 正文 + 悬停
+// 动作行（复制 + 时间戳）、流式等待行、左缘虚线刻度。
 import { useEffect, useRef, useState } from "react";
-import {
-  Bot,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CircleCheck,
-  CircleSlash,
-  CircleX,
-  LoaderCircle,
-  Wrench,
-  X,
-} from "lucide-react";
+import { Bot, ChevronLeft, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
 import { formatRunDuration, pairedRunTools, type SubagentRun } from "../../state/subagentRuns";
-import { verbKeyFor } from "../chat/toolRows";
+import { runToolsToTimelineRows } from "../chat/toolRows";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
+import { ThinkingRow } from "../chat/ThinkingRow";
+import { WaitingRow } from "../chat/WaitingRow";
+import { ChatDashes } from "../chat/ChatDashes";
+import { ToolTimeline } from "../chat/ToolRow";
+import { CopyButton } from "../MessageItem";
 
 export function isRunning(run: SubagentRun): boolean {
   return run.status === "started" || run.status === "running";
@@ -30,84 +25,6 @@ function statusIcon(run: SubagentRun): React.JSX.Element {
   if (run.status === "cancelled")
     return <CircleSlash size={14} strokeWidth={1.5} className="shrink-0 text-(--color-faint)" aria-hidden />;
   return <LoaderCircle size={14} strokeWidth={1.5} className="shrink-0 animate-spin text-(--color-accent)" aria-hidden />;
-}
-
-/** 子工具轨迹行：图标 + 动词（运行中渐变文字）+ 参数摘要 + 尾部状态；点击
- *  行展开该次调用的结果摘录（acc-panel，与主时间线展开同语言）。 */
-function RunToolRow({
-  t,
-  tool,
-}: {
-  t: (key: string) => string;
-  tool: ReturnType<typeof pairedRunTools>[number];
-}): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="w-full">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        title={tool.title ?? t(verbKeyFor(tool.name))}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 text-left"
-      >
-        <Wrench size={16} strokeWidth={1.4} className="size-4 shrink-0 text-(--color-muted)" aria-hidden />
-        <span
-          className={`shrink-0 font-medium whitespace-nowrap ${
-            !tool.done ? "animated-gradient-text" : "text-(--color-faint)"
-          }`}
-        >
-          {t(verbKeyFor(tool.name))}
-        </span>
-        {tool.title && <span className="min-w-0 truncate font-mono text-(--color-muted)">{tool.title}</span>}
-        <span className="min-w-4 flex-1" />
-        {!tool.done ? (
-          <LoaderCircle size={13} strokeWidth={1.5} className="size-3.5 shrink-0 animate-spin text-(--color-accent)" aria-hidden />
-        ) : tool.isError ? (
-          <X size={13} strokeWidth={1.5} className="size-3.5 shrink-0 text-(--color-tool-err)" aria-hidden />
-        ) : (
-          <Check size={13} strokeWidth={1.5} className="size-3.5 shrink-0 text-(--color-tool-ok)" aria-hidden />
-        )}
-        <ChevronRight
-          size={14}
-          aria-hidden
-          className={`size-3.5 shrink-0 text-(--color-faint) transition-[transform] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${
-            open ? "rotate-90" : ""
-          }`}
-        />
-      </button>
-      <div className="acc-panel" data-open={open}>
-        <div className="acc-panel-inner">
-          <div className="space-y-2 pt-2">
-            {tool.result ? (
-              <pre
-                className={`scrollbar-thin max-h-60 overflow-auto rounded-md p-2 font-mono code-text whitespace-pre ${
-                  tool.isError ? "bg-(--color-tool-err)/10 text-(--color-tool-err)" : "bg-(--color-surface) text-(--color-foreground)"
-                }`}
-              >
-                {tool.result}
-              </pre>
-            ) : !tool.done ? (
-              <div className="h-6 animate-pulse rounded-md bg-(--color-surface)" />
-            ) : (
-              <div className="text-(--color-faint)">{t("tool.status.empty")}</div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RunToolRows({ t, tools }: { t: (key: string) => string; tools: SubagentRun["tools"] }): React.JSX.Element {
-  const rows = pairedRunTools(tools);
-  return (
-    <div className="flex flex-col gap-4">
-      {rows.map((tool, index) => (
-        <RunToolRow key={index} t={t} tool={tool} />
-      ))}
-    </div>
-  );
 }
 
 /** 列表视图卡片：状态图标 + 预设徽章 + 描述 + 状态·时长；给文本尾部两行预览。 */
@@ -150,8 +67,9 @@ export function RunCard({
   );
 }
 
-/** 对话视图：选中运行的完整对话——prompt、子工具轨迹、Markdown 正文（运行中
- *  流式增长，外观设置的高亮主题对经 code 传入）、错误块与时间戳。 */
+/** 对话视图：选中运行的完整对话——与主聊天时间线同一表现：prompt 用户气泡
+ *  （hover 复制）、思考幽灵行、ToolRow 工具轨迹、Markdown 正文（运行中流式
+ *  光标，完成后悬停复制 + 时间戳）、等待行与错误块。 */
 export function RunConversation({
   t,
   run,
@@ -167,12 +85,27 @@ export function RunConversation({
   const body = run.final ?? run.text;
   const stamp = new Date(run.endedAt ?? run.startedAt);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollFraction, setScrollFraction] = useState(0);
+  const thinkingLive = running && !body;
+  const hasContent = Boolean(run.prompt || run.thinking || run.tools.length || body || run.error);
+
+  const handleScroll = (): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setScrollFraction(max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0);
+  };
+  const seekTo = (fraction: number): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = fraction * (el.scrollHeight - el.clientHeight);
+  };
   // 运行中且用户贴底（<48px）时保持钉底，上滚即释放——与时间线同规则。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !running) return;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
-  }, [running, run.text, run.final, run.tools.length]);
+  }, [running, run.text, run.final, run.thinking, run.tools.length]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-hairline) px-2">
@@ -194,35 +127,49 @@ export function RunConversation({
           <span className="font-mono tabular-nums">{formatRunDuration(run.startedAt, run.endedAt ?? Date.now())}</span>
         </span>
       </div>
-      <div ref={scrollRef} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-        {/* 消息渲染与主聊天同语言：prompt = 用户气泡（右对齐、3px 尾角），
-            工具轨迹 = 扁平工具行（动词 + 参数摘要、可展开结果摘录），
-            正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀正文行。 */}
-        <div className="space-y-5 px-3 py-4">
-          {run.prompt && (
-            <div className="flex justify-end">
-              <div className="max-w-[85%] rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
-                {run.prompt}
+      <div className="relative min-h-0 flex-1">
+        {hasContent && (
+          <div className="absolute left-[12px] top-1/2 z-[5] -translate-y-1/2">
+            <ChatDashes fraction={scrollFraction} onSeek={seekTo} />
+          </div>
+        )}
+        <div ref={scrollRef} onScroll={handleScroll} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
+          {/* 消息渲染与主聊天同语言同节奏（32px 消息间距）：prompt = 用户气泡
+              （右对齐、3px 尾角、hover 复制），thinking = 幽灵行，工具 = 同一
+              ToolRow 时间线，正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀
+              正文行，空等 = 轮换耐心提示。 */}
+          <div className="space-y-8 px-3 py-4">
+            {run.prompt && (
+              <div className="rise-in group/user-row flex flex-col items-end">
+                <div className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
+                  {run.prompt}
+                </div>
+                <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/user-row:opacity-100 focus-within:opacity-100">
+                  <CopyButton t={t} text={run.prompt} />
+                </div>
               </div>
-            </div>
-          )}
-          {run.tools.length > 0 && <RunToolRows t={t} tools={run.tools} />}
-          {body && (
-            <div className="min-h-6">
-              <MarkdownView source={body} animated={running} code={code} />
-              {running && <span className="stream-caret" aria-hidden />}
-            </div>
-          )}
-          {!body && running && (
-            <div className="flex items-center gap-1.5 text-(--color-faint)">
-              <span className="inline-block size-3 animate-spin rounded-full border border-(--color-border) border-t-(--color-foreground)" />
-              {t("chat.thinking.live")}
-            </div>
-          )}
-          {run.error && <div className="leading-relaxed break-words text-(--color-foreground)">⚠ {run.error}</div>}
-          <time className="block select-none text-[12px] text-(--color-faint)" dateTime={stamp.toISOString()}>
-            {stamp.toTimeString().slice(0, 5)}
-          </time>
+            )}
+            {run.thinking && <ThinkingRow t={t} text={run.thinking} live={thinkingLive} />}
+            {run.tools.length > 0 && <ToolTimeline t={t} rows={runToolsToTimelineRows(pairedRunTools(run.tools))} />}
+            {body && (
+              <div className="rise-in group/assistant-row flex flex-col gap-4">
+                <div className="min-h-6">
+                  <MarkdownView source={body} animated={running} code={code} />
+                  {running && <span className="stream-caret" aria-hidden />}
+                </div>
+                {!running && (
+                  <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/assistant-row:opacity-100 focus-within:opacity-100">
+                    <CopyButton t={t} text={body} />
+                    <time className="select-none text-[12px] text-(--color-faint)" dateTime={stamp.toISOString()}>
+                      {stamp.toTimeString().slice(0, 5)}
+                    </time>
+                  </div>
+                )}
+              </div>
+            )}
+            {!body && thinkingLive && !run.thinking && <WaitingRow t={t} />}
+            {run.error && <div className="leading-relaxed break-words text-(--color-foreground)">⚠ {run.error}</div>}
+          </div>
         </div>
       </div>
     </div>

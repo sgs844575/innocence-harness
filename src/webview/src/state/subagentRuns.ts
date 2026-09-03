@@ -25,6 +25,8 @@ export interface SubagentRun {
   status: SubagentStatus;
   /** 运行中累加的子代理文本输出。 */
   text: string;
+  /** 运行中累加的推理（thinking）文本——与主时间线的幽灵行同源。 */
+  thinking: string;
   tools: SubagentRunTool[];
   final?: string;
   error?: string;
@@ -56,6 +58,7 @@ export function reduceSubagentRuns(
       ...(event.prompt ? { prompt: event.prompt } : {}),
       status: event.status,
       text: "",
+      thinking: "",
       tools: [],
       startedAt: at,
     };
@@ -67,6 +70,7 @@ export function reduceSubagentRuns(
     ...existing,
     status: event.status,
     text: event.delta ? existing.text + event.delta : existing.text,
+    thinking: event.thinkingDelta ? existing.thinking + event.thinkingDelta : existing.thinking,
     tools: event.tool ? [...existing.tools, { ...event.tool, at }] : existing.tools,
     ...(event.final !== undefined ? { final: event.final } : {}),
     ...(event.error !== undefined ? { error: event.error } : {}),

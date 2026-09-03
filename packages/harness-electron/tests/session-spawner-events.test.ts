@@ -14,15 +14,17 @@ import type { AgentSessionOptions } from "../src/session-options";
 const allowEngine = () =>
   new PermissionEngine({ mode: "auto", decider: { ask: async () => "deny" as const } });
 
-/** 两轮脚本：首轮一个 Probe 工具调用，次轮纯文本收尾。 */
+/** 两轮脚本：首轮思考 + 一个 Probe 工具调用，次轮纯文本收尾。 */
 function scriptedProvider(): Provider {
   let turn = 0;
   return {
     id: "scripted",
     async *chat(): AsyncIterable<Delta> {
       turn += 1;
-      if (turn === 1) yield { type: "toolCall", id: "call_1", toolName: "Probe", args: {} };
-      else yield { type: "text", text: "子代理结论" };
+      if (turn === 1) {
+        yield { type: "thinking", text: "推理" };
+        yield { type: "toolCall", id: "call_1", toolName: "Probe", args: {} };
+      } else yield { type: "text", text: "子代理结论" };
     },
   };
 }
@@ -71,6 +73,7 @@ describe("spawner child event forwarding", () => {
     const result = await child.run("任务", undefined, {}, (event) => events.push(event));
 
     expect(result.finalText).toBe("子代理结论");
+    expect(events).toContainEqual({ type: "thinking", text: "推理" } as SubagentChildEvent);
     expect(events).toContainEqual({ type: "toolCall", name: "Probe", args: {} });
     expect(events).toContainEqual({ type: "toolResult", name: "Probe", isError: false, result: "probe-done" });
     expect(events).toContainEqual({ type: "text", text: "子代理结论" });

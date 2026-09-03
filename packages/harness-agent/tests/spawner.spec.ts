@@ -172,6 +172,7 @@ describe("spawner lifecycle port", () => {
     const lifecycle: import("@innocenceharness/harness-agent").SubagentLifecycleEvent[] = [];
     const { factory, gates } = makeFactory({
       childEvents: [
+        { type: "thinking", text: "推理增量" },
         { type: "toolCall", name: "Read", args: { file_path: "D:/repo/src/a.ts" } },
         { type: "toolResult", name: "Read", isError: false, result: "文件内容摘录" },
         { type: "text", text: "结论" },
@@ -203,6 +204,7 @@ describe("spawner lifecycle port", () => {
     // agentType/prompt 只在 started 上；parentInvocationId 每个事件都有。
     expect(lifecycle.at(-1)).toMatchObject({ status: "completed", parentInvocationId: "inv-42" });
     expect(lifecycle.at(-1)?.agentType).toBeUndefined();
+    expect(lifecycle).toContainEqual(expect.objectContaining({ status: "running", thinkingDelta: "推理增量" }));
     expect(lifecycle).toContainEqual(
       expect.objectContaining({
         status: "running",
