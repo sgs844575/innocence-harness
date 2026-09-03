@@ -348,9 +348,10 @@ export async function runLoop(
       /**
        * Per-call preparation, in the fixed executor-chain order:
        *   raw → validateArgs(raw) → permissionResource(raw) → persistArgs(raw)
-       * persistArgs runs exactly ONCE per invocation; its output is the only
-       * args shape allowed into history/events/permission/audit. Raw values
-       * live only for this invocation and die with it.
+       * persistArgs runs exactly ONCE per invocation; its output is the args
+       * shape carried by history/events/permission/audit. Tools persist full
+       * display values (commands, file bodies); declared credential fields
+       * never persist.
        */
       interface PreparedCall {
         part: ToolCallPart;
@@ -385,20 +386,24 @@ export async function runLoop(
           const resource = await tool.permissionResource(part.args, invocationCtx);
           const persistedArgs = tool.persistArgs(part.args);
           prepared.set(part.id, { part, tool, ctx: invocationCtx, resource, persistedArgs });
-        } catch (_error) {
-          // Preparation functions receive raw args, so their diagnostics are
-          // not safe to persist into history, events, audit, or transcripts.
+        } catch (error) {
+          // The call record keeps empty persisted args (the raw shape never
+          // enters history), but the diagnostic itself flows to the result:
+          // validateArgs/permissionResource errors are tool-authored
+          // (argument NAME, never content) and hiding the cause made
+          // preparation failures undiagnosable from the transcript.
+          const reason = error instanceof Error ? error.message : String(error);
           prepared.set(part.id, {
             part,
             tool,
             ctx: invocationCtx,
             persistedArgs: {},
-            failure: "工具调用准备失败",
+            failure: `工具调用准备失败：${reason}`,
           });
         }
       }
 
-      // Persisted assistant message: secrets from raw args never enter history.
+      // Persisted assistant message: args enter history in persistArgs shape.
       const toPersisted = (part: MessagePart): MessagePart =>
         part.type === "toolCall"
           ? { ...part, args: prepared.get(part.id)?.persistedArgs ?? {} }
