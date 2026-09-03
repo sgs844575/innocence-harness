@@ -18,8 +18,9 @@ export interface SubagentRunRecord {
   readonly info: SubagentRunInfo;
   /** True for runs spawned detached (start); only those queue progress notes. */
   readonly detached: boolean;
-  /** Aborts the run's own controller (linked to the spawning signal). */
-  readonly abort: () => void;
+  /** Aborts the run's own controller (linked to the spawning signal).
+   *  Reassigned on resume so cancel always reaches the CURRENT controller. */
+  abort: () => void;
   /** Latest-wins pending progress note for the auto-report drain. */
   pendingNote?: string;
   /** Resolve functions parked in wait() until the run turns terminal. */

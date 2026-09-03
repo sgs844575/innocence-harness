@@ -10,6 +10,7 @@ import {
   type SpawnerService,
   type SpawnerSessionFactory,
   type SubagentChildEvent,
+  type SubagentLifecycleEvent,
   type SubagentResult,
   type SubagentSpawner,
 } from "@innocenceharness/harness-agent";
@@ -460,7 +461,9 @@ describe("spawner concurrency cap", () => {
     gates[2]!();
     gates[3]!();
     await Promise.all([second, third, fourth]);
-    expect(children.every((c) => c.disposeCalls === 1)).toBe(true);
+    // Completed runs park (resumable) instead of disposing; the withdraw
+    // test below pins their eventual release.
+    expect(children.every((c) => c.disposeCalls === 0)).toBe(true);
   });
 
   it("honors an injected concurrency cap", async () => {
@@ -669,21 +672,21 @@ describe("context inheritance (S2b)", () => {
 });
 
 describe("spawner child disposal", () => {
-  it("disposes the child in a finally after a successful run, swallowing dispose errors", async () => {
-    const disposeError = new Error("dispose-boom");
-    const logs: Array<{ level: string; msg: string; data?: unknown }> = [];
-    const logger: SpawnerLogger = (level, msg, data) => logs.push({ level, msg, data });
-    const { factory, children, gates } = makeFactory({ disposeError });
-    const ctx = await withSpawner({ sessionFactory: factory, logger });
+  it("parks the completed child instead of disposing it (resumable, released on teardown)", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({ sessionFactory: factory });
 
     await expect(runOne(ctx, gates)).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+    // Completed = parked with its full history for resume; no dispose yet.
+    expect(children[0]!.disposeCalls).toBe(0);
+  });
+
+  it("disposes a FAILED child immediately and never parks it", async () => {
+    const { factory, children, gates } = makeFactory({ runError: new Error("run-boom") });
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    await expect(runOne(ctx, gates)).rejects.toThrow("run-boom");
     expect(children[0]!.disposeCalls).toBe(1);
-    // The swallowed dispose failure is still reported through the logger.
-    expect(logs).toContainEqual({
-      level: "error",
-      msg: "subagent child dispose failed",
-      data: disposeError,
-    });
   });
 
   it("never masks the child run's original error with a dispose failure", async () => {
@@ -699,6 +702,104 @@ describe("spawner child disposal", () => {
     await expect(runOne(ctx, gates)).rejects.toThrow("run-boom");
     expect(children[0]!.disposeCalls).toBe(1);
     expect(logs).toContainEqual({ level: "error", msg: "subagent child dispose failed" });
+  });
+});
+
+describe("spawner resume", () => {
+  it("continues a parked completed child under the same run id with a resumed lifecycle event", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    const { factory, children, gates } = makeFactory({
+      childEvents: [{ type: "text", text: "续跑增量" }],
+    });
+    const ctx = await withSpawner({ sessionFactory: factory, lifecycle: { emit: (event) => lifecycle.push(event) } });
+
+    const first = ctx.spawner.run({ ...baseInput, sessionId: "parent-r", description: "首段" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await expect(first).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+    const runId = lifecycle[0]!.childId;
+    expect(children[0]!.disposeCalls).toBe(0);
+
+    const second = ctx.spawner.resume({ runId, prompt: "继续任务", sessionId: "parent-r" });
+    await vi.waitFor(() => expect(children[0]!.runs).toHaveLength(2));
+    await expect(second).resolves.toEqual({ finalText: "子代理报告", turns: 1 });
+    // Same child session (no new factory call): the conversation continues.
+    expect(children).toHaveLength(1);
+    expect(children[0]!.runs[1]!.prompt).toBe("继续任务");
+    // Lifecycle reopens with resumed + the follow-up prompt, settles completed
+    // again under the same childId.
+    expect(lifecycle).toContainEqual(
+      expect.objectContaining({ childId: runId, status: "running", resumed: true, prompt: "继续任务" }),
+    );
+    expect(lifecycle).toContainEqual(expect.objectContaining({ childId: runId, status: "running", delta: "续跑增量" }));
+    expect(lifecycle.filter((event) => event.status === "completed")).toHaveLength(2);
+    expect(ctx.spawner.runs().find((info) => info.runId === runId)?.status).toBe("completed");
+    // The resumed completion parks the child again (still resumable).
+    expect(children[0]!.disposeCalls).toBe(0);
+  });
+
+  it("rejects resume for unknown or non-completed runs (failed children are never parked)", async () => {
+    const { factory, children, gates } = makeFactory({ runError: new Error("run-boom") });
+    const ctx = await withSpawner({ sessionFactory: factory });
+
+    const first = ctx.spawner.run({ ...baseInput, sessionId: "parent-f" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    gates[0]!();
+    await expect(first).rejects.toThrow("run-boom");
+    expect(children[0]!.disposeCalls).toBe(1);
+
+    const failedId = ctx.spawner.runs()[0]!.runId;
+    await expect(ctx.spawner.resume({ runId: failedId, prompt: "x" })).rejects.toThrow("不可续跑");
+    await expect(ctx.spawner.resume({ runId: "child_missing", prompt: "x" })).rejects.toThrow("不可续跑");
+  });
+
+  it("cancel reaches a resumed run through the reassigned abort handle", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    // 首跑即完；续跑挂起直到被 abort——cancel 必须命中重开后的控制器。
+    const factory: SpawnerSessionFactory = async () => {
+      let calls = 0;
+      return {
+        run: (_prompt: string, signal: AbortSignal | undefined) => {
+          calls += 1;
+          if (calls === 1) return Promise.resolve({ finalText: "首段报告", turns: 1 });
+          return new Promise<SubagentResult>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+        dispose: async () => {},
+      };
+    };
+    const ctx = await withSpawner({ sessionFactory: factory, lifecycle: { emit: (event) => lifecycle.push(event) } });
+
+    await ctx.spawner.run({ ...baseInput, sessionId: "parent-c" });
+    const runId = lifecycle[0]!.childId;
+
+    const second = ctx.spawner.resume({ runId, prompt: "继续" });
+    await vi.waitFor(() =>
+      expect(lifecycle.some((event) => event.status === "running" && event.resumed === true)).toBe(true),
+    );
+    ctx.spawner.cancel(runId);
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    // The resumed run terminated as cancelled and its child was released.
+    expect(ctx.spawner.runs().find((info) => info.runId === runId)?.status).toBe("cancelled");
+    expect(lifecycle.at(-1)).toMatchObject({ status: "cancelled" });
+  });
+
+  it("unwinding the plugin disposes every parked child", async () => {
+    const { factory, children, gates } = makeFactory();
+    const ctx = new Context();
+    const fiber = await ctx.plugin(
+      createSpawnerPlugin({
+        sessionFactory: factory,
+        provider: echoProvider,
+        permission: allowEngine(),
+        tools: [],
+      }),
+    );
+    await runOne(ctx, gates);
+    expect(children[0]!.disposeCalls).toBe(0);
+    await fiber.dispose();
+    expect(children[0]!.disposeCalls).toBe(1);
   });
 });
 

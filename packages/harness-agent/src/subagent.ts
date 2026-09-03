@@ -34,6 +34,10 @@ export interface SubagentLifecycleEvent {
   /** Agent preset id and task prompt, present on the started event only. */
   agentType?: string;
   prompt?: string;
+  /** Present only on the running event that reopens a completed run for a
+   *  continuation (resume): consumers use it to un-terminal the run; the
+   *  prompt field carries the follow-up instruction on that same event. */
+  resumed?: true;
   delta?: string;
   /** Streaming reasoning text (same cadence as delta; not persisted). */
   thinkingDelta?: string;
@@ -149,6 +153,22 @@ export interface SubagentResult {
   completion?: TurnCompletion;
 }
 
+/**
+ * One follow-up prompt on a completed child run: the parked child session
+ * (its full message history) continues under the same run id.
+ */
+export interface SubagentResumeInput {
+  /** The completed run's id (its childId). */
+  runId: string;
+  /** Self-contained follow-up instruction (the child keeps its own context). */
+  prompt: string;
+  description?: string;
+  signal?: AbortSignal;
+  parentScope?: ExecutionScope;
+  /** Optional lifecycle observer local to this resume. */
+  onLifecycle?: SubagentLifecycleListener;
+}
+
 /** Snapshot of one spawned run in the session registry (live or terminal). */
 export interface SubagentRunInfo {
   runId: string;
@@ -179,6 +199,13 @@ export interface SubagentRunHandle {
 
 export interface SubagentSpawner {
   run(options: SubagentOptions): Promise<SubagentResult>;
+  /**
+   * Continues a completed run's child session with a follow-up prompt (same
+   * run id, lifecycle reopens with a resumed running event). Rejects when the
+   * run is unknown, not completed, or no longer parked (e.g. after a host
+   * restart). Optional: hosts without a resumable spawner omit it.
+   */
+  resume?(input: SubagentResumeInput): Promise<SubagentResult>;
   /**
    * Detached spawn: returns immediately; the run keeps going after the
    * spawning tool call returns. Cancellation comes from session teardown or
@@ -218,6 +245,12 @@ export function bindSubagentSpawner(
   };
   return {
     run: (options) => spawner.run(bindOptions(options)),
+    // Resume keeps the scope binding too: the continuation inherits the
+    // resuming invocation's identity (no context re-seeding — the child keeps
+    // its own ledger).
+    ...(spawner.resume
+      ? { resume: (input: SubagentResumeInput) => spawner.resume!({ ...input, parentScope: scope }) }
+      : {}),
     // Registry faces forward as-is when present; start gets the same
     // scope/history binding as run so detached children inherit identity too.
     ...(spawner.start

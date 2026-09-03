@@ -12,13 +12,14 @@ import type {
   SubagentChildEventListener,
   SubagentLifecycleEvent,
   SubagentLifecyclePort,
+  SubagentResumeInput,
   SubagentResult,
   SubagentRunHandle,
   SubagentRunInfo,
 } from "./subagent";
 import { INHERITED_CONTEXT_BRIEFING, sanitizeInheritedHistory } from "./subagent";
 import { clipToolResult, summarizeToolTitle } from "./tool-summary";
-import { createRunRegistry } from "./run-registry";
+import { createRunRegistry, type SubagentRunRecord } from "./run-registry";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while the
@@ -32,6 +33,11 @@ declare module "@innocenceharness/kernel" {
 
 /** Concurrent-child cap of the original AgentSession spawner (session.ts:23). */
 export const SUBAGENT_CONCURRENCY = 3;
+
+/** Cap on parked (completed, resumable) child sessions; the oldest is
+ *  disposed on overflow — resumability is a bounded convenience, not a
+ *  retention guarantee. */
+export const PARKED_CHILD_LIMIT = 10;
 
 /**
  * Tools never inherited by a child session: Task would recurse, and
@@ -110,6 +116,12 @@ export interface SpawnerRunInput extends SpawnerSessionInput {
   sessionId?: string;
 }
 
+/** {@link SubagentResumeInput} plus the spawning session fallback identity. */
+export type SpawnerResumeInput = SubagentResumeInput & {
+  /** Session id used when no parent scope supplies one. */
+  sessionId?: string;
+};
+
 /** Child-session materials the spawner assembles per spawn (session.ts:317-356). */
 export interface SpawnerChildMaterials {
   /** subagent-tools set: the tools selected from the parent set, "Task" excluded, parent order. */
@@ -153,13 +165,21 @@ export type SpawnerSessionFactory = (materials: SpawnerChildMaterials) => Promis
  * child registers the parent's message processors (minus those opting out via
  * `inheritToSubagents: false`) and tool middlewares, runs under the
  * parent-derived identity, is concurrency-capped (excess spawns wait FIFO for
- * a free slot instead of failing), and is disposed in a finally once its run
- * settles. Beyond `run` (blocking), the service tracks every spawn in a
- * session run registry: `start` detaches, `runs`/`wait`/`cancel` query and
- * control, and `drainProgress` feeds the auto progress report.
+ * a free slot instead of failing), and is parked (not disposed) once it
+ * COMPLETES so `resume` can continue the same conversation under the same
+ * run id; every other terminal state is disposed. Beyond `run` (blocking),
+ * the service tracks every spawn in a session run registry: `start` detaches,
+ * `runs`/`wait`/`cancel` query and control, and `drainProgress` feeds the
+ * auto progress report.
  */
 export interface SpawnerService {
   run(input: SpawnerRunInput): Promise<SubagentResult>;
+  /**
+   * Continues a parked completed run's child session with a follow-up prompt
+   * (same childId; the lifecycle reopens with a `resumed` running event).
+   * Rejects for unknown, non-completed, or no-longer-parked runs.
+   */
+  resume(input: SpawnerResumeInput & { sessionId?: string }): Promise<SubagentResult>;
   /** Detached spawn: returns immediately; the run settles via the registry. */
   start(input: SpawnerRunInput): SubagentRunHandle;
   /** Snapshot of this session's run registry (oldest first). */
@@ -201,10 +221,11 @@ export interface SpawnerPlugin {
 
 /**
  * Creates the spawner spine plugin for one session (the concurrency slots, the
- * run registry, and the shared provider/engine are session state, so the
- * plugin is created per session — the permissions factory precedent). `apply`
- * publishes the service under "spawner" and returns a withdraw handle that
- * also ABORTS every live run: a session teardown must not leak detached
+ * run registry, the parked children, and the shared provider/engine are
+ * session state, so the plugin is created per session — the permissions
+ * factory precedent). `apply` publishes the service under "spawner" and
+ * returns a withdraw handle that also ABORTS every live run and DISPOSES
+ * every parked child: a session teardown must not leak detached or resumable
  * children (repo rule: explicit resource cleanup).
  */
 export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
@@ -248,6 +269,164 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     else activeChildren -= 1;
   };
 
+  /** Completed child sessions parked for resume (own full history). */
+  interface ParkedChild {
+    child: SpawnerChildSession;
+    agentType?: string;
+    description: string;
+  }
+  const parkedChildren = new Map<string, ParkedChild>();
+  const disposeQuietly = (child: SpawnerChildSession) =>
+    child.dispose().catch((disposeError) => {
+      logger("error", "subagent child dispose failed", disposeError);
+    });
+  const parkChild = (childId: string, entry: ParkedChild) => {
+    parkedChildren.set(childId, entry);
+    // Bounded resumability: overflow evicts the oldest parked child.
+    for (const [oldestId, oldest] of parkedChildren) {
+      if (parkedChildren.size <= PARKED_CHILD_LIMIT) break;
+      parkedChildren.delete(oldestId);
+      void disposeQuietly(oldest.child);
+    }
+  };
+  /**
+   * Releases a settled child: completed runs stay parked (resumable), every
+   * other outcome is disposed. The registry status mirrored by the terminal
+   * lifecycle event decides.
+   */
+  const settleChild = (
+    childId: string,
+    child: SpawnerChildSession,
+    entry: Pick<ParkedChild, "agentType" | "description">,
+    record: SubagentRunRecord,
+  ): Promise<void> => {
+    if (record.info.status === "completed") {
+      parkChild(childId, { child, ...entry });
+      return Promise.resolve();
+    }
+    return disposeQuietly(child);
+  };
+
+  /** Per-run lifecycle emitter: terminal-once guard, registry mirror,
+   *  progress notes, and the lifecycle port + local observer fan-out. */
+  type EmitEvent = Omit<SubagentLifecycleEvent, "childId" | "parentSessionId" | "description" | "parentInvocationId">;
+  const makeEmitter = (
+    record: SubagentRunRecord,
+    base: {
+      childId: string;
+      parentSessionId: string;
+      description: string;
+      parentInvocationId?: string;
+      onLifecycle?: (event: SubagentLifecycleEvent) => void;
+    },
+  ) => {
+    let terminal = false;
+    return (event: EmitEvent) => {
+      if (TERMINAL_STATUSES.has(event.status)) {
+        if (terminal) return;
+        terminal = true;
+      } else if (terminal) {
+        return;
+      }
+      // Registry mirror: every lifecycle event keeps the queryable run
+      // info current; detached runs additionally queue progress notes.
+      record.info.status = event.status;
+      if (event.tool) {
+        if (event.tool.phase === "call") record.info.toolCalls += 1;
+        record.info.lastActivity = `tool ${event.tool.name} ${event.tool.phase}`;
+        registry.note(
+          record,
+          `${base.childId} running: ${event.tool.name} ${event.tool.phase} (${record.info.toolCalls} tool calls)`,
+        );
+      }
+      if (event.status === "completed" || event.status === "failed" || event.status === "cancelled") {
+        registry.settle(record, {
+          status: event.status,
+          ...(event.final !== undefined ? { final: event.final } : {}),
+          ...(event.error !== undefined ? { error: event.error } : {}),
+        });
+        const label = base.description || "(no description)";
+        if (event.status === "completed") {
+          registry.note(record, `${base.childId} completed: ${label}\n${event.final ?? ""}`);
+        } else if (event.status === "failed") {
+          registry.note(record, `${base.childId} failed: ${label} — ${event.error ?? "unknown error"}`);
+        } else {
+          registry.note(record, `${base.childId} cancelled: ${label}`);
+        }
+      }
+      const lifecycleEvent = {
+        childId: base.childId,
+        parentSessionId: base.parentSessionId,
+        description: base.description,
+        parentInvocationId: base.parentInvocationId,
+        ...event,
+      };
+      emitLifecycle(lifecycleEvent);
+      base.onLifecycle?.(lifecycleEvent);
+    };
+  };
+
+  /**
+   * Drives one child run to its terminal lifecycle event (child-event adapter,
+   * the blocking run, terminal decision). Parking/disposal is the caller's
+   * settleChild — never this function.
+   */
+  const driveChild = async (params: {
+    emit: (event: EmitEvent) => void;
+    record: SubagentRunRecord;
+    child: SpawnerChildSession;
+    prompt: string;
+    signal: AbortSignal;
+    identity: ExecutionScopeIdentity;
+  }): Promise<SubagentResult> => {
+    const { emit, record, child, prompt, signal, identity } = params;
+    emit({ status: "running" });
+    let childFailed = false;
+    const childEvent: SubagentChildEventListener = (event) => {
+      if (event.type === "text" && event.text) emit({ status: "running", delta: event.text });
+      if (event.type === "thinking" && event.text) emit({ status: "running", thinkingDelta: event.text });
+      if (event.type === "toolCall") {
+        const title = summarizeToolTitle(event.name, event.args);
+        emit({ status: "running", tool: { name: event.name, phase: "call", ...(title ? { title } : {}) } });
+      }
+      if (event.type === "toolResult") {
+        const result = clipToolResult(event.result);
+        emit({
+          status: "running",
+          tool: { name: event.name, phase: "result", isError: event.isError, ...(result ? { result } : {}) },
+        });
+      }
+      if (event.type === "error") {
+        childFailed = true;
+        emit({ status: "failed", error: event.error });
+      }
+    };
+    try {
+      const result = await child.run(prompt, signal, identity, childEvent);
+      record.info.turns = result.turns;
+      if (signal.aborted) {
+        emit({ status: "cancelled" });
+      } else if (childFailed || result.completion?.finishReason === "error") {
+        emit({ status: "failed", ...(result.completion?.finishReason === "error" ? { error: "子代理运行失败" } : {}) });
+      } else {
+        emit({ status: "completed", final: result.finalText });
+      }
+      return {
+        finalText: result.finalText,
+        turns: result.turns,
+        ...(childFailed
+          ? { completion: result.completion ?? { finishReason: "error", aborted: false } }
+          : result.completion
+            ? { completion: result.completion }
+            : {}),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      emit({ status: signal.aborted ? "cancelled" : "failed", error: message });
+      throw error;
+    }
+  };
+
   /** One spawn, shared by run (blocking) and start (detached). */
   const spawn = (input: SpawnerRunInput, detached: boolean) => {
     const childId = `child_${Date.now().toString(36)}_${(nextChildId++).toString(36)}`;
@@ -277,54 +456,18 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
         registry.note(record, `${childId} cancelled while queued: ${record.info.description || "(no description)"}`);
         throw error;
       }
+      let child: SpawnerChildSession | undefined;
       try {
         const parent = input.parentScope;
         const parentSessionId = parent?.sessionId ?? input.sessionId ?? "";
         const description = input.description ?? "";
-        let terminal = false;
-        const emit = (event: Omit<SubagentLifecycleEvent, "childId" | "parentSessionId" | "description" | "parentInvocationId">) => {
-          if (TERMINAL_STATUSES.has(event.status)) {
-            if (terminal) return;
-            terminal = true;
-          } else if (terminal) {
-            return;
-          }
-          // Registry mirror: every lifecycle event keeps the queryable run
-          // info current; detached runs additionally queue progress notes.
-          record.info.status = event.status;
-          if (event.tool) {
-            if (event.tool.phase === "call") record.info.toolCalls += 1;
-            record.info.lastActivity = `tool ${event.tool.name} ${event.tool.phase}`;
-            registry.note(
-              record,
-              `${childId} running: ${event.tool.name} ${event.tool.phase} (${record.info.toolCalls} tool calls)`,
-            );
-          }
-          if (event.status === "completed" || event.status === "failed" || event.status === "cancelled") {
-            registry.settle(record, {
-              status: event.status,
-              ...(event.final !== undefined ? { final: event.final } : {}),
-              ...(event.error !== undefined ? { error: event.error } : {}),
-            });
-            const label = description || "(no description)";
-            if (event.status === "completed") {
-              registry.note(record, `${childId} completed: ${label}\n${event.final ?? ""}`);
-            } else if (event.status === "failed") {
-              registry.note(record, `${childId} failed: ${label} — ${event.error ?? "unknown error"}`);
-            } else {
-              registry.note(record, `${childId} cancelled: ${label}`);
-            }
-          }
-          const lifecycleEvent = {
-            childId,
-            parentSessionId,
-            description,
-            parentInvocationId: parent?.invocationId,
-            ...event,
-          };
-          emitLifecycle(lifecycleEvent);
-          input.onLifecycle?.(lifecycleEvent);
-        };
+        const emit = makeEmitter(record, {
+          childId,
+          parentSessionId,
+          description,
+          parentInvocationId: parent?.invocationId,
+          onLifecycle: input.onLifecycle,
+        });
         emit({ status: "started", agentType: input.agentType, prompt: input.prompt });
         registry.note(
           record,
@@ -370,76 +513,37 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
             });
           }
         }, () => {});
-        let child: SpawnerChildSession;
         try {
           child = await raceWithSignal(childPromise, signal);
         } catch (error) {
           emit({ status: signal.aborted ? "cancelled" : "failed", error: error instanceof Error ? error.message : String(error) });
           throw error;
         }
-        try {
-          const parent = input.parentScope;
-          emit({ status: "running" });
-          let childFailed = false;
-          const childEvent: SubagentChildEventListener = (event) => {
-            if (event.type === "text" && event.text) emit({ status: "running", delta: event.text });
-            if (event.type === "thinking" && event.text) emit({ status: "running", thinkingDelta: event.text });
-            if (event.type === "toolCall") {
-              const title = summarizeToolTitle(event.name, event.args);
-              emit({ status: "running", tool: { name: event.name, phase: "call", ...(title ? { title } : {}) } });
-            }
-            if (event.type === "toolResult") {
-              const result = clipToolResult(event.result);
-              emit({
-                status: "running",
-                tool: { name: event.name, phase: "result", isError: event.isError, ...(result ? { result } : {}) },
-              });
-            }
-            if (event.type === "error") {
-              childFailed = true;
-              emit({ status: "failed", error: event.error });
-            }
-          };
-          // S2b：种子历史存在时任务 prompt 前置继承简报（历史已在子账本中，
-          // 简报声明其来源与陈旧纪律）。
-          const effectivePrompt = seedHistory?.length
-            ? `${INHERITED_CONTEXT_BRIEFING}\n\n${input.prompt}`
-            : input.prompt;
-          const result = await child.run(effectivePrompt, signal, {
+        // S2b：种子历史存在时任务 prompt 前置继承简报（历史已在子账本中，
+        // 简报声明其来源与陈旧纪律）。
+        const effectivePrompt = seedHistory?.length
+          ? `${INHERITED_CONTEXT_BRIEFING}\n\n${input.prompt}`
+          : input.prompt;
+        return await driveChild({
+          emit,
+          record,
+          child,
+          prompt: effectivePrompt,
+          signal,
+          identity: {
             sessionId: parent?.sessionId ?? input.sessionId,
             taskId: parent?.taskId,
             routeId: parent?.routeId,
             parentInvocationId: parent?.invocationId,
-          }, childEvent);
-          record.info.turns = result.turns;
-          if (signal.aborted) {
-            emit({ status: "cancelled" });
-          } else if (childFailed || result.completion?.finishReason === "error") {
-            emit({ status: "failed", ...(result.completion?.finishReason === "error" ? { error: "子代理运行失败" } : {}) });
-          } else {
-            emit({ status: "completed", final: result.finalText });
-          }
-          return {
-            finalText: result.finalText,
-            turns: result.turns,
-            ...(childFailed
-              ? { completion: result.completion ?? { finishReason: "error", aborted: false } }
-              : result.completion
-                ? { completion: result.completion }
-                : {}),
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          emit({ status: signal.aborted ? "cancelled" : "failed", error: message });
-          throw error;
-        } finally {
-          // A dispose failure must never mask the child run's own outcome —
-          // log and swallow it (create's rollback path does the same).
-          await child.dispose().catch((disposeError) => {
-            logger("error", "subagent child dispose failed", disposeError);
-          });
-        }
+          },
+        });
       } finally {
+        if (child) {
+          await settleChild(childId, child, {
+            ...(input.agentType ? { agentType: input.agentType } : {}),
+            description: input.description ?? "",
+          }, record);
+        }
         input.signal?.removeEventListener("abort", linkParent);
         releaseSlot();
       }
@@ -447,8 +551,85 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     return { record, promise };
   };
 
+  /**
+   * Follow-up run on a parked completed child: the SAME child session (and
+   * run id) continues its conversation with a fresh prompt. Unknown,
+   * non-completed, or evicted ids reject — completed children are the only
+   * parked state (failures are disposed; a restart parks nothing).
+   */
+  const resume = (input: SpawnerResumeInput & { sessionId?: string }): Promise<SubagentResult> => {
+    const entry = parkedChildren.get(input.runId);
+    if (!entry) {
+      return Promise.reject(new Error(`子代理不可续跑：${input.runId}（未知、未完成或已释放）`));
+    }
+    parkedChildren.delete(input.runId);
+    const runControl = new AbortController();
+    const signal = runControl.signal;
+    const linkParent = () => runControl.abort(input.signal?.reason);
+    if (input.signal) {
+      if (input.signal.aborted) runControl.abort(input.signal.reason);
+      else input.signal.addEventListener("abort", linkParent, { once: true });
+    }
+    const abort = () => runControl.abort();
+    // Records pruned by the finished-limit come back to life here; the
+    // abort handle always points at the CURRENT (resumed) controller.
+    const record = registry.record(input.runId) ?? registry.create({
+      runId: input.runId,
+      ...(entry.agentType ? { agentType: entry.agentType } : {}),
+      description: entry.description,
+      detached: false,
+      abort,
+    });
+    record.abort = abort;
+
+    return (async (): Promise<SubagentResult> => {
+      try {
+        await acquireSlot(signal);
+      } catch (error) {
+        // The parked child left the pool above and can never go back.
+        registry.settle(record, { status: "cancelled" });
+        registry.note(record, `${input.runId} cancelled while queued: ${record.info.description || "(no description)"}`);
+        await disposeQuietly(entry.child);
+        throw error;
+      }
+      try {
+        const parent = input.parentScope;
+        const description = input.description ?? entry.description;
+        const emit = makeEmitter(record, {
+          childId: input.runId,
+          parentSessionId: parent?.sessionId ?? input.sessionId ?? "",
+          description,
+          parentInvocationId: parent?.invocationId,
+          onLifecycle: input.onLifecycle,
+        });
+        // The resumed running event reopens the run in every projection;
+        // prompt rides along so consumers can show the follow-up instruction.
+        emit({ status: "running", resumed: true, prompt: input.prompt });
+        registry.note(record, `${input.runId} resumed: ${description || "(no description)"}`);
+        return await driveChild({
+          emit,
+          record,
+          child: entry.child,
+          prompt: input.prompt,
+          signal,
+          identity: {
+            sessionId: parent?.sessionId ?? input.sessionId,
+            taskId: parent?.taskId,
+            routeId: parent?.routeId,
+            parentInvocationId: parent?.invocationId,
+          },
+        });
+      } finally {
+        await settleChild(input.runId, entry.child, entry, record);
+        input.signal?.removeEventListener("abort", linkParent);
+        releaseSlot();
+      }
+    })();
+  };
+
   const service: SpawnerService = {
     run: (input) => spawn(input, false).promise,
+    resume,
     start: (input) => {
       const { record, promise } = spawn(input, true);
       return {
@@ -472,8 +653,12 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     apply: (ctx) => {
       const withdraw = ctx.provide("spawner", service);
       return () => {
-        // Teardown cancels every live child before the service disappears.
+        // Teardown cancels every live child and releases every parked
+        // (resumable) child before the service disappears.
         registry.abortActive();
+        const evicted = [...parkedChildren.values()];
+        parkedChildren.clear();
+        for (const entry of evicted) void disposeQuietly(entry.child);
         withdraw();
       };
     },
