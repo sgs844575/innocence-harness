@@ -20,7 +20,7 @@ import { useChatStream } from "./state/useChatStream";
 import { useSettings } from "./state/useSettings";
 import { useSidebarState } from "./state/useSidebarState";
 import { useSubagentRuns } from "./state/useSubagentRuns";
-import { groupRunsByLiveness, runByInvocation, runsForSession, type SubagentRun } from "./state/subagentRuns";
+import { groupRunsByLiveness, runForTaskRow, runsForSession, type SubagentRun, type TaskRowClue } from "./state/subagentRuns";
 import { RightDock } from "./components/RightDock";
 import { clampDockWidth, DEFAULT_DOCK_WIDTH, type DockFilePayload, type DockTabInstance, type DockTabKind } from "./state/dockTabs";
 import { AuxChatView } from "./components/AuxChatView";
@@ -99,17 +99,6 @@ export function App(): React.JSX.Element {
   const activeRuns = useMemo(
     () => runsForSession(subagentRunsState, sessions.activeId),
     [subagentRunsState, sessions.activeId],
-  );
-  /** 有档案的 Task 调用集合：时间线 Task 行据此决定「开面板」还是退化为
-   *  可展开行（档案缺失时至少给只读 final/error 详情）。 */
-  const subagentInvocations = useMemo(
-    () =>
-      new Set(
-        Object.values(subagentRunsState)
-          .map((run) => run.parentInvocationId)
-          .filter((id): id is string => id !== undefined),
-      ),
-    [subagentRunsState],
   );
   // 重启/切会话后按会话回放落盘档案（实况优先），面板历史由此可再查看。
   useEffect(() => {
@@ -214,11 +203,15 @@ export function App(): React.JSX.Element {
     setSubagentsArchive(false);
   }, [sessions.activeId]);
 
-  const openSubagentRun = useCallback((invocationId: string) => {
+  const openSubagentRun = useCallback((clue: TaskRowClue) => {
     newDockTab("subagents");
-    const match = runByInvocation(subagentStateRef.current, invocationId);
+    // 关联键优先；无键（重启前的旧记录）或键失配时按标题在本会话内唯一匹配，
+    // 重名用结果文本消歧（runForTaskRow）。无法唯一确定时落归档列表——用户能
+    // 看到全部运行标题自行定位，绝不猜错记录。
+    const match = runForTaskRow(subagentStateRef.current, sessions.activeId, clue);
     setSelectedChildId(match?.childId ?? null);
-  }, [newDockTab]);
+    setSubagentsArchive(match === undefined);
+  }, [newDockTab, sessions.activeId]);
 
   /** 胶囊智能体段点运行行标题：dock 直达该子代理的会话记录（不是列表）。 */
   const openSubagentChild = useCallback(
@@ -567,6 +560,7 @@ export function App(): React.JSX.Element {
           runs={activeRuns}
           selectedChildId={selectedChildId}
           onSelect={setSelectedChildId}
+          onOpenFile={openDockFile}
           subagentsArchive={subagentsArchive}
           onSubagentsArchive={setSubagentsArchive}
           renderAuxTab={(tab) => (
@@ -787,7 +781,6 @@ export function App(): React.JSX.Element {
             capsule={capsule}
             onManageModels={openModelSettings}
             onOpenSubagent={openSubagentRun}
-            subagentInvocations={subagentInvocations}
             onOpenFile={openDockFile}
             terminalPanel={
               <TerminalPanel

@@ -25,9 +25,11 @@ import {
   type DockTabInstance,
   type DockTabKind,
 } from "../state/dockTabs";
-import { isRunning, RunConversation, SubagentsList } from "./dock/SubagentsView";
+import { isRunning, SubagentsList } from "./dock/SubagentsView";
+import { RunConversation } from "./dock/RunConversation";
 import { DiffBlock } from "./chat/ToolRow";
 import type { CodeAppearance } from "./chat/MarkdownView";
+import type { ToolRowModel } from "./chat/toolRows";
 
 // 类型经本文件再导出（type-only，不影响 Fast Refresh）；运行时工具函数见
 // state/dockTabs.ts（组件文件混出运行时会破坏 vite Fast Refresh）。
@@ -45,6 +47,8 @@ interface Props {
   runs: SubagentRun[];
   selectedChildId?: string | null;
   onSelect?: (childId: string | null) => void;
+  /** 子代理会话工具行的文件簇：点击在 dock 打开文件标签（同主时间线）。 */
+  onOpenFile?: (row: ToolRowModel) => void;
   /** 列表归档视图开关（true = 已完成的子代理）；胶囊「查看全部」直达。 */
   subagentsArchive?: boolean;
   onSubagentsArchive?: (open: boolean) => void;
@@ -356,6 +360,7 @@ export function RightDock({
   runs,
   selectedChildId,
   onSelect,
+  onOpenFile,
   subagentsArchive,
   onSubagentsArchive,
   renderAuxTab,
@@ -401,7 +406,7 @@ export function RightDock({
       {activeTab?.kind === "file" && <DockFileView t={t} tab={activeTab} />}
       {activeTab?.kind === "subagents" &&
         (selected ? (
-          <RunConversation t={t} run={selected} onBack={() => onSelect?.(null)} code={code} />
+          <RunConversation t={t} run={selected} onBack={() => onSelect?.(null)} code={code} onOpenFile={onOpenFile} />
         ) : (
           <SubagentsList
             t={t}

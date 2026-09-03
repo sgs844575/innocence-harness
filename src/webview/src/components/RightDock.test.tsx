@@ -362,6 +362,104 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
   });
 
+  it("正文按段与工具轨迹穿插（text 条目），末个正文帧带 hover 复制 + 时间戳", () => {
+    const run: SubagentRun = {
+      ...doneRun,
+      closedTextLength: 7,
+      entries: [
+        { kind: "text", text: "先说两句" },
+        { kind: "tool", tool: { name: "Read", phase: "call", title: "a.ts", args: { file_path: "src/a.ts" }, at: 1100 } },
+        { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 1200 } },
+        { kind: "text", text: "下一段" },
+      ],
+    };
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c2" />,
+    );
+    // 正文段与工具动词按文档顺序穿插；旧档案的末尾整段正文（final）不再出现。
+    const order = [screen.getByText("先说两句"), screen.getByText("tool.verb.read"), screen.getByText("下一段")];
+    for (let index = 0; index < order.length - 1; index += 1) {
+      expect(order[index]!.compareDocumentPosition(order[index + 1]!) & 4).toBeTruthy();
+    }
+    expect(container.textContent).not.toContain("结论全文");
+    // 末个正文帧的 hover 复制钮复制该块文本（另有 prompt 气泡的复制钮，共两个）。
+    const copies = screen.getAllByLabelText("chat.copy");
+    expect(copies.length).toBe(2);
+    expect(container.querySelector("time")).toBeTruthy();
+  });
+
+  it("段间距节奏与主时间线一致：轮内 16px（mt-4），prompt 气泡相邻 32px（mt-8）", () => {
+    const run: SubagentRun = {
+      ...doneRun,
+      prompt: "初次任务",
+      entries: [
+        { kind: "thinking", text: "想一想" },
+        { kind: "tool", tool: { name: "Read", phase: "call", at: 1100 } },
+        { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 1200 } },
+        { kind: "text", text: "阶段结论" },
+        { kind: "prompt", text: "继续任务" },
+        { kind: "thinking", text: "再想想" },
+      ],
+    };
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c2" />,
+    );
+    // 会话列：初始 prompt 气泡（无包装）+ 每个 chunk 的间距包装层。
+    const children = [...container.querySelector(".px-3.py-4")!.children];
+    expect(children[0]!.className).not.toContain("mt-");
+    expect(children[1]!.className).toContain("mt-8"); // 思考（跟在初始 prompt 气泡后）
+    expect(children[2]!.className).toContain("mt-4"); // 工具组
+    expect(children[3]!.className).toContain("mt-4"); // 正文段
+    expect(children[4]!.className).toContain("mt-8"); // 续跑 prompt 气泡
+    expect(children[5]!.className).toContain("mt-8"); // 思考（跟在续跑 prompt 气泡后）
+  });
+
+  it("运行中的未闭合正文尾部渲染为流式帧（流式光标），思考不再 live", () => {
+    const run: SubagentRun = {
+      ...runningRun,
+      text: "已闭合段未闭合尾",
+      closedTextLength: 4,
+      entries: [
+        { kind: "thinking", text: "先看入口" },
+        { kind: "text", text: "已闭合段" },
+      ],
+    };
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c1" />,
+    );
+    expect(screen.getByText("已闭合段")).toBeTruthy();
+    expect(container.textContent).toContain("未闭合尾");
+    expect(container.querySelector(".stream-caret")).toBeTruthy();
+    // 有未闭合尾部时等待行与思考 live 标签都不出现。
+    expect(screen.queryByTestId("chat-waiting")).toBeNull();
+    expect(screen.queryByText("chat.thinking.live")).toBeNull();
+  });
+
+  it("富工具行：args 投影产出文件名/±计数，文件簇点击经 onOpenFile 打开 dock 文件标签", () => {
+    const onOpenFile = vi.fn();
+    const run: SubagentRun = {
+      ...doneRun,
+      entries: [
+        {
+          kind: "tool",
+          tool: { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "D:/x/src/a.ts", old_string: "a\nb", new_string: "a\nc\nd" }, at: 1100 },
+        },
+        { kind: "tool", tool: { name: "Edit", phase: "result", isError: false, at: 1200 } },
+      ],
+    };
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[run]} selectedChildId="c2" onOpenFile={onOpenFile} />,
+    );
+    expect(screen.getByText("tool.verb.edit")).toBeTruthy();
+    expect(screen.getByText("+3")).toBeTruthy();
+    expect(screen.getByText("−2")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("tool.openFile"));
+    expect(onOpenFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filePath: "D:/x/src/a.ts", verbKey: "tool.verb.edit" }),
+    );
+  });
+
   it("selectedChildId 无匹配运行时回落到列表主视图", () => {
     render(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"

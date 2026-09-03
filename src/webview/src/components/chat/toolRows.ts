@@ -146,22 +146,39 @@ export interface RunToolRowInput {
   done: boolean;
   isError?: boolean;
   title?: string;
+  /** call 阶段参数的**有界投影**（harness-agent clipToolArgs 截断）；有值时
+   *  复用主时间线 summarize() 产出富工具行（diff/±计数/命令/todo 展开）。 */
+  args?: Record<string, unknown>;
   result?: string;
   at: number;
 }
 
 /** 子代理运行的轨迹 → 时间线工具行模型（与主聊天同一 ToolRow 渲染）：
+ *  有 args 时构造临时 ToolCallPart 走 summarize() 得到动词/文件路径/±diff
+ *  计数/展开明细（title 为空回退轨迹摘要），无 args 的旧档案保持简版行：
  *  摘要作标题、未配对 = 运行中、result 摘录作展开内容。 */
 export function runToolsToTimelineRows(tools: readonly RunToolRowInput[]): ToolRowModel[] {
-  return tools.map((tool, index) => ({
-    id: `run-tool-${index}`,
-    toolName: tool.name,
-    verbKey: verbKeyFor(tool.name),
-    title: tool.title ?? "",
-    running: !tool.done,
-    isError: tool.isError === true,
-    ...(tool.result !== undefined ? { resultText: tool.result } : {}),
-  }));
+  return tools.map((tool, index) => {
+    if (tool.args) {
+      const summary = summarize({ type: "toolCall", id: `run-tool-${index}`, toolName: tool.name, args: tool.args });
+      return {
+        ...summary,
+        title: summary.title || tool.title || "",
+        running: !tool.done,
+        isError: tool.isError === true,
+        ...(tool.result !== undefined ? { resultText: tool.result } : {}),
+      };
+    }
+    return {
+      id: `run-tool-${index}`,
+      toolName: tool.name,
+      verbKey: verbKeyFor(tool.name),
+      title: tool.title ?? "",
+      running: !tool.done,
+      isError: tool.isError === true,
+      ...(tool.result !== undefined ? { resultText: tool.result } : {}),
+    };
+  });
 }
 
 /** 进程段数据源：消息里最近一次 todo 工具调用的清单。 */

@@ -80,6 +80,56 @@ describe("runToolsToTimelineRows", () => {
     expect(rows[1]).toMatchObject({ toolName: "Read", verbKey: "tool.verb.read", title: "a.ts", running: true, isError: false });
     expect("resultText" in rows[1]).toBe(false);
   });
+
+  it("有 args 投影时复用 summarize()：文件路径/±diff 计数/展开明细全量产出", () => {
+    const rows = runToolsToTimelineRows([
+      {
+        name: "Edit",
+        done: true,
+        isError: false,
+        title: "a.ts",
+        args: { file_path: "D:/x/src/a.ts", old_string: "a\nb", new_string: "a\nc\nd" },
+        result: "done",
+        at: 1,
+      },
+      { name: "Bash", done: false, args: { command: "npm test" }, at: 2 },
+      {
+        name: "TodoWrite",
+        done: true,
+        args: { todos: [{ content: "甲", status: "completed" }, { content: "乙", status: "in_progress" }] },
+        at: 3,
+      },
+    ]);
+    expect(rows[0]).toMatchObject({
+      id: "run-tool-0",
+      verbKey: "tool.verb.edit",
+      title: "a.ts",
+      detail: "D:/x/src",
+      filePath: "D:/x/src/a.ts",
+      additions: 3,
+      deletions: 2,
+      diff: { removed: "a\nb", added: "a\nc\nd" },
+      running: false,
+      resultText: "done",
+    });
+    expect(rows[1]).toMatchObject({ verbKey: "tool.verb.bash", title: "npm test", command: "npm test", running: true });
+    expect(rows[2]).toMatchObject({
+      verbKey: "tool.verb.todo",
+      title: "乙",
+      detail: "1/2",
+      todos: [
+        { content: "甲", status: "completed" },
+        { content: "乙", status: "in_progress" },
+      ],
+    });
+  });
+
+  it("args 派生不出标题时回退轨迹摘要", () => {
+    const rows = runToolsToTimelineRows([
+      { name: "WebFetch", done: true, title: "example.test", args: { mode: "text" }, at: 1 },
+    ]);
+    expect(rows[0]).toMatchObject({ title: "example.test" });
+  });
 });
 
 describe("latestTodos", () => {

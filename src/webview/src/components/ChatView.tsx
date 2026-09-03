@@ -11,6 +11,7 @@ import { ChatDashes } from "./chat/ChatDashes";
 import { WaitingRow } from "./chat/WaitingRow";
 import { capsuleHasContent, capsuleRightGutter, CAPSULE_SQUEEZE_MIN_WIDTH } from "./chat/chatLayout";
 import type { ToolRowModel } from "./chat/toolRows";
+import type { TaskRowClue } from "../state/subagentRuns";
 
 // 内容列宽度：默认 896px（max-w-4xl）；宽窗分档放宽，最大化时不显窄——
 // 视口 ≥1280 放宽到 1024（5xl），≥1536 放宽到 1152（6xl）。三处共用保持一致。
@@ -30,10 +31,9 @@ interface Props {
   onPermissionRespond: (requestId: string, choice: PermissionChoice) => void;
   capsule: GitCapsuleData;
   onManageModels?: () => void;
-  /** 子代理工具行：在右侧面板中查看该次运行。 */
-  onOpenSubagent?: (invocationId: string) => void;
-  /** 有档案的 Task 调用集合（缺档案的 Task 行退化为可展开行，兜底只读详情）。 */
-  subagentInvocations?: ReadonlySet<string>;
+  /** 子代理工具行：在右侧面板中查看该次运行（载荷含关联键/标题/结果文本，
+   *  无法唯一确定时落归档列表）。 */
+  onOpenSubagent?: (clue: TaskRowClue) => void;
   /** 文件工具行：文件簇点击在右侧 dock 打开文件标签。 */
   onOpenFile?: (row: ToolRowModel) => void;
   /** 底部终端面板（顶栏终端钮开合；挂在输入卡之后，聊天列全宽）。 */
@@ -54,7 +54,6 @@ export function ChatView({
   capsule,
   onManageModels,
   onOpenSubagent,
-  subagentInvocations,
   onOpenFile,
   terminalPanel,
 }: Props): React.JSX.Element {
@@ -212,7 +211,6 @@ export function ChatView({
                   onContinue={() => handleSend(t("chat.continue.prompt"))}
                   code={codeAppearance}
                   onOpenSubagent={onOpenSubagent}
-                  subagentInvocations={subagentInvocations}
                   onOpenFile={onOpenFile}
                 />
               ))}

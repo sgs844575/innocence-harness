@@ -10,6 +10,7 @@ import {
   reduceSubagentRuns,
   runByInvocation,
   runConversationChunks,
+  runForTaskRow,
   runsForSession,
   type SubagentRun,
   type SubagentRunsState,
@@ -65,13 +66,34 @@ describe("reduceSubagentRuns", () => {
     ]);
   });
 
-  it("工具条目携带参数摘要与结果摘录", () => {
+  it("工具条目携带参数摘要与结果摘录；call 的 args 有界投影保留", () => {
     let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Grep", phase: "call", title: "pairedRunTools" } }, 1300);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Grep", phase: "result", isError: true, result: "无匹配" } }, 1400);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "src/a.ts", old_string: "a", new_string: "b" } } }, 1500);
     expect(state["c1"]!.entries).toEqual([
       { kind: "tool", tool: { name: "Grep", phase: "call", title: "pairedRunTools", at: 1300 } },
       { kind: "tool", tool: { name: "Grep", phase: "result", isError: true, result: "无匹配", at: 1400 } },
+      { kind: "tool", tool: { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "src/a.ts", old_string: "a", new_string: "b" }, at: 1500 } },
+    ]);
+  });
+
+  it("textSegment 并入紧邻的 text 条目并累计 closedTextLength（工具活动打断即分段）", () => {
+    let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "先说" }, 1100);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "两句" }, 1150);
+    // 实况形态：delta 先行，闭合 textSegment 单独成事件（不携带 delta）。
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", textSegment: "先说两句" }, 1200);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "call" } }, 1300);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "下一段" }, 1400);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", textSegment: "下一段" }, 1500);
+    // 全部闭合：text.slice(closedTextLength) 即未闭合尾部，应为空。
+    expect(state["c1"]).toMatchObject({ text: "先说两句下一段", closedTextLength: 7 });
+    expect(state["c1"]!.text.slice(state["c1"]!.closedTextLength!)).toBe("");
+    expect(state["c1"]!.entries).toEqual([
+      { kind: "text", text: "先说两句" },
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1300 } },
+      { kind: "text", text: "下一段" },
     ]);
   });
 
@@ -91,6 +113,29 @@ describe("reduceSubagentRuns", () => {
       "tool:Read/call",
       "tool:Read/result",
       "thinking:再看",
+    ]);
+  });
+
+  it("thinkingSegment：实况与 thinkingDelta 去重（同段不重复落条），回放直接落成思考条目", () => {
+    // 实况：delta 已把同一段推理累积成紧邻思考条目，段落闭合事件不重复落条。
+    let live: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    live = reduceSubagentRuns(live, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "先看" }, 1100);
+    live = reduceSubagentRuns(live, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "入口" }, 1150);
+    live = reduceSubagentRuns(live, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingSegment: "先看入口" }, 1200);
+    live = reduceSubagentRuns(live, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "call" } }, 1300);
+    expect(live["c1"]!.entries).toEqual([
+      { kind: "thinking", text: "先看入口" },
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1300 } },
+    ]);
+    // 回放（delta 不落盘）：闭合思考段按事件顺序落成条目，不同段各自成条。
+    let replayed: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    replayed = reduceSubagentRuns(replayed, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingSegment: "先看入口" }, 1200);
+    replayed = reduceSubagentRuns(replayed, { childId: "c1", parentSessionId: "s1", description: "", status: "running", tool: { name: "Read", phase: "call" } }, 1300);
+    replayed = reduceSubagentRuns(replayed, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingSegment: "再看一眼" }, 1400);
+    expect(replayed["c1"]!.entries).toEqual([
+      { kind: "thinking", text: "先看入口" },
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1300 } },
+      { kind: "thinking", text: "再看一眼" },
     ]);
   });
 
@@ -159,9 +204,60 @@ describe("runsForSession / runByInvocation", () => {
     expect(runsForSession(state, null)).toEqual([]);
   });
 
-  it("按 Task 调用 id 反查运行", () => {
-    expect(runByInvocation(state, "inv-2")?.childId).toBe("c2");
-    expect(runByInvocation(state, "inv-none")).toBeUndefined();
+  it("按 Task 调用 id 反查运行（限定会话，跨会话撞键不误配）", () => {
+    expect(runByInvocation(state, "s1", "inv-2")?.childId).toBe("c2");
+    // inv-3 属于 s2：在 s1 里查不到，在 s2 里命中；空会话 id 一律不中。
+    expect(runByInvocation(state, "s1", "inv-3")).toBeUndefined();
+    expect(runByInvocation(state, "s2", "inv-3")?.childId).toBe("c3");
+    expect(runByInvocation(state, null, "inv-2")).toBeUndefined();
+    expect(runByInvocation(state, "s1", "inv-none")).toBeUndefined();
+  });
+});
+
+describe("runForTaskRow", () => {
+  // c1 有关联键；c2/c3 为同名旧记录（无关联键，final 不同）；c4 唯一标题旧记录；
+  // c5 与 c4 同标题但属另一会话（验证会话隔离）。
+  const state = [
+    { ...started },
+    { childId: "c2", parentSessionId: "s1", description: "重名", status: "started" as const },
+    { childId: "c2", parentSessionId: "s1", description: "", status: "completed" as const, final: "结论A" },
+    { childId: "c3", parentSessionId: "s1", description: "重名", status: "started" as const },
+    { childId: "c3", parentSessionId: "s1", description: "", status: "completed" as const, final: "结论B" },
+    { childId: "c4", parentSessionId: "s1", description: "唯一旧记录", status: "started" as const },
+    { childId: "c4", parentSessionId: "s1", description: "", status: "completed" as const, final: "结论C" },
+    { childId: "c5", parentSessionId: "s2", description: "唯一旧记录", status: "started" as const },
+  ].reduce<SubagentRunsState>(
+    (acc, event, index) => reduceSubagentRuns(acc, event, 1000 + index * 100),
+    initialSubagentRunsState,
+  );
+
+  it("关联键命中直达", () => {
+    expect(runForTaskRow(state, "s1", { invocationId: "inv-1" })?.childId).toBe("c1");
+  });
+
+  it("键失配时回退标题唯一匹配；无键旧记录同样命中", () => {
+    expect(runForTaskRow(state, "s1", { invocationId: "inv-x", title: "唯一旧记录" })?.childId).toBe("c4");
+    expect(runForTaskRow(state, "s1", { title: "唯一旧记录" })?.childId).toBe("c4");
+  });
+
+  it("标题匹配限定会话（同标题的他会话运行不干扰）", () => {
+    expect(runForTaskRow(state, "s2", { title: "唯一旧记录" })?.childId).toBe("c5");
+  });
+
+  it("重名且无结果文本可辨时不猜（返回 undefined 由调用方落归档列表）", () => {
+    expect(runForTaskRow(state, "s1", { title: "重名" })).toBeUndefined();
+    expect(runForTaskRow(state, "s1", { title: "重名", resultText: "不存在的结论" })).toBeUndefined();
+  });
+
+  it("重名时用结果文本（= run.final）消歧", () => {
+    expect(runForTaskRow(state, "s1", { title: "重名", resultText: "结论A" })?.childId).toBe("c2");
+    expect(runForTaskRow(state, "s1", { title: "重名", resultText: "结论B" })?.childId).toBe("c3");
+  });
+
+  it("空标题/空会话/无线索一律不中", () => {
+    expect(runForTaskRow(state, "s1", {})).toBeUndefined();
+    expect(runForTaskRow(state, "s1", { title: "" })).toBeUndefined();
+    expect(runForTaskRow(state, null, { title: "唯一旧记录" })).toBeUndefined();
   });
 });
 
@@ -252,13 +348,16 @@ describe("pairedRunTools", () => {
     expect(pairedRunTools([{ name: "Read", phase: "call", at: 1 }])[0]).toMatchObject({ done: false });
   });
 
-  it("call 的摘要保留在行上；result 的摘录并回同一行", () => {
+  it("call 的摘要与 args 投影保留在行上；result 的摘录并回同一行", () => {
     const rows = pairedRunTools([
       { name: "Grep", phase: "call", title: "pairedRunTools", at: 1 },
       { name: "Grep", phase: "result", isError: true, result: "无匹配", at: 2 },
+      { name: "Edit", phase: "call", title: "a.ts", args: { file_path: "src/a.ts", new_string: "b" }, at: 3 },
+      { name: "Edit", phase: "result", isError: false, at: 4 },
     ]);
     expect(rows).toEqual([
       { name: "Grep", done: true, isError: true, title: "pairedRunTools", result: "无匹配", at: 1 },
+      { name: "Edit", done: true, isError: false, title: "a.ts", args: { file_path: "src/a.ts", new_string: "b" }, at: 3 },
     ]);
   });
 
@@ -308,6 +407,26 @@ describe("runConversationChunks", () => {
       { kind: "tools", tools: [{ name: "Read", phase: "call", at: 1 }] },
       { kind: "prompt", text: "继续" },
       { kind: "tools", tools: [{ name: "Read", phase: "result", isError: false, at: 2 }] },
+    ]);
+  });
+
+  it("正文段与工具组按事件顺序穿插；相邻 text 条目合并成一块", () => {
+    const chunks = runConversationChunks([
+      { kind: "text", text: "先说两句" },
+      { kind: "tool", tool: { name: "Edit", phase: "call", title: "a.ts", at: 1 } },
+      { kind: "tool", tool: { name: "Edit", phase: "result", isError: false, at: 2 } },
+      { kind: "text", text: "中段" },
+      { kind: "text", text: "续写" },
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 3 } },
+    ]);
+    expect(chunks).toEqual([
+      { kind: "text", text: "先说两句" },
+      { kind: "tools", tools: [
+        { name: "Edit", phase: "call", title: "a.ts", at: 1 },
+        { name: "Edit", phase: "result", isError: false, at: 2 },
+      ] },
+      { kind: "text", text: "中段续写" },
+      { kind: "tools", tools: [{ name: "Read", phase: "call", at: 3 }] },
     ]);
   });
 });

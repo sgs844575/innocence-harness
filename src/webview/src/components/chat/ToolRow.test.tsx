@@ -107,15 +107,20 @@ describe("ToolRow", () => {
         onOpenSubagent={onOpenSubagent}
       />,
     );
-    // 主按钮即面板入口（title 提示），点击回传关联键，不渲染下拉区。
+    // 主按钮即面板入口（title 提示），点击回传定位线索（关联键+标题+结果文本），不渲染下拉区。
     fireEvent.click(screen.getByTitle("tool.task.openPanel"));
-    expect(onOpenSubagent).toHaveBeenCalledWith("inv-9");
+    expect(onOpenSubagent).toHaveBeenCalledWith({
+      invocationId: "inv-9",
+      title: "定位渲染",
+      resultText: "不应出现在时间线",
+    });
     expect(container.querySelector(".acc-panel")).toBeNull();
     expect(screen.queryByText("不应出现在时间线")).toBeNull();
   });
 
-  it("缺 invocationId 的子代理行保持下拉展开（历史消息兜底）", () => {
-    render(
+  it("缺 invocationId 的子代理行（旧记录）同样可点击：回传标题/结果文本线索，无下拉无结果块", () => {
+    const onOpenSubagent = vi.fn();
+    const { container } = render(
       <ToolRow
         t={t}
         row={{
@@ -127,16 +132,19 @@ describe("ToolRow", () => {
           isError: false,
           resultText: "历史结论",
         }}
-        onOpenSubagent={() => {}}
+        onOpenSubagent={onOpenSubagent}
       />,
     );
-    fireEvent.click(screen.getByTitle("tool.preview"));
-    expect(screen.getByText("历史结论")).toBeTruthy();
+    fireEvent.click(screen.getByTitle("tool.task.openPanel"));
+    expect(onOpenSubagent).toHaveBeenCalledWith({ title: "旧记录", resultText: "历史结论" });
+    expect(screen.queryByTitle("tool.preview")).toBeNull();
+    expect(container.querySelector(".acc-panel")).toBeNull();
+    expect(screen.queryByText("历史结论")).toBeNull();
   });
 
-  it("有 invocationId 但档案缺失（不在 subagentInvocations 集合）的行退化为可展开", () => {
+  it("有 invocationId 即面板入口（档案缺失也不退化为可展开行）", () => {
     const onOpenSubagent = vi.fn();
-    render(
+    const { container } = render(
       <ToolRow
         t={t}
         row={{
@@ -150,36 +158,17 @@ describe("ToolRow", () => {
           resultText: "落盘前的结论",
         }}
         onOpenSubagent={onOpenSubagent}
-        subagentInvocations={new Set(["inv-other"])}
       />,
     );
-    // 无面板入口，点击预览展开只读结果（final/error 兜底详情）。
-    expect(screen.queryByTitle("tool.task.openPanel")).toBeNull();
-    fireEvent.click(screen.getByTitle("tool.preview"));
-    expect(screen.getByText("落盘前的结论")).toBeTruthy();
-    expect(onOpenSubagent).not.toHaveBeenCalled();
-  });
-
-  it("档案集合包含 invocationId 时保持面板入口（集合过滤不误伤）", () => {
-    const onOpenSubagent = vi.fn();
-    render(
-      <ToolRow
-        t={t}
-        row={{
-          id: "c6",
-          toolName: "Task",
-          verbKey: "tool.verb.task",
-          title: "有档案",
-          invocationId: "inv-ok",
-          running: false,
-          isError: false,
-        }}
-        onOpenSubagent={onOpenSubagent}
-        subagentInvocations={new Set(["inv-ok"])}
-      />,
-    );
+    // 整行即面板入口，点击回传定位线索；不渲染下拉区与只读结果。
     fireEvent.click(screen.getByTitle("tool.task.openPanel"));
-    expect(onOpenSubagent).toHaveBeenCalledWith("inv-ok");
+    expect(onOpenSubagent).toHaveBeenCalledWith({
+      invocationId: "inv-gone",
+      title: "孤儿调用",
+      resultText: "落盘前的结论",
+    });
+    expect(container.querySelector(".acc-panel")).toBeNull();
+    expect(screen.queryByText("落盘前的结论")).toBeNull();
   });
 
   it("非子代理行不渲染面板入口", () => {

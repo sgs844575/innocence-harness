@@ -1,9 +1,12 @@
 // 工具行（对齐参考规格）：图标(16px) + 动词(运行中渐变文字) + 文件图标与名称
 // + 路径 + ±diff(mono tabular-nums)。编辑/写入/读取行拆两个点击目标：文件簇
 // （图标+名称+路径+±计数）在右侧 dock 打开文件标签（修改内容或原文），末尾
-// chevron 下拉按钮走现存的内联展开预览；其余行整行点击展开。展开区：diff 红绿
-// 行块（max-h-60 限高自滚动，防长写入撑爆时间线）/ 终端卡 / todo 清单 / 结果块；
-// 运行中无内容时给脉冲占位，完成但无输出时给「无输出」。
+// chevron 下拉按钮走现存的内联展开预览；Task（子代理）行不做下拉展开——整行
+// 点击携带关联键/标题/结果文本在 dock 解析到该次运行的会话（runForTaskRow：
+// 键优先，无键旧记录按标题唯一匹配，无法唯一确定时落子代理归档列表）；其余
+// 行整行点击展开。
+// 展开区：diff 红绿行块（max-h-60 限高自滚动，防长写入撑爆时间线）/ 终端卡 /
+// todo 清单 / 结果块；运行中无内容时给脉冲占位，完成但无输出时给「无输出」。
 import { useState } from "react";
 import {
   Bot,
@@ -18,7 +21,17 @@ import {
   Search,
   SquareTerminal,
 } from "lucide-react";
+import type { TaskRowClue } from "../../state/subagentRuns";
 import type { ToolRowModel } from "./toolRows";
+
+/** Task 行的面板定位载荷：关联键（新记录）+ 标题/结果文本（旧记录回退匹配）。 */
+function taskRowClue(row: ToolRowModel): TaskRowClue {
+  return {
+    ...(row.invocationId !== undefined ? { invocationId: row.invocationId } : {}),
+    ...(row.title ? { title: row.title } : {}),
+    ...(row.resultText ? { resultText: row.resultText } : {}),
+  };
+}
 
 function rowIcon(row: ToolRowModel): typeof FileText {
   switch (row.verbKey) {
@@ -126,27 +139,23 @@ export function ToolRow({
   t,
   row,
   onOpenSubagent,
-  subagentInvocations,
   onOpenFile,
 }: {
   t: (key: string) => string;
   row: ToolRowModel;
-  /** 子代理行：整行点击在右侧面板打开该次运行（不再下拉展开）。 */
-  onOpenSubagent?: (invocationId: string) => void;
-  /** 有档案的 Task 调用集合：提供时，缺档案的 Task 行退化为普通可展开行
-   *  （兜底只读 resultText 详情）；未提供时不设限。 */
-  subagentInvocations?: ReadonlySet<string>;
+  /** 子代理行：整行点击在右侧 dock 打开该次运行的会话；载荷携带关联键 +
+   *  行标题/结果文本，供无键旧记录在面板侧按标题唯一匹配（见 runForTaskRow）。 */
+  onOpenSubagent?: (clue: TaskRowClue) => void;
   /** 文件行（编辑/写入/读取）：文件簇点击在右侧 dock 打开文件标签。 */
   onOpenFile?: (row: ToolRowModel) => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const Icon = rowIcon(row);
-  const subagentLink =
-    row.verbKey === "tool.verb.task" && row.invocationId && onOpenSubagent &&
-    (subagentInvocations === undefined || subagentInvocations.has(row.invocationId))
-      ? row.invocationId
-      : undefined;
+  const isTaskRow = row.verbKey === "tool.verb.task";
+  // Task 行（子代理）不做下拉展开：整行跳转 dock（有关联键直达该次运行，无键落列表）。
+  const subagentLink = isTaskRow && onOpenSubagent !== undefined;
   const fileLink = !subagentLink && row.filePath && onOpenFile ? row.filePath : undefined;
+  const expandable = !subagentLink && !isTaskRow;
   const toggle = (): void => setOpen((value) => !value);
   const countsRow =
     (row.additions !== undefined && row.additions > 0) || (row.deletions !== undefined && row.deletions > 0) ? (
@@ -176,10 +185,12 @@ export function ToolRow({
       <div className="group/tool-summary inline-flex max-w-full items-center gap-2 self-start text-left">
         <button
           type="button"
-          onClick={() => (subagentLink ? onOpenSubagent?.(subagentLink) : toggle())}
-          {...(subagentLink ? {} : { "aria-expanded": open })}
+          onClick={subagentLink ? () => onOpenSubagent?.(taskRowClue(row)) : expandable ? toggle : undefined}
+          {...(expandable ? { "aria-expanded": open } : {})}
           title={subagentLink ? t("tool.task.openPanel") : fileLink ? undefined : row.detail ? `${row.detail}/${row.title}` : row.title || t(row.verbKey)}
-          className="inline-flex min-w-0 cursor-pointer items-center gap-2 transition-colors"
+          className={`inline-flex min-w-0 items-center gap-2 transition-colors ${
+            subagentLink || expandable ? "cursor-pointer" : "cursor-default"
+          }`}
         >
           <Icon size={16} className="size-4 shrink-0 text-(--color-muted)" aria-hidden />
           <span
@@ -219,7 +230,7 @@ export function ToolRow({
             {countsRow}
           </button>
         )}
-        {!subagentLink && (
+        {expandable && (
           <button
             type="button"
             onClick={toggle}
@@ -240,7 +251,7 @@ export function ToolRow({
           </button>
         )}
       </div>
-      {!subagentLink && (
+      {expandable && (
         <div className="acc-panel" data-open={open}>
           <div className="acc-panel-inner">
             <div className="space-y-2 pt-2">
@@ -275,19 +286,17 @@ export function ToolTimeline({
   t,
   rows,
   onOpenSubagent,
-  subagentInvocations,
   onOpenFile,
 }: {
   t: (key: string) => string;
   rows: ToolRowModel[];
-  onOpenSubagent?: (invocationId: string) => void;
-  subagentInvocations?: ReadonlySet<string>;
+  onOpenSubagent?: (clue: TaskRowClue) => void;
   onOpenFile?: (row: ToolRowModel) => void;
 }): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       {rows.map((row) => (
-        <ToolRow key={row.id} t={t} row={row} onOpenSubagent={onOpenSubagent} subagentInvocations={subagentInvocations} onOpenFile={onOpenFile} />
+        <ToolRow key={row.id} t={t} row={row} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} />
       ))}
     </div>
   );

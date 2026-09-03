@@ -9,6 +9,7 @@ import { ThinkingRow } from "./chat/ThinkingRow";
 import { ToolTimeline } from "./chat/ToolRow";
 import { segmentParts } from "./chat/segmentParts";
 import { buildToolRows, type ToolRowModel } from "./chat/toolRows";
+import type { TaskRowClue } from "../state/subagentRuns";
 
 interface Props {
   t: (key: string) => string;
@@ -21,15 +22,14 @@ interface Props {
   onContinue?: () => void;
   /** 代码外观（外观设置）：高亮主题对 + 行号开关。 */
   code?: CodeAppearance;
-  /** 子代理工具行：在右侧面板中查看该次运行。 */
-  onOpenSubagent?: (invocationId: string) => void;
-  /** 有档案的 Task 调用集合（缺档案的 Task 行退化为可展开行）。 */
-  subagentInvocations?: ReadonlySet<string>;
+  /** 子代理工具行：在右侧面板中查看该次运行（载荷含关联键/标题/结果文本，
+   *  无法唯一确定时落归档列表）。 */
+  onOpenSubagent?: (clue: TaskRowClue) => void;
   /** 文件工具行：文件簇点击在右侧 dock 打开文件标签。 */
   onOpenFile?: (row: ToolRowModel) => void;
 }
 
-export function MessageItem({ t, message, canEdit, onEditSend, continuable, onContinue, code, onOpenSubagent, subagentInvocations, onOpenFile }: Props): React.JSX.Element {
+export function MessageItem({ t, message, canEdit, onEditSend, continuable, onContinue, code, onOpenSubagent, onOpenFile }: Props): React.JSX.Element {
   if (message.role === "user") {
     return <UserBubble t={t} message={message} canEdit={canEdit === true} onEditSend={onEditSend} />;
   }
@@ -51,7 +51,7 @@ export function MessageItem({ t, message, canEdit, onEditSend, continuable, onCo
           );
         }
         if (segment.kind === "tools") {
-          return <ToolTimeline key={index} t={t} rows={buildToolRows(segment.parts)} onOpenSubagent={onOpenSubagent} subagentInvocations={subagentInvocations} onOpenFile={onOpenFile} />;
+          return <ToolTimeline key={index} t={t} rows={buildToolRows(segment.parts)} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} />;
         }
         return (
           <div key={index} className="min-h-6">
