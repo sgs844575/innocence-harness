@@ -897,6 +897,43 @@ describe("runLoop", () => {
     expect(tr.content).not.toContain("worker cancelled");
   });
 
+  it("recovers DSML-markup tool calls leaked into text and executes them", async () => {
+    const read = fakeTool("Read", async (args) => ({ content: `read:${String(args.path ?? "")}` }));
+    const glob = fakeTool("Glob", async () => ({ content: "files" }));
+    // 实机漏出形态：模型想并行调用工具，却把原生标记写进了正文文本通道。
+    const envelope = [
+      "<｜DSML｜｜tool_calls>",
+      '<｜DSML｜｜invoke name="Read">',
+      '<｜DSML｜｜parameter name="path" string="true">package.json</｜DSML｜｜parameter>',
+      '<｜DSML｜｜parameter name="offset" string="false">95</｜DSML｜｜parameter>',
+      '<｜DSML｜｜parameter name="limit" string="false">10</｜DSML｜｜parameter>',
+      "</｜DSML｜｜invoke>",
+      '<｜DSML｜｜invoke name="Glob">',
+      '<｜DSML｜｜parameter name="pattern" string="true">.*</｜DSML｜｜parameter>',
+      "</｜DSML｜｜invoke>",
+      "</｜DSML｜｜tool_calls>",
+    ].join(" ");
+    const provider = scriptedProvider([
+      { text: `请继续避免遗漏。\n${envelope}` },
+      { text: "done" },
+    ]);
+    const { events, history, run } = await setup([read, glob], provider);
+
+    const result = await run("继续");
+    // 漏出的两个调用照常执行（数值参数还原为数字）。
+    expect(read.calls).toHaveLength(1);
+    expect(read.calls[0]).toMatchObject({ path: "package.json", offset: 95, limit: 10 });
+    expect(glob.calls).toHaveLength(1);
+    // 历史与持久化事件不带标记残留（token 流式事件是落账前的瞬时展示，
+    // 随干净的 assistantMessage 事件整体替换）；助手轮携带结构化 toolCall。
+    expect(JSON.stringify(history)).not.toContain("DSML");
+    const persisted = events.filter((event) => event.type !== "token");
+    expect(JSON.stringify(persisted)).not.toContain("DSML");
+    const assistant = history.find((message) => message.role === "assistant");
+    expect(assistant?.parts.some((part) => part.type === "toolCall" && part.toolName === "Read")).toBe(true);
+    expect(result.finalText).toBe("done");
+  });
+
   it("fail-closes remaining calls after a stop instead of consulting the permission chain", async () => {
     const stop = new AbortController();
     let asks = 0;

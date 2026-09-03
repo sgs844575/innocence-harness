@@ -22,6 +22,7 @@ import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innoce
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { classifyModelRequestError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import { recoverDsmlToolCalls } from "./dsml-recovery";
 
 export interface LoopOptions {
   provider: Provider;
@@ -298,6 +299,11 @@ export async function runLoop(
     log: () => {}, // session installs a real logger over onEvent
   };
 
+  // 漏到文本通道的原生工具调用标记（DSML 信封）回收后的调用 id 序列。
+  let dsmlCallSeq = 0;
+  const nextDsmlCallId = (): string =>
+    `call_dsml_${Date.now().toString(36)}_${(dsmlCallSeq++).toString(36)}`;
+
   let aborted = false;
   let turns = 0;
   const stepMetadata: TurnMetadata[] = [];
@@ -341,7 +347,9 @@ export async function runLoop(
         break;
       }
 
-      const parts = step.parts;
+      // 文本通道漏出的原生工具调用标记先回收成结构化调用：被漏出的
+      // invoke 照常走权限/执行/落账管线，正文不再携带标记。
+      const parts = recoverDsmlToolCalls(step.parts, nextDsmlCallId);
       if (parts.length === 0) break;
 
       const calls = parts.filter(
@@ -613,8 +621,9 @@ export async function runLoop(
       if (epilogue.aborted) {
         aborted = true;
       } else if (!epilogue.error) {
-        // 收尾步只取文本/思考；模型在无工具定义下仍执意发的调用轮被丢弃。
-        const textParts = epilogue.parts.filter(
+        // 收尾步只取文本/思考（标记同样回收剥离）；模型在无工具定义下
+        // 仍执意发的调用轮被丢弃。
+        const textParts = recoverDsmlToolCalls(epilogue.parts, nextDsmlCallId).filter(
           (part) => part.type === "text" || part.type === "thinking",
         );
         if (textParts.length > 0) {

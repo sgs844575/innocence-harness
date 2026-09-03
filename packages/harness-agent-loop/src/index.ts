@@ -13,3 +13,4 @@ export {
   type LoopRunOptions,
   type RunLoopFunction,
 } from "./service";
+export { recoverDsmlToolCalls } from "./dsml-recovery";
