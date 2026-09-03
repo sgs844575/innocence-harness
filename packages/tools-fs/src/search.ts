@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { matchGlob } from "@innocenceharness/harness-permissions";
 import { resolveWithin, requireString, walkFiles, workspaceScope } from "./paths";
+import { engineGrep, engineList, findEngine, type EngineMatch } from "./search-engines";
 import type { Tool, ToolContext } from "@innocenceharness/harness-tools";
 
 const FILE_LIMIT = 500;
@@ -12,6 +13,49 @@ function listWorkspaceFiles(ctx: ToolContext, subDir?: string): string[] {
   const files: string[] = [];
   walkFiles(ctx.workspaceRoot, base, files, FILE_LIMIT);
   return files;
+}
+
+/**
+ * 外部引擎失败时回退纯 Node 扫描；用户中止不是失败，直接上抛交还给
+ * 执行器按中止语义收尾。
+ */
+async function withEngineFallback<T>(
+  ctx: ToolContext,
+  capability: "grep" | "list",
+  run: (engine: NonNullable<Awaited<ReturnType<typeof findEngine>>>) => Promise<T>,
+): Promise<T | undefined> {
+  if (ctx.signal.aborted) return undefined;
+  const engine = await findEngine(capability);
+  if (!engine) return undefined;
+  try {
+    return await run(engine);
+  } catch (err) {
+    if (ctx.signal.aborted) throw err;
+    ctx.log("warn", "search engine failed; falling back to node scan", err);
+    return undefined;
+  }
+}
+
+/** 命中行形状与纯 Node 路径完全一致：`文件:行号: 内容` + 截断披露。 */
+function formatGrepHits(matches: EngineMatch[], total: number, truncated: boolean): string {
+  if (total === 0) return "没有匹配行。";
+  const shown = matches
+    .slice(0, MATCH_LIMIT)
+    .map((m) => `${m.file}:${m.line}: ${m.text.trim().slice(0, 200)}`);
+  let disclosure = "";
+  if (total > MATCH_LIMIT) {
+    disclosure = `\n[命中已截断：展示前 ${MATCH_LIMIT} 条 / 共 ${total} 条命中]`;
+  } else if (truncated) {
+    disclosure = `\n[命中已截断：展示前 ${matches.length} 条 / 结果超出读取上限]`;
+  }
+  return shown.join("\n") + disclosure;
+}
+
+function formatGlobHits(hits: string[]): string {
+  if (hits.length === 0) return "没有匹配的文件。";
+  return (
+    hits.join("\n") + (hits.length >= FILE_LIMIT ? `\n[已达 ${FILE_LIMIT} 条上限]` : "")
+  );
 }
 
 /** Search resources key on the searched directory ("." for the whole workspace). */
@@ -48,13 +92,17 @@ export const globTool: Tool = {
   async execute(args, ctx: ToolContext) {
     const pattern = requireString(args, "pattern");
     const subDir = typeof args.path === "string" ? args.path : undefined;
+    const engineHits = await withEngineFallback(ctx, "list", (engine) =>
+      engineList(engine, { root: ctx.workspaceRoot, subDir, signal: ctx.signal }),
+    );
+    if (engineHits) {
+      return {
+        content: formatGlobHits(engineHits.filter((f) => matchGlob(pattern, f)).slice(0, FILE_LIMIT)),
+      };
+    }
     const files = listWorkspaceFiles(ctx, subDir);
     const hits = files.filter((f) => matchGlob(pattern, f));
-    if (hits.length === 0) return { content: "没有匹配的文件。" };
-    return {
-      content:
-        hits.join("\n") + (hits.length >= FILE_LIMIT ? `\n[已达 ${FILE_LIMIT} 条上限]` : ""),
-    };
+    return { content: formatGlobHits(hits) };
   },
 };
 
@@ -83,17 +131,32 @@ export const grepTool: Tool = {
     return { pattern: args.pattern, glob: args.glob, path: args.path };
   },
   async execute(args, ctx: ToolContext) {
+    const pattern = requireString(args, "pattern");
     let regex: RegExp;
     try {
-      regex = new RegExp(requireString(args, "pattern"), "u");
+      regex = new RegExp(pattern, "u");
     } catch (err) {
       throw new Error(`无效正则：${err instanceof Error ? err.message : err}`);
     }
     const globFilter = typeof args.glob === "string" ? args.glob : undefined;
     const subDir = typeof args.path === "string" ? args.path : undefined;
-    const files = listWorkspaceFiles(ctx, subDir);
+    const engineHits = await withEngineFallback(ctx, "grep", (engine) =>
+      engineGrep(engine, {
+        root: ctx.workspaceRoot,
+        pattern,
+        glob: globFilter,
+        subDir,
+        signal: ctx.signal,
+      }),
+    );
+    if (engineHits) {
+      return {
+        content: formatGrepHits(engineHits.matches, engineHits.matches.length, engineHits.truncated),
+      };
+    }
 
-    const hits: string[] = [];
+    const files = listWorkspaceFiles(ctx, subDir);
+    const matches: EngineMatch[] = [];
     let totalHits = 0;
     for (const rel of files) {
       if (globFilter && !matchGlob(globFilter, path.posix.basename(rel))) continue;
@@ -110,17 +173,12 @@ export const grepTool: Tool = {
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
           totalHits++;
-          if (hits.length < MATCH_LIMIT) {
-            hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
+          if (matches.length < MATCH_LIMIT) {
+            matches.push({ file: rel, line: i + 1, text: lines[i] });
           }
         }
       }
     }
-    if (totalHits === 0) return { content: "没有匹配行。" };
-    const disclosure =
-      totalHits > MATCH_LIMIT
-        ? `\n[命中已截断：展示前 ${MATCH_LIMIT} 条 / 共 ${totalHits} 条命中]`
-        : "";
-    return { content: hits.join("\n") + disclosure };
+    return { content: formatGrepHits(matches, totalHits, false) };
   },
 };
