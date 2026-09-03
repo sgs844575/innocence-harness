@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SubagentLifecycleEvent } from "../../../shared/ipc";
 import {
+  filterHydrationEntries,
   formatRunDuration,
   initialSubagentRunsState,
   pairedRunTools,
@@ -77,6 +78,13 @@ describe("reduceSubagentRuns", () => {
     const after = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "迟到" }, 6000);
     expect(after).toBe(state);
   });
+
+  it("重放的 started 对已建档运行是幂等空操作（不重置状态/时间轴）", () => {
+    let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" }, 5000);
+    const replayed = reduceSubagentRuns(state, started, 9000);
+    expect(replayed).toBe(state);
+  });
 });
 
 describe("runsForSession / runByInvocation", () => {
@@ -97,6 +105,17 @@ describe("runsForSession / runByInvocation", () => {
   it("按 Task 调用 id 反查运行", () => {
     expect(runByInvocation(state, "inv-2")?.childId).toBe("c2");
     expect(runByInvocation(state, "inv-none")).toBeUndefined();
+  });
+});
+
+describe("filterHydrationEntries", () => {
+  it("内存已有档案的 childId 不回放（实况优先，历史终态不覆盖实况）", () => {
+    const state = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    const entries = [
+      { at: 1000, event: started },
+      { at: 5000, event: { ...started, childId: "c2", status: "completed" as const, final: "另一报告" } },
+    ];
+    expect(filterHydrationEntries(state, entries)).toEqual([entries[1]]);
   });
 });
 

@@ -5,13 +5,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  adoptMessageId,
   appendMessage,
   createSession,
   deleteSession,
   initSessionStore,
   listMessages,
   listSessions,
+  listSubagentHistory,
 } from "./sessions";
+import { appendSubagentHistoryEvent, subagentHistoryFile } from "./subagentHistoryStore";
 import { appendText, messageText } from "../shared/ipc";
 
 let dir: string;
@@ -36,6 +39,18 @@ describe("session store persistence", () => {
     expect(restored.map((s) => s.id)).toEqual([session.id]);
     expect(restored[0].title).toBe("新会话");
     expect(restored[0].messageCount).toBe(0);
+  });
+
+  it("子代理档案随会话可读回，删除会话时连同 sidecar 一并清理", () => {
+    const s = createSession();
+    const file = subagentHistoryFile(dir, s.id)!;
+    appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: s.id, description: "任务", status: "started" }, 1000);
+    expect(listSubagentHistory(s.id)).toEqual([
+      { at: 1000, event: { childId: "c1", parentSessionId: s.id, description: "任务", status: "started" } },
+    ]);
+    deleteSession(s.id);
+    expect(existsSync(file)).toBe(false);
+    expect(listSubagentHistory(s.id)).toEqual([]);
   });
 
   it("一轮内的多个工具轮归并为一条助手消息（重载后不拆分，对齐 live 形状）", () => {
@@ -86,6 +101,16 @@ describe("session store persistence", () => {
     const b = restored.find((s) => s.id === without.id)!;
     expect(a.workspaceRoot).toBe("D:/x/alpha");
     expect(b.workspaceRoot ?? "").toBe("");
+  });
+
+  it("aux 标记随会话持久化并在重启后恢复（普通会话缺省）", () => {
+    const auxSession = createSession({ title: "辅助对话 1", workspaceRoot: "D:/x/alpha", aux: true });
+    const normal = createSession();
+    expect(listSessions().find((s) => s.id === auxSession.id)?.aux).toBe(true);
+    initSessionStore(dir); // restart
+    const restored = listSessions();
+    expect(restored.find((s) => s.id === auxSession.id)?.aux).toBe(true);
+    expect(restored.find((s) => s.id === normal.id)?.aux).toBeUndefined();
   });
 
   it("corrupt transcript (NUL-filled after power loss) heals aside + surfaces a notice, not a silent blank", () => {    const session = createSession();
@@ -363,6 +388,31 @@ describe("session store persistence", () => {
     writeFileSync(path.join(dir, "sessions.json"), "not json{{{", "utf8");
     initSessionStore(dir);
     expect(listSessions()).toEqual([]);
+  });
+});
+
+describe("adoptMessageId", () => {
+  it("采用渲染层透传的合法未占用 id（乐观气泡与落账同 id，编辑重发可截断）", () => {
+    const s = createSession();
+    expect(adoptMessageId(s.id, "msg_renderer_1_u")).toBe("msg_renderer_1_u");
+  });
+
+  it("id 已被会话占用时回退到本地生成（不落账重复 id）", () => {
+    const s = createSession();
+    appendMessage(s.id, { id: "taken", role: "user", parts: [{ type: "text", text: "hi" }], createdAt: 1 });
+    const adopted = adoptMessageId(s.id, "taken");
+    expect(adopted).not.toBe("taken");
+    expect(adopted.length).toBeGreaterThan(0);
+  });
+
+  it("非法请求（非字符串/空串/未知会话）一律回退到本地生成", () => {
+    const s = createSession();
+    for (const bad of [undefined, null, 42, ""]) {
+      const adopted = adoptMessageId(s.id, bad);
+      expect(typeof adopted).toBe("string");
+      expect(adopted.length).toBeGreaterThan(0);
+    }
+    expect(adoptMessageId("sess_missing", "msg_renderer_1_u")).not.toBe("msg_renderer_1_u");
   });
 });
 

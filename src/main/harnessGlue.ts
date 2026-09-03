@@ -38,6 +38,8 @@ import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry }
 import { createSendToTeammate } from "./teammatePort";
 import { sessionHasFinishedTurn, summarizeSessionUsage } from "./sessionUsage";
 import * as sessions from "./sessions";
+import { ensureSessionScratchDir } from "./sessionScratch";
+import { appendSubagentHistoryEvent, subagentHistoryFile } from "./subagentHistoryStore";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
@@ -404,13 +406,18 @@ const runtime = new HarnessRuntime({
   sessionSpine: async () => (await ensureBoot()).spine,
   // Authoritative per-route workspace root: a live task's effective workspace
   // (the isolated worktree) wins, then the session-bound project root, then
-  // settings — settings.workspaceRoot is never the sole task root.
-  workspaceRootFor: (context) =>
+  // settings — settings.workspaceRoot is never the sole task root. The last
+  // stop for project-less sessions is a per-session scratch dir under
+  // ~/.innocence/tmp/<sessionId> (created on demand), so fs/shell tools never
+  // anchor to the process install dir; unsafe ids keep the in-package
+  // fallback (settings root || process.cwd()).
+  workspaceRootFor: async (context) =>
     (context.taskId ? taskBridge.getRoute(context.taskId, context.routeId)?.workspaceRoot : undefined) ||
     resolveTaskWorkspaceRoot(context.sessionId, {
       getSessionWorkspaceRoot: (id) => sessions.getSession(id)?.workspaceRoot || undefined,
       fallbackRoot: settings.workspaceRoot,
-    }),
+    }) ||
+    (await ensureSessionScratchDir(context.sessionId)),
   forkRoute: (input) => taskBridge.forkRoute(input),
   // S2a 工作树会话判定：与 workspaceRootFor 同一谓词（isolated 模式或有效
   // 根位于任务工作树存储目录下），供 buildSession 驱动子代理片段注册。
@@ -491,6 +498,9 @@ const runtime = new HarnessRuntime({
   hooks: {
     ...createRuntimeHooks(pendingAsks),
     onSubagentLifecycle: (event) => {
+      // 广播实况的同时落盘档案（delta 不落盘，见 subagentHistoryStore）——
+      // 渲染层重启后按会话回放建档，历史运行才可再查看。
+      appendSubagentHistoryEvent(subagentHistoryFile(transcriptsDir(), event.parentSessionId), event, Date.now());
       const win = getMainWindow();
       if (win && !win.isDestroyed()) win.webContents.send(IPC.subagentLifecycle, event);
     },
@@ -630,7 +640,13 @@ export async function pickWorkspace(): Promise<string> {
 
 export async function respondPermission(requestId: string, choice: PermissionChoice): Promise<void> {
   const pending = pendingAsks.get(requestId);
-  if (!pending) throw new Error("permission request not found");
+  // 未知 id = 请求已了结（超时兜底 deny、stop/dispose 取消、重复点击的第二次
+  // 应答）。迟到/重复的 UI 应答不能改变 loop 已拿到的决定，按幂等空操作处理，
+  // 只留 warn 轨迹，避免 IPC handler 抛出主进程级错误。
+  if (!pending) {
+    logger.warn("permission response for settled request ignored", { requestId });
+    return;
+  }
   pending.finish(choice);
 }
 
@@ -682,6 +698,33 @@ export function sendChatTurn(sessionId: string, text: string): string {
 export function stopChatTurn(sessionId: string): void {
   cancelPendingAsks(pendingAsks, sessionId);
   runtime.stop(sessionId);
+}
+
+/**
+ * Edit-and-resend (replace semantics): truncates the edited message and
+ * everything after it (store + rewritten transcript), rewinds the route's
+ * in-memory history, then starts a fresh turn with the edited text. Guards:
+ * a running route and a task-bound session both refuse — a live turn would
+ * race the rewind, and the task layer's checkpoints cannot be rewound with
+ * the text layer. `newMessageId` is the renderer's optimistic bubble id,
+ * adopted for the persisted user message so a later resend can find it.
+ * Returns the new assistant message id.
+ */
+export function resendChatTurn(sessionId: string, fromMessageId: string, text: string, newMessageId?: string): string {
+  if (runtime.isRouteRunning(sessionId)) throw new Error("session is streaming");
+  if (sessionTaskRoutes.has(sessionId)) throw new Error("task-bound session cannot rewind");
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("empty message");
+  const rewind = sessions.truncateMessagesFrom(sessionId, fromMessageId);
+  if (!rewind) throw new Error("message not found");
+  runtime.rewindHistory(sessionId, rewind.keptUserTurns);
+  sessions.appendMessage(sessionId, {
+    id: sessions.adoptMessageId(sessionId, newMessageId),
+    role: "user",
+    parts: [{ type: "text", text: trimmed }],
+    createdAt: Date.now(),
+  });
+  return sendChatTurn(sessionId, trimmed);
 }
 
 /** Releases one chat session's agent resources (aborts runs, disposes its

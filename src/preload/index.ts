@@ -19,6 +19,8 @@ import {
   type TerminalExitEvent,
   type TerminalOutputEvent,
   type ShellTranscriptEvent,
+  type DockTerminalExitEvent,
+  type DockTerminalOutputEvent,
 } from "../shared/terminalIpc";
 
 function subscribe(channel: string, listener: (...args: never[]) => void): () => void {
@@ -32,6 +34,8 @@ const subscribeTask = <T>(channel: string, cb: (payload: T) => void): (() => voi
 
 const api: InnocenceCodeApi = {
   getAppInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  getAppMetrics: () => ipcRenderer.invoke(IPC.appMetrics),
+  exportLogs: () => ipcRenderer.invoke(IPC.appExportLogs),
   getTheme: () => ipcRenderer.invoke(IPC.themeGet),
   setTheme: (mode: ThemeMode) => ipcRenderer.invoke(IPC.themeSet, mode),
   onThemeChanged: (cb) => subscribe(IPC.themeChanged, cb as never),
@@ -59,7 +63,10 @@ const api: InnocenceCodeApi = {
   setSidebarGroupCollapsed: (id, collapsed) => ipcRenderer.invoke(IPC.sidebarGroupCollapse, id, collapsed),
   onSidebarChanged: (cb) => subscribe(IPC.sidebarChanged, cb as never),
   listMessages: (sessionId) => ipcRenderer.invoke(IPC.messagesList, sessionId),
-  sendMessage: (sessionId, text) => ipcRenderer.invoke(IPC.chatSend, sessionId, text),
+  sendMessage: (sessionId, text, userMessageId) =>
+    ipcRenderer.invoke(IPC.chatSend, sessionId, text, userMessageId),
+  resendMessage: (sessionId, fromMessageId, text, newMessageId) =>
+    ipcRenderer.invoke(IPC.chatResend, sessionId, fromMessageId, text, newMessageId),
   stopMessage: (sessionId, messageId) => ipcRenderer.invoke(IPC.chatStop, sessionId, messageId),
   onChatDelta: (cb) => subscribe(IPC.chatDelta, cb as never),
   onChatDone: (cb) => subscribe(IPC.chatDone, cb as never),
@@ -67,10 +74,27 @@ const api: InnocenceCodeApi = {
   onChatTool: (cb) => subscribe(IPC.chatTool, cb as never),
   onChatThinking: (cb) => subscribe(IPC.chatThinking, cb as never),
   onSubagentLifecycle: (cb) => subscribe(IPC.subagentLifecycle, cb as never),
+  listSubagentHistory: (sessionId) => ipcRenderer.invoke(IPC.subagentHistory, sessionId),
   onChatPermission: (cb) => subscribe(IPC.chatPermission, cb as never),
   respondChatPermission: (requestId, choice) =>
     ipcRenderer.invoke(IPC.chatPermissionRespond, requestId, choice),
   pickWorkspace: () => ipcRenderer.invoke(IPC.workspacePick),
+  workspaceGitBranch: (root) => ipcRenderer.invoke(IPC.workspaceGitBranch, root),
+  workspaceGitChanges: (root) => ipcRenderer.invoke(IPC.workspaceGitChanges, root),
+  workspaceGitBranches: (root) => ipcRenderer.invoke(IPC.workspaceGitBranches, root),
+  workspaceGitCheckout: (root, branch, create) =>
+    ipcRenderer.invoke(IPC.workspaceGitCheckout, root, branch, create),
+  listWorkspaceDir: (root, relDir) => ipcRenderer.invoke(IPC.workspaceListDir, root, relDir),
+  readWorkspaceFile: (root, rel) => ipcRenderer.invoke(IPC.workspaceReadFile, root, rel),
+  listWorkspaceFiles: (root) => ipcRenderer.invoke(IPC.workspaceListFiles, root),
+  workspaceGitReviewFiles: (root, scope) =>
+    ipcRenderer.invoke(IPC.workspaceGitReviewFiles, root, scope),
+  workspaceGitReviewDiff: (root, scope, path) =>
+    ipcRenderer.invoke(IPC.workspaceGitReviewDiff, root, scope, path),
+  browserEmulate: (request) => ipcRenderer.invoke(IPC.browserEmulate, request),
+  revealPath: (path) => ipcRenderer.invoke(IPC.hostRevealPath, path),
+  openExternal: (url) => ipcRenderer.invoke(IPC.hostOpenExternal, url),
+  getSessionPaths: (id) => ipcRenderer.invoke(IPC.sessionPaths, id),
   getHarnessSettings: () => ipcRenderer.invoke(IPC.settingsGet),
   setHarnessSettings: (settings) => ipcRenderer.invoke(IPC.settingsSet, settings),
   setProviderApiKey: (profileId, apiKey) => ipcRenderer.invoke(IPC.settingsApiKeySet, profileId, apiKey),
@@ -139,6 +163,12 @@ const terminalApi: TerminalIpcApi = {
   onTerminalOutput: (cb) => subscribeTask<TerminalOutputEvent>(TerminalIpcChannels.terminalOutput, cb),
   onTerminalExit: (cb) => subscribeTask<TerminalExitEvent>(TerminalIpcChannels.terminalExit, cb),
   onShellTranscript: (cb) => subscribeTask<ShellTranscriptEvent>(TerminalIpcChannels.terminalShell, cb),
+  dockCreate: (req) => ipcRenderer.invoke(TerminalIpcChannels.dockTerminalCreate, req),
+  dockWrite: (req) => ipcRenderer.invoke(TerminalIpcChannels.dockTerminalWrite, req),
+  dockResize: (req) => ipcRenderer.invoke(TerminalIpcChannels.dockTerminalResize, req),
+  dockDispose: (req) => ipcRenderer.invoke(TerminalIpcChannels.dockTerminalDispose, req),
+  onDockTerminalOutput: (cb) => subscribeTask<DockTerminalOutputEvent>(TerminalIpcChannels.dockTerminalOutput, cb),
+  onDockTerminalExit: (cb) => subscribeTask<DockTerminalExitEvent>(TerminalIpcChannels.dockTerminalExit, cb),
 };
 
 contextBridge.exposeInMainWorld("innocencecode", api);

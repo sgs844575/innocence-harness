@@ -16,7 +16,9 @@ import {
   type SessionRecord,
 } from "./sessionIndexStore";
 import { hydrateSessionMessages } from "./sessionHydration";
+import { removeSessionScratchDir } from "./sessionScratch";
 import { appendSessionMessage, updateSessionMessage } from "./sessionMessages";
+import { rewriteSessionTranscript, truncateSessionMessages, type SessionRewind } from "./sessionRewind";
 import {
   createForkWorktree,
   forkMessagePrefix,
@@ -26,6 +28,12 @@ import {
   type SessionForkOptions,
 } from "./sessionFork";
 import { createSidebarIndexStore, type SidebarIndexStore, type SidebarState } from "./sidebarIndexStore";
+import {
+  deleteSubagentHistory,
+  readSubagentHistory,
+  subagentHistoryFile,
+  type SubagentHistoryEntry,
+} from "./subagentHistoryStore";
 import type { SidebarContainer } from "../shared/sidebarIpc";
 import type { ChatMessage, Session } from "../shared/ipc";
 
@@ -77,7 +85,7 @@ export function listSessions(): Session[] {
   return order.map((id) => publicSessionView(sessions.get(id)!));
 }
 
-export function createSession(options?: { title?: string; workspaceRoot?: string }): Session {
+export function createSession(options?: { title?: string; workspaceRoot?: string; aux?: boolean }): Session {
   const id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const now = Date.now();
   const record: SessionRecord = {
@@ -87,6 +95,7 @@ export function createSession(options?: { title?: string; workspaceRoot?: string
     updatedAt: now,
     messageCount: 0,
     workspaceRoot: options?.workspaceRoot ?? "",
+    ...(options?.aux === true ? { aux: true } : {}),
     messages: [],
     messagesLoaded: true, // Fresh session: nothing on disk to restore.
   };
@@ -111,6 +120,14 @@ export function deleteSession(id: string): void {
       // Transcript removal is best-effort; the session itself is gone.
     }
   }
+  deleteSubagentHistory(subagentHistoryFile(storeDir, id));
+  // 无项目会话的暂存目录随会话一并清理（尽力而为，失败不阻断删除）。
+  removeSessionScratchDir(id);
+}
+
+/** 子代理运行档案（sidecar 回放用；渲染层按激活会话拉取建档）。 */
+export function listSubagentHistory(sessionId: string): SubagentHistoryEntry[] {
+  return readSubagentHistory(subagentHistoryFile(storeDir, sessionId));
 }
 
 /**
@@ -159,6 +176,11 @@ export function getSession(id: string): SessionRecord | undefined {
   return sessions.get(id);
 }
 
+/** 会话转录文件绝对路径（「复制任务路径」菜单项）；未知会话 → null。 */
+export function getSessionTranscriptPath(id: string): string | null {
+  return sessions.has(id) ? sessionTranscriptFile(storeDir, id) : null;
+}
+
 export function listMessages(id: string): ChatMessage[] {
   const record = sessions.get(id);
   if (!record) return [];
@@ -178,6 +200,41 @@ export function appendMessage(id: string, message: ChatMessage): void {
   }
   persistIndex();
   syncSidebar();
+}
+
+/**
+ * 渲染层乐观消息 id 透传：发送/编辑重发的乐观气泡 id 由渲染层先行生成并
+ * 随 IPC 带上，主进程落账沿用同一 id——否则乐观气泡的本地 id 不在存储里，
+ * 紧接着的编辑重发会因截断找不到消息而报 "message not found"。请求的 id
+ * 为合法字符串且会话内未占用时采用；否则（旧渲染层不带 id、id 冲突）回退
+ * 到本地生成。
+ */
+export function adoptMessageId(sessionId: string, requested: unknown): string {
+  if (typeof requested === "string" && requested.length > 0 && requested.length <= 128) {
+    const record = sessions.get(sessionId);
+    if (record) {
+      if (!record.messagesLoaded) hydrate(record);
+      if (!record.messages.some((m) => m.id === requested)) return requested;
+    }
+  }
+  return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}_u`;
+}
+
+/**
+ * 编辑重发的存储截断：删掉 fromMessageId（含）及其后所有消息，并按保留
+ * 消息整档重写主转录（重启后 hydration 与运行时播种都以重写文件为准，
+ * 被替换的轮次不会复活）。会话或消息不存在返回 undefined 由调用方报错。
+ */
+export function truncateMessagesFrom(id: string, fromMessageId: string): SessionRewind | undefined {
+  const record = sessions.get(id);
+  if (!record) return undefined;
+  if (!record.messagesLoaded) hydrate(record);
+  const rewind = truncateSessionMessages(record, fromMessageId);
+  if (!rewind) return undefined;
+  persistIndex();
+  syncSidebar();
+  rewriteSessionTranscript(sessionTranscriptFile(storeDir, id), rewind.keptMessages);
+  return rewind;
 }
 
 export function getSidebarState(): SidebarState {
@@ -214,7 +271,7 @@ export function reorderSidebarContainers(kind: "projects" | "groups", orderedIds
   sidebarStore.reorderContainers(kind, orderedIds);
 }
 
-export function upsertSidebarGroup(group: { id: string; name: string; collapsed?: boolean; sessionIds?: readonly string[] }): void {
+export function upsertSidebarGroup(group: { id: string; name: string; collapsed?: boolean; sessionIds?: readonly string[]; color?: string }): void {
   if (!sidebarStore) throw new Error("sidebar store not initialized");
   sidebarStore.upsertSidebarGroup(group);
 }

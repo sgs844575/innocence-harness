@@ -1,140 +1,96 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+// 会话页：消息时间线 + 左缘虚线刻度 + 右上 Git 浮动面板 + 底部输入卡；
+// 中断的末条助手消息带「继续」图标钮；上滚脱离贴底时出回到底部钮；发送即回贴底。
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown } from "lucide-react";
 import type { ChatMessage, ChatPermissionEvent, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
-import { MessageItem, type ForkMessageCommand, type TaskChangeCardCommand } from "./MessageItem";
+import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
-import { ProjectPicker, type RecentProject } from "./composer/ProjectPicker";
-import type { AgentModeOption } from "./composer/AgentModePicker";
-import { AgentActivityCapsule } from "./context-capsule/AgentActivityCapsule";
+import { GitCapsule, type GitCapsuleData } from "./GitCapsule";
 import { ChatDashes } from "./chat/ChatDashes";
-import type { AgentActivityProjection } from "./context-capsule/activityProjection";
-import { defaultWorkspacePresentationState, reduceWorkspacePresentationState, workspaceLayoutForWidth } from "../state/workspacePresentationState";
-import { api } from "../lib/ipc";
+import { WaitingRow } from "./chat/WaitingRow";
+import { capsuleHasContent, capsuleRightGutter, CAPSULE_SQUEEZE_MIN_WIDTH } from "./chat/chatLayout";
+import type { ToolRowModel } from "./chat/toolRows";
+
+// 内容列宽度：默认 896px（max-w-4xl）；宽窗分档放宽，最大化时不显窄——
+// 视口 ≥1280 放宽到 1024（5xl），≥1536 放宽到 1152（6xl）。三处共用保持一致。
+const columnClass = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
 
 interface Props {
   t: (key: string) => string;
-  appName: string;
   messages: ChatMessage[];
   streaming: boolean;
-  settings: HarnessSettings | null;
-  /** agent 模式目录（App 层 useAgentModes 拉取，透传 Composer）。 */
-  agentModes?: AgentModeOption[];
   permission: ChatPermissionEvent | null;
-  onSettingsChange: (patch: Partial<HarnessSettings>) => void;
-  onPermissionRespond: (requestId: string, choice: PermissionChoice) => void;
+  settings: HarnessSettings | null;
+  onPatchSettings: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
+  /** 编辑重发（替换语义）：截断 messageId 起的消息并以新文本重开一轮。 */
+  onEditResend: (messageId: string, text: string) => void;
   onStop: () => void;
-  /** 落地态（无激活会话）：输入面板垂直居中 + 顶部项目选择行。 */
-  landing: boolean;
-  /** 落地态选中的项目（"" = 不在项目中）。 */
-  pendingProject: string;
-  onPickProject: (workspaceRoot: string) => void;
-  recentProjects: RecentProject[];
-  /** 「打开项目…」系统目录选择器（结果进落地态选择，不直接改全局）。 */
-  onOpenProjectDir: () => void;
-  /** 消息内任务变更卡（按消息 id 索引）；Task 12 接 IPC view model，缺省不渲染。 */
-  taskChanges?: Record<string, TaskChangeCardCommand>;
-  /** 「审查」动作——打开任务审查面板；缺省为 no-op（按钮禁用）。 */
-  onOpenTaskReview?: (messageId: string) => void;
-  /** 消息级分叉入口（编辑并创建路线 / 重试并创建路线）；缺省不渲染按钮。 */
-  onForkMessage?: (command: ForkMessageCommand) => void;
-  /** M1 会话 fork 入口（非任务会话的用户消息动作）；缺省不渲染按钮。 */
-  onForkSession?: (messageId: string, mode?: "text" | "worktree") => void;
-  /** S1 后台运行入口（现有会话输入框动作）；缺省不渲染按钮。 */
-  onBackgroundRun?: (text: string) => void;
-  /** Opens the existing typed Review panel from the header action. */
-  onOpenReview?: () => void;
-  /** Existing domain/runtime state projected for the right activity capsule. */
-  activity?: AgentActivityProjection;}
+  onPermissionRespond: (requestId: string, choice: PermissionChoice) => void;
+  capsule: GitCapsuleData;
+  onManageModels?: () => void;
+  /** 子代理工具行：在右侧面板中查看该次运行。 */
+  onOpenSubagent?: (invocationId: string) => void;
+  /** 有档案的 Task 调用集合（缺档案的 Task 行退化为可展开行，兜底只读详情）。 */
+  subagentInvocations?: ReadonlySet<string>;
+  /** 文件工具行：文件簇点击在右侧 dock 打开文件标签。 */
+  onOpenFile?: (row: ToolRowModel) => void;
+  /** 底部终端面板（顶栏终端钮开合；挂在输入卡之后，聊天列全宽）。 */
+  terminalPanel?: React.ReactNode;
+}
 
 export function ChatView({
   t,
-  appName,
   messages,
   streaming,
-  settings,
-  agentModes,
   permission,
-  onSettingsChange,
-  onPermissionRespond,
+  settings,
+  onPatchSettings,
   onSend,
+  onEditResend,
   onStop,
-  landing,
-  pendingProject,
-  onPickProject,
-  recentProjects,
-  onOpenProjectDir,
-  taskChanges,
-  onOpenTaskReview,
-  onForkMessage,
-  onForkSession,
-  onBackgroundRun,
-  activity,
+  onPermissionRespond,
+  capsule,
+  onManageModels,
+  onOpenSubagent,
+  subagentInvocations,
+  onOpenFile,
+  terminalPanel,
 }: Props): React.JSX.Element {
-  const [presentation, dispatchPresentation] = useReducer(reduceWorkspacePresentationState, defaultWorkspacePresentationState);
-  // 轨道按聊天容器实宽重算（侧栏/工作台停靠后的余量），初值 0 等到
-  // layout 测量后再出列——避免用 window.innerWidth 把「侧栏已收」的宽当成当前列宽。
-  const [availableWidth, setAvailableWidth] = useState(0);
-  // 最大化状态决定轨道形态：最大化 → 不对称左锚（右留白专给胶囊）；
-  // 非最大化 → 左右留白等大、聊天主体居中。初值用窗口尺寸启发式避免
-  // 首帧布局跳变，随后以 preload 桥的真实状态为准（桥缺失时沿用启发式）。
-  const [maximized, setMaximized] = useState<boolean>(() => {
-    if (typeof window === "undefined" || typeof window.outerWidth !== "number") return true;
-    const avail = window.screen?.availWidth;
-    if (typeof avail !== "number") return true;
-    return window.outerWidth >= avail - 8;
-  });
-  const layout = workspaceLayoutForWidth(availableWidth, maximized);
-  const workspaceRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  // 贴底策略：用户上滚（scrollTop 减小）→ 暂停跟随；回到底部（距底 <48px）→ 恢复。
-  // 判定必须带方向：smooth 跟随动画期间流式内容长高，中途帧距底会 >48px，
-  // 纯距离判定会把程序滚动误判成用户上滚使 pinned 自锁为 false；而向下滚动
-  // （含程序动画）不会让 scrollTop 减小，方向判定天然免疫，对惯性/回弹也稳健。
-  const [pinned, setPinned] = useState(true);
-  const lastScrollTop = useRef(0);
-  // 滚动位置比例（0..1）：驱动左缘虚线刻度的高亮。
-  const [scrollFraction, setScrollFraction] = useState(0);
-  // 供应商显示名：完成元数据只有 profile id（如 custom_mtb2pr7n），
-  // 这里按 settings.profiles 解析成用户可读的厂家名（同 ModelPicker 芯片）。
-  const providerNameOf = useCallback(
-    (providerId?: string): string | undefined => {
-      if (!providerId) return undefined;
-      return settings?.profiles.find((profile) => profile.id === providerId)?.name ?? providerId;
-    },
-    [settings],
-  );
-
-  useLayoutEffect(() => {
-    const workspace = workspaceRef.current;
-    if (workspace && typeof ResizeObserver !== "undefined") {
-      const applyWidth = (width: number) => {
-        if (width > 0) setAvailableWidth(width);
-      };
-      applyWidth(workspace.getBoundingClientRect().width);
-      const observer = new ResizeObserver(([entry]) => {
-        applyWidth(entry?.contentRect.width ?? 0);
-      });
-      observer.observe(workspace);
-      return () => observer.disconnect();
-    }
-    const onResize = () => setAvailableWidth(window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [landing]);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // 胶囊开合（受控）：展开时按胶囊尺寸挤压内容列，宽度不够则不挤。
+  // 阈值（1280px，对齐参考容器断点）两侧自动开合：窄窗收成芯片、宽窗展开面板；
+  // 阈值不变时用户手动开关保持有效。
+  const [capsuleOpen, setCapsuleOpen] = useState(true);
+  const [containerWidth, setContainerWidth] = useState(0);
+  // 胶囊默认不出现：Git 仓库/待办/智能体/终端任一成立才显示，不显示时不挤压内容列。
+  const capsuleShown = capsuleHasContent(capsule);
+  const rightGutter = capsuleShown ? capsuleRightGutter(containerWidth, capsuleOpen) : 0;
+  const squeezedRef = useRef<boolean | null>(null);
 
   useEffect(() => {
-    let off: (() => void) | undefined;
-    try {
-      void api.isWindowMaximized().then(setMaximized);
-      off = api.onWindowMaximizedChanged(setMaximized);
-    } catch {
-      // preload 桥缺失（测试/纯浏览器渲染）：沿用窗口尺寸启发式初值。
-    }
-    return () => off?.();
+    const body = bodyRef.current;
+    if (!body || typeof ResizeObserver === "undefined") return;
+    const apply = (width: number) => {
+      if (width <= 0) return;
+      setContainerWidth(width);
+      const squeezed = width >= CAPSULE_SQUEEZE_MIN_WIDTH;
+      if (squeezedRef.current !== squeezed) {
+        squeezedRef.current = squeezed;
+        setCapsuleOpen(squeezed);
+      }
+    };
+    apply(body.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => apply(entry?.contentRect.width ?? 0));
+    observer.observe(body);
+    return () => observer.disconnect();
   }, []);
+  // 贴底策略：用户上滚（scrollTop 减小）→ 暂停跟随；回到底部（距底 <48px）→ 恢复。
+  const [pinned, setPinned] = useState(true);
+  const lastScrollTop = useRef(0);
+  const [scrollFraction, setScrollFraction] = useState(0);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -148,7 +104,6 @@ export function ChatView({
     setScrollFraction(range > 0 ? Math.min(1, Math.max(0, el.scrollTop / range)) : 0);
   };
 
-  // 虚线刻度跳转：按比例滚动到对应历史位置。
   const seekTo = (fraction: number) => {
     const el = scrollRef.current;
     if (!el) return;
@@ -156,76 +111,79 @@ export function ChatView({
     el.scrollTo({ top: fraction * range, behavior: "smooth" });
   };
 
+  // 贴底滚动直达内容真底部（scrollHeight 含列的 pb-8；scrollIntoView 依赖
+  // 锚点位置，曾被列 padding 截留 32px）。pinnedRef 供 ResizeObserver 闭包读取。
+  const scrollToBottom = (behavior: ScrollBehavior) => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+  };
+  const pinnedRef = useRef(pinned);
+  pinnedRef.current = pinned;
+
   useEffect(() => {
     if (!pinned) return;
-    // 流式期间必须瞬时贴底：smooth 动画的终点是"动画开始时的底部"，
-    // 而流式内容在动画窗口内持续增长，动画永远追不上 → 视口总差一点。
-    // 瞬时滚动每次都精确落底；非流式变化（切会话/首载）保留 smooth 手感。
-    bottomRef.current?.scrollIntoView({ behavior: streaming ? "auto" : "smooth", block: "end" });
+    // 流式期间瞬时贴底：smooth 动画追不上持续增长的内容。
+    scrollToBottom(streaming ? "auto" : "smooth");
   }, [messages, pinned, streaming]);
 
-  // 落地态（无激活会话）：输入面板垂直居中 + 顶部项目选择行；不渲染消息区。
-  if (landing) {
-    return (
-      <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center pb-24" style={{ paddingInline: layout.contentGutter }}>
-          <div className="w-full" style={{ maxWidth: layout.contentMaxWidth }}>
-            <h1 className="mb-4 text-center font-medium">
-              {t("chat.empty.title").replace("InnocenceHarness", appName)}
-            </h1>
-            <Composer
-              t={t}
-              mode="landing"
-              streaming={streaming}
-              settings={settings}
-              agentModes={agentModes}
-              onSettingsChange={onSettingsChange}
-              onSend={onSend}
-              onStop={onStop}
-              contentMaxWidth={layout.contentMaxWidth}
-              gutterLeft={0}
-              gutterRight={0}
-              header={
-                <ProjectPicker
-                  t={t}
-                  value={pendingProject}
-                  recent={recentProjects}
-                  onSelect={onPickProject}
-                  onOpenProject={onOpenProjectDir}
-                />
-              }
-            />
-          </div>
-        </div>
-      </div>
-  );
-}
+  // 不改变 messages 引用的高度增长（异步代码高亮、等待行显隐等）同样跟随到底。
+  useEffect(() => {
+    const column = scrollRef.current?.firstElementChild;
+    if (!column || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) scrollToBottom("auto");
+    });
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, []);
 
-  const capsule = activity ? (
-    <AgentActivityCapsule
-      open={presentation.capsuleOpen}
-      onToggleOpen={() => dispatchPresentation({ type: "capsule/toggle" })}
-      expandedSections={presentation.expandedCapsuleSections}
-      onToggleSection={(section) => dispatchPresentation({ type: "capsule/toggle-section", section })}
-      environment={activity.environment}
-      process={activity.process}
-      terminal={activity.terminal}
-      agent={activity.agent}
-      subagents={activity.agent.subagents}
-      onOpenSubagent={activity.agent.onOpenSubagent}
-      placement={layout.capsulePlacement}
-    />
-  ) : null;
+  // 中断检测：末轮助手消息无完成元数据且不在流式 → 该消息挂「继续」图标钮。
+  const showContinue = useMemo(() => {
+    if (streaming || permission || messages.length === 0) return false;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i]!;
+      if (message.role !== "assistant") continue;
+      return message.streaming !== true && message.completion == null;
+    }
+    return false;
+  }, [messages, streaming, permission]);
+
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]!.role === "assistant") return messages[i]!.id;
+    }
+    return null;
+  }, [messages]);
+  const latestUserId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]!.role === "user") return messages[i]!.id;
+    }
+    return null;
+  }, [messages]);
+
+  // 发送（含「继续」）一律回到贴底跟随；编辑重发同样回贴底。
+  const handleSend = (text: string): void => {
+    setPinned(true);
+    requestAnimationFrame(() => scrollToBottom("auto"));
+    onSend(text);
+  };
+
+  const handleEditResend = (messageId: string, text: string): void => {
+    setPinned(true);
+    requestAnimationFrame(() => scrollToBottom("auto"));
+    onEditResend(messageId, text);
+  };
+
+  // 外观设置 → 代码块高亮主题对与行号开关。
+  const codeAppearance = {
+    light: settings?.codeThemeLight ?? "github-light",
+    dark: settings?.codeThemeDark ?? "github-dark",
+    lineNumbers: settings?.codeLineNumbers !== false,
+  };
 
   return (
-    <div ref={workspaceRef} className="chat-workspace flex h-full min-w-0 flex-1 flex-col">
-      {/* 滚动区满宽铺开：Y 滚动条贴主列最右缘（参考稿 .scroll 满宽模型）；
-          内容列流体收缩——最大化时左锚（左 8% 呼吸、右留白专给胶囊），
-          非最大化时左右留白等大、列居中；1120px 封顶，胶囊悬浮其上
-          （.agent-capsule-floating 绝对定位），不再扣列。 */}
-      <div className="chat-workspace-body relative min-h-0 flex-1">
-        {/* 左缘虚线刻度（参考稿 chat-dashes left:12px）：垂直居中于滚动区、
-            紧贴主列左缘，点击按比例跳转。 */}
+    <div className="flex h-full min-w-0 flex-1 flex-col">
+      <div ref={bodyRef} className="relative min-h-0 flex-1">
         {messages.length > 0 && (
           <div className="absolute left-[12px] top-1/2 z-[5] -translate-y-1/2">
             <ChatDashes fraction={scrollFraction} onSeek={seekTo} />
@@ -235,55 +193,79 @@ export function ChatView({
           ref={scrollRef}
           onScroll={onScroll}
           className="scrollbar-thin h-full min-w-0 overflow-y-auto"
-          style={{ padding: `2px ${layout.contentRightGutter}px 0 ${layout.contentGutter}px` }}
+          style={{ paddingLeft: 24, paddingRight: 24 + rightGutter }}
         >
-          <div data-testid="chat-timeline" className="chat-column pb-8" style={{ maxWidth: layout.contentMaxWidth }}>
-            <div className="space-y-8 pt-10">
-              {messages.map((m) => (
+          <div data-testid="chat-timeline" className={`${columnClass} pb-8`}>
+            {/* 首内容顶部留白 56px（参考 turn 的 pt-14）：避开右上悬浮的
+                胶囊/芯片，窄窗下用户气泡不被遮盖。 */}
+            <div className="space-y-5 pt-14">
+              {messages.map((message) => (
                 <MessageItem
-                  key={m.id}
+                  key={message.id}
                   t={t}
-                  message={m}
-                  onForkMessage={onForkMessage}
-                  onForkSession={onForkSession}
-                  taskChange={taskChanges?.[m.id]}
-                  onOpenTaskReview={onOpenTaskReview ? () => onOpenTaskReview(m.id) : undefined}
-                  providerNameOf={providerNameOf}
+                  message={message}
+                  canEdit={!streaming && message.id === latestUserId}
+                  onEditSend={
+                    message.role === "user" ? (text) => handleEditResend(message.id, text) : undefined
+                  }
+                  continuable={showContinue && message.id === lastAssistantId}
+                  onContinue={() => handleSend(t("chat.continue.prompt"))}
+                  code={codeAppearance}
+                  onOpenSubagent={onOpenSubagent}
+                  subagentInvocations={subagentInvocations}
+                  onOpenFile={onOpenFile}
                 />
               ))}
+              {/* 流式等待行：转圈 + 轮换耐心等待提示，位于时间线最底部。 */}
+              {streaming && <WaitingRow t={t} />}
             </div>
-            <div ref={bottomRef} />
           </div>
         </div>
-        {capsule}
+        {capsuleShown && <GitCapsule t={t} data={capsule} open={capsuleOpen} onToggleOpen={setCapsuleOpen} />}
+        {!pinned && (
+          <button
+            type="button"
+            aria-label={t("chat.backToBottom")}
+            title={t("chat.backToBottom")}
+            onClick={() => {
+              setPinned(true);
+              scrollToBottom("smooth");
+            }}
+            // 会话列在扣除胶囊右侧边距后的内容盒内居中（内容盒中心 = 50% − 边距/2），
+            // 按钮须对齐会话中心而非整个容器中心，否则胶囊开启时按钮偏右半个边距。
+            style={{ left: `calc(50% - ${rightGutter / 2}px)` }}
+            className="dropdown-in origin-bottom absolute bottom-4 z-[5] grid size-8 -translate-x-1/2 place-items-center rounded-full border border-(--color-border) bg-(--color-raised) text-(--color-muted) shadow-(--shadow-pop) hover:text-(--color-foreground)"
+            data-state="open"
+          >
+            <ArrowDown size={14} strokeWidth={1.5} />
+          </button>
+        )}
       </div>
 
       {permission && (
-        <div
-          className="shrink-0 pb-2"
-          style={{ paddingLeft: layout.contentGutter, paddingRight: layout.contentRightGutter }}
-        >
-          <div className="chat-column" style={{ maxWidth: layout.contentMaxWidth }}>
+        <div className="shrink-0 pb-2" style={{ paddingLeft: 24, paddingRight: 24 + rightGutter }}>
+          <div className={columnClass}>
             <PermissionCard t={t} request={permission} onRespond={onPermissionRespond} />
           </div>
         </div>
       )}
 
-      <Composer
-        t={t}
-        mode="existing"
-        contextCount={0}
-        contentMaxWidth={layout.contentMaxWidth}
-        gutterLeft={layout.contentGutter}
-        gutterRight={layout.contentRightGutter}
-        streaming={streaming}
-        settings={settings}
-        agentModes={agentModes}
-        onSettingsChange={onSettingsChange}
-        onSend={onSend}
-        onStop={onStop}
-        onBackgroundRun={onBackgroundRun}
-      />
+      <div className="shrink-0 pb-[clamp(10px,1.5vw,16px)]" style={{ paddingLeft: 24, paddingRight: 24 + rightGutter }}>
+        <div className={columnClass}>
+          <Composer
+            t={t}
+            mode="existing"
+            streaming={streaming}
+            settings={settings}
+            onPatchSettings={onPatchSettings}
+            onSend={handleSend}
+            onStop={onStop}
+            onManageModels={onManageModels}
+          />
+        </div>
+      </div>
+
+      {terminalPanel}
     </div>
   );
 }

@@ -42,6 +42,8 @@ export const IPC = {
   chatTool: "chat:tool",
   chatThinking: "chat:thinking",
   subagentLifecycle: "subagent:lifecycle",
+  /** 子代理运行档案回放：按会话拉取落盘的 lifecycle 记录（重启后建档）。 */
+  subagentHistory: "subagent:history",
   workspacePick: "workspace:pick",
   /** 落地页分支胶囊：探测任意项目根的 Git 分支（非仓库/失败 → null）。 */
   workspaceGitBranch: "workspace:git-branch",
@@ -540,6 +542,8 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   onChatTool(cb: (e: ChatToolEvent) => void): () => void;
   onChatThinking(cb: (e: ChatThinkingEvent) => void): () => void;
   onSubagentLifecycle(cb: (e: SubagentLifecycleEvent) => void): () => void;
+  /** 子代理运行档案：按会话读回落盘的 lifecycle 记录（重启后回放建档）。 */
+  listSubagentHistory(sessionId: string): Promise<{ at: number; event: SubagentLifecycleEvent }[]>;
   onChatPermission(cb: (e: ChatPermissionEvent) => void): () => void;
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;

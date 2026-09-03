@@ -1,8 +1,8 @@
 // IPC surface — one handler per channel defined in src/shared/ipc.ts.
-import { app, ipcMain } from "electron";
+import { app, dialog, ipcMain, shell, webContents } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IPC, isPermissionChoice, type MenuId } from "../shared/ipc";
+import { IPC, isPermissionChoice, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
@@ -24,6 +24,7 @@ import {
   listProviderModelsById,
   pickWorkspace,
   respondPermission,
+  resendChatTurn,
   sendChatTurn,
   setHarnessSettings,
   stopChatTurn,
@@ -34,9 +35,95 @@ import {
 import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { popupMenu } from "./menu";
 import { getMainWindow } from "./appWindow";
-import { logger } from "./logger";
+import { currentLogFile, logger } from "./logger";
+import { toAppProcessMetrics } from "./processMetrics";
+import { copyLogFiles } from "./exportLogs";
+import { listWorkspaceDir, listWorkspaceFiles, readWorkspaceFile } from "./workspaceFiles";
 import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { TaskIpcHandlers } from "./taskIpcHandlers";
+import { createGitAdapter, type GitAdapter } from "@innocenceharness/task-git";
+import { workspaceReviewFileDiff, workspaceReviewFiles } from "./workspaceReview";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+/** 落地页分支胶囊用的 Git 探测（懒加载单例；非仓库/异常 → null）。 */
+let gitAdapter: GitAdapter | undefined;
+async function detectWorkspaceGitBranch(root: string): Promise<string | null> {
+  try {
+    gitAdapter ??= createGitAdapter();
+    const info = await gitAdapter.detect(root);
+    return info.branch ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Git 面板「更改」统计：porcelain 计文件数，shortstat 取增删行（失败 → null）。 */
+async function workspaceGitChangesStat(
+  root: string,
+): Promise<{ changedFiles: number; additions: number; deletions: number } | null> {
+  try {
+    const { stdout: status } = await execFileAsync("git", ["-C", root, "status", "--porcelain"], { windowsHide: true });
+    const changedFiles = status.split("\n").filter((line) => line.trim() !== "").length;
+    let shortstat = "";
+    try {
+      ({ stdout: shortstat } = await execFileAsync("git", ["-C", root, "diff", "--shortstat", "HEAD"], { windowsHide: true }));
+    } catch {
+      // 空仓无 HEAD：退化为工作区+暂存统计。
+      ({ stdout: shortstat } = await execFileAsync("git", ["-C", root, "diff", "--shortstat"], { windowsHide: true }));
+    }
+    const additions = /(\d+) insertion/.exec(shortstat);
+    const deletions = /(\d+) deletion/.exec(shortstat);
+    return {
+      changedFiles,
+      additions: additions ? Number(additions[1]) : 0,
+      deletions: deletions ? Number(deletions[1]) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 分支面板：本地分支短名列表 + 当前分支（非仓库/失败 → null）。 */
+async function workspaceGitBranchList(
+  root: string,
+): Promise<{ current: string | null; branches: string[] } | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, "branch", "--format=%(refname:short)"], { windowsHide: true });
+    gitAdapter ??= createGitAdapter();
+    const info = await gitAdapter.detect(root);
+    return {
+      current: info.branch ?? null,
+      branches: stdout.split("\n").map((line) => line.trim()).filter(Boolean),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 分支面板：检出（create=true 时先建）分支。失败回传 stderr 末行摘要。 */
+async function workspaceGitCheckoutBranch(
+  root: string,
+  branch: string,
+  create: boolean,
+): Promise<{ ok: boolean; branch?: string; error?: string }> {
+  const name = branch.trim();
+  // execFile 不过 shell，但仍挡掉会被 git 当成选项的名字。
+  if (name === "" || name.startsWith("-")) return { ok: false, error: "invalid branch name" };
+  try {
+    const args = create ? ["-C", root, "checkout", "-b", name] : ["-C", root, "checkout", name];
+    await execFileAsync("git", args, { windowsHide: true });
+    return { ok: true, branch: name };
+  } catch (error) {
+    const stderr =
+      typeof error === "object" && error !== null && "stderr" in error
+        ? String((error as { stderr: unknown }).stderr).trim()
+        : "";
+    return { ok: false, error: stderr.split("\n").pop() || "checkout failed" };
+  }
+}
 
 /** Task IPC handlers — wired by registerTaskIpcHandlers after bridge composition. */
 let taskHandlers: TaskIpcHandlers | undefined;
@@ -83,6 +170,20 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.windowClose, () => needWindow().close());
   ipcMain.handle(IPC.windowMaximizedGet, () => needWindow().isMaximized());
 
+  // 顶栏应用菜单：进程监视器快照（映射在 processMetrics.ts）。
+  ipcMain.handle(IPC.appMetrics, () => toAppProcessMetrics(app.getAppMetrics()));
+
+  // 顶栏应用菜单「导出日志」：用户选目录后平铺复制 userData/logs 的日志文件。
+  ipcMain.handle(IPC.appExportLogs, async () => {
+    const picked = await dialog.showOpenDialog(needWindow(), {
+      properties: ["openDirectory", "createDirectory"],
+    });
+    const target = picked.filePaths[0];
+    if (picked.canceled || !target) return null;
+    const exported = await copyLogFiles(path.join(app.getPath("userData"), "logs"), target);
+    return exported > 0 ? { exported } : null;
+  });
+
   ipcMain.handle(IPC.sessionsList, () => sessions.listSessions());
   ipcMain.handle(IPC.sidebarGet, () => sessions.getSidebarState());
   ipcMain.handle(IPC.sidebarArchive, (_e, id: string, archived: boolean) => {
@@ -113,8 +214,8 @@ export function registerIpcHandlers(): void {
     sessions.setSidebarGroupCollapsed(id, collapsed);
     broadcastSidebar();
   });
-  ipcMain.handle(IPC.sessionCreate, (_e, options?: { title?: string; workspaceRoot?: string }) => {
-    const session = sessions.createSession({ title: options?.title, workspaceRoot: options?.workspaceRoot });
+  ipcMain.handle(IPC.sessionCreate, (_e, options?: { title?: string; workspaceRoot?: string; aux?: boolean }) => {
+    const session = sessions.createSession({ title: options?.title, workspaceRoot: options?.workspaceRoot, aux: options?.aux });
     broadcastSessions();
     broadcastSidebar();
     return session;
@@ -151,13 +252,16 @@ export function registerIpcHandlers(): void {
     broadcastSidebar();
   });
   ipcMain.handle(IPC.messagesList, (_e, sessionId: string) => sessions.listMessages(sessionId));
+  ipcMain.handle(IPC.subagentHistory, (_e, sessionId: string) => sessions.listSubagentHistory(sessionId));
 
-  ipcMain.handle(IPC.chatSend, (_e, sessionId: string, text: string) => {
+  ipcMain.handle(IPC.chatSend, (_e, sessionId: string, text: string, userMessageId?: string) => {
     needWindow();
     const trimmed = text.trim();
     if (!trimmed) throw new Error("empty message");
+    // 落账沿用渲染层乐观气泡的 id（见 adoptMessageId），保证后续编辑重发
+    // 的截断能在存储中找到这条用户消息。
     sessions.appendMessage(sessionId, {
-      id: `msg_${Date.now().toString(36)}_u`,
+      id: sessions.adoptMessageId(sessionId, userMessageId),
       role: "user",
       parts: [{ type: "text", text: trimmed }],
       createdAt: Date.now(),
@@ -171,6 +275,18 @@ export function registerIpcHandlers(): void {
     return { messageId };
   });
 
+  // 编辑重发（替换语义）：主进程截断存储/转录并回退运行时历史后重开一轮；
+  // 运行中/任务绑定/未知消息 id 抛错，由渲染层提示并回读存储恢复。
+  // newMessageId 为渲染层乐观新气泡的 id，落账沿用同一 id（见 adoptMessageId）。
+  ipcMain.handle(IPC.chatResend, (_e, sessionId: string, fromMessageId: string, text: string, newMessageId?: string) => {
+    needWindow();
+    const messageId = resendChatTurn(sessionId, fromMessageId, text, newMessageId);
+    broadcastSessions();
+    broadcastSidebar();
+    logger.info("chat:resend", { sessionId, messageId, fromMessageId });
+    return { messageId };
+  });
+
   ipcMain.handle(IPC.chatStop, (_e, sessionId: string) => {
     stopChatTurn(sessionId);
   });
@@ -181,6 +297,100 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.workspacePick, () => pickWorkspace());
+
+  ipcMain.handle(IPC.workspaceGitBranch, (_e, root: string) =>
+    typeof root === "string" && root.trim() !== "" ? detectWorkspaceGitBranch(root.trim()) : null,
+  );
+
+  ipcMain.handle(IPC.workspaceGitChanges, (_e, root: string) =>
+    typeof root === "string" && root.trim() !== "" ? workspaceGitChangesStat(root.trim()) : null,
+  );
+
+  ipcMain.handle(IPC.workspaceGitBranches, (_e, root: string) =>
+    typeof root === "string" && root.trim() !== "" ? workspaceGitBranchList(root.trim()) : null,
+  );
+
+  ipcMain.handle(IPC.workspaceGitCheckout, (_e, root: string, branch: string, create?: boolean) =>
+    typeof root === "string" && root.trim() !== "" && typeof branch === "string"
+      ? workspaceGitCheckoutBranch(root.trim(), branch, create === true)
+      : { ok: false, error: "invalid arguments" },
+  );
+
+  // 侧栏文件树：目录列举 / 文本读取 / 全量清单（路径防护在 workspaceFiles.ts）。
+  const validRoot = (root: unknown): root is string => typeof root === "string" && root.trim() !== "";
+  ipcMain.handle(IPC.workspaceListDir, (_e, root: string, relDir: string) =>
+    validRoot(root) && typeof relDir === "string" ? listWorkspaceDir(root.trim(), relDir) : [],
+  );
+  ipcMain.handle(IPC.workspaceReadFile, (_e, root: string, rel: string) => {
+    if (!validRoot(root) || typeof rel !== "string" || rel.trim() === "") {
+      throw new Error("workspace files: invalid arguments");
+    }
+    return readWorkspaceFile(root.trim(), rel);
+  });
+  ipcMain.handle(IPC.workspaceListFiles, (_e, root: string) =>
+    validRoot(root) ? listWorkspaceFiles(root.trim()) : [],
+  );
+
+  // 审查面板：改动文件列表与单文件 diff（只读 git 查询，见 workspaceReview.ts）。
+  ipcMain.handle(IPC.workspaceGitReviewFiles, (_e, root: string, scope: unknown) =>
+    typeof root === "string" && root.trim() !== ""
+      ? workspaceReviewFiles(root.trim(), scope === "staged" ? "staged" : "unstaged")
+      : null,
+  );
+  ipcMain.handle(IPC.workspaceGitReviewDiff, (_e, root: string, scope: unknown, relPath: string) =>
+    typeof root === "string" && root.trim() !== "" && typeof relPath === "string" && relPath.trim() !== ""
+      ? workspaceReviewFileDiff(root.trim(), scope === "staged" ? "staged" : "unstaged", relPath)
+      : null,
+  );
+
+  // dock 浏览器：设备度量仿真（CDP Emulation）；只接受挂在主窗口上的 webview
+  // 访客（hostWebContents 非空），拒绝主窗口自身或来历不明的 webContents。
+  ipcMain.handle(IPC.browserEmulate, async (_e, req: BrowserEmulateRequest) => {
+    const guestId = Number(req?.guestId);
+    if (!Number.isInteger(guestId) || guestId <= 0) return { ok: false, error: "invalid guestId" };
+    const guest = webContents.fromId(guestId);
+    if (!guest || guest.isDestroyed()) return { ok: false, error: "guest gone" };
+    if (!guest.hostWebContents) return { ok: false, error: "not a webview guest" };
+    const width = req.width === null ? null : Number(req.width);
+    const height = req.height === null ? null : Number(req.height);
+    try {
+      try {
+        guest.debugger.attach("1.3");
+      } catch {
+        // 已附着（重复仿真）——直接发命令。
+      }
+      if (width === null || height === null) {
+        await guest.debugger.sendCommand("Emulation.clearDeviceMetricsOverride");
+      } else {
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 50 || height < 50 || width > 4000 || height > 4000) {
+          return { ok: false, error: "invalid size" };
+        }
+        await guest.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
+          width,
+          height,
+          deviceScaleFactor: 0,
+          mobile: req.mobile === true,
+        });
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+  });
+
+  // 会话「…」菜单宿主动作：文件管理器打开目录 / 外部链接（仅 http(s)）。
+  ipcMain.handle(IPC.hostRevealPath, async (_e, target: string) => {
+    if (typeof target !== "string" || target.trim() === "") return;
+    await shell.openPath(target.trim());
+  });
+  ipcMain.handle(IPC.hostOpenExternal, async (_e, url: string) => {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
+    await shell.openExternal(url);
+  });
+  ipcMain.handle(IPC.sessionPaths, (_e, id: string) => ({
+    taskPath: typeof id === "string" ? sessions.getSessionTranscriptPath(id) : null,
+    logPath: currentLogFile(),
+  }));
 
   ipcMain.handle(IPC.settingsGet, () => getCommittedHarnessSettings());
   ipcMain.handle(IPC.settingsSet, (_e, next: HarnessSettingsPatch) => setHarnessSettings(next));

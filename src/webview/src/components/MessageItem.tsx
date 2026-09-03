@@ -1,113 +1,229 @@
-import { GitBranch, GitFork, Pencil, RotateCcw } from "lucide-react";
+// 消息行：用户 = 右对齐圆角气泡（悬停出复制；最近一条可编辑重发）；
+// 助手 = 无头部帧（思考行/工具时间线/正文段），中断帧带「继续」图标钮。
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Check, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import type { ChatMessage } from "../../../shared/ipc";
 import { messageText } from "../../../shared/ipc";
-import type { ValidationResult } from "../../../shared/taskIpc";
-import { MessageFrame } from "./chat/MessageFrame";
-import { CompletionMetadata } from "./chat/CompletionMetadata";
-import { TaskChangeCard } from "./task/TaskChangeCard";
-import type { TaskChangeSummary } from "./task/taskViewModel";
+import { MarkdownView, type CodeAppearance } from "./chat/MarkdownView";
+import { ThinkingRow } from "./chat/ThinkingRow";
+import { ToolTimeline } from "./chat/ToolRow";
+import { segmentParts } from "./chat/segmentParts";
+import { buildToolRows, type ToolRowModel } from "./chat/toolRows";
 
-export interface ForkMessageCommand {
-  turnId: string;
-  mode: "edit-user" | "retry-assistant";
-  text: string;
-}
-
-/** 该轮的任务变更摘要（IPC view model 片段，Task 12 接完整 task context）。 */
-export interface TaskChangeCardCommand {
-  summary: TaskChangeSummary;
-  checkpointId: string;
-  validation: ValidationResult | null;
-}
-
-export function MessageItem({
-  t, message, onForkMessage, onForkSession, taskChange, onOpenTaskReview, providerNameOf,
-}: {
+interface Props {
   t: (key: string) => string;
   message: ChatMessage;
-  onForkMessage?: (command: ForkMessageCommand) => void;
-  /** M1 会话 fork：非任务会话的用户消息动作（任务会话走路线分叉）。
-   *  mode="worktree" 为工作树分叉（A:95：父 Git 工作区建分离工作树）。 */
-  onForkSession?: (messageId: string, mode?: "text" | "worktree") => void;
-  taskChange?: TaskChangeCardCommand;
-  onOpenTaskReview?: () => void;
-  /** completion.providerId → 供应商显示名（ChatView 按 settings.profiles 解析）。 */
-  providerNameOf?: (providerId?: string) => string | undefined;
-}): React.JSX.Element {
-  const text = messageText(message.parts);
+  /** 最近一条用户消息（且不在流式）= 可编辑重发。 */
+  canEdit?: boolean;
+  onEditSend?: (text: string) => void;
+  /** 中断的末条助手消息 = 显示「继续」图标钮。 */
+  continuable?: boolean;
+  onContinue?: () => void;
+  /** 代码外观（外观设置）：高亮主题对 + 行号开关。 */
+  code?: CodeAppearance;
+  /** 子代理工具行：在右侧面板中查看该次运行。 */
+  onOpenSubagent?: (invocationId: string) => void;
+  /** 有档案的 Task 调用集合（缺档案的 Task 行退化为可展开行）。 */
+  subagentInvocations?: ReadonlySet<string>;
+  /** 文件工具行：文件簇点击在右侧 dock 打开文件标签。 */
+  onOpenFile?: (row: ToolRowModel) => void;
+}
+
+export function MessageItem({ t, message, canEdit, onEditSend, continuable, onContinue, code, onOpenSubagent, subagentInvocations, onOpenFile }: Props): React.JSX.Element {
   if (message.role === "user") {
-    return (
-      <div className="rise-in group flex flex-col items-end">
-        <div className="max-w-[85%] rounded-[12px] rounded-br-[3px] bg-(--color-app-bubble) px-4 py-2.5 leading-relaxed whitespace-pre-wrap">
-          {text}
-        </div>
-        {(onForkMessage || onForkSession) && (
-          <div className="mt-1 flex gap-1 opacity-0 hover:opacity-100 group-hover:opacity-100 focus-within:opacity-100">
-            {onForkMessage && (
-              <button
-                type="button"
-                title="编辑并创建路线"
-                aria-label="编辑并创建路线"
-                onClick={() => onForkMessage({ turnId: message.id, mode: "edit-user", text })}
-                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
-              >
-                <Pencil size={13} /> 编辑并创建路线
-              </button>
-            )}
-            {onForkSession && (
-              <button
-                type="button"
-                title="从这里分叉会话"
-                aria-label="从这里分叉会话"
-                onClick={() => onForkSession(message.id)}
-                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
-              >
-                <GitFork size={13} /> 从这里分叉
-              </button>
-            )}
-            {onForkSession && (
-              <button
-                type="button"
-                title="从这里分叉到工作树"
-                aria-label="从这里分叉到工作树"
-                onClick={() => onForkSession(message.id, "worktree")}
-                className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
-              >
-                <GitBranch size={13} /> 分叉到工作树
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    return <UserBubble t={t} message={message} canEdit={canEdit === true} onEditSend={onEditSend} />;
   }
+
+  const streaming = message.streaming === true;
+  const segments = segmentParts(message.parts);
+  // 段间距 16px（参考行列表 gap-4）：思考行/工具时间线/正文段之间统一节奏。
   return (
-    <div className="rise-in group">
-      <MessageFrame parts={message.parts} streaming={message.streaming === true} t={t} />
-      <CompletionMetadata completion={message.completion} providerName={providerNameOf?.(message.completion?.providerId)} />
-      {taskChange && (
-        <div className="mt-2">
-          <TaskChangeCard
-            summary={taskChange.summary}
-            checkpointId={taskChange.checkpointId}
-            validation={taskChange.validation}
-            t={t}
-            onReview={onOpenTaskReview}
-          />
+    <div className="rise-in group/assistant-row flex flex-col gap-4">
+      {segments.map((segment, index) => {
+        if (segment.kind === "thinking") {
+          return (
+            <ThinkingRow
+              key={index}
+              t={t}
+              text={segment.text}
+              live={streaming && index === segments.length - 1}
+            />
+          );
+        }
+        if (segment.kind === "tools") {
+          return <ToolTimeline key={index} t={t} rows={buildToolRows(segment.parts)} onOpenSubagent={onOpenSubagent} subagentInvocations={subagentInvocations} onOpenFile={onOpenFile} />;
+        }
+        return (
+          <div key={index} className="min-h-6">
+            <MarkdownView source={segment.text} animated={streaming} code={code} />
+          </div>
+        );
+      })}
+      {streaming && message.parts.length === 0 && (
+        <div className="flex items-center gap-1.5 text-(--color-faint)">
+          <LoaderCircleInline />
+          {t("chat.thinking.live")}
         </div>
       )}
-      {onForkMessage && !message.streaming && (
-        <div className="mt-1 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+      {/* 中断帧的「继续」图标钮（参考规格：异常中断时挂在最近一条消息上）。 */}
+      {continuable && (
+        <div>
           <button
             type="button"
-            title="重试并创建路线"
-            onClick={() => onForkMessage({ turnId: message.id, mode: "retry-assistant", text })}
-            className="flex h-7 items-center gap-1 px-2 text-(--color-app-muted) hover:bg-(--color-app-bubble)"
+            onClick={onContinue}
+            aria-label={t("chat.continue")}
+            title={t("chat.continue")}
+            className="grid size-7 place-items-center rounded-full border border-(--color-border) text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
           >
-            <RotateCcw size={13} /> 重试并创建路线
+            <RotateCcw size={13} strokeWidth={1.5} />
           </button>
+        </div>
+      )}
+      {/* 悬停动作行（参考规格）：复制 + 时间戳，opacity-0 → hover 显现。 */}
+      {!streaming && message.parts.length > 0 && (
+        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/assistant-row:opacity-100 focus-within:opacity-100">
+          <CopyButton t={t} text={messageText(message.parts)} />
+          <time className="select-none text-[12px] text-(--color-faint)" dateTime={new Date(message.createdAt).toISOString()}>
+            {new Date(message.createdAt).toTimeString().slice(0, 5)}
+          </time>
         </div>
       )}
     </div>
   );
+}
+
+/** 用户气泡：悬停出复制；最近一条额外出编辑钮——编辑中气泡换为文本域，
+ *  Enter 或发送图标钮确认（替换原消息重发，历史截断）、Esc 或取消图标钮退出。 */
+function UserBubble({
+  t,
+  message,
+  canEdit,
+  onEditSend,
+}: {
+  t: (key: string) => string;
+  message: ChatMessage;
+  canEdit: boolean;
+  onEditSend?: (text: string) => void;
+}): React.JSX.Element {
+  const text = messageText(message.parts);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      const el = areaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }
+  }, [editing]);
+
+  const submit = (): void => {
+    const next = draft.trim();
+    if (!next) return;
+    setEditing(false);
+    onEditSend?.(next);
+  };
+
+  const cancel = (): void => {
+    setDraft(text);
+    setEditing(false);
+  };
+
+  return (
+    <div className="rise-in group/user-row flex flex-col items-end">
+      {editing ? (
+        <div className="flex w-full max-w-xl flex-col gap-2">
+          <textarea
+            ref={areaRef}
+            value={draft}
+            rows={Math.min(8, draft.split("\n").length + 1)}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                submit();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancel();
+              }
+            }}
+            aria-label={t("chat.edit")}
+            className="scrollbar-thin w-full resize-none rounded-xl border border-(--color-border-hover) bg-(--color-surface) px-4 py-3 leading-relaxed outline-none text-(--color-foreground)"
+          />
+          {/* 编辑动作行：发送图标钮确认重发（与输入卡发送钮同图标）、取消图标钮退出。 */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label={t("chat.edit.send")}
+              title={t("chat.edit.send")}
+              disabled={!draft.trim()}
+              onClick={submit}
+              className="grid size-7 place-items-center rounded-md border border-(--color-border) bg-(--color-raised) text-(--color-foreground) hover:bg-(--color-hover) disabled:opacity-40"
+            >
+              <ArrowUp size={14} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              aria-label={t("chat.edit.cancel")}
+              title={t("chat.edit.cancel")}
+              onClick={cancel}
+              className="grid size-7 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
+          {text}
+        </div>
+      )}
+      {!editing && (
+        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/user-row:opacity-100 focus-within:opacity-100">
+          <CopyButton t={t} text={text} />
+          {canEdit && (
+            <button
+              type="button"
+              aria-label={t("chat.edit")}
+              title={t("chat.edit")}
+              onClick={() => {
+                setDraft(text);
+                setEditing(true);
+              }}
+              className="grid size-7 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CopyButton({ t, text }: { t: (key: string) => string; text: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={copied ? t("chat.copied") : t("chat.copy")}
+      title={copied ? t("chat.copied") : t("chat.copy")}
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).catch(() => undefined);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="grid size-7 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+    >
+      {copied ? <Check size={14} className="text-(--color-tool-ok)" /> : <Copy size={14} />}
+    </button>
+  );
+}
+
+function LoaderCircleInline(): React.JSX.Element {
+  return <span className="inline-block size-3 animate-spin rounded-full border border-(--color-border) border-t-(--color-foreground)" />;
 }

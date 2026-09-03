@@ -61,8 +61,8 @@ export function reduceSubagentRuns(
     };
     return { ...state, [event.childId]: run };
   }
-  // 终态之后不再有更新（spawner 保证终态唯一，这里再兜一层）。
-  if (existing.endedAt !== undefined) return state;
+  // 重放的 started 对已建档运行是幂等空操作（不得把终态重置回 started）。
+  if (existing.endedAt !== undefined || event.status === "started") return state;
   const next: SubagentRun = {
     ...existing,
     status: event.status,
@@ -86,6 +86,14 @@ export function runsForSession(state: SubagentRunsState, sessionId: string | nul
 /** 按 Task 调用 id 反查运行（时间线工具行 → 面板卡片）。 */
 export function runByInvocation(state: SubagentRunsState, invocationId: string): SubagentRun | undefined {
   return Object.values(state).find((run) => run.parentInvocationId === invocationId);
+}
+
+/** 回放过滤：内存已有档案的 childId 不回放（实况优先，历史不覆盖）。 */
+export function filterHydrationEntries(
+  state: SubagentRunsState,
+  entries: readonly { at: number; event: SubagentLifecycleEvent }[],
+): { at: number; event: SubagentLifecycleEvent }[] {
+  return entries.filter((entry) => state[entry.event.childId] === undefined);
 }
 
 /** 运行时长 mm:ss（运行中传 now 取活值，终态传 endedAt 定值）。 */
