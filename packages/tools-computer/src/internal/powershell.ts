@@ -91,7 +91,14 @@ function decodeExpr(base64: string): string {
   return `[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${base64}'))`;
 }
 
-/** 截图：整块虚拟屏幕 → PNG 临时文件，stdout 输出 `<file>|<W>x<H>`。 */
+/** 截图降采样目标宽（模型可见图）：1080p 桌面缩到 720p 足以辨物，控制
+ * base64 体积与后续轮次的上下文占用。 */
+const CAPTURE_MAX_WIDTH = 1280;
+/** JPEG 编码质量（0-100）。 */
+const CAPTURE_JPEG_QUALITY = 70;
+
+/** 截图：整块虚拟屏幕 → PNG 全分辨率留档 + JPEG 降采样供模型，stdout
+ * 输出 `<png>|<W>x<H>|<jpg>|<jW>x<jH>`。 */
 export function screenshotScript(): string {
   return [
     PS_PREAMBLE,
@@ -106,9 +113,24 @@ export function screenshotScript(): string {
     "$name = 'screen-{0}-{1}.png' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), [Guid]::NewGuid().ToString('N').Substring(0, 8)",
     "$path = Join-Path $directory $name",
     "$bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)",
+    `$scale = [Math]::Min(1.0, ${CAPTURE_MAX_WIDTH} / $bounds.Width)`,
+    "$scaledW = [int][Math]::Round($bounds.Width * $scale)",
+    "$scaledH = [int][Math]::Round($bounds.Height * $scale)",
+    "$jpeg = New-Object System.Drawing.Bitmap $scaledW, $scaledH",
+    "$jpegGraphics = [System.Drawing.Graphics]::FromImage($jpeg)",
+    "$jpegGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic",
+    "$jpegGraphics.DrawImage($bitmap, 0, 0, $scaledW, $scaledH)",
+    "$jpegName = 'screen-{0}-{1}.jpg' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), [Guid]::NewGuid().ToString('N').Substring(0, 8)",
+    "$jpegPath = Join-Path $directory $jpegName",
+    "$codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }",
+    "$encoderParams = New-Object System.Drawing.Imaging.EncoderParameters 1",
+    `$encoderParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${CAPTURE_JPEG_QUALITY})`,
+    "$jpeg.Save($jpegPath, $codec, $encoderParams)",
     "$graphics.Dispose()",
     "$bitmap.Dispose()",
-    "Write-Output ('{0}|{1}x{2}' -f $path, $bounds.Width, $bounds.Height)",
+    "$jpegGraphics.Dispose()",
+    "$jpeg.Dispose()",
+    "Write-Output ('{0}|{1}x{2}|{3}|{4}x{5}|{6},{7}' -f $path, $bounds.Width, $bounds.Height, $jpegPath, $scaledW, $scaledH, $bounds.X, $bounds.Y)",
   ].join("\n");
 }
 
