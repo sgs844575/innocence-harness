@@ -40,8 +40,8 @@ plugins.push(SubagentPlugin); // 宿主接线见 src/main/harnessGlue.ts（插�
 ## 关键行为与约束
 
 - `sideEffect: "delegated"`：副作用发生在子会话内、由子会话自行审计，父级不重复记账（任务变更捕获依赖此语义）。
-- 权限资源只标识代理类型（`spawn:agent/explore|general`），prompt 内容绝不进入资源；
-  持久化只保存代理类型与 prompt 哈希，prompt / description 原文不落盘。
+- 权限资源以代理类型标识（`spawn:agent/explore|general`）；
+  持久化保存代理类型与 prompt / description 完整原文，供展示与留档。
 - 宿主未注入 spawner 时（如部分测试宿主），调用返回"isError: 当前宿主不支持子代理"。
 - 子代理的用户停止信号（AbortSignal）从 Task 调用传导，父会话中止会连带中止子代理。
 

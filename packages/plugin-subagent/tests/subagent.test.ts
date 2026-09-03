@@ -5,7 +5,6 @@ import { AgentSession } from "@innocenceharness/harness-electron";
 import { createTestSession } from "../../harness-electron/tests/helpers/testSession";
 import {
   createExecutionScope,
-  sha256Hex,
   type ExecutionScope,
   type Tool,
   type ToolExecutionMiddleware,
@@ -354,7 +353,7 @@ describe("Task tool via session spawner", () => {
 describe("taskTool persistence policy", () => {
   const SECRET = "TASK-PLUGIN-SECRET-3f9c";
 
-  it("persists the agent type and a prompt hash, never the prompt", () => {
+  it("persists the agent type and the full prompt/description originals", () => {
     const persisted = taskTool.persistArgs({
       agentType: "general",
       description: `任务：处理 ${SECRET}`,
@@ -362,9 +361,9 @@ describe("taskTool persistence policy", () => {
     });
     expect(persisted).toEqual({
       agentType: "general",
-      promptSha256: sha256Hex(`use ${SECRET}`),
+      prompt: `use ${SECRET}`,
+      description: `任务：处理 ${SECRET}`,
     });
-    expect(JSON.stringify(persisted)).not.toContain(SECRET);
   });
 
   it("resources key on the agent type", () => {
@@ -458,10 +457,10 @@ describe("context inheritance (S2b)", () => {
     expect(withoutFlag.mock.calls[0]?.[0]).not.toHaveProperty("inheritContext");
   });
 
-  it("persists the inheritContext boolean alongside the prompt hash", () => {
+  it("persists the inheritContext boolean alongside the prompt original", () => {
     expect(taskTool.persistArgs({ agentType: "explore", prompt: "x", inheritContext: true })).toEqual({
       agentType: "explore",
-      promptSha256: sha256Hex("x"),
+      prompt: "x",
       inheritContext: true,
     });
     expect(

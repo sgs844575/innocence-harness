@@ -1,6 +1,5 @@
 import type { Context } from "@innocenceharness/kernel";
 import {
-  sha256Hex,
   type Tool,
   type ToolContext,
 } from "@innocenceharness/harness-tools";
@@ -114,7 +113,7 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
       }
     },
     permissionResource(args) {
-      // 资源只标识代理预设类型；prompt 内容绝不进入资源。
+      // 资源以代理预设类型标识（spawn:agent/<preset>）。
       return {
         action: "spawn",
         kind: "agent",
@@ -122,12 +121,14 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
       };
     },
     persistArgs(args) {
-      const prompt = typeof args.prompt === "string" ? args.prompt : "";
-      // 保存预设类型和 prompt 哈希；prompt/description 原文不持久化。
-      // inheritContext 为布尔开关，非机密值，原样持久化。
+      // 持久化完整原文供展示/留档：预设类型、prompt 原文、description 原文（如有），
+      // inheritContext 为布尔开关，原样持久化。
       return {
         agentType: pickAgentType(args.agentType),
-        promptSha256: sha256Hex(prompt),
+        prompt: typeof args.prompt === "string" ? args.prompt : "",
+        ...(typeof args.description === "string" && args.description
+          ? { description: args.description }
+          : {}),
         ...(args.inheritContext === true ? { inheritContext: true } : {}),
       };
     },
@@ -150,6 +151,7 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         // 人设 + 线程注记（M3）：注记是系统级线程纪律，逐线程附加，不入预设。
         systemPrompt: withThreadNotes(preset.systemPrompt),
         tools: preset.tools,
+        agentType,
         prompt,
         description: typeof description === "string" ? description : undefined,
         signal: ctx.signal,
