@@ -20,7 +20,7 @@ import { useChatStream } from "./state/useChatStream";
 import { useSettings } from "./state/useSettings";
 import { useSidebarState } from "./state/useSidebarState";
 import { useSubagentRuns } from "./state/useSubagentRuns";
-import { runByInvocation, runsForSession } from "./state/subagentRuns";
+import { groupRunsByLiveness, runByInvocation, runsForSession, type SubagentRun } from "./state/subagentRuns";
 import { RightDock } from "./components/RightDock";
 import { clampDockWidth, DEFAULT_DOCK_WIDTH, type DockFilePayload, type DockTabInstance, type DockTabKind } from "./state/dockTabs";
 import { AuxChatView } from "./components/AuxChatView";
@@ -30,7 +30,7 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { BrowserView } from "./components/BrowserView";
 import { latestTodos, type ToolRowModel } from "./components/chat/toolRows";
 import type { ComposerDraft } from "./components/Composer";
-import type { GitCapsuleData } from "./components/GitCapsule";
+import type { CapsuleSubagentItem, GitCapsuleData } from "./components/GitCapsule";
 import { BranchPicker } from "./components/BranchPicker";
 import { AppMenu } from "./components/AppMenu";
 import type { TitleBarMenuItem } from "./components/TitleBar";
@@ -214,13 +214,29 @@ export function App(): React.JSX.Element {
     setSelectedChildId(match?.childId ?? null);
   }, [newDockTab]);
 
-  /** 胶囊「智能体」行：打开 dock 子代理标签并选中最新存活运行（无存活选最近一次）实时展示。 */
+  /** 胶囊智能体段点运行行标题：dock 直达该子代理的会话记录（不是列表）。 */
+  const openSubagentChild = useCallback(
+    (childId: string) => {
+      newDockTab("subagents");
+      setSelectedChildId(childId);
+    },
+    [newDockTab],
+  );
+
+  /** 胶囊「查看全部 N ›」行：dock 打开本会话子代理列表（存活/已完成分组，倒序）。 */
   const openCapsuleSubagents = useCallback(() => {
     newDockTab("subagents");
-    const runs = runsForSession(subagentStateRef.current, sessions.activeId);
-    const live = runs.find((run) => run.endedAt === undefined) ?? runs.at(-1);
-    setSelectedChildId(live?.childId ?? null);
-  }, [newDockTab, sessions.activeId]);
+    setSelectedChildId(null);
+  }, [newDockTab]);
+
+  /** 胶囊存活行「暂停」钮：取消该子代理运行（终态经 lifecycle 事件回流面板）。 */
+  const cancelSubagent = useCallback(
+    (childId: string) => {
+      if (!hasBridge() || sessions.activeId === null) return;
+      void api.cancelSubagent(sessions.activeId, childId).catch(() => undefined);
+    },
+    [sessions.activeId],
+  );
 
   /** 顶栏终端钮：开合聊天页底部终端面板（右侧 dock 的终端标签走 dock 首页/＋ 菜单）。 */
   const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
@@ -384,20 +400,46 @@ export function App(): React.JSX.Element {
   }, [sessionRoot, sessions.activeId, chat.streaming, gitTick]);
 
   const capsule: GitCapsuleData = useMemo(() => {
-    const running = activeRuns.filter((run) => run.endedAt === undefined).length;
     const terminalCount = panelTerminalCount + dockTabs.filter((tab) => tab.kind === "terminal").length;
+    // 胶囊智能体段逐运行行：存活（带暂停钮）在上、已结束在下，各自新→旧。
+    const groups = groupRunsByLiveness(activeRuns);
+    const toCapsuleItem = (run: SubagentRun): CapsuleSubagentItem => ({
+      childId: run.childId,
+      title: run.description || run.agentType || t("dock.subagents"),
+      status: run.status,
+    });
     return {
       branch: capsuleGit.branch,
       // 空仓（无提交）branch 为 null 但 changes 可统计——两者皆空才视为非 Git。
       isGitRepo: capsuleGit.branch !== null || capsuleGit.changes !== undefined,
       changes: capsuleGit.changes,
       todos: latestTodos(chat.messages),
-      ...(activeRuns.length > 0 ? { subagents: { total: activeRuns.length, running } } : {}),
+      ...(activeRuns.length > 0
+        ? {
+            subagents: {
+              running: groups.running.map(toCapsuleItem),
+              completed: groups.completed.map(toCapsuleItem),
+            },
+          }
+        : {}),
       ...(terminalCount > 0 ? { terminals: { count: terminalCount } } : {}),
+      onOpenSubagentRun: openSubagentChild,
+      onCancelSubagent: hasBridge() ? cancelSubagent : undefined,
       onOpenSubagents: openCapsuleSubagents,
       onOpenTerminals: openCapsuleTerminals,
     };
-  }, [capsuleGit, chat.messages, activeRuns, dockTabs, panelTerminalCount, openCapsuleSubagents, openCapsuleTerminals]);
+  }, [
+    capsuleGit,
+    chat.messages,
+    activeRuns,
+    dockTabs,
+    panelTerminalCount,
+    t,
+    openSubagentChild,
+    cancelSubagent,
+    openCapsuleSubagents,
+    openCapsuleTerminals,
+  ]);
 
   const runningIds = useMemo<ReadonlySet<string>>(
     () => new Set(chat.streaming && sessions.activeId ? [sessions.activeId] : []),

@@ -11,17 +11,17 @@ export function capsuleRightGutter(containerWidth: number, capsuleOpen: boolean)
 }
 
 /** 胶囊可见性（默认不出现）：本项目是 Git 仓库 / 已有待办清单 /
- *  调用过智能体（含已结束，段内展示存活状态）/ 存在存活终端——任一成立即出现。 */
+ *  存在子代理运行（存活或已结束任一）/ 存在存活终端——任一成立即出现。 */
 export function capsuleHasContent(data: {
   isGitRepo: boolean;
   todos: readonly unknown[];
-  subagents?: { total: number; running?: number };
+  subagents?: { running: readonly unknown[]; completed?: readonly unknown[] };
   terminals?: { count: number };
 }): boolean {
   return (
     data.isGitRepo ||
     data.todos.length > 0 ||
-    (data.subagents?.total ?? 0) > 0 ||
+    (data.subagents ? data.subagents.running.length + (data.subagents.completed?.length ?? 0) > 0 : false) ||
     (data.terminals?.count ?? 0) > 0
   );
 }

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { SubagentLifecycleEvent } from "../../../shared/ipc";
+import type { SubagentLifecycleEvent, SubagentStatus } from "../../../shared/ipc";
 import {
   filterHydrationEntries,
   formatRunDuration,
+  groupRunsByLiveness,
   hydrateSubagentRuns,
   initialSubagentRunsState,
   pairedRunTools,
   reduceSubagentRuns,
   runByInvocation,
   runsForSession,
+  type SubagentRun,
   type SubagentRunsState,
 } from "./subagentRuns";
 
@@ -114,6 +116,48 @@ describe("runsForSession / runByInvocation", () => {
   it("按 Task 调用 id 反查运行", () => {
     expect(runByInvocation(state, "inv-2")?.childId).toBe("c2");
     expect(runByInvocation(state, "inv-none")).toBeUndefined();
+  });
+});
+
+describe("groupRunsByLiveness", () => {
+  const run = (childId: string, status: SubagentStatus, startedAt: number): SubagentRun => ({
+    childId,
+    parentSessionId: "s1",
+    description: childId,
+    status,
+    text: "",
+    thinking: "",
+    tools: [],
+    startedAt,
+  });
+
+  it("存活一组（started/running）、已结束一组（completed/failed/cancelled）", () => {
+    const groups = groupRunsByLiveness([
+      run("a", "started", 1000),
+      run("b", "running", 2000),
+      run("c", "completed", 3000),
+      run("d", "failed", 4000),
+      run("e", "cancelled", 5000),
+    ]);
+    expect(groups.running.map((item) => item.childId)).toEqual(["b", "a"]);
+    expect(groups.completed.map((item) => item.childId)).toEqual(["e", "d", "c"]);
+  });
+
+  it("两组各自按创建时间倒序（新→旧），不改动入参数组顺序", () => {
+    const input = [
+      run("old_run", "running", 1000),
+      run("new_done", "completed", 9000),
+      run("new_run", "running", 8000),
+      run("old_done", "failed", 2000),
+    ];
+    const groups = groupRunsByLiveness(input);
+    expect(groups.running.map((item) => item.childId)).toEqual(["new_run", "old_run"]);
+    expect(groups.completed.map((item) => item.childId)).toEqual(["new_done", "old_done"]);
+    expect(input.map((item) => item.childId)).toEqual(["old_run", "new_done", "new_run", "old_done"]);
+  });
+
+  it("空入参给空两组", () => {
+    expect(groupRunsByLiveness([])).toEqual({ running: [], completed: [] });
   });
 });
 

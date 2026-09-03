@@ -28,6 +28,7 @@ import {
   sendChatTurn,
   setHarnessSettings,
   stopChatTurn,
+  cancelSubagentRun,
   updateProviderApiKey,
   disposeSession,
   getBackgroundJobs,
@@ -253,6 +254,8 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC.messagesList, (_e, sessionId: string) => sessions.listMessages(sessionId));
   ipcMain.handle(IPC.subagentHistory, (_e, sessionId: string) => sessions.listSubagentHistory(sessionId));
+  ipcMain.handle(IPC.subagentCancel, (_e, sessionId: string, childId: string) =>
+    cancelSubagentRun(sessionId, childId));
 
   ipcMain.handle(IPC.chatSend, (_e, sessionId: string, text: string, userMessageId?: string) => {
     needWindow();

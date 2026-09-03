@@ -44,6 +44,8 @@ export const IPC = {
   subagentLifecycle: "subagent:lifecycle",
   /** 子代理运行档案回放：按会话拉取落盘的 lifecycle 记录（重启后建档）。 */
   subagentHistory: "subagent:history",
+  /** 取消一个存活子代理运行（childId = lifecycle 事件 id = 运行注册表 id）。 */
+  subagentCancel: "subagent:cancel",
   workspacePick: "workspace:pick",
   /** 落地页分支胶囊：探测任意项目根的 Git 分支（非仓库/失败 → null）。 */
   workspaceGitBranch: "workspace:git-branch",
@@ -546,6 +548,8 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   onSubagentLifecycle(cb: (e: SubagentLifecycleEvent) => void): () => void;
   /** 子代理运行档案：按会话读回落盘的 lifecycle 记录（重启后回放建档）。 */
   listSubagentHistory(sessionId: string): Promise<{ at: number; event: SubagentLifecycleEvent }[]>;
+  /** 取消一个存活子代理运行；返回是否命中存活注册表项（终态/未知 id → false）。 */
+  cancelSubagent(sessionId: string, childId: string): Promise<boolean>;
   onChatPermission(cb: (e: ChatPermissionEvent) => void): () => void;
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
   pickWorkspace(): Promise<string>;

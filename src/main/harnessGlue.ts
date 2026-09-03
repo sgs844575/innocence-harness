@@ -702,6 +702,12 @@ export function stopChatTurn(sessionId: string): void {
   runtime.stop(sessionId);
 }
 
+/** 取消一个存活子代理运行（childId = lifecycle 事件 id = 运行注册表 id）；
+ *  是否命中存活注册表项由 runtime 按会话各路由逐个尝试得出。 */
+export function cancelSubagentRun(sessionId: string, childId: string): boolean {
+  return runtime.cancelSubagent(sessionId, childId);
+}
+
 /**
  * Edit-and-resend (replace semantics): truncates the edited message and
  * everything after it (store + rewritten transcript), rewinds the route's

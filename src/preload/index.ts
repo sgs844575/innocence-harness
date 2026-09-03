@@ -75,6 +75,7 @@ const api: InnocenceCodeApi = {
   onChatThinking: (cb) => subscribe(IPC.chatThinking, cb as never),
   onSubagentLifecycle: (cb) => subscribe(IPC.subagentLifecycle, cb as never),
   listSubagentHistory: (sessionId) => ipcRenderer.invoke(IPC.subagentHistory, sessionId),
+  cancelSubagent: (sessionId, childId) => ipcRenderer.invoke(IPC.subagentCancel, sessionId, childId),
   onChatPermission: (cb) => subscribe(IPC.chatPermission, cb as never),
   respondChatPermission: (requestId, choice) =>
     ipcRenderer.invoke(IPC.chatPermissionRespond, requestId, choice),

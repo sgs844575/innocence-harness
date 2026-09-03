@@ -4,7 +4,7 @@
 // 动作行（复制 + 时间戳）、流式等待行、左缘虚线刻度。
 import { useEffect, useRef, useState } from "react";
 import { Bot, ChevronLeft, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
-import { formatRunDuration, pairedRunTools, type SubagentRun } from "../../state/subagentRuns";
+import { formatRunDuration, groupRunsByLiveness, pairedRunTools, type SubagentRun } from "../../state/subagentRuns";
 import { runToolsToTimelineRows } from "../chat/toolRows";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
 import { ThinkingRow } from "../chat/ThinkingRow";
@@ -176,7 +176,8 @@ export function RunConversation({
   );
 }
 
-/** 列表视图整体（含空态）。 */
+/** 列表视图整体（含空态）：两组分类——正在运行的子代理在上、已完成的子代理
+ *  在下（失败/取消以各自状态标在该组行内），两组各自按创建时间倒序（新→旧）。 */
 export function SubagentsList({
   t,
   runs,
@@ -186,6 +187,8 @@ export function SubagentsList({
   runs: SubagentRun[];
   onOpen: (childId: string) => void;
 }): React.JSX.Element {
+  const groups = groupRunsByLiveness(runs);
+  const groupLabel = "px-1 pb-1 text-[12px] text-(--color-faint) select-none";
   return (
     <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
       {runs.length === 0 ? (
@@ -194,10 +197,27 @@ export function SubagentsList({
           <span className="text-[13px]">{t("dock.empty")}</span>
         </div>
       ) : (
-        <div className="space-y-2.5 p-3">
-          {runs.map((run) => (
-            <RunCard key={run.childId} t={t} run={run} onOpen={() => onOpen(run.childId)} />
-          ))}
+        <div className="space-y-3 p-3">
+          {groups.running.length > 0 && (
+            <section>
+              <div className={groupLabel}>{t("dock.subagents.runningGroup")}</div>
+              <div className="space-y-2.5">
+                {groups.running.map((run) => (
+                  <RunCard key={run.childId} t={t} run={run} onOpen={() => onOpen(run.childId)} />
+                ))}
+              </div>
+            </section>
+          )}
+          {groups.completed.length > 0 && (
+            <section>
+              <div className={groupLabel}>{t("dock.subagents.completedGroup")}</div>
+              <div className="space-y-2.5">
+                {groups.completed.map((run) => (
+                  <RunCard key={run.childId} t={t} run={run} onOpen={() => onOpen(run.childId)} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

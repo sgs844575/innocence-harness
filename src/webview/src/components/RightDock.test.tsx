@@ -179,6 +179,46 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByText("1")).toBeTruthy();
   });
 
+  it("列表视图：正在运行/已完成两组分类，各自按创建时间倒序，运行组在上", () => {
+    const oldRunning: SubagentRun = { ...runningRun, childId: "c_older", description: "较早存活", startedAt: 1000 };
+    const newRunning: SubagentRun = { ...runningRun, childId: "c_newer", description: "较新存活", startedAt: 2000 };
+    const oldDone: SubagentRun = { ...doneRun, childId: "d_older", description: "较早完成", startedAt: 3000 };
+    const newFailed: SubagentRun = {
+      ...doneRun,
+      childId: "d_newer",
+      description: "较新失败",
+      status: "failed",
+      final: undefined,
+      error: "出错了",
+      startedAt: 4000,
+    };
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[oldRunning, oldDone, newRunning, newFailed]} />,
+    );
+    expect(screen.getByText("dock.subagents.runningGroup")).toBeTruthy();
+    expect(screen.getByText("dock.subagents.completedGroup")).toBeTruthy();
+    // 组内倒序 + 组间次序：较新存活 → 较早存活 →（分组标题）→ 较新失败 → 较早完成。
+    const order = ["较新存活", "较早存活", "dock.subagents.completedGroup", "较新失败", "较早完成"].map((text) =>
+      screen.getByText(text),
+    );
+    for (let index = 0; index < order.length - 1; index += 1) {
+      // Node.DOCUMENT_POSITION_FOLLOWING (4)：后一个元素在文档顺序上位于前一个之后。
+      expect(order[index]!.compareDocumentPosition(order[index + 1]!) & 4).toBeTruthy();
+    }
+    // 失败行保留自身状态标（「已完成」组内含失败/取消，各自状态可见）。
+    expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
+    expect(screen.getByText(/dock\.status\.completed/)).toBeTruthy();
+  });
+
+  it("列表视图：某组为空时不渲染该组标题", () => {
+    render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[doneRun]} />,
+    );
+    expect(screen.queryByText("dock.subagents.runningGroup")).toBeNull();
+    expect(screen.getByText("dock.subagents.completedGroup")).toBeTruthy();
+  });
+
   it("点击卡片进入对话视图；对话视图含 Markdown 正文 + prompt + 工具轨迹，返回钮回列表", () => {
     const onSelect = vi.fn();
     const { container } = render(

@@ -204,6 +204,22 @@ export class AgentSession {
   }
 
   /**
+   * Cancels one spawned child run by its lifecycle childId (the run registry
+   * keys runs by that same id). Aborting is asynchronous — the child settles
+   * through the normal cancelled lifecycle event. Returns false when this
+   * session's registry holds no non-terminal entry for the id (foreign id,
+   * already finished, or pruned by the finished-record cap).
+   */
+  cancelSubagent(childId: string): boolean {
+    try {
+      const info = this.kernel.services.spawner.cancel(childId);
+      return info.status === "started" || info.status === "running";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Aborts the active run, waits for it to settle, then disposes the kernel
    * context (every plugin and effect, reverse activation order). The
    * disposed flag flips first, so run() calls racing this teardown reject

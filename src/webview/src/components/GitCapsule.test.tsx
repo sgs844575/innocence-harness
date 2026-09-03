@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GitCapsule, type GitCapsuleData } from "./GitCapsule";
+import { GitCapsule, type CapsuleSubagentItem, type GitCapsuleData } from "./GitCapsule";
 
 afterEach(cleanup);
 
 const t = (key: string) => key;
+
+function item(childId: string, title: string, status: CapsuleSubagentItem["status"]): CapsuleSubagentItem {
+  return { childId, title, status };
+}
 
 function renderCapsule(data: Partial<GitCapsuleData> = {}) {
   const full: GitCapsuleData = {
@@ -39,18 +43,72 @@ describe("GitCapsule", () => {
     expect(screen.getByText("任务一")).toBeTruthy();
   });
 
-  it("智能体段：存活显示运行中，点击打开子代理面板", () => {
-    const onOpenSubagents = vi.fn();
-    renderCapsule({ subagents: { total: 2, running: 1 }, onOpenSubagents });
-    const row = screen.getByRole("button", { name: /capsule.subagents.running/ });
-    expect(row.textContent).toContain("2");
-    fireEvent.click(row);
-    expect(onOpenSubagents).toHaveBeenCalledTimes(1);
+  it("智能体段：存活行在上（带暂停钮）、已结束行在下，点标题直达该运行会话", () => {
+    const onOpenSubagentRun = vi.fn();
+    const onCancelSubagent = vi.fn();
+    renderCapsule({
+      subagents: {
+        running: [item("c_live", "检索参考资料", "running")],
+        completed: [item("c_done", "修复测试", "completed")],
+      },
+      onOpenSubagentRun,
+      onCancelSubagent,
+    });
+    // 存活标题 → 打开该运行的会话记录
+    fireEvent.click(screen.getByText("检索参考资料"));
+    expect(onOpenSubagentRun).toHaveBeenCalledWith("c_live");
+    // 已结束标题 → 同样直达会话记录
+    fireEvent.click(screen.getByText("修复测试"));
+    expect(onOpenSubagentRun).toHaveBeenCalledWith("c_done");
+    // 暂停钮只取消，不打开
+    fireEvent.click(screen.getByRole("button", { name: "capsule.subagents.pause" }));
+    expect(onCancelSubagent).toHaveBeenCalledWith("c_live");
+    expect(onOpenSubagentRun).toHaveBeenCalledTimes(2);
   });
 
-  it("智能体段：全部结束后显示已结束", () => {
-    renderCapsule({ subagents: { total: 2, running: 0 } });
-    expect(screen.getByText("capsule.subagents.done")).toBeTruthy();
+  it("智能体段：存活行渲染顺序在已结束行之前", () => {
+    renderCapsule({
+      subagents: {
+        running: [item("c_live", "存活任务", "running"), item("c_live2", "存活任务二", "started")],
+        completed: [item("c_done", "完成任务", "completed")],
+      },
+    });
+    const titles = ["存活任务", "存活任务二", "完成任务"].map((title) => screen.getByText(title));
+    for (let index = 0; index < titles.length - 1; index += 1) {
+      // Node.DOCUMENT_POSITION_FOLLOWING (4)：后一个元素在文档顺序上位于前一个之后。
+      expect(titles[index]!.compareDocumentPosition(titles[index + 1]!) & 4).toBeTruthy();
+    }
+  });
+
+  it("智能体段：已结束行最多直出两条，其余只经「查看全部」", () => {
+    renderCapsule({
+      subagents: {
+        running: [],
+        completed: [
+          item("c1", "任务一", "completed"),
+          item("c2", "任务二", "failed"),
+          item("c3", "任务三", "cancelled"),
+        ],
+      },
+    });
+    expect(screen.getByText("任务一")).toBeTruthy();
+    expect(screen.getByText("任务二")).toBeTruthy();
+    expect(screen.queryByText("任务三")).toBeNull();
+  });
+
+  it("智能体段：「查看全部 N ›」显示总数并进入本会话列表", () => {
+    const onOpenSubagents = vi.fn();
+    renderCapsule({
+      subagents: {
+        running: [item("c_live", "存活任务", "running")],
+        completed: [item("c1", "任务一", "completed"), item("c2", "任务二", "completed")],
+      },
+      onOpenSubagents,
+    });
+    const row = screen.getByRole("button", { name: /capsule.subagents.all/ });
+    expect(row.textContent).toContain("3");
+    fireEvent.click(row);
+    expect(onOpenSubagents).toHaveBeenCalledTimes(1);
   });
 
   it("终端段：显示存活数，点击打开终端", () => {
@@ -66,5 +124,11 @@ describe("GitCapsule", () => {
     renderCapsule();
     expect(screen.queryByText("capsule.subagents")).toBeNull();
     expect(screen.queryByText("capsule.terminals")).toBeNull();
+  });
+
+  it("智能体两组皆空时段不渲染（不残留「查看全部」）", () => {
+    renderCapsule({ subagents: { running: [], completed: [] } });
+    expect(screen.queryByText("capsule.subagents")).toBeNull();
+    expect(screen.queryByText("capsule.subagents.all")).toBeNull();
   });
 });

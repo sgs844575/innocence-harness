@@ -178,6 +178,20 @@ export class HarnessRuntime {
   }
 
   /**
+   * Cancels one spawned subagent of a chat session by its lifecycle childId.
+   * The child belongs to exactly one route session (each route mounts its own
+   * spawner registry keyed by that id), so try every cached route until one
+   * reports a live entry. False = no live registry entry anywhere (already
+   * terminal, foreign id, or no session built).
+   */
+  cancelSubagent(sessionId: string, childId: string): boolean {
+    for (const session of this.cache.sessionsOf(sessionId)) {
+      if (session.cancelSubagent(childId)) return true;
+    }
+    return false;
+  }
+
+  /**
    * Releases one route's agent resources (empty routeId = the main route,
    * like send; omitted route = every route of the chat session): aborts any
    * active run, waits for it to settle and disposes the session's plugins.

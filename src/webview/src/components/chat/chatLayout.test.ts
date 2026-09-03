@@ -25,11 +25,14 @@ describe("capsuleHasContent", () => {
   it("四个出现条件各自独立成立", () => {
     expect(capsuleHasContent({ isGitRepo: true, todos: [] })).toBe(true);
     expect(capsuleHasContent({ isGitRepo: false, todos: [{}] })).toBe(true);
-    expect(capsuleHasContent({ isGitRepo: false, todos: [], subagents: { total: 2, running: 0 } })).toBe(true);
+    expect(capsuleHasContent({ isGitRepo: false, todos: [], subagents: { running: [], completed: [{}] } })).toBe(true);
+    expect(capsuleHasContent({ isGitRepo: false, todos: [], subagents: { running: [{}], completed: [] } })).toBe(true);
     expect(capsuleHasContent({ isGitRepo: false, todos: [], terminals: { count: 1 } })).toBe(true);
   });
 
   it("计数为 0 的段不算内容", () => {
-    expect(capsuleHasContent({ isGitRepo: false, todos: [], subagents: { total: 0, running: 0 }, terminals: { count: 0 } })).toBe(false);
+    expect(
+      capsuleHasContent({ isGitRepo: false, todos: [], subagents: { running: [], completed: [] }, terminals: { count: 0 } }),
+    ).toBe(false);
   });
 });

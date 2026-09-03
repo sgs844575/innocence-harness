@@ -64,6 +64,16 @@ export class RouteSessionCache {
     return this.sessions.get(key);
   }
 
+  /** Every cached session of one chat session (all of its routes), in cache
+   *  insertion order. Callers must treat the sessions as read-only handles,
+   *  not cache keys. */
+  sessionsOf(sessionId: string): AgentSession[] {
+    const prefix = routeKeyPrefix(sessionId);
+    return [...this.sessions.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, entry]) => entry.session);
+  }
+
   isDisposing(key: string): boolean {
     return this.disposing.has(key);
   }

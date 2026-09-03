@@ -87,6 +87,27 @@ export function runsForSession(state: SubagentRunsState, sessionId: string | nul
     .sort((a, b) => a.startedAt - b.startedAt);
 }
 
+/** 分组视图：存活（started/running）一组、已结束（completed/failed/cancelled，
+ *  即「已完成」大类，失败/取消在组内以各自状态标出）一组；两组各自按创建
+ *  时间倒序（新→旧）。不改动入参数组。 */
+export interface SubagentRunGroups {
+  running: SubagentRun[];
+  completed: SubagentRun[];
+}
+
+export function groupRunsByLiveness(runs: readonly SubagentRun[]): SubagentRunGroups {
+  const running: SubagentRun[] = [];
+  const completed: SubagentRun[] = [];
+  for (const run of runs) {
+    if (run.status === "started" || run.status === "running") running.push(run);
+    else completed.push(run);
+  }
+  const byNewest = (a: SubagentRun, b: SubagentRun): number => b.startedAt - a.startedAt;
+  running.sort(byNewest);
+  completed.sort(byNewest);
+  return { running, completed };
+}
+
 /** 按 Task 调用 id 反查运行（时间线工具行 → 面板卡片）。 */
 export function runByInvocation(state: SubagentRunsState, invocationId: string): SubagentRun | undefined {
   return Object.values(state).find((run) => run.parentInvocationId === invocationId);
