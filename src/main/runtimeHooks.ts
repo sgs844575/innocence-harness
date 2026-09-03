@@ -70,6 +70,7 @@ export function createRuntimeHooks(
               content: part.content,
               isError: part.isError === true,
               durationMs: part.durationMs,
+              invocationId: part.invocationId,
             };
       sessions.updateMessage(sessionId, messageId, (m) => {
         m.parts.push(normalized);
@@ -117,8 +118,8 @@ export function createRuntimeHooks(
         requestId: ask.requestId,
         toolName: ask.call.toolName,
         args: ask.call.args,
-        // 脱敏持久化资源摘要（kind/action/scope）——raw 值在 core 侧已
-        // 被 persistArgs/permissionResource 挡在门外，这里只透传镜像。
+        // 持久化资源摘要（kind/action/scope）——与 persistArgs 同粒度的
+        // 持久化形状，这里只透传镜像。
         resource: {
           kind: ask.call.resource.kind,
           action: ask.call.resource.action,

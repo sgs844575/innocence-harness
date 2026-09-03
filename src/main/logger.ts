@@ -4,15 +4,22 @@ import fs from "node:fs";
 import path from "node:path";
 
 let logStream: fs.WriteStream | null = null;
+let logFilePath: string | null = null;
 
 function stream(): fs.WriteStream {
   if (!logStream) {
     const dir = path.join(app.getPath("userData"), "logs");
     fs.mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    logStream = fs.createWriteStream(path.join(dir, `main-${stamp}.log`), { flags: "ax" });
+    logFilePath = path.join(dir, `main-${stamp}.log`);
+    logStream = fs.createWriteStream(logFilePath, { flags: "ax" });
   }
   return logStream;
+}
+
+/** 当前日志文件路径（尚未写过日志 → null）。 */
+export function currentLogFile(): string | null {
+  return logFilePath;
 }
 
 export function log(level: "info" | "warn" | "error", message: string, extra?: unknown): void {

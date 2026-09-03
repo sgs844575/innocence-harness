@@ -9,6 +9,8 @@ export interface SidebarIndexGroup {
   name: string;
   collapsed: boolean;
   sessionIds: string[];
+  /** 分组颜色 id（缺省 gray；旧文档无此键）。 */
+  color?: string;
 }
 
 export interface SidebarIndexProject {
@@ -165,7 +167,13 @@ function normalizeDocument(value: unknown, sessions: readonly SessionProjection[
     if (!group || typeof group !== "object" || typeof group.id !== "string" || typeof group.name !== "string") continue;
     const sessionIds = normalizeSessionIds(Array.isArray(group.sessionIds) ? group.sessionIds : [], validIds).filter((id) => !grouped.has(id));
     sessionIds.forEach((id) => grouped.add(id));
-    groups.push({ id: group.id, name: group.name, collapsed: group.collapsed === true, sessionIds });
+    groups.push({
+      id: group.id,
+      name: group.name,
+      collapsed: group.collapsed === true,
+      sessionIds,
+      ...(typeof group.color === "string" && group.color.trim() !== "" ? { color: group.color } : {}),
+    });
   }
   const manualUngrouped = input.manualUngrouped === true;
   const ungroupedSeed = manualUngrouped && Array.isArray(input.ungrouped)
@@ -242,7 +250,7 @@ export interface SidebarIndexStore {
   reorderSessions(container: SidebarContainer, orderedIds: readonly string[]): void;
   moveSession(id: string, target: SidebarContainer, beforeId?: string): void;
   reorderContainers(kind: "projects" | "groups", orderedIds: readonly string[]): void;
-  upsertSidebarGroup(group: { id: string; name: string; collapsed?: boolean; sessionIds?: readonly string[] }): void;
+  upsertSidebarGroup(group: { id: string; name: string; collapsed?: boolean; sessionIds?: readonly string[]; color?: string }): void;
   deleteSidebarGroup(id: string): void;
   setSidebarGroupCollapsed(id: string, collapsed: boolean): void;
 }
@@ -372,10 +380,17 @@ export function createSidebarIndexStore(
       if (existing) {
         existing.name = group.name;
         existing.collapsed = group.collapsed ?? existing.collapsed;
+        if (group.color !== undefined) existing.color = group.color;
         if (ids) existing.sessionIds = ids;
         return;
       }
-      staged.groups.push({ id: group.id, name: group.name, collapsed: group.collapsed ?? DEFAULT_GROUP_COLLAPSED, sessionIds: ids ?? [] });
+      staged.groups.push({
+        id: group.id,
+        name: group.name,
+        collapsed: group.collapsed ?? DEFAULT_GROUP_COLLAPSED,
+        sessionIds: ids ?? [],
+        ...(group.color !== undefined ? { color: group.color } : {}),
+      });
     }),
     deleteSidebarGroup: (id) => commit((staged) => {
       const index = staged.groups.findIndex((group) => group.id === id);

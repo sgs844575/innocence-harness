@@ -121,8 +121,9 @@ export function deleteSession(id: string): void {
     }
   }
   deleteSubagentHistory(subagentHistoryFile(storeDir, id));
-  // 无项目会话的暂存目录随会话一并清理（尽力而为，失败不阻断删除）。
-  removeSessionScratchDir(id);
+  // 无项目会话的暂存目录随会话一并清理（尽力而为，失败不阻断删除；异步
+  // 不阻塞主进程，见 sessionScratch.ts）。
+  void removeSessionScratchDir(id);
 }
 
 /** 子代理运行档案（sidecar 回放用；渲染层按激活会话拉取建档）。 */

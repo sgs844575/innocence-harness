@@ -24,6 +24,8 @@ export interface SessionIndexEntry {
   workspaceRoot?: string;
   /** M1 会话 fork 血缘：父会话与切口消息（信息性，不参与装载逻辑）。 */
   forkedFrom?: { sessionId: string; messageId?: string };
+  /** dock 辅助对话会话标记（缺省 = 普通会话）。 */
+  aux?: boolean;
 }
 
 /** <storeDir>/sessions.json; null while the store has no directory. */
@@ -52,6 +54,7 @@ export function sessionIndexEntryOf(record: SessionRecord): SessionIndexEntry {
     messageCount: record.messageCount,
     workspaceRoot: record.workspaceRoot,
     ...(record.forkedFrom ? { forkedFrom: { ...record.forkedFrom } } : {}),
+    ...(record.aux === true ? { aux: true } : {}),
   };
 }
 
@@ -101,6 +104,7 @@ export function sessionRecordFromEntry(e: SessionIndexEntry): SessionRecord {
     updatedAt: typeof e.updatedAt === "number" ? e.updatedAt : Date.now(),
     messageCount: typeof e.messageCount === "number" ? e.messageCount : 0,
     workspaceRoot: typeof e.workspaceRoot === "string" ? e.workspaceRoot : "",
+    ...(e.aux === true ? { aux: true } : {}),
     ...(forked && typeof forked === "object" && typeof forked.sessionId === "string"
       ? {
           forkedFrom: {

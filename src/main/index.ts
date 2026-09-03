@@ -35,6 +35,7 @@ import { watchTheme } from "./theme";
 import { logger } from "./logger";
 import { hostShutdownGate } from "./shutdown";
 import { createTerminalIpcService, registerTerminalIpc, type TerminalIpcService } from "./terminalIpc";
+import { createDockTerminalIpcService, registerDockTerminalIpc, type DockTerminalIpcService } from "./dockTerminalIpc";
 import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import { currentTestOverrides } from "./testOverrides";
 
@@ -50,6 +51,7 @@ registerPluginScheme();
 
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
+let dockTerminalService: DockTerminalIpcService | undefined;
 let taskRuntimeDeps: TaskRuntimeIpcDeps | undefined;
 
 const appLifecycle = createMainAppLifecycle({
@@ -129,6 +131,10 @@ if (!gotLock) {
       });
       await registerTerminalIpc(terminalService);
 
+      // dock 终端（右侧 dock 标签）：cwd 来自渲染端项目根，与任务路由终端隔离。
+      dockTerminalService = createDockTerminalIpcService({ send: broadcast });
+      await registerDockTerminalIpc(dockTerminalService);
+
       const win = await appLifecycle.createInitialWindow();
       // Non-mac: the custom title bar's File/Edit/View/Help buttons pop up
       // menus on demand (see src/main/menu.ts popupMenu), so no menu bar.
@@ -168,6 +174,7 @@ if (!gotLock) {
     disposeTaskRuntime,
     disposeTerminals: async () => {
       await terminalService?.disposeAll();
+      await dockTerminalService?.disposeAll();
     },
   });
   app.on("before-quit", (e) => {

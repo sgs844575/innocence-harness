@@ -53,7 +53,8 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
     minWidth: 760,
     minHeight: 520,
     show: false,
-    backgroundColor: resolved === "dark" ? "#0d0d0d" : "#d6d6da",
+    // 窗口底色 = 页面灰（侧栏色）；黑主区由网页层圆角浮起。
+    backgroundColor: resolved === "dark" ? "#1e1e1e" : "#ececee",
     ...(iconPath ? { icon: iconPath } : {}),
     // 自绘窗口控制：Win/Linux 无边框 + 网页内控制钮（TitleBar 渲染，
     // window:* IPC 驱动）；macOS 保留系统红绿灯（hiddenInset）。
@@ -63,7 +64,9 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: false,
+      // dock 浏览器标签需要 <webview> 内嵌访客页面（访客独立进程，主窗口
+      // 仍 sandbox + contextIsolation，不开 nodeIntegration）。
+      webviewTag: true,
       spellcheck: true,
     },
   });

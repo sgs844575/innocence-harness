@@ -20,6 +20,8 @@ export interface SidebarGroup {
   name: string;
   collapsed: boolean;
   sessionIds: string[];
+  /** 分组颜色 id（gray/red/orange/yellow/green/blue/purple；缺省 gray）。 */
+  color?: string;
 }
 
 export interface SidebarProject {
@@ -46,6 +48,8 @@ export type SidebarGroupInput = {
   name: string;
   collapsed?: boolean;
   sessionIds?: string[];
+  /** 分组颜色 id（开放字符串；缺省 gray）。 */
+  color?: string;
 };
 
 export interface SidebarApi {

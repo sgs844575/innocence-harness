@@ -20,6 +20,14 @@ export const TerminalIpcChannels = {
   terminalExit: "terminal:exit",
   /** Main -> renderer: shell transcript events from tool execution. */
   terminalShell: "terminal:shell",
+  /** dock 终端（非任务路由，cwd 由渲染端的项目根给出）：创建/写/调尺寸/释放。 */
+  dockTerminalCreate: "terminal:dock-create",
+  dockTerminalWrite: "terminal:dock-write",
+  dockTerminalResize: "terminal:dock-resize",
+  dockTerminalDispose: "terminal:dock-dispose",
+  /** Main -> renderer: dock 终端输出与退出。 */
+  dockTerminalOutput: "terminal:dock-output",
+  dockTerminalExit: "terminal:dock-exit",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -114,6 +122,55 @@ export type ShellTranscriptEvent =
     };
 
 // ---------------------------------------------------------------------------
+// Dock terminal DTOs (右侧 dock 的独立终端：非任务路由，cwd = 渲染端项目根)
+// ---------------------------------------------------------------------------
+
+export interface DockTerminalCreateRequest {
+  /** dock 标签实例 id（一标签一终端）。 */
+  terminalId: string;
+  /** 工作目录（渲染端项目根；空串 → 主进程回退用户主目录）。 */
+  cwd: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface DockTerminalCreateResponse {
+  terminalId: string;
+  ptyId: string;
+}
+
+export interface DockTerminalWriteRequest {
+  terminalId: string;
+  ptyId: string;
+  data: string;
+}
+
+export interface DockTerminalResizeRequest {
+  terminalId: string;
+  ptyId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface DockTerminalDisposeRequest {
+  terminalId: string;
+  /** 缺省 = 按 terminalId 直接释放（标签关闭路径）；带值时必须匹配存活会话。 */
+  ptyId?: string;
+}
+
+export interface DockTerminalOutputEvent {
+  terminalId: string;
+  ptyId: string;
+  data: string;
+}
+
+export interface DockTerminalExitEvent {
+  terminalId: string;
+  ptyId: string;
+  exitCode: number | null;
+}
+
+// ---------------------------------------------------------------------------
 // Renderer-callable API surface (typed; the preload bridge implements it)
 // ---------------------------------------------------------------------------
 
@@ -125,4 +182,11 @@ export interface TerminalIpcApi {
   onTerminalOutput(cb: (e: TerminalOutputEvent) => void): () => void;
   onTerminalExit(cb: (e: TerminalExitEvent) => void): () => void;
   onShellTranscript(cb: (e: ShellTranscriptEvent) => void): () => void;
+  /** dock 终端（右侧 dock 标签的独立 PTY）。 */
+  dockCreate(request: DockTerminalCreateRequest): Promise<DockTerminalCreateResponse>;
+  dockWrite(request: DockTerminalWriteRequest): Promise<void>;
+  dockResize(request: DockTerminalResizeRequest): Promise<void>;
+  dockDispose(request: DockTerminalDisposeRequest): Promise<void>;
+  onDockTerminalOutput(cb: (e: DockTerminalOutputEvent) => void): () => void;
+  onDockTerminalExit(cb: (e: DockTerminalExitEvent) => void): () => void;
 }
