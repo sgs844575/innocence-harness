@@ -12,7 +12,7 @@ export {
   type ModelFetchOptions,
   type ModelFetchResolution,
 } from "./proxy-fetch";
-export { streamOneHarnessStep, type HarnessStepEvent, type StreamOneHarnessStepRequest } from "./stream-step";
+export { classifyModelRequestError, streamOneHarnessStep, type HarnessStepEvent, type StreamOneHarnessStepRequest } from "./stream-step";
 export {
   AutomationCandidateSchema,
   createAutomationCandidateService,

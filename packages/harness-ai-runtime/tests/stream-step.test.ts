@@ -247,6 +247,67 @@ describe("streamOneHarnessStep", () => {
     }
   });
 
+  it("classifies HTTP status failures into actionable messages without the provider body", async () => {
+    const upstream = "无权访问 max 分组（服务商原始响应，绝不外泄）";
+    const withStatus = Object.assign(new Error(upstream), { statusCode: 403 });
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "error", error: withStatus },
+        ]),
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: { value: model, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [],
+      }),
+    );
+    const errorEvent = events.find((event) => event.type === "error");
+    const message = errorEvent && errorEvent.type === "error" ? errorEvent.error.message : "";
+    expect(message).toContain("HTTP 403");
+    expect(message).toContain("拒绝访问");
+    expect(message).not.toContain(upstream);
+    expect(JSON.stringify(events)).not.toContain("max 分组");
+  });
+
+  it("classifies rate limits and network failures", async () => {
+    const cases: Array<{ error: Error; expectText: string }> = [
+      { error: Object.assign(new Error("rate limited"), { statusCode: 429 }), expectText: "HTTP 429" },
+      {
+        error: Object.assign(new Error("fetch failed"), {
+          cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+        }),
+        expectText: "ECONNREFUSED",
+      },
+    ];
+    for (const { error, expectText } of cases) {
+      const model = new MockLanguageModelV3({
+        doStream: {
+          stream: convertArrayToReadableStream([
+            { type: "stream-start", warnings: [] },
+            { type: "error", error },
+          ]),
+        },
+      });
+      const events = await collect(
+        streamOneHarnessStep({
+          model: { value: model, providerId: "test", modelId: "model" },
+          system: "system",
+          messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+          tools: [],
+        }),
+      );
+      const errorEvent = events.find((event) => event.type === "error");
+      const message = errorEvent && errorEvent.type === "error" ? errorEvent.error.message : "";
+      expect(message).toContain(expectText);
+    }
+  });
+
   it("places a cache breakpoint on the system prompt for anthropic protocol models", async () => {
     const model = new MockLanguageModelV3({
       doStream: {

@@ -21,7 +21,7 @@ import {
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
-import { streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import { classifyModelRequestError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 
 export interface LoopOptions {
   provider: Provider;
@@ -136,7 +136,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
     } catch (_error) {
       return request.signal?.aborted
         ? { parts, aborted: true }
-        : { parts, aborted: false, error: "Model request failed" };
+        : { parts, aborted: false, error: classifyModelRequestError(_error) };
     }
     return { parts, aborted: request.signal?.aborted === true };
   }
@@ -178,8 +178,8 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         completeTrace(metadata, true);
         return { parts, metadata, aborted: true };
       case "error":
-        // The runtime deliberately normalizes this message, so no provider
-        // payload, prompt, credentials, or raw tool arguments escape here.
+        // Classified to a status/network category (harness-ai-runtime), so no
+        // provider payload, prompt, credentials, or raw tool arguments escape.
         error = event.error.message;
         break;
       case "usage":

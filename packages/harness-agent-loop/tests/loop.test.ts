@@ -431,6 +431,22 @@ describe("runLoop", () => {
     }
   });
 
+  it("classifies legacy provider failures into actionable messages (HTTP 403)", async () => {
+    const upstream = "无权访问 max 分组（服务商原始响应，绝不外泄）";
+    const provider: Provider = {
+      id: "legacy-fail",
+      async *chat(): AsyncIterable<Delta> {
+        throw Object.assign(new Error(upstream), { statusCode: 403 });
+      },
+    };
+    const { events, run } = await setup([], provider);
+    await run("x");
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent && errorEvent.type === "error" && errorEvent.message).toContain("HTTP 403");
+    expect(errorEvent && errorEvent.type === "error" && errorEvent.message).toContain("拒绝访问");
+    expect(JSON.stringify(events)).not.toContain("max 分组");
+  });
+
   it("rejects denied SDK MCP calls without leaking raw arguments", async () => {
     const secret = "SDK-MCP-SECRET";
     const { provider } = sdkProviderForTurns([

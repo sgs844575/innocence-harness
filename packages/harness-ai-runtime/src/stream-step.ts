@@ -170,8 +170,54 @@ function stringifyToolOutput(output: unknown): string {
 
 const SAFE_MODEL_ERROR_MESSAGE = "Model request failed";
 
-function toNeutralError(_error: unknown): { message: string } {
-  return { message: SAFE_MODEL_ERROR_MESSAGE };
+/**
+ * Classifies a model-request failure into a specific, actionable message.
+ * Safety boundary: classification keys ONLY off the HTTP status code, the
+ * network errno, and known error names — provider message/response bodies are
+ * read solely for the context-length heuristic and never flow onward, so no
+ * credentials, prompt text, or tool arguments can leak through this path.
+ */
+export function classifyModelRequestError(error: unknown): string {
+  const shape = error as
+    | {
+        name?: string;
+        message?: string;
+        statusCode?: number;
+        status?: number;
+        responseBody?: unknown;
+        cause?: { code?: string; name?: string; cause?: { code?: string } };
+      }
+    | null
+    | undefined;
+  const status = shape?.statusCode ?? shape?.status;
+  const causeCode = shape?.cause?.code ?? shape?.cause?.cause?.code;
+  const name = shape?.name ?? "";
+
+  if (status === 401) return "模型服务鉴权失败（HTTP 401）：API Key 无效或已过期";
+  if (status === 403)
+    return "模型服务拒绝访问（HTTP 403）：Key 无权使用该模型或分组，请到服务商后台检查分组/套餐权限";
+  if (status === 404) return "模型或端点不存在（HTTP 404）：请检查模型名与服务地址";
+  if (status === 429) return "模型服务限流（HTTP 429）：请求过于频繁或额度耗尽，请稍后重试";
+  if (status !== undefined && status >= 500)
+    return `模型服务错误（HTTP ${status}）：供应商暂时不可用，请稍后重试`;
+  if (status === 400) {
+    const hint = `${String(shape?.responseBody ?? "")} ${shape?.message ?? ""}`;
+    if (/context length|token limit|too many tokens|maximum context/i.test(hint)) {
+      return "上下文超出模型限制（HTTP 400）：请压缩对话或新建会话";
+    }
+  }
+  if (causeCode === "ECONNREFUSED" || causeCode === "ETIMEDOUT" || causeCode === "ECONNRESET" || causeCode === "ENOTFOUND" || causeCode === "EAI_AGAIN") {
+    return `网络错误（${causeCode}）：无法连接模型服务`;
+  }
+  if (/fetch failed|network error/i.test(shape?.message ?? "")) {
+    return "网络错误：无法连接模型服务";
+  }
+  if (name === "TimeoutError") return "模型请求超时";
+  return SAFE_MODEL_ERROR_MESSAGE;
+}
+
+function toNeutralError(error: unknown): { message: string } {
+  return { message: classifyModelRequestError(error) };
 }
 
 /**
