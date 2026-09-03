@@ -22,7 +22,7 @@ import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innoce
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { classifyModelRequestError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
-import { recoverDsmlToolCalls } from "./dsml-recovery";
+import { createDsmlTokenFilter, recoverDsmlToolCalls } from "./dsml-recovery";
 
 export interface LoopOptions {
   provider: Provider;
@@ -90,6 +90,17 @@ interface ModelStepRequest {
  * persistence, permission, and execution policy stays below this boundary.
  */
 async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
+  // token 展示走标记过滤器（漏出的原生工具调用标记不进展示流；部件累积
+  // 保留全文，落账前由 recoverDsmlToolCalls 回收）。
+  const tokenFilter = createDsmlTokenFilter();
+  const emitToken = (text: string): void => {
+    const safe = tokenFilter.push(text);
+    if (safe) request.onEvent?.({ type: "token", text: safe });
+  };
+  const flushTokens = (): void => {
+    const tail = tokenFilter.flush();
+    if (tail) request.onEvent?.({ type: "token", text: tail });
+  };
   const model = providerModel(request.provider);
   const trace = model
     ? request.telemetry?.startModelStep({ providerId: model.providerId, modelId: model.modelId })
@@ -118,7 +129,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         if (delta.type === "text") {
           if (delta.text) {
             parts.push({ type: "text", text: delta.text });
-            request.onEvent?.({ type: "token", text: delta.text });
+            emitToken(delta.text);
           }
         } else if (delta.type === "thinking") {
           if (delta.text) {
@@ -135,10 +146,12 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         }
       }
     } catch (_error) {
+      flushTokens();
       return request.signal?.aborted
         ? { parts, aborted: true }
         : { parts, aborted: false, error: classifyModelRequestError(_error) };
     }
+    flushTokens();
     return { parts, aborted: request.signal?.aborted === true };
   }
 
@@ -155,7 +168,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
       case "text":
         if (event.text) {
           parts.push({ type: "text", text: event.text });
-          request.onEvent?.({ type: "token", text: event.text });
+          emitToken(event.text);
         }
         break;
       case "reasoning":
@@ -176,6 +189,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         metadata = event.metadata;
         break;
       case "abort":
+        flushTokens();
         completeTrace(metadata, true);
         return { parts, metadata, aborted: true };
       case "error":
@@ -190,6 +204,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         break;
     }
   }
+  flushTokens();
   completeTrace(metadata, request.signal?.aborted === true, error !== undefined);
   return { parts, metadata, aborted: request.signal?.aborted === true, ...(error ? { error } : {}) };
 }

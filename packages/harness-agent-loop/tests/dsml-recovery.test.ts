@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MessagePart } from "@innocenceharness/harness-session";
-import { recoverDsmlToolCalls } from "../src/dsml-recovery";
+import { createDsmlTokenFilter, recoverDsmlToolCalls } from "../src/dsml-recovery";
 
 // 与实机漏出形态一致的样例信封：字符串参数（string="true"）与数值参数
 // （string="false"）各一，双 invoke 并行。
@@ -61,5 +61,38 @@ describe("recoverDsmlToolCalls", () => {
       toolName: "Write",
       args: { content: { a: 1 } },
     });
+  });
+});
+
+describe("createDsmlTokenFilter", () => {
+  it("逐字符喂入（标记任意拆分）：标记段全抑制，前后文本直通", () => {
+    const filter = createDsmlTokenFilter();
+    const stream = "AB<｜DSML｜｜tool_calls><｜DSML｜｜invoke name=\"Read\">x</｜DSML｜｜invoke></｜DSML｜｜tool_calls>CD";
+    let out = "";
+    for (const char of stream) out += filter.push(char);
+    out += filter.flush();
+    expect(out).toBe("ABCD");
+  });
+
+  it("普通增量直接直通；形似前缀的尾巴在证伪后放出", () => {
+    const filter = createDsmlTokenFilter();
+    expect(filter.push("hello ")).toBe("hello ");
+    expect(filter.push("<｜D")).toBe("");
+    expect(filter.push("S 无关")).toBe("<｜DS 无关");
+    expect(filter.flush()).toBe("");
+  });
+
+  it("流结束时释放被保持的非标记尾巴", () => {
+    const filter = createDsmlTokenFilter();
+    expect(filter.push("tail <｜DS")).toBe("tail ");
+    expect(filter.flush()).toBe("<｜DS");
+  });
+
+  it("未闭合的信封（流被截断）整段抑制", () => {
+    const filter = createDsmlTokenFilter();
+    let out = "";
+    for (const char of "ok<｜DSML｜｜tool_calls>被截断") out += filter.push(char);
+    out += filter.flush();
+    expect(out).toBe("ok");
   });
 });

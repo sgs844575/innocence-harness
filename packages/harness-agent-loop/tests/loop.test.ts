@@ -924,11 +924,10 @@ describe("runLoop", () => {
     expect(read.calls).toHaveLength(1);
     expect(read.calls[0]).toMatchObject({ path: "package.json", offset: 95, limit: 10 });
     expect(glob.calls).toHaveLength(1);
-    // 历史与持久化事件不带标记残留（token 流式事件是落账前的瞬时展示，
-    // 随干净的 assistantMessage 事件整体替换）；助手轮携带结构化 toolCall。
+    // 历史与全部事件（含 token 流式展示——源头有标记过滤器）都不带残留；
+    // 助手轮携带结构化 toolCall，结果成对回填。
     expect(JSON.stringify(history)).not.toContain("DSML");
-    const persisted = events.filter((event) => event.type !== "token");
-    expect(JSON.stringify(persisted)).not.toContain("DSML");
+    expect(JSON.stringify(events)).not.toContain("DSML");
     const assistant = history.find((message) => message.role === "assistant");
     expect(assistant?.parts.some((part) => part.type === "toolCall" && part.toolName === "Read")).toBe(true);
     expect(result.finalText).toBe("done");

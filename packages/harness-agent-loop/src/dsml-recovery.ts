@@ -13,6 +13,8 @@ const INVOKE_PATTERN = /<｜DSML｜｜invoke\s+name="([^"]*)"\s*>([\s\S]*?)<\/�
 const PARAM_PATTERN = /<｜DSML｜｜parameter\s+name="([^"]*)"\s+string="([^"]*)"\s*>([\s\S]*?)<\/｜DSML｜｜parameter>/g;
 /** 廉价预判：正文里出现标记开头才进入解析路径。 */
 const MARKER_HEAD = "<｜DSML｜｜";
+/** 信封闭合标记（流式守卫的吞没终点）。 */
+const MARKER_CLOSE = "</｜DSML｜｜tool_calls>";
 
 function parseNonString(raw: string): unknown {
   const trimmed = raw.trim();
@@ -67,4 +69,66 @@ export function recoverDsmlToolCalls(
   }
   if (!touched) return parts as MessagePart[];
   return [...kept, ...recovered];
+}
+
+/**
+ * 流式展示过滤器：从 `<｜DSML｜｜` 出现到其闭合之间的 token 全部抑制
+ * （标记可能被任意拆分在多个增量里，故维护前缀保持状态），标记之外的
+ * 文本立即直通。只影响展示事件——部件累积保留全文供
+ * {@link recoverDsmlToolCalls} 落账前回收。
+ */
+export interface DsmlTokenFilter {
+  /** 喂入一个文本增量，返回可安全外发的部分（"" = 全部保持/抑制）。 */
+  push(text: string): string;
+  /** 流结束：释放被保持的非标记尾巴（形似标记前缀但终究不是）。 */
+  flush(): string;
+}
+
+export function createDsmlTokenFilter(): DsmlTokenFilter {
+  let buffer = "";
+  let insideMarker = false;
+  /** buffer 尾部与标记头的最长公共前缀（保持待判）。 */
+  const heldPrefixLength = (): number => {
+    for (let length = Math.min(buffer.length, MARKER_HEAD.length - 1); length > 0; length -= 1) {
+      if (buffer.endsWith(MARKER_HEAD.slice(0, length))) return length;
+    }
+    return 0;
+  };
+  return {
+    push(text: string): string {
+      buffer += text;
+      let emit = "";
+      for (;;) {
+        if (insideMarker) {
+          const closerAt = buffer.indexOf(MARKER_CLOSE);
+          if (closerAt < 0) {
+            // 未闭合：只保留足以跨增量拼出闭合串的尾巴，其余抑制丢弃。
+            const carry = Math.min(buffer.length, MARKER_CLOSE.length - 1);
+            buffer = buffer.slice(buffer.length - carry);
+            break;
+          }
+          buffer = buffer.slice(closerAt + MARKER_CLOSE.length);
+          insideMarker = false;
+          continue;
+        }
+        const headAt = buffer.indexOf(MARKER_HEAD);
+        const hold = heldPrefixLength();
+        if (headAt < 0) {
+          emit += buffer.slice(0, buffer.length - hold);
+          buffer = buffer.slice(buffer.length - hold);
+          break;
+        }
+        emit += buffer.slice(0, headAt);
+        buffer = buffer.slice(headAt + MARKER_HEAD.length);
+        insideMarker = true;
+      }
+      return emit;
+    },
+    flush(): string {
+      const released = insideMarker ? "" : buffer;
+      buffer = "";
+      insideMarker = false;
+      return released;
+    },
+  };
 }
