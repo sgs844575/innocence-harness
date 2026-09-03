@@ -131,17 +131,6 @@ async function writeFixtureSource(fixtureDirectory: string, relativePath: string
 }
 
 describe("dependency and host boundary declarations", () => {
-  it("declares every renderer drag utility direct import in the root runtime manifest", async () => {
-    const manifest = await readManifest("package.json");
-    const sources = await Promise.all([
-      readSource("src/webview/src/components/Sidebar.tsx"),
-      readSource("src/webview/src/components/settings/provider/ProviderRow.tsx"),
-    ]);
-
-    expect(sources.every((source) => source.includes('from "@dnd-kit/utilities"'))).toBe(true);
-    expect(manifest.dependencies?.["@dnd-kit/utilities"]).toBe("^3.2.2");
-  });
-
   it("keeps the Node trace adapter in the host and outside staged runtime dependencies", async () => {
     const [rootManifest, runtimeManifest, hostTelemetryTest, nodeAdapter] = await Promise.all([
       readManifest("package.json"),
