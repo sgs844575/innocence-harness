@@ -121,6 +121,93 @@ describe("Task tool via session spawner", () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ description: "检查生命周期" }));
     expect(result).toEqual({ content: "【检查生命周期】\n子会话结论" });
   });
+
+  it("appends the [run:...] marker when the spawner reports the started childId", async () => {
+    const run = vi.fn(async (options: { onLifecycle?: (event: { childId: string; status: string }) => void }) => {
+      options.onLifecycle?.({ childId: "child_abc", status: "started" });
+      return { finalText: "结论", turns: 1 };
+    });
+
+    const result = await taskTool.execute(
+      { agentType: "explore", prompt: "查" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: { run },
+      },
+    );
+    expect(result.content).toBe("结论\n\n[run:child_abc]");
+  });
+
+  it("resume forwards to the spawner and stamps the reopened run id from the lifecycle event", async () => {
+    const resume = vi.fn(
+      async (input: {
+        runId: string;
+        prompt: string;
+        onLifecycle?: (event: { childId: string; status: string; resumed?: true }) => void;
+      }) => {
+        input.onLifecycle?.({ childId: "child_real", status: "running", resumed: true });
+        return { finalText: "续跑结论", turns: 2 };
+      },
+    );
+
+    const result = await taskTool.execute(
+      { resume: "child_old", prompt: "继续执行" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: {
+          run: async () => ({ finalText: "x", turns: 1 }),
+          resume,
+        },
+      },
+    );
+
+    expect(resume).toHaveBeenCalledWith(expect.objectContaining({ runId: "child_old", prompt: "继续执行" }));
+    // 运行标识以重开事件回流的 childId 为准（续跑链可再续）。
+    expect(result.content).toBe("续跑结论\n\n[run:child_real]");
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("resume failures surface as an error result carrying the authored message", async () => {
+    const result = await taskTool.execute(
+      { resume: "child_gone", prompt: "继续" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: {
+          run: async () => ({ finalText: "x", turns: 1 }),
+          resume: async () => {
+            throw new Error("子代理不可续跑：child_gone（未知、未完成或已释放）");
+          },
+        },
+      },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("不可续跑");
+    expect(result.content).toContain("child_gone");
+  });
+
+  it("resume without a resumable host spawner reports an error result", async () => {
+    const result = await taskTool.execute(
+      { resume: "child_x", prompt: "继续" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+        subagent: { run: async () => ({ finalText: "x", turns: 1 }) },
+      },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("不支持续跑");
+  });
   it("marks a child model failure as an error tool result instead of success", async () => {
     const run = vi.fn(async () => ({
       finalText: "子会话部分输出",
@@ -260,7 +347,7 @@ describe("Task tool via session spawner", () => {
     expect(childUser?.parts.at(-1)).toMatchObject({ type: "text", text: " [marked]" });
   });
 
-  it("disposes the child session in a finally after a successful spawn", async () => {
+  it("parks the completed child session for resume; session teardown releases it", async () => {
     let parentTurn = 0;
     const provider: Provider = {
       id: "dual",
@@ -287,10 +374,62 @@ describe("Task tool via session spawner", () => {
     try {
       const result = await session.run("帮我查");
       expect(result.finalText).toBe("父级最终答案");
-      expect(disposeSpy).toHaveBeenCalledTimes(1);
+      // 完成 = 驻留待续跑（不即时 dispose）。
+      expect(disposeSpy).toHaveBeenCalledTimes(0);
+      await session.dispose();
+      // 会话收尾释放驻留子会话；父会话自身的 dispose 也计一次。
+      expect(disposeSpy).toHaveBeenCalledTimes(2);
     } finally {
       disposeSpy.mockRestore();
     }
+  });
+
+  it("end to end: resume continues the parked child session's own conversation", async () => {
+    let childTurn = 0;
+    const childRequests: Array<Array<{ role: string; parts: Array<{ type: string; text?: string }> }>> = [];
+    const provider: Provider = {
+      id: "dual",
+      async *chat(req): AsyncIterable<Delta> {
+        if (req.system.includes(EXPLORE_MARKER)) {
+          // 推快照（活引用会让两份记录在断言时长成同一终态）。
+          childRequests.push(req.messages.map((m) => ({ role: m.role, parts: [...m.parts] })) as never);
+          childTurn += 1;
+          yield { type: "text", text: childTurn === 1 ? "首段结论" : "续段结论" };
+          return;
+        }
+        yield { type: "text", text: "父级不参与" };
+      },
+    };
+    const session = await createTestSession({
+      plugins: [SubagentPlugin],
+      provider,
+      workspaceRoot: "D:/tmp",
+      permission: { mode: "auto", decider: { ask: async () => "deny" } },
+    });
+
+    // 直接驱动会话级 spawner：首跑完成即驻留，runId 从生命周期建档事件捕获。
+    let childId: string | undefined;
+    const first = await session.spawner.run({
+      systemPrompt: "You are the Read-Only Codebase Explorer of the harness.",
+      tools: "readOnly",
+      prompt: "查一下",
+      onLifecycle: (event) => {
+        if (event.status === "started") childId = event.childId;
+      },
+    });
+    expect(first.finalText).toBe("首段结论");
+    expect(childId).toBeDefined();
+
+    const second = await session.spawner.resume({ runId: childId!, prompt: "继续查" });
+    expect(second.finalText).toBe("续段结论");
+    // 同一子会话：第二次请求带着首段对话（历史增长，含首段 prompt 与结论）。
+    expect(childRequests).toHaveLength(2);
+    expect(childRequests[1]!.length).toBeGreaterThan(childRequests[0]!.length);
+    const firstTexts = childRequests[0]!.flatMap((m) => m.parts.map((p) => p.text ?? "")).join("");
+    expect(firstTexts).toContain("查一下");
+    const secondTexts = childRequests[1]!.flatMap((m) => m.parts.map((p) => p.text ?? "")).join("");
+    expect(secondTexts).toContain("首段结论");
+    expect(secondTexts).toContain("继续查");
   });
 
   it("disposes the child session even when the spawn fails", async () => {
@@ -366,7 +505,26 @@ describe("taskTool persistence policy", () => {
     });
   });
 
-  it("resources key on the agent type", () => {
+  it("persists resume verbatim (agentType is a spawn-time choice, not a resume field)", () => {
+    expect(taskTool.persistArgs({ resume: `run-${SECRET}`, prompt: "继续" })).toEqual({
+      resume: `run-${SECRET}`,
+      prompt: "继续",
+    });
+  });
+
+  it("validateArgs requires a non-empty prompt", async () => {
+    await expect(taskTool.validateArgs?.({ agentType: "explore", prompt: " " })).rejects.toThrow(
+      "prompt",
+    );
+  });
+
+  it("validateArgs: resume exempts agentType but must itself be a non-empty id", async () => {
+    await expect(taskTool.validateArgs?.({ resume: "child_x", prompt: "继续" })).resolves.toBeUndefined();
+    await expect(taskTool.validateArgs?.({ resume: " ", prompt: "继续" })).rejects.toThrow("resume");
+    await expect(taskTool.validateArgs?.({ prompt: "没有类型" })).rejects.toThrow("agentType");
+  });
+
+  it("resources key on the agent type; resume keys on the resume scope", () => {
     const resource = taskTool.permissionResource(
       { agentType: "explore", prompt: SECRET },
       {
@@ -377,12 +535,16 @@ describe("taskTool persistence policy", () => {
       },
     );
     expect(resource).toEqual({ action: "spawn", kind: "agent", scope: "explore" });
-  });
-
-  it("validateArgs requires a non-empty prompt", async () => {
-    await expect(taskTool.validateArgs?.({ agentType: "explore", prompt: " " })).rejects.toThrow(
-      "prompt",
+    const resumed = taskTool.permissionResource(
+      { resume: "child_x", prompt: "继续" },
+      {
+        workspaceRoot: "D:/tmp",
+        signal: new AbortController().signal,
+        log: () => {},
+        scope: createExecutionScope("Task"),
+      },
     );
+    expect(resumed).toEqual({ action: "spawn", kind: "agent", scope: "resume" });
   });
 });
 

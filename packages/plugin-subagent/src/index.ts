@@ -74,11 +74,14 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
   const fallbackId = ids[0] ?? "";
   const pickAgentType = (value: unknown): string =>
     typeof value === "string" && byId.has(value) ? value : fallbackId;
+  /** 结果尾部附运行标识：模型可凭 [run:...] 用 resume 参数续跑同一子代理。 */
+  const withRunMarker = (body: string, runId: string | undefined): string =>
+    runId ? `${body}\n\n[run:${runId}]` : body;
   return {
     name: "Task",
     description:
-      "派生一个隔离子代理去完成一项独立任务，适合并行研究和探索（子代理的中间过程不占用当前上下文）。" +
-      "prompt 里给足自包含的上下文和目标。可用预设：\n" +
+      "派生一个隔离子代理去完成一项独立任务，适合并行研究和探索（同一消息里的多条 Task 调用会并行执行；子代理的中间过程不占用当前上下文）。" +
+      "prompt 里给足自包含的上下文和目标。每次调用结果末尾带 [run:运行id] 标识，传入 resume 参数即可唤醒已完成的子代理继续任务（沿用其完整对话上下文）。可用预设：\n" +
       catalogLines(presets),
     readOnly: false,
     // 副作用发生在子会话内、由子会话自行审计——父级不得重复记账（P1 依赖此值）。
@@ -89,42 +92,56 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         agentType: {
           type: "string",
           enum: ids,
-          description: "子代理预设类型（见工具描述目录）",
+          description: "子代理预设类型（见工具描述目录；resume 续跑时无需指定）",
         },
         description: { type: "string", description: "一句话任务摘要" },
         prompt: { type: "string", description: "自包含的任务描述（目标、范围、期望产出）" },
+        resume: {
+          type: "string",
+          description: "续跑已完成的子代理：先前 Task 结果末尾 [run:...] 中的运行 id",
+        },
         inheritContext: {
           type: "boolean",
           description:
-            "继承父会话最近对话上下文（近 50 条消息种子进子代理并附继承简报；适合延续父任务的工作树/同工作区协作。默认 false = 全新上下文，prompt 需自包含）",
+            "继承父会话最近对话上下文（近 50 条消息种子进子代理并附继承简报；适合延续父任务的工作树/同工作区协作。默认 false = 全新上下文，prompt 需自包含。resume 续跑时忽略——子代理自带上下文）",
         },
       },
-      required: ["agentType", "prompt"],
+      required: ["prompt"],
     },
     async validateArgs(args) {
       const prompt = args.prompt;
       if (typeof prompt !== "string" || prompt.trim().length === 0) {
         throw new Error("缺少必填参数 prompt（自包含的任务描述）");
       }
-      const agentType = args.agentType;
-      if (typeof agentType !== "string" || !byId.has(agentType)) {
-        // 只列合法值，绝不回显入参内容。
-        throw new Error(`无效的 agentType（合法值：${ids.join(", ")}）`);
+      const resume = args.resume;
+      if (resume !== undefined && (typeof resume !== "string" || resume.trim().length === 0)) {
+        throw new Error("无效的 resume（须为非空的先前运行 id）");
+      }
+      if (resume === undefined) {
+        const agentType = args.agentType;
+        if (typeof agentType !== "string" || !byId.has(agentType)) {
+          // 只列合法值，绝不回显入参内容。
+          throw new Error(`无效的 agentType（合法值：${ids.join(", ")}）`);
+        }
       }
     },
     permissionResource(args) {
-      // 资源以代理预设类型标识（spawn:agent/<preset>）。
-      return {
-        action: "spawn",
-        kind: "agent",
-        scope: pickAgentType(args.agentType),
-      };
+      // 资源以代理预设类型标识（spawn:agent/<preset>）；续跑以 resume 标识
+      //（预设固定在子代理上，调用侧不再选择）。
+      return args.resume !== undefined
+        ? { action: "spawn", kind: "agent", scope: "resume" }
+        : {
+            action: "spawn",
+            kind: "agent",
+            scope: pickAgentType(args.agentType),
+          };
     },
     persistArgs(args) {
-      // 持久化完整原文供展示/留档：预设类型、prompt 原文、description 原文（如有），
-      // inheritContext 为布尔开关，原样持久化。
+      // 持久化完整原文供展示/留档：预设类型（续跑时不指定）、prompt 原文、
+      // description/resume 原文（如有），inheritContext 为布尔开关，原样持久化。
+      const resume = typeof args.resume === "string" && args.resume ? args.resume : undefined;
       return {
-        agentType: pickAgentType(args.agentType),
+        ...(resume ? { resume } : { agentType: pickAgentType(args.agentType) }),
         prompt: typeof args.prompt === "string" ? args.prompt : "",
         ...(typeof args.description === "string" && args.description
           ? { description: args.description }
@@ -133,8 +150,6 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
       };
     },
     async execute(args, ctx: ToolContext) {
-      const agentType = pickAgentType(args.agentType);
-      const preset = byId.get(agentType)!;
       const prompt = args.prompt;
       const description = args.description;
       if (typeof prompt !== "string" || prompt.trim().length === 0) {
@@ -147,6 +162,40 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         };
       }
       const header = typeof description === "string" && description ? `【${description}】\n` : "";
+      const resume = typeof args.resume === "string" && args.resume ? args.resume : undefined;
+
+      if (resume) {
+        if (!ctx.subagent.resume) {
+          return { content: "当前宿主不支持续跑子代理（spawner 不可续跑）", isError: true };
+        }
+        // 续跑沿用子代理自身上下文；运行标识以重开事件回流的 childId 为准。
+        let runId = resume;
+        try {
+          const result = await ctx.subagent.resume({
+            runId: resume,
+            prompt,
+            description: typeof description === "string" ? description : undefined,
+            signal: ctx.signal,
+            onLifecycle: (event) => {
+              if (event.status === "running" && event.resumed) runId = event.childId;
+            },
+          });
+          const isError = result.completion?.finishReason === "error";
+          return {
+            content: withRunMarker((header + result.finalText).trim() || "[子代理没有产出文本]", runId),
+            ...(isError ? { isError: true } : {}),
+          };
+        } catch (error) {
+          return {
+            content: `子代理续跑失败：${error instanceof Error ? error.message : String(error)}`,
+            isError: true,
+          };
+        }
+      }
+
+      const agentType = pickAgentType(args.agentType);
+      const preset = byId.get(agentType)!;
+      let runId: string | undefined;
       const result = await ctx.subagent.run({
         // 人设 + 线程注记（M3）：注记是系统级线程纪律，逐线程附加，不入预设。
         systemPrompt: withThreadNotes(preset.systemPrompt),
@@ -155,13 +204,16 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
         prompt,
         description: typeof description === "string" ? description : undefined,
         signal: ctx.signal,
+        // 运行标识取建档 started 事件的 childId（结果尾标供 resume 引用）。
+        onLifecycle: (event) => {
+          if (event.status === "started") runId = event.childId;
+        },
         // S2b 上下文继承请求：由 loop 绑定的 spawner 兑现（无绑定时降级全新上下文）。
         ...(args.inheritContext === true ? { inheritContext: true } : {}),
       });
       const isError = result.completion?.finishReason === "error";
       return {
-        content:
-          (header + result.finalText).trim() || "[子代理没有产出文本]",
+        content: withRunMarker((header + result.finalText).trim() || "[子代理没有产出文本]", runId),
         ...(isError ? { isError: true } : {}),
       };
     },

@@ -2,7 +2,14 @@
 // AgentSession.spawner face, and builds the child sessions it spawns — the
 // recursive AgentSession.create adapter (shared provider/engine, inherited
 // processors/middlewares in order, parent workspaceRoot closure).
-import type { SpawnerChildMaterials, SpawnerChildSession, SubagentChildEventListener, SubagentSpawner } from "@innocenceharness/harness-agent";
+import type {
+  SpawnerChildMaterials,
+  SpawnerChildSession,
+  SubagentChildEventListener,
+  SubagentOptions,
+  SubagentResumeInput,
+  SubagentSpawner,
+} from "@innocenceharness/harness-agent";
 import type { SpawnerService } from "@innocenceharness/harness-agent";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import type { HarnessEvent } from "@innocenceharness/harness-session";
@@ -63,18 +70,20 @@ export function makeSessionSpawner(
   sessionId: string,
   view: SessionRegistryView,
 ): SubagentSpawner {
+  const bound = (options: SubagentOptions): Parameters<SpawnerService["run"]>[0] => ({
+    ...options,
+    sessionId,
+    // Live arrays (never snapshots); the mutable-array cast satisfies the
+    // service input shape — the service only reads them.
+    inherit: {
+      processors: view.messageProcessors as MessageProcessor[],
+      middlewares: view.toolMiddlewares as ToolExecutionMiddleware[],
+    },
+  });
   return {
-    run: (options) =>
-      spawnerService.run({
-        ...options,
-        sessionId,
-        // Live arrays (never snapshots); the mutable-array cast satisfies the
-        // service input shape — the service only reads them.
-        inherit: {
-          processors: view.messageProcessors as MessageProcessor[],
-          middlewares: view.toolMiddlewares as ToolExecutionMiddleware[],
-        },
-      }),
+    run: (options) => spawnerService.run(bound(options)),
+    // 续跑直通（同会话回退身份）：loop 绑定后 Task 的 resume 参数由此落地。
+    resume: (input: SubagentResumeInput) => spawnerService.resume({ ...input, sessionId }),
   };
 }
 

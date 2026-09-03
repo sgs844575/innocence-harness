@@ -273,6 +273,9 @@ export interface SubagentLifecycleEvent {
   /** Agent preset id and task prompt (started event only). */
   agentType?: string;
   prompt?: string;
+  /** Present only on the running event that reopens a completed run for a
+   *  continuation (resume); the prompt field carries the follow-up on it. */
+  resumed?: true;
   delta?: string;
   /** Streaming reasoning text (same cadence as delta; not persisted). */
   thinkingDelta?: string;

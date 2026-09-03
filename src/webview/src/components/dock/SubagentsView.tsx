@@ -66,10 +66,25 @@ export function RunCard({
   );
 }
 
+/** prompt 用户气泡（右对齐、3px 尾角、hover 复制）：初始 prompt 与续跑
+ *  prompt 共用同一形态。 */
+function PromptBubble({ t, text }: { t: (key: string) => string; text: string }): React.JSX.Element {
+  return (
+    <div className="rise-in group/user-row flex flex-col items-end">
+      <div className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
+        {text}
+      </div>
+      <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/user-row:opacity-100 focus-within:opacity-100">
+        <CopyButton t={t} text={text} />
+      </div>
+    </div>
+  );
+}
+
 /** 对话视图：选中运行的完整对话——与主聊天时间线同一表现：prompt 用户气泡
  *  （hover 复制）、思考幽灵行与工具轨迹按事件顺序穿插（思考被工具活动打断
- *  即分段，不再并成一行）、ToolRow 工具行、Markdown 正文（运行中流式
- *  光标，完成后悬停复制 + 时间戳）、等待行与错误块。 */
+ *  即分段，不再并成一行；续跑 prompt 追加为同形态气泡）、ToolRow 工具行、
+ *  Markdown 正文（运行中流式光标，完成后悬停复制 + 时间戳）、等待行与错误块。 */
 export function RunConversation({
   t,
   run,
@@ -119,23 +134,16 @@ export function RunConversation({
       <div className="min-h-0 flex-1">
         <div ref={scrollRef} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
           {/* 消息渲染与主聊天同语言同节奏（32px 消息间距）：prompt = 用户气泡
-              （右对齐、3px 尾角、hover 复制），chunks = 思考幽灵行与工具时间线
-              按事件顺序穿插，正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀
-              正文行，空等 = 轮换耐心提示。 */}
+              （右对齐、3px 尾角、hover 复制），chunks = 续跑 prompt 气泡、思考
+              幽灵行与工具时间线按事件顺序穿插，正文 = Markdown 帧（运行中流式
+              光标），错误 = ⚠ 前缀正文行，空等 = 轮换耐心提示。 */}
           <div className="space-y-8 px-3 py-4">
-            {run.prompt && (
-              <div className="rise-in group/user-row flex flex-col items-end">
-                <div className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
-                  {run.prompt}
-                </div>
-                <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/user-row:opacity-100 focus-within:opacity-100">
-                  <CopyButton t={t} text={run.prompt} />
-                </div>
-              </div>
-            )}
+            {run.prompt && <PromptBubble t={t} text={run.prompt} />}
             {chunks.map((chunk, index) =>
               chunk.kind === "thinking" ? (
                 <ThinkingRow key={`think-${index}`} t={t} text={chunk.text} live={thinkingLive && index === lastIndex} />
+              ) : chunk.kind === "prompt" ? (
+                <PromptBubble key={`prompt-${index}`} t={t} text={chunk.text} />
               ) : (
                 <ToolTimeline key={`tools-${index}`} t={t} rows={runToolsToTimelineRows(pairedRunTools(chunk.tools))} />
               ),

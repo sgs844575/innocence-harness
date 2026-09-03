@@ -84,11 +84,13 @@ describe("reduceSubagentRuns", () => {
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "再看" }, 1500);
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "正文" }, 1600);
     expect(state["c1"]).toMatchObject({ text: "正文" });
-    expect(state["c1"]!.entries.map((entry) => (entry.kind === "thinking" ? `think:${entry.text}` : `tool:${entry.tool.name}/${entry.tool.phase}`))).toEqual([
-      "think:先看入口",
+    expect(state["c1"]!.entries.map((entry) =>
+      entry.kind === "tool" ? `tool:${entry.tool.name}/${entry.tool.phase}` : `${entry.kind}:${entry.text}`,
+    )).toEqual([
+      "thinking:先看入口",
       "tool:Read/call",
       "tool:Read/result",
-      "think:再看",
+      "thinking:再看",
     ]);
   });
 
@@ -105,6 +107,40 @@ describe("reduceSubagentRuns", () => {
     state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "报告" }, 5000);
     const replayed = reduceSubagentRuns(state, started, 9000);
     expect(replayed).toBe(state);
+  });
+
+  it("终态档案只被 resumed running 重开：清终态字段、续跑 prompt 入时间线、更新关联调用键", () => {
+    let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "先看" }, 1100);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "首段结论" }, 1200);
+    const reopened = reduceSubagentRuns(
+      state,
+      { childId: "c1", parentSessionId: "s1", description: "", status: "running", resumed: true, prompt: "继续查", parentInvocationId: "inv-2" },
+      1300,
+    );
+    expect(reopened["c1"]).toMatchObject({ status: "running", parentInvocationId: "inv-2", text: "" });
+    expect(reopened["c1"]!.endedAt).toBeUndefined();
+    expect(reopened["c1"]!.final).toBeUndefined();
+    expect(reopened["c1"]!.entries).toEqual([
+      { kind: "thinking", text: "先看" },
+      { kind: "prompt", text: "继续查" },
+    ]);
+  });
+
+  it("非 resumed 的迟到事件仍忽略；重开后照常累积并可再次终态", () => {
+    let state: SubagentRunsState = reduceSubagentRuns(initialSubagentRunsState, started, 1000);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "首段结论" }, 1200);
+    expect(
+      reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "迟到" }, 1250),
+    ).toBe(state);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", resumed: true, prompt: "继续" }, 1300);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "再想" }, 1400);
+    state = reduceSubagentRuns(state, { childId: "c1", parentSessionId: "s1", description: "", status: "completed", final: "第二段结论" }, 1500);
+    expect(state["c1"]).toMatchObject({ status: "completed", final: "第二段结论", endedAt: 1500 });
+    expect(state["c1"]!.entries).toEqual([
+      { kind: "prompt", text: "继续" },
+      { kind: "thinking", text: "再想" },
+    ]);
   });
 });
 
@@ -261,6 +297,18 @@ describe("runConversationChunks", () => {
       { kind: "thinking", text: "段二" },
     ]);
     expect(runConversationChunks([])).toEqual([]);
+  });
+
+  it("续跑 prompt 独立成分段（打断工具合组）", () => {
+    expect(runConversationChunks([
+      { kind: "tool", tool: { name: "Read", phase: "call", at: 1 } },
+      { kind: "prompt", text: "继续" },
+      { kind: "tool", tool: { name: "Read", phase: "result", isError: false, at: 2 } },
+    ])).toEqual([
+      { kind: "tools", tools: [{ name: "Read", phase: "call", at: 1 }] },
+      { kind: "prompt", text: "继续" },
+      { kind: "tools", tools: [{ name: "Read", phase: "result", isError: false, at: 2 }] },
+    ]);
   });
 });
 

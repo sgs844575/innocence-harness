@@ -5,6 +5,7 @@ export type {
   SubagentLifecycleListener,
   SubagentLifecyclePort,
   SubagentOptions,
+  SubagentResumeInput,
   SubagentResult,
   SubagentRunHandle,
   SubagentRunInfo,
@@ -32,6 +33,7 @@ export {
 } from "./run-registry";
 export { AgentsPlugin, type AgentDef, type AgentsService } from "./agents";
 export {
+  PARKED_CHILD_LIMIT,
   SUBAGENT_CONCURRENCY,
   createSpawnerPlugin,
   type SpawnerChildMaterials,
@@ -39,6 +41,7 @@ export {
   type SpawnerDeps,
   type SpawnerLogger,
   type SpawnerPlugin,
+  type SpawnerResumeInput,
   type SpawnerRunInput,
   type SpawnerService,
   type SpawnerSessionFactory,

@@ -338,6 +338,20 @@ describe("RightDock 子代理标签", () => {
     }
   });
 
+  it("续跑 prompt 条目渲染为用户气泡（与初始 prompt 同形态）", () => {
+    const run: SubagentRun = {
+      ...doneRun,
+      prompt: "初次任务",
+      entries: [
+        { kind: "thinking", text: "首段思考" },
+        { kind: "prompt", text: "继续任务" },
+      ],
+    };
+    render(<RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[run]} selectedChildId="c2" />);
+    expect(screen.getByText("初次任务")).toBeTruthy();
+    expect(screen.getByText("继续任务")).toBeTruthy();
+  });
+
   it("对话视图失败态：错误块 + 失败状态", () => {
     const { container } = render(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"

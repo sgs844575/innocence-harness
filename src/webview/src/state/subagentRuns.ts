@@ -15,8 +15,10 @@ export interface SubagentRunTool {
   at: number;
 }
 
-/** 对话时间线条目：一段思考文本或一次工具活动（call/result 各自成条）。 */
+/** 对话时间线条目：一段思考文本、一次工具活动（call/result 各自成条）或
+ *  一条续跑 prompt（resume 重开时追加，与初始 prompt 同形态展示）。 */
 export type SubagentRunEntry =
+  | { kind: "prompt"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; tool: SubagentRunTool };
 
@@ -89,8 +91,25 @@ export function reduceSubagentRuns(
     };
     return { ...state, [event.childId]: run };
   }
-  // 重放的 started 对已建档运行是幂等空操作（不得把终态重置回 started）。
-  if (existing.endedAt !== undefined || event.status === "started") return state;
+  // 重放的 started 对已建档运行是幂等空操作；终态档案只被 resume 重开事件
+  // （resumed running）拉回运行，其余迟到事件一律忽略。
+  if (existing.endedAt !== undefined) {
+    if (event.status !== "running" || event.resumed !== true) return state;
+    const run: SubagentRun = {
+      ...existing,
+      status: "running",
+      endedAt: undefined,
+      final: undefined,
+      error: undefined,
+      // 续跑 prompt 追加为时间线条目（初始 prompt 仍在 run.prompt 独立渲染）。
+      entries: event.prompt
+        ? [...existing.entries, { kind: "prompt", text: event.prompt } as const]
+        : existing.entries,
+      ...(event.parentInvocationId ? { parentInvocationId: event.parentInvocationId } : {}),
+    };
+    return { ...state, [event.childId]: run };
+  }
+  if (event.status === "started") return state;
   const next: SubagentRun = {
     ...existing,
     status: event.status,
@@ -216,17 +235,18 @@ export function pairedRunTools(tools: readonly SubagentRunTool[]): SubagentRunTo
   return rows;
 }
 
-/** 渲染分段：思考段与「连续工具条目」组成的工具组按事件顺序交替——
- *  思考被工具活动打断即成独立幽灵行，工具不跨思考段合组。 */
+/** 渲染分段：续跑 prompt、思考段与「连续工具条目」组成的工具组按事件顺序
+ *  交替——思考被工具活动打断即成独立幽灵行，工具不跨思考/prompt 段合组。 */
 export type SubagentRunChunk =
+  | { kind: "prompt"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tools"; tools: SubagentRunTool[] };
 
 export function runConversationChunks(entries: readonly SubagentRunEntry[]): SubagentRunChunk[] {
   const chunks: SubagentRunChunk[] = [];
   for (const entry of entries) {
-    if (entry.kind === "thinking") {
-      chunks.push({ kind: "thinking", text: entry.text });
+    if (entry.kind === "thinking" || entry.kind === "prompt") {
+      chunks.push({ kind: entry.kind, text: entry.text });
       continue;
     }
     const last = chunks[chunks.length - 1];
