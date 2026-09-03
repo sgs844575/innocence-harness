@@ -35,11 +35,10 @@ const SERVER_ERROR_MAX_CHARS = 500;
 /**
  * Server error text is UNTRUSTED input: a hostile or buggy server may echo
  * raw call arguments (secrets included) into its error messages, and those
- * texts flow into isError tool results → history/audit — OUTSIDE the
- * persistArgs redaction pipeline (see Tool.execute's no-raw-args contract).
- * Secret content cannot be recognized reliably, so the trust boundary is
- * mechanical: strip control characters and hard-truncate; the truncation
- * marker keeps the loss visible instead of silent.
+ * texts flow into isError tool results → history/audit. Secret content
+ * cannot be recognized reliably, so the trust boundary is mechanical: strip
+ * control characters and hard-truncate; the truncation marker keeps the
+ * loss visible instead of silent.
  */
 function sanitizeServerMessage(raw: string | undefined): string {
   const text = (raw ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();

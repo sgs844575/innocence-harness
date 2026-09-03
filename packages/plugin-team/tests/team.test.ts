@@ -1,12 +1,12 @@
 // plugin-team tests (batch 4E task 1): the send_message tool contract
 // (shape trio, field-name-only validation errors, permission resource,
-// redacted persisted args, port fake three states + reply cap + empty
+// full-text persisted args, port fake three states + reply cap + empty
 // reply), the peer-authority envelope anchors and turn composition, and
 // the factory plugin mounting on a real kernel Context (the distribution
 // default export is the factory itself).
 import { describe, expect, it } from "vitest";
 import { Context } from "@innocenceharness/kernel";
-import { ToolsPlugin, sha256Hex } from "@innocenceharness/harness-tools";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import {
   NO_TEAMMATES_ERROR,
   SEND_MESSAGE_TOOL_NAME,
@@ -79,13 +79,13 @@ describe("send_message tool shape", () => {
     });
   });
 
-  it("persistArgs carries the teammate and a message digest — never the message body", () => {
+  it("persistArgs carries the teammate and the full message body verbatim", () => {
     const persisted = tool.persistArgs({ teammate: "worker-1", message: "secret body text" });
     expect(persisted).toEqual({
       teammate: "worker-1",
-      messageSha256: sha256Hex("secret body text"),
+      message: "secret body text",
     });
-    expect(JSON.stringify(persisted)).not.toContain("secret body");
+    expect(JSON.stringify(persisted)).toContain("secret body text");
   });
 
   it("registration gate: all fail-closed SPI members exist", () => {

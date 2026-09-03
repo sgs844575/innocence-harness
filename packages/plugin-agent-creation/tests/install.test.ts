@@ -64,4 +64,13 @@ describe("install_user_plugin", () => {
     const ok = await tool.execute({ id: "exists", packageJson: "{}", indexJs: "x", overwrite: true }, ctx);
     expect(ok.isError).toBeFalsy();
   });
+
+  it("persistArgs keeps the full original packageJson/indexJs for display", () => {
+    const tool = createInstallUserPluginTool({ userRoot: root });
+    const packageJson = "{\n  \"name\": \"my-tool\"\n}";
+    const indexJs = "export default { name: 'my-tool', apply() {} };";
+    expect(
+      tool.persistArgs({ id: "my-tool", packageJson, indexJs, overwrite: true }),
+    ).toEqual({ id: "my-tool", overwrite: true, packageJson, indexJs });
+  });
 });

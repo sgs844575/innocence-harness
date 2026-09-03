@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sha256Hex } from "@innocenceharness/harness-tools";
 import { resolveWithin, requireString, workspaceScope } from "./paths";
+import { boundPersistedText, PERSIST_TEXT_CHAR_LIMIT, summaryOfLines } from "./persisted-text";
 import type { Tool, ToolContext } from "@innocenceharness/harness-tools";
 
 /** Create or overwrite a file (mkdir -p for parent directories). */
@@ -32,11 +32,12 @@ export const writeTool: Tool = {
   },
   persistArgs(args) {
     const content = requireString(args, "content");
-    // 只保存路径、内容长度和 SHA-256 —— 文件内容绝不持久化。
+    // 保留正文供聊天工具行展示（用户裁定不再脱敏）；超长内容封顶截断。
     return {
       path: args.path,
+      content: boundPersistedText(content, PERSIST_TEXT_CHAR_LIMIT).text,
       contentLength: content.length,
-      contentSha256: sha256Hex(content),
+      summary: summaryOfLines(content.split("\n")),
     };
   },
   async execute(args, ctx: ToolContext) {

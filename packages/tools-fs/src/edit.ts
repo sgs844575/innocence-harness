@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import { sha256Hex } from "@innocenceharness/harness-tools";
 import { resolveWithin, requireString, workspaceScope } from "./paths";
+import { boundPersistedText, PERSIST_TEXT_CHAR_LIMIT, summaryOfLines } from "./persisted-text";
 import type { Tool, ToolContext } from "@innocenceharness/harness-tools";
 
-/** Exact-string replacement with uniqueness enforcement (like ZCode's Edit). */
+/** Exact-string replacement with uniqueness enforcement. */
 export const editTool: Tool = {
   name: "Edit",
   description:
@@ -34,12 +34,15 @@ export const editTool: Tool = {
     };
   },
   persistArgs(args) {
-    const next = requireString(args, "new_string");
-    // 只保存路径、内容长度和 SHA-256 —— old/new 原文绝不持久化。
+    const oldString = requireString(args, "old_string");
+    const newString = requireString(args, "new_string");
+    // 保留 old/new 正文供聊天工具行展示 diff（用户裁定不再脱敏）；超长封顶。
     return {
       path: args.path,
-      contentLength: next.length,
-      contentSha256: sha256Hex(next),
+      old_string: boundPersistedText(oldString, PERSIST_TEXT_CHAR_LIMIT).text,
+      new_string: boundPersistedText(newString, PERSIST_TEXT_CHAR_LIMIT).text,
+      contentLength: newString.length,
+      summary: summaryOfLines(newString.split("\n")),
     };
   },
   async execute(args, ctx: ToolContext) {

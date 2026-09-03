@@ -88,7 +88,7 @@ describe("remote_shell tool", () => {
     expect(result.content).toContain("permission denied");
   });
 
-  it("persists only a redacted target summary and command hash", () => {
+  it("persists the full target and command; declared credential fields never persist", () => {
     const tool = createRemoteShellTool();
     const persisted = tool.persistArgs?.({
       host: "secret-host",
@@ -96,9 +96,8 @@ describe("remote_shell tool", () => {
       password: "super-secret",
       command: "cat /etc/hostname",
     });
-    expect(persisted).toMatchObject({ target: "ops@secret-host:22" });
+    expect(persisted).toMatchObject({ target: "ops@secret-host:22", command: "cat /etc/hostname" });
     expect(JSON.stringify(persisted)).not.toContain("super-secret");
-    expect(JSON.stringify(persisted)).not.toContain("cat /etc/hostname");
   });
 
   it("registers the tool under the plugin name ssh", () => {

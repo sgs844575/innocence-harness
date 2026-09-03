@@ -3,11 +3,11 @@
 // session's task — and returns that teammate's final reply. Factory form:
 // the deliver/collect port is host-injected (the plugin owns no routing
 // knowledge), so tests pass fakes and the host composition binds the real
-// route resolution. Discipline: persisted args carry the teammate name and a
-// message digest — never the message body (transcripts stay clean); errors
-// name the failing field only; the envelope is English LLM-facing text while
-// the tool description follows the repository's Chinese style.
-import { sha256Hex, type Tool } from "@innocenceharness/harness-tools";
+// route resolution. Discipline: persisted args carry the teammate name and
+// the full message body verbatim for display and archival; errors name the
+// failing field only; the envelope is English LLM-facing text while the tool
+// description follows the repository's Chinese style.
+import type { Tool } from "@innocenceharness/harness-tools";
 
 export const SEND_MESSAGE_TOOL_NAME = "send_message";
 
@@ -111,7 +111,7 @@ export function createSendMessageTool(options: SendMessageToolOptions): Tool {
       }
     },
     permissionResource(args) {
-      // 资源只标识队友名；message 内容绝不进入资源。
+      // 资源以队友名为标识（队友名即路由名）。
       return {
         action: "send",
         kind: "teammate",
@@ -119,10 +119,10 @@ export function createSendMessageTool(options: SendMessageToolOptions): Tool {
       };
     },
     persistArgs(args) {
-      // 敏感面纪律：消息原文不落 transcript——持久化队友名与消息摘要。
+      // 持久化队友名与消息完整原文，供展示与留档。
       return {
         teammate: requireTeammate(args.teammate) ?? "invalid",
-        messageSha256: sha256Hex(typeof args.message === "string" ? args.message : ""),
+        message: typeof args.message === "string" ? args.message : "",
       };
     },
     async execute(args) {

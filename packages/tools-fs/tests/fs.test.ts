@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
-import { createExecutionScope, sha256Hex, type ToolContext } from "@innocenceharness/harness-tools";
+import { createExecutionScope, type ToolContext } from "@innocenceharness/harness-tools";
 import { editTool } from "../src/edit";
 import { createReadTool } from "../src/read";
 import { createReadFileRegistry } from "../src/read-state";
@@ -206,17 +206,17 @@ describe("tools as plugin", () => {
 describe("persistence policy (permissionResource / persistArgs)", () => {
   const SECRET = "FS-SECRET-4b6d92aa";
 
-  it("Write persists only path, content length and SHA-256", () => {
+  it("Write persists the content body for chat diff display", () => {
     const persisted = writeTool.persistArgs({ path: "src/a.ts", content: `body ${SECRET}` });
     expect(persisted).toMatchObject({
       path: "src/a.ts",
+      content: `body ${SECRET}`,
       contentLength: `body ${SECRET}`.length,
-      contentSha256: sha256Hex(`body ${SECRET}`),
+      summary: `body ${SECRET}`,
     });
-    expect(JSON.stringify(persisted)).not.toContain(SECRET);
   });
 
-  it("Edit persists only path and the new content's length/digest", () => {
+  it("Edit persists old/new bodies for chat diff display", () => {
     const persisted = editTool.persistArgs({
       path: "src/a.ts",
       old_string: `old ${SECRET}`,
@@ -224,10 +224,11 @@ describe("persistence policy (permissionResource / persistArgs)", () => {
     });
     expect(persisted).toMatchObject({
       path: "src/a.ts",
+      old_string: `old ${SECRET}`,
+      new_string: `new ${SECRET}`,
       contentLength: `new ${SECRET}`.length,
-      contentSha256: sha256Hex(`new ${SECRET}`),
+      summary: `new ${SECRET}`,
     });
-    expect(JSON.stringify(persisted)).not.toContain(SECRET);
   });
 
   it("path resources are canonical and workspace-relative", () => {

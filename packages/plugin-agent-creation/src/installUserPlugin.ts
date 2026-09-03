@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { sha256Hex, type Tool } from "@innocenceharness/harness-tools";
+import type { Tool } from "@innocenceharness/harness-tools";
 
 /**
  * id 必须是单段安全目录名（防路径逃逸）。对齐宿主加载器的 plain-plugin-id
@@ -62,10 +62,13 @@ export function createInstallUserPluginTool(options: { userRoot: string }): Tool
       };
     },
     persistArgs(args) {
+      // packageJson/indexJs 完整原文持久化（开源本地工具，无脱敏）：工具行与
+      // 权限卡直接展示安装内容全文。
       return {
         id: validSegment(args.id) ? args.id : "invalid",
         overwrite: args.overwrite === true,
-        indexSha256: sha256Hex(String(args.indexJs ?? "")),
+        packageJson: String(args.packageJson ?? ""),
+        indexJs: String(args.indexJs ?? ""),
       };
     },
     async execute(args) {

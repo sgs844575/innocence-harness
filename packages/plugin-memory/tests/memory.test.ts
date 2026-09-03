@@ -1,14 +1,14 @@
 // plugin-memory tests (batch 4B task 1): the dual-root memory store
 // (write -> list -> read closed loop, user-root shadowing, malformed-entry
 // degradation, id-escape rejection) and the three tool contracts
-// (overwrite gating, persisted-args redaction, permission resource shapes),
-// plus the factory plugin mounting on a real kernel Context.
+// (overwrite gating, persisted-args full persistence, permission resource
+// shapes), plus the factory plugin mounting on a real kernel Context.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Context } from "@innocenceharness/kernel";
-import { sha256Hex, ToolsPlugin } from "@innocenceharness/harness-tools";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import {
   MEMORY_LIST_TOOL_NAME,
   MEMORY_READ_TOOL_NAME,
@@ -308,7 +308,7 @@ describe("memory tools", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("persistArgs never carries the memory body, only the digest and key fields", () => {
+  it("persistArgs carries key fields plus the full memory body verbatim", () => {
     const { write, list, read } = makeTools(tmpRoot(), tmpRoot());
     const content = "SECRET-MEMORY-BODY-9812";
     const persisted = write.persistArgs({ id: "secret-note", content, tags: ["private"] });
@@ -316,9 +316,10 @@ describe("memory tools", () => {
       id: "secret-note",
       scope: "project",
       tags: ["private"],
-      contentSha256: sha256Hex(content),
+      content,
     });
-    expect(JSON.stringify(persisted)).not.toContain(content);
+    // 完整原文持久化：正文全文进入持久化载荷。
+    expect(JSON.stringify(persisted)).toContain(content);
     // scope 默认透出 project；显式 user 保持。
     expect(write.persistArgs({ id: "n2", content: "x", scope: "user" })).toMatchObject({ scope: "user" });
     // 非法 id 持久化为占位符，不回显原值。

@@ -1,11 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Context } from "@innocenceharness/kernel";
 import {
-  redactCommandSummary,
-  sha256Hex,
   type Tool,
   type ToolContext,
 } from "@innocenceharness/harness-tools";
+import { createOutputDecoder, windowsAnsiEncoding } from "./output-decoder";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 30_000;
@@ -95,11 +94,15 @@ export interface RunCommandResult {
   timedOut: boolean;
 }
 
-/** Runs a shell command with timeout, abort and truncated capture. */
-export function runCommand(options: RunCommandOptions): Promise<RunCommandResult> {
+/** Runs a shell command with timeout, abort and truncated capture. Output bytes
+ *  are decoded per stream: UTF-8, falling back to the Windows console codepage
+ *  (e.g. GBK on zh-CN) when the bytes are not valid UTF-8. */
+export async function runCommand(options: RunCommandOptions): Promise<RunCommandResult> {
   const { command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
   const max = options.maxOutputChars ?? MAX_OUTPUT_CHARS;
   const isWindows = process.platform === "win32";
+  // 先取代码页再 spawn：仅 Windows 首次调用有一次 chcp 探测，之后走缓存。
+  const ansiEncoding = await windowsAnsiEncoding();
   const child = spawn(command, {
     shell: true,
     cwd,
@@ -112,6 +115,8 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
     let stderr = "";
     let timedOut = false;
     let settled = false;
+    const stdoutDecoder = createOutputDecoder(ansiEncoding);
+    const stderrDecoder = createOutputDecoder(ansiEncoding);
 
     const capture = (kind: "stdout" | "stderr", chunk: string) => {
       const total = stdout.length + stderr.length;
@@ -129,8 +134,8 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       options.onOutput?.(kind, text);
     };
 
-    child.stdout?.on("data", (d: Buffer) => capture("stdout", d.toString("utf8")));
-    child.stderr?.on("data", (d: Buffer) => capture("stderr", d.toString("utf8")));
+    child.stdout?.on("data", (d: Buffer) => capture("stdout", stdoutDecoder.push(d)));
+    child.stderr?.on("data", (d: Buffer) => capture("stderr", stderrDecoder.push(d)));
 
     const finish = (exitCode: number | null) => {
       if (settled) return;
@@ -155,7 +160,14 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       capture("stderr", `spawn 失败：${err.message}`);
       finish(null);
     });
-    child.on("close", (code) => finish(code));
+    child.on("close", (code) => {
+      // 冲刷解码器暂存（跨块的不完整多字节序列）后再收尾。
+      const tailOut = stdoutDecoder.end();
+      if (tailOut) capture("stdout", tailOut);
+      const tailErr = stderrDecoder.end();
+      if (tailErr) capture("stderr", tailErr);
+      finish(code);
+    });
   });
 }
 
@@ -182,22 +194,17 @@ export const bashTool: Tool = {
     }
   },
   permissionResource(args) {
-    // scope 与持久化摘要同粒度（程序词 + 合法形状 subcommand）：会话授权
-    // 因此区分 npm test 与 npm publish；完整命令绝不进入资源。
+    // scope 与持久化同粒度：完整命令原文（项目规则按 token 前缀匹配）。
     return {
       action: "execute",
       kind: "command",
-      scope: redactCommandSummary(String(args.command ?? "")),
+      scope: String(args.command ?? ""),
     };
   },
   persistArgs(args) {
     const command = requireCommand(args);
-    // 保存脱敏命令摘要（程序词 + 合法形状的 subcommand token）和命令哈希；
-    // 完整命令与参数值绝不持久化，项目规则按摘要前缀匹配。
-    return {
-      command: redactCommandSummary(command),
-      commandSha256: sha256Hex(command),
-    };
+    // 完整命令原文持久化（开源本地工具，无脱敏）：聊天工具行与权限卡直接展示。
+    return { command };
   },
   async execute(args, ctx: ToolContext) {
     const command = requireCommand(args);

@@ -32,10 +32,10 @@ plugins.push(shellPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件�
 - **进程树终止**：`shell: true` 会产生包装 shell，普通 `kill()` 杀不掉其子进程——Windows 用
   `taskkill /pid <pid> /T /F`，POSIX 用 SIGKILL；超时与用户中止都走树杀。
 - **输出截断**：stdout+stderr 合计上限 30000 字符，超出部分以 `…[已截断]` 标记。
-- **权限资源**：scope 是脱敏命令摘要（程序词 + 合法形状的 subcommand token）——会话授权因此能区分
-  `npm test` 与 `npm publish`；完整命令绝不进入资源。
-- **持久化脱敏**：只保存命令摘要与命令哈希；完整命令与参数值绝不持久化，项目 allow/deny 规则按摘要前缀匹配
-  （如 `Bash(npm test)` 放行该前缀序列，`*` 匹配任意单个词）。
+- **权限资源**：scope 是完整命令原文——会话授权按完整命令区分（`npm test` 的授权不覆盖
+  `npm test -- -u`）。
+- **持久化**：完整命令原文持久化（开源本地工具，无脱敏）——聊天工具行与权限卡直接展示；
+  项目 allow/deny 规则按 token 前缀匹配（如 `Bash(npm test)` 放行该前缀序列，`*` 匹配任意单个词）。
 - 非零退出码或超时都会把结果标记为 `isError`，stderr 一并回喂模型自行修正。
 
 ## 测试
@@ -44,4 +44,4 @@ plugins.push(shellPlugin); // 宿主接线见 src/main/harnessGlue.ts（插件�
 npx vitest run packages/tools-shell
 ```
 
-`tests/shell.test.ts` 覆盖执行、超时、中止、截断与脱敏。
+`tests/shell.test.ts` 覆盖执行、超时、中止、截断与持久化形状。

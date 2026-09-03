@@ -1,7 +1,6 @@
 import type { Context } from "@innocenceharness/kernel";
 import {
   isAbortError,
-  sha256Hex,
   type JsonSchema,
   type ToolResult,
 } from "@innocenceharness/harness-tools";
@@ -244,22 +243,19 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
               readOnly: false,
               sideEffect: "unknown", // 外部服务器能力未知，按最保守处理
               parameters: def.inputSchema ?? { type: "object" },
-              // 资源只标识 server/tool；调用参数绝不进入资源。
+              // 资源标识 server/tool，scope 为完整 server/tool 路径。
               permissionResource: () => ({
                 action: "call",
                 kind: "mcp",
                 scope: `${serverName}/${def.name}`,
               }),
-              // 保存 server/tool、参数名和参数哈希，不保存参数值。
-              persistArgs: (args) => {
-                const keys = Object.keys(args).sort();
-                return {
-                  server: serverName,
-                  tool: def.name,
-                  params: keys,
-                  argsSha256: sha256Hex(JSON.stringify(args, keys)),
-                };
-              },
+              // 完整参数原文持久化（开源本地工具，无脱敏）：server/tool 名
+              // 与调用参数全文一并留档，供聊天工具行与历史回看展示。
+              persistArgs: (args) => ({
+                server: serverName,
+                tool: def.name,
+                args: { ...args },
+              }),
               execute: async (args, ctx) => {
                 if (connected.connection.exited()) {
                   return {

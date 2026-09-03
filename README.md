@@ -26,7 +26,8 @@
   内核注册路径（注册即"可逆效应"，卸载自动回卷）；每个会话路由独享一个内核 scope，
   会话释放即整体回卷，不影响兄弟路由。
 - **权限体系**：模式（auto / ask / plan）+ 项目级白名单（`.innocence/config.json`）+ 会话授权；
-  写操作强制落在工作区内，路径逃逸直接拒绝；原始工具参数绝不进入历史 / 事件 / 审计（持久化前统一脱敏）。
+  写操作强制落在工作区内，路径逃逸直接拒绝；工具参数以 `persistArgs` 形状持久化（完整命令与文件正文原文，
+  供聊天工具行与权限卡展示；声明式凭据字段不落盘）。
 - **任务工作流**：为每个任务 fork 隔离的 Git worktree，捕获归属工作区变更，逐 hunk 审查后应用或丢弃——
   事件溯源状态机 + 跨进程双锁 + 崩溃恢复，全程不触碰你的 Git index。
 - **上下文管理**：超过阈值自动压缩旧轮次（安全边界切分，工具配对不拆散），最近 6 条保原文。
@@ -152,7 +153,7 @@ innocence-code/
 ├── build/dist/resources/      # staging 树：内核 dist + 能力插件 + manifest（构建生成）
 ├── packages/                  # Harness 与领域包（除 harness-electron 外均不依赖 Electron）
 │   ├── harness-electron/      # 适配层：路由会话运行时 + AgentSession + 设置 + JSONL 转写
-│   ├── harness-tools/         # 脊柱：工具注册/执行/脱敏/执行作用域
+│   ├── harness-tools/         # 脊柱：工具注册/执行/持久化形状/执行作用域
 │   ├── harness-permissions/   # 脊柱：权限引擎/策略/项目规则
 │   ├── harness-providers/     # 脊柱：Provider 注册/SSE 解析
 │   ├── harness-session/       # 脊柱：消息模型/处理器/压缩

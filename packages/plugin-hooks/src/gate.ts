@@ -21,7 +21,6 @@
 // the executor's fail-open rule — a missing gate is a missing
 // authorization, not a broken hook.
 import type { PermissionsService } from "@innocenceharness/harness-permissions";
-import { redactCommandSummary } from "@innocenceharness/harness-tools";
 import type { HookDefinition } from "./config";
 import { formatPermissionSkip } from "./wording";
 
@@ -68,7 +67,7 @@ export function createHookPermissionGate(options: HookGateOptions): HookPermissi
           {
             toolName: HOOKS_PERMISSION_TOOL_NAME,
             resource: { action: "run", kind: "hook", scope: key.split(" ")[0] },
-            args: { command: redactCommandSummary(key) },
+            args: { command: key },
           },
           { readOnly: false, sideEffect: "process" },
         );

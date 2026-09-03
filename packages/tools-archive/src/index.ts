@@ -54,11 +54,11 @@ export const archiveTool: Tool = {
     };
   },
   persistArgs(args) {
-    const paths = Array.isArray(args.paths) ? args.paths : [];
-    // 口令绝不持久化；条目列表截断为计数 + 首条样本 + 内容哈希。
+    const paths = Array.isArray(args.paths) ? args.paths.map((p) => String(p)) : [];
+    // 持久化完整原文供展示与留档；口令属声明式凭据字段，仅以 encrypted 布尔留痕、不落盘。
     return {
       output: String(args.output ?? ""),
-      entryCount: paths.length,
+      paths,
       encrypted: args.passphrase !== undefined,
     };
   },

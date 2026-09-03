@@ -1,11 +1,11 @@
 // Memory tools (batch 4B task 1): write/list/read over the dual-root store.
 // Factory form — roots arrive as host-injected getters (tests pass tmp dirs,
 // the session composition passes the user data root and the workspace root).
-// Discipline: persisted args carry the id, scope, tags and a content digest —
-// never the memory body (the sensitive surface must not land in transcripts);
-// errors name the failing field without echoing its value; LLM-facing output
-// text is English, tool descriptions follow the repository's Chinese style.
-import { sha256Hex, type Tool } from "@innocenceharness/harness-tools";
+// Discipline: persisted args carry the id, scope, tags and the full memory
+// body verbatim for display and audit; errors name the failing field without
+// echoing its value; LLM-facing output text is English, tool descriptions
+// follow the repository's Chinese style.
+import { type Tool } from "@innocenceharness/harness-tools";
 import {
   listEntries,
   readEntry,
@@ -158,12 +158,12 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
       };
     },
     persistArgs(args) {
-      // 敏感面纪律：记忆正文不落 transcript——持久化 id/域/标签与摘要。
+      // 持久化完整原文供展示/留档：id/域/标签与正文全文。
       return {
         id: validMemoryId(args.id) ? args.id : "invalid",
         scope: normalizedScope(args.scope),
         tags: normalizedTags(args.tags),
-        contentSha256: sha256Hex(typeof args.content === "string" ? args.content : ""),
+        content: typeof args.content === "string" ? args.content : "",
       };
     },
     async execute(args) {

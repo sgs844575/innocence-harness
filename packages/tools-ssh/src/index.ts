@@ -1,9 +1,5 @@
 import type { Context } from "@innocenceharness/kernel";
-import {
-  redactCommandSummary,
-  sha256Hex,
-  type Tool,
-} from "@innocenceharness/harness-tools";
+import { type Tool } from "@innocenceharness/harness-tools";
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   runRemoteCommand,
@@ -58,22 +54,21 @@ export function createRemoteShellTool(deps: RemoteShellToolDependencies = {}): T
         throw new Error("需要提供 password 或 privateKey 之一");
       }
     },
-    // scope 与持久化摘要同粒度：目标 + 命令摘要；凭据绝不进入资源或落盘。
+    // scope 与持久化同粒度：目标 + 完整命令原文；凭据字段（password/
+    // privateKey/passphrase）天然是密钥，绝不进入资源或落盘。
     permissionResource(args) {
       const port = typeof args.port === "number" ? args.port : 22;
       return {
         action: "execute",
         kind: "command",
-        scope: `${String(args.username)}@${String(args.host)}:${port} ${redactCommandSummary(String(args.command ?? ""))}`,
+        scope: `${String(args.username)}@${String(args.host)}:${port} ${String(args.command ?? "")}`,
       };
     },
     persistArgs(args) {
-      const command = String(args.command ?? "");
       const port = typeof args.port === "number" ? args.port : 22;
       return {
         target: `${String(args.username)}@${String(args.host)}:${port}`,
-        command: redactCommandSummary(command),
-        commandSha256: sha256Hex(command),
+        command: String(args.command ?? ""),
       };
     },
     async execute(args, ctx) {

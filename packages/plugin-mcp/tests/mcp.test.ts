@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Context } from "@innocenceharness/kernel";
 import { LoggerPlugin } from "@innocenceharness/kernel-logger";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
-import { createExecutionScope, sha256Hex, type ToolContext } from "@innocenceharness/harness-tools";
+import { createExecutionScope, type ToolContext } from "@innocenceharness/harness-tools";
 import { createSessionPlugin, textMessage } from "@innocenceharness/harness-session";
 import { StdioJsonRpcClient, createMcpPlugin, type StdioServerOptions } from "../src";
 
@@ -211,21 +211,21 @@ describe("createMcpPlugin", () => {
     await ctx.fiber.dispose();
   });
 
-  it("persists server/tool, parameter names and an args hash — never arg values", async () => {
+  it("persists server/tool and the full argument text", async () => {
     const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
     const tool = ctx.tools.get("mcp__echo__echo")!;
     const SECRET = "MCP-PLUGIN-SECRET-77aa1";
     const resource = tool.permissionResource({ text: SECRET }, ctxToolContext());
     expect(resource).toEqual({ action: "call", kind: "mcp", scope: "echo/echo" });
 
+    // 完整参数原文持久化：展示与留档直接读 persisted.args。
     const persisted = tool.persistArgs({ text: SECRET, extra: 1 });
     expect(persisted).toEqual({
       server: "echo",
       tool: "echo",
-      params: ["extra", "text"],
-      argsSha256: sha256Hex(JSON.stringify({ text: SECRET, extra: 1 }, ["extra", "text"])),
+      args: { text: SECRET, extra: 1 },
     });
-    expect(JSON.stringify(persisted)).not.toContain(SECRET);
+    expect(JSON.stringify(persisted)).toContain(SECRET);
     await ctx.fiber.dispose();
   });
 

@@ -61,8 +61,9 @@ deletion.
 Effectful tools go through the permission engine driven by their declared
 resource: \`permissionResource\` yields \`{ action, kind, scope }\` and the
 policy engine decides allow, deny, or ask. Everything in the resource is
-persisted, so the scope must contain the canonical identifier only —
-redacted, never raw secret-bearing values.
+persisted, so the scope carries the full canonical identifier verbatim
+(paths, URLs, targets) — declared credential fields (passwords, private
+keys) never enter it.
 
 ## Testing discipline
 

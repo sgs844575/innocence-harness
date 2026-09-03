@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,9 +13,6 @@ import {
 } from "@innocenceharness/harness-permissions";
 import {
   createExecutionScope,
-  redactCommand,
-  redactCommandSummary,
-  sha256Hex,
   type ToolContext,
 } from "@innocenceharness/harness-tools";
 
@@ -142,33 +140,21 @@ describe("ShellPlugin", () => {
 describe("bashTool persistence policy", () => {
   const SECRET = "SHELL-SECRET-8e17c3";
 
-  it("persists program word plus shape-legal subcommands, never values or secrets", () => {
+  it("persists the full command verbatim (no redaction — owner decision)", () => {
     const command = "npm test -- -u";
-    expect(bashTool.persistArgs({ command })).toEqual({
-      command: "npm test",
-      commandSha256: sha256Hex(command),
-    });
-    expect(bashTool.persistArgs({ command: "npm run build" }).command).toBe("npm run build");
-    // Flags, assignments, values and secrets stop the token walk immediately.
-    expect(bashTool.persistArgs({ command: `deploy --token=${SECRET}` }).command).toBe("deploy");
-    expect(bashTool.persistArgs({ command: `send ${SECRET}` }).command).toBe("send");
-    expect(JSON.stringify(bashTool.persistArgs({ command: `curl -H "Authorization: Bearer ${SECRET}" https://x/y` })))
-      .not.toContain(SECRET);
+    expect(bashTool.persistArgs({ command })).toEqual({ command });
+    expect(bashTool.persistArgs({ command: `curl -H "Authorization: Bearer ${SECRET}" https://x/y` }).command)
+      .toContain(SECRET);
   });
 
-  it("resource scope carries the same subcommand granularity as the persisted summary", async () => {
+  it("resource scope carries the full command", async () => {
     const resource = await bashTool.permissionResource({ command: "npm test" }, ctx());
     expect(resource).toEqual({ action: "execute", kind: "command", scope: "npm test" });
-    expect((await bashTool.permissionResource({ command: "npm publish" }, ctx())).scope).toBe(
-      "npm publish",
-    );
-    // Flags/values never enter the scope (same shape-checked walk as the summary).
-    expect((await bashTool.permissionResource({ command: `deploy --token=${SECRET}` }, ctx())).scope).toBe(
-      "deploy",
-    );
+    expect((await bashTool.permissionResource({ command: `deploy --token=${SECRET}` }, ctx())).scope)
+      .toBe(`deploy --token=${SECRET}`);
   });
 
-  it("npm test session grant does not admit npm publish (end-to-end through the real tool)", async () => {
+  it("session grants are scoped to the exact full command (end-to-end through the real tool)", async () => {
     const engine = new PermissionEngine({
       mode: "ask",
       decider: { ask: async () => "allowSession" },
@@ -183,27 +169,29 @@ describe("bashTool persistence policy", () => {
     const first = await engine.resolve(await request("npm test"), meta);
     expect(first.via).toBe("ask"); // ask once, user allows for the session
 
-    // Different subcommand under the same program: different scope -> must ask again.
+    // A different command under the same program: different scope -> must ask again.
     const second = await engine.resolve(await request("npm publish"), meta);
     expect(second.via).toBe("ask");
     expect(second.via).not.toBe("sessionGrant");
 
-    // Same canonical summary (flags dropped) reuses the grant without asking.
-    const third = await engine.resolve(await request("npm test -- -u"), meta);
-    expect(third.via).toBe("sessionGrant");
+    // The exact same command reuses the grant without asking; extra flags ask again.
+    const same = await engine.resolve(await request("npm test"), meta);
+    expect(same.via).toBe("sessionGrant");
+    const withFlags = await engine.resolve(await request("npm test -- -u"), meta);
+    expect(withFlags.via).toBe("ask");
   });
 
-  it("project allow rules revive against the persisted summary", () => {
+  it("project allow rules prefix-match against the persisted full command", () => {
     const allow = parseRuleSpec("Bash(npm test)", "allow");
     const match = (raw: string) =>
       allow.match({ toolName: "Bash", args: bashTool.persistArgs({ command: raw }) });
     expect(match("npm test")).toBe("allow");
-    expect(match("npm test -- -u")).toBe("allow"); // flags dropped from the summary
+    expect(match("npm test -- -u")).toBe("allow"); // extra tokens after the prefix are allowed
     expect(match("npm install")).toBe("skip");
     expect(match("npm publish")).toBe("skip");
   });
 
-  it("project deny rules revive against the persisted summary", () => {
+  it("project deny rules prefix-match against the persisted full command", () => {
     const deny = parseRuleSpec("Bash(curl evil.com)", "deny");
     const match = (raw: string) =>
       deny.match({ toolName: "Bash", args: bashTool.persistArgs({ command: raw }) });
@@ -216,15 +204,43 @@ describe("bashTool persistence policy", () => {
     await expect(bashTool.validateArgs?.({})).rejects.toThrow("command");
     await expect(bashTool.validateArgs?.({ command: "   " })).rejects.toThrow("command");
   });
+});
 
-  it("redactCommand masks non-command-shaped program words", () => {
-    expect(redactCommand(`${SECRET} run`)).toBe("[redacted]");
+describe("runCommand console codepage decoding", () => {
+  const winCodepage = (): string | null => {
+    if (process.platform !== "win32") return null;
+    try {
+      return /(\d+)/.exec(execFileSync("chcp.com").toString())?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 中文代码页机器上 cmd 的本地化错误文本是 GBK 字节——复现乱码报修的场景。
+  it.runIf(process.platform === "win32")("decodes localized cmd errors instead of mojibake", async () => {
+    if (winCodepage() !== "936") return; // 非 936 代码页机器上没有可断言的 GBK 输出
+    const r = await runCommand({ command: "definitely-not-a-command-xyz", cwd: root });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("不是内部或外部命令");
   });
 
-  it("redactCommandSummary keeps only shape-legal leading tokens", () => {
-    expect(redactCommandSummary("npm test -- -u")).toBe("npm test");
-    expect(redactCommandSummary("git")).toBe("git");
-    expect(redactCommandSummary("--flag first")).toBe("[redacted]");
-    expect(redactCommandSummary(`node ./run.js ${SECRET}`)).toBe("node");
+  it.runIf(process.platform === "win32")("decodes GBK stdout bytes per the system codepage", async () => {
+    if (winCodepage() !== "936") return;
+    const r = await runCommand({
+      command: `"${process.execPath}" -e process.stdout.write(Buffer.from([0xB2,0xE2,0xCA,0xD4]))`,
+      cwd: root,
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("测试");
+  });
+
+  it("keeps UTF-8 output intact across split multibyte writes", async () => {
+    const script =
+      "process.stdout.write(Buffer.from([0xE4,0xB8]));setTimeout(function(){process.stdout.write(Buffer.from([0xAD,0xE6,0x96,0x87]))},50)";
+    const command =
+      process.platform === "win32" ? `"${process.execPath}" -e ${script}` : `'${process.execPath}' -e '${script}'`;
+    const r = await runCommand({ command, cwd: root });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("中文");
   });
 });

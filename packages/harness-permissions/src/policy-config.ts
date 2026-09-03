@@ -7,16 +7,15 @@ import type { PermissionDecision, PolicyRule, ToolCallInfo } from "./policy";
  * Project-level permission config (`.innocence/config.json`). Rule specs:
  *   "Read"                 — bare tool name: every call of that tool
  *   "Bash(npm test)"       — command tools: pattern tokens prefix-match the
- *                            tokens of the PERSISTED command summary (program
- *                            word + shape-checked subcommand tokens; flags and
- *                            argument values never persist); "*" matches any
+ *                            tokens of the PERSISTED command (the full command
+ *                            string persists verbatim); "*" matches any
  *                            single token
  *   "Edit(src/**)"         — path tools: workspace-relative glob on args.path
  *
  * Rules are matched against the tool's PERSISTED args (Tool.persistArgs), so
- * command specs match the redacted summary Bash keeps (`npm test -- -u`
- * persists as "npm test") and path specs keep working because paths stay in
- * the persisted copy verbatim.
+ * command specs prefix-match the full persisted command (`npm test -- -u`
+ * persists and matches as "npm test" plus its extra tokens) and path specs
+ * keep working because paths stay in the persisted copy verbatim.
  */
 export interface ProjectPermissionConfig {
   allow?: string[];
