@@ -43,7 +43,7 @@ describe("GitCapsule", () => {
     expect(screen.getByText("任务一")).toBeTruthy();
   });
 
-  it("智能体段：存活行在上（带暂停钮）、已结束行在下，点标题直达该运行会话", () => {
+  it("智能体段：只直出进行中运行行（带暂停钮，点标题直达会话），终态不出现", () => {
     const onOpenSubagentRun = vi.fn();
     const onCancelSubagent = vi.fn();
     renderCapsule({
@@ -54,33 +54,29 @@ describe("GitCapsule", () => {
       onOpenSubagentRun,
       onCancelSubagent,
     });
-    // 存活标题 → 打开该运行的会话记录
+    // 运行标题 → 打开该运行的会话记录
     fireEvent.click(screen.getByText("检索参考资料"));
     expect(onOpenSubagentRun).toHaveBeenCalledWith("c_live");
-    // 已结束标题 → 同样直达会话记录
-    fireEvent.click(screen.getByText("修复测试"));
-    expect(onOpenSubagentRun).toHaveBeenCalledWith("c_done");
     // 暂停钮只取消，不打开
     fireEvent.click(screen.getByRole("button", { name: "capsule.subagents.pause" }));
     expect(onCancelSubagent).toHaveBeenCalledWith("c_live");
-    expect(onOpenSubagentRun).toHaveBeenCalledTimes(2);
+    // 终态行不直出胶囊（只经「查看全部」计数进入）
+    expect(screen.queryByText("修复测试")).toBeNull();
+    expect(onOpenSubagentRun).toHaveBeenCalledTimes(1);
   });
 
-  it("智能体段：存活行渲染顺序在已结束行之前", () => {
+  it("智能体段：多路进行中运行全部直出（新→旧）", () => {
     renderCapsule({
       subagents: {
         running: [item("c_live", "存活任务", "running"), item("c_live2", "存活任务二", "started")],
-        completed: [item("c_done", "完成任务", "completed")],
+        completed: [],
       },
     });
-    const titles = ["存活任务", "存活任务二", "完成任务"].map((title) => screen.getByText(title));
-    for (let index = 0; index < titles.length - 1; index += 1) {
-      // Node.DOCUMENT_POSITION_FOLLOWING (4)：后一个元素在文档顺序上位于前一个之后。
-      expect(titles[index]!.compareDocumentPosition(titles[index + 1]!) & 4).toBeTruthy();
-    }
+    const titles = [screen.getByText("存活任务"), screen.getByText("存活任务二")];
+    expect(titles[0]!.compareDocumentPosition(titles[1]!) & 4).toBeTruthy();
   });
 
-  it("智能体段：已结束行最多直出两条，其余只经「查看全部」", () => {
+  it("智能体段：终态全部只经「查看全部」计数进入，不直出行", () => {
     renderCapsule({
       subagents: {
         running: [],
@@ -91,9 +87,11 @@ describe("GitCapsule", () => {
         ],
       },
     });
-    expect(screen.getByText("任务一")).toBeTruthy();
-    expect(screen.getByText("任务二")).toBeTruthy();
+    expect(screen.queryByText("任务一")).toBeNull();
+    expect(screen.queryByText("任务二")).toBeNull();
     expect(screen.queryByText("任务三")).toBeNull();
+    // 段仍在（「查看全部 3」入口可达归档）。
+    expect(screen.getByRole("button", { name: /capsule.subagents.all/ }).textContent).toContain("3");
   });
 
   it("智能体段：「查看全部 N ›」显示终态数并进入归档；无终态时不渲染", () => {

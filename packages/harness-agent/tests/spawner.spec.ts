@@ -466,6 +466,60 @@ describe("spawner concurrency cap", () => {
     expect(children.every((c) => c.disposeCalls === 0)).toBe(true);
   });
 
+  it("queued spawns are announced immediately (started fires before the slot frees)", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      concurrency: 1,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const first = ctx.spawner.run({ ...baseInput, description: "占槽" });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    const second = ctx.spawner.run({ ...baseInput, description: "排队" });
+    // 第二个派发未获槽（无新子会话）但 started 已发——面板即刻可见。
+    await vi.waitFor(() =>
+      expect(lifecycle.filter((event) => event.status === "started")).toHaveLength(2),
+    );
+    expect(children).toHaveLength(1);
+
+    gates[0]!();
+    await first;
+    await vi.waitFor(() => expect(children).toHaveLength(2));
+    gates[1]!();
+    await second;
+  });
+
+  it("a spawn cancelled while queued emits started then cancelled (no silent vanish)", async () => {
+    const lifecycle: SubagentLifecycleEvent[] = [];
+    const { factory, children, gates } = makeFactory();
+    const ctx = await withSpawner({
+      sessionFactory: factory,
+      concurrency: 1,
+      lifecycle: { emit: (event) => lifecycle.push(event) },
+    });
+
+    const first = ctx.spawner.run(baseInput);
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    const controller = new AbortController();
+    const queued = ctx.spawner.run({ ...baseInput, signal: controller.signal });
+    await vi.waitFor(() =>
+      expect(lifecycle.filter((event) => event.status === "started")).toHaveLength(2),
+    );
+    controller.abort();
+    await expect(queued).rejects.toMatchObject({ name: "AbortError" });
+    expect(lifecycle.at(-1)).toMatchObject({ status: "cancelled" });
+
+    // 槽位未泄漏：首个运行完成后新派发可立即进入。
+    gates[0]!();
+    await first;
+    const third = ctx.spawner.run(baseInput);
+    await vi.waitFor(() => expect(children).toHaveLength(2));
+    gates[1]!();
+    await third;
+  });
+
   it("honors an injected concurrency cap", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory, concurrency: 1 });

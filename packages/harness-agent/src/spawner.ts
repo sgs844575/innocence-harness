@@ -448,31 +448,33 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     });
 
     const promise = (async (): Promise<SubagentResult> => {
+      const parent = input.parentScope;
+      const parentSessionId = parent?.sessionId ?? input.sessionId ?? "";
+      const description = input.description ?? "";
+      const emit = makeEmitter(record, {
+        childId,
+        parentSessionId,
+        description,
+        parentInvocationId: parent?.invocationId,
+        onLifecycle: input.onLifecycle,
+      });
+      // started 在取槽前即发：并发上限内排队的派发也立刻进面板/登记——
+      // N 路并行派发 N 行全可见，槽位 FIFO 释放后逐个转 running。
+      emit({ status: "started", agentType: input.agentType, prompt: input.prompt });
+      registry.note(
+        record,
+        `${childId} started (${input.agentType ?? "agent"}): ${description || "(no description)"}`,
+      );
       try {
         await acquireSlot(signal);
       } catch (error) {
-        // Never started: no lifecycle events, just a terminal registry entry.
-        registry.settle(record, { status: "cancelled" });
-        registry.note(record, `${childId} cancelled while queued: ${record.info.description || "(no description)"}`);
+        // Withdrawn while queued: the run was already announced — close it
+        // with a cancelled event instead of vanishing from the panel.
+        emit({ status: "cancelled" });
         throw error;
       }
       let child: SpawnerChildSession | undefined;
       try {
-        const parent = input.parentScope;
-        const parentSessionId = parent?.sessionId ?? input.sessionId ?? "";
-        const description = input.description ?? "";
-        const emit = makeEmitter(record, {
-          childId,
-          parentSessionId,
-          description,
-          parentInvocationId: parent?.invocationId,
-          onLifecycle: input.onLifecycle,
-        });
-        emit({ status: "started", agentType: input.agentType, prompt: input.prompt });
-        registry.note(
-          record,
-          `${childId} started (${input.agentType ?? "agent"}): ${description || "(no description)"}`,
-        );
         const allTools = deps.tools.filter((t) => !CHILD_TOOL_EXCLUSIONS.has(t.name));
         const selected =
           input.tools === "all"
@@ -583,29 +585,27 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
     record.abort = abort;
 
     return (async (): Promise<SubagentResult> => {
+      const parent = input.parentScope;
+      const description = input.description ?? entry.description;
+      const emit = makeEmitter(record, {
+        childId: input.runId,
+        parentSessionId: parent?.sessionId ?? input.sessionId ?? "",
+        description,
+        parentInvocationId: parent?.invocationId,
+        onLifecycle: input.onLifecycle,
+      });
+      // 与 spawn 同律：重开事件在取槽前即发（排队中的续跑在面板上先行回到
+      // 运行态），取槽失败（排队中被取消）以 cancelled 事件收尾。
+      emit({ status: "running", resumed: true, prompt: input.prompt });
+      registry.note(record, `${input.runId} resumed: ${description || "(no description)"}`);
       try {
         await acquireSlot(signal);
       } catch (error) {
-        // The parked child left the pool above and can never go back.
-        registry.settle(record, { status: "cancelled" });
-        registry.note(record, `${input.runId} cancelled while queued: ${record.info.description || "(no description)"}`);
+        emit({ status: "cancelled" });
         await disposeQuietly(entry.child);
         throw error;
       }
       try {
-        const parent = input.parentScope;
-        const description = input.description ?? entry.description;
-        const emit = makeEmitter(record, {
-          childId: input.runId,
-          parentSessionId: parent?.sessionId ?? input.sessionId ?? "",
-          description,
-          parentInvocationId: parent?.invocationId,
-          onLifecycle: input.onLifecycle,
-        });
-        // The resumed running event reopens the run in every projection;
-        // prompt rides along so consumers can show the follow-up instruction.
-        emit({ status: "running", resumed: true, prompt: input.prompt });
-        registry.note(record, `${input.runId} resumed: ${description || "(no description)"}`);
         return await driveChild({
           emit,
           record,

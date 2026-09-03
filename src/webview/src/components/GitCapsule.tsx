@@ -3,8 +3,8 @@
 // 清单 / 调用过智能体 / 存在存活终端时任一成立才出现（capsuleHasContent 判定）。
 // 头部 = 标题（Git 仓库显示「Git 工具」，否则「活动」）+ 折叠钮；Git 段直出
 // （更改/分支/提交或推送，仅 Git 仓库）；进程段 = 待办清单（完成项划线）；
-// 智能体段 = 逐运行行（存活在上带暂停钮、已结束在下，点标题开右侧对话，
-// 「查看全部」进本会话子代理列表）；终端段为状态摘要行。
+// 智能体段 = 只直出进行中运行行（带暂停钮，点标题开右侧对话），已结束的
+// 全部收进「查看全部」归档；终端段为状态摘要行。
 // 折叠后收成右缘图标小胶囊。开合切换：先播关闭再进场。
 import { useEffect, useState } from "react";
 import {
@@ -12,9 +12,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
-  CircleCheck,
-  CircleSlash,
-  CircleX,
   FilePlus2,
   GitBranch,
   GitCommitHorizontal,
@@ -29,8 +26,6 @@ import type { TodoItem } from "./chat/toolRows";
 
 /** 关闭动画时长，与 app.css `--duration-quick` 对齐。 */
 const CAPSULE_CLOSE_MS = 150;
-/** 胶囊内已结束运行最多直出行数（其余经「查看全部」进列表）。 */
-const CAPSULE_COMPLETED_ROWS = 2;
 
 /** 胶囊里的单个子代理运行行（标题 = description，回退预设名/面板名）。 */
 export interface CapsuleSubagentItem {
@@ -46,7 +41,7 @@ export interface GitCapsuleData {
   /** 工作区 diff 统计；undefined = 未探测到。 */
   changes?: { changedFiles: number; additions: number; deletions: number };
   todos: TodoItem[];
-  /** 本会话子代理运行：存活（新→旧）直出带暂停钮，已结束（新→旧）直出前几条。 */
+  /** 本会话子代理运行：进行中（新→旧）直出带暂停钮；终态只计入「查看全部」。 */
   subagents?: { running: CapsuleSubagentItem[]; completed: CapsuleSubagentItem[] };
   /** 存活终端数（一个终端标签 = 一个存活 PTY）。 */
   terminals?: { count: number };
@@ -72,17 +67,6 @@ const summaryRow =
 /** 智能体运行行：标题可截断，hover 提亮（与摘要行同节奏但无卡底）。 */
 const runRow =
   "flex h-[26px] w-full items-center gap-2 rounded-md px-1.5 text-left whitespace-nowrap text-(--color-foreground) transition-colors hover:bg-(--color-hover)";
-
-/** 运行行状态图标（与 dock 子代理列表同一语义：绿完成/红失败/灰取消/转圈存活）。 */
-function capsuleRunIcon(status: SubagentStatus): React.JSX.Element {
-  if (status === "failed")
-    return <CircleX size={13} strokeWidth={1.5} className="shrink-0 text-(--color-tool-err)" aria-hidden />;
-  if (status === "cancelled")
-    return <CircleSlash size={13} strokeWidth={1.5} className="shrink-0 text-(--color-faint)" aria-hidden />;
-  if (status === "completed")
-    return <CircleCheck size={13} strokeWidth={1.5} className="shrink-0 text-(--color-tool-ok)" aria-hidden />;
-  return <LoaderCircle size={13} strokeWidth={1.5} className="shrink-0 animate-spin text-(--color-accent)" aria-hidden />;
-}
 
 export function GitCapsule({
   t,
@@ -272,22 +256,7 @@ export function GitCapsule({
                 )}
               </div>
             ))}
-            {/* 已结束行在下（最多直出两条，其余进列表）：状态图标 + 标题。 */}
-            {subagentCompleted.slice(0, CAPSULE_COMPLETED_ROWS).map((item) => (
-              <button
-                key={item.childId}
-                type="button"
-                onClick={() => data.onOpenSubagentRun?.(item.childId)}
-                title={item.title}
-                className={`${runRow} mb-[2px] text-(--color-muted) hover:text-(--color-foreground)`}
-              >
-                {capsuleRunIcon(item.status)}
-                <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                <ChevronRight size={12} className="shrink-0 text-(--color-faint)" />
-              </button>
-            ))}
-            {/* 「查看全部 N ›」：N = 终态运行数（直出两条之外的都在归档里），
-                点击进入 dock 子代理归档视图；没有终态运行时不渲染。 */}
+            {/* 「查看全部 N ›」：已结束运行不直出，全部收进归档（N = 终态数）。 */}
             {subagentCompleted.length > 0 && (
               <button
                 type="button"
