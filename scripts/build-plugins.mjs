@@ -88,6 +88,11 @@ const LIBS = [
 // 绑定当次路由会话身份的 sendToTeammate 投递端口——注册 send_message
 // 工具（向具名队友路由投递携带对等权威信封的回合并取回回复；持久化仅
 // 队友名与消息摘要），无任务路由的组装面恒答"无具名队友"。
+// computer 为桌面操控工具插件：默认导出即插件对象（name 同 id），仅
+// Windows 宿主注册工具——computer_screenshot（虚拟屏幕截屏落 PNG 临时
+// 文件并返回路径与分辨率，只读）与 computer_click / computer_type /
+// computer_key / computer_scroll（输入注入，PowerShell 无 shell 直调，
+// 字符串入参 base64 嵌入）；非 Windows 宿主不注册任何工具。
 const BUILTIN_DESCRIPTORS = [
   { id: "fs", core: true, dependencies: [] },
   { id: "shell", core: true, dependencies: [] },
@@ -99,6 +104,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "todo", dependencies: [] },
   { id: "reference", dependencies: [] },
   { id: "web", dependencies: [] },
+  { id: "computer", dependencies: [] },
   { id: "builtin-skills", dependencies: [] },
   { id: "reminders", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
@@ -122,6 +128,7 @@ const PLUGINS = [
   { dir: "packages/tools-todo", id: "todo" },
   { dir: "packages/tools-reference", id: "reference" },
   { dir: "packages/tools-web", id: "web" },
+  { dir: "packages/tools-computer", id: "computer" },
   { dir: "packages/plugin-skills", id: "skills" },
   { dir: "packages/plugin-mcp", id: "mcp" },
   { dir: "packages/tools-ssh", id: "ssh" },
@@ -153,12 +160,14 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "ai",
   "zod",
   "@ai-sdk/openai",
+  "@ai-sdk/openai-compatible",
   "@ai-sdk/anthropic",
   "@ai-sdk/google",
   // 插件 dist 的运行时裸导入：plugin-skills→yaml、harness-ai-runtime→undici、
   // tools-ssh→ssh2、plugin-mcp→ws、tools-archive→yazl+node-forge、
   // tools-fs(read-pdf)→pdfjs-dist（legacy 构建动态导入），与根 package.json
-  // 声明保持一致。
+  // 声明保持一致；@ai-sdk/openai-compatible 由 harness-ai-runtime 的
+  // model-factory 直引（兼容端点通道）。
   "yaml",
   "undici",
   "ssh2",

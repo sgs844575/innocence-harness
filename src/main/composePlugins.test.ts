@@ -78,9 +78,13 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // web 为网页抓取工具插件（批次 4F）：默认导出即插件对象（name 同 id），
 // 静态形态走通用装载链——向 tools 服务注册只读 web_fetch（SSRF 基线：
 // 内网/环回字面量拒绝 + 重定向每跳重验 + 文本类响应截断）。
+// computer 为桌面操控工具插件：默认导出即插件对象（name 同 id），静态
+// 形态走通用装载链——仅 Windows 宿主注册 computer_screenshot 与
+// computer_click/computer_type/computer_key/computer_scroll 五个工具；
+// 非 Windows 宿主 apply 直接返回，不注册任何工具。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "reference", "web", "builtin-skills", "reminders",
+  "reference", "web", "computer", "builtin-skills", "reminders",
   "default", "creation", "plan", "focus", "minimal", "learning", "auto", "coordinator",
   "planflow",
   "memory",
@@ -126,6 +130,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       todo: "todo",
       reference: "reference",
       web: "web",
+      computer: "computer",
       "builtin-skills": "builtin-skills",
       reminders: "reminders",
       default: "default",
@@ -253,6 +258,14 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     expect(webEntry?.core ?? false, '"web" 必须非 core（可开关）').toBe(false);
     expect(webEntry?.kind).toBeUndefined();
     expect(webEntry?.title, '"web" 缺 title').toMatch(/\S/);
+    // 桌面操控工具插件：静态能力插件（非 core、无依赖、无 kind），默认
+    // 导出即插件对象——通用装载链直装载，name 与 staging id 同名。
+    const computerEntry = byId.get("computer");
+    expect(computerEntry, 'manifest 缺少 "computer" 条目').toBeDefined();
+    expect(computerEntry).toMatchObject({ dependencies: [] });
+    expect(computerEntry?.core ?? false, '"computer" 必须非 core（可开关）').toBe(false);
+    expect(computerEntry?.kind).toBeUndefined();
+    expect(computerEntry?.title, '"computer" 缺 title').toMatch(/\S/);
   });
 
   it("reminders entry mounts the staged factory with the settings-threaded permission mode", async () => {
