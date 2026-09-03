@@ -38,12 +38,23 @@ import { createTerminalIpcService, registerTerminalIpc, type TerminalIpcService 
 import { createDockTerminalIpcService, registerDockTerminalIpc, type DockTerminalIpcService } from "./dockTerminalIpc";
 import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import { currentTestOverrides } from "./testOverrides";
+import { defaultDataRoot, migrateAppData } from "./userDataRoot";
 
 // Test roots are opt-in through the centralized controlled marker. Packaged
 // production ignores all test override variables unless the acceptance launcher
 // also supplies the dedicated argument.
 const testOverrides = currentTestOverrides(app.isPackaged);
-if (testOverrides.userData) app.setPath("userData", testOverrides.userData);
+if (testOverrides.userData) {
+  app.setPath("userData", testOverrides.userData);
+} else {
+  // 统一数据根：应用产生的所有数据（会话、转写、日志、设置、凭据、任务）
+  // 都落在 ~/.innocence，与插件/技能/记忆同根；旧默认根一次性迁移。
+  const legacyUserData = app.getPath("userData");
+  const dataRoot = defaultDataRoot();
+  const migrations = migrateAppData(legacyUserData, dataRoot);
+  app.setPath("userData", dataRoot);
+  for (const outcome of migrations) logger.info(`data root migration: ${outcome}`);
+}
 
 // Custom schemes must be registered before app ready.
 registerAppScheme();

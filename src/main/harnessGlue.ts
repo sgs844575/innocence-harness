@@ -60,7 +60,7 @@ export function handleWorkbenchFocusNotice(notice: {
   if (!binding || typeof notice.relativePath !== "string" || !notice.relativePath.trim()) {
     return;
   }
-  const workspaceRoot = taskBridge.get(notice.taskId)?.workspaceRoot;
+  const workspaceRoot = getTaskBridge().get(notice.taskId)?.workspaceRoot;
   const current = getWorkbenchFocus();
   const notes = workspaceRoot ? diagnoseFocusedFile(workspaceRoot, notice.relativePath) : [];
   // Only newly seen fingerprints are forwarded; a repeated focus change does
@@ -305,7 +305,7 @@ export function bootPaths(): { kernelPath: string; builtinRoot: string } {
  *  plugin loading and per-session plugin assembly live in pluginBoot/
  *  sessionComposition (Electron-free, Node-testable); this module injects
  *  the Electron-side path/workspace/log ports. The teammate port factory
- *  closes over runtime/taskBridge below — it only ever runs at session
+ *  closes over runtime/getTaskBridge() below — it only ever runs at session
  *  build time, long after both are initialized. */
 const sessionComposition = createSessionComposition({
   resolvePaths: bootPaths,
@@ -317,7 +317,7 @@ const sessionComposition = createSessionComposition({
       {
         runtime,
         listTeammateRoutes: async (taskId) => [
-          ...reduceTask(await taskBridge.listEvents(taskId)).routes.keys(),
+          ...reduceTask(await getTaskBridge().listEvents(taskId)).routes.keys(),
         ],
       },
       identity,
@@ -352,24 +352,26 @@ export async function disposePluginBoot(): Promise<void> {
   await sessionComposition.disposePluginBoot();
 }
 
-/** Task runtime bridge: opens tasks (baseline/isolated), holds each task's
- *  TaskRuntimePort and injects plugin-task middleware into route-scoped
- *  sessions (see taskRuntimeBridge.ts — electron-free by construction). */
-const taskStorageDir = path.join(app.getPath("userData"), "tasks");
-const taskBridge = createTaskRuntimeBridge({
-  taskStorageDir,
-  log: (level, msg, data) => logger[level]("task bridge", { msg, data: String(data) }),
-});
-const telemetry = createHostTelemetry();
+/** Bridge + storage dir for the host's task-runtime IPC composition (Task 12).
+ *  惰性求值：index.ts 在启动时把 userData 重定向到 ~/.innocence（数据根统
+ *  一），模块加载期读 app.getPath 会钉死旧默认根。 */
+let taskStorageDirCache: string | undefined;
+let taskBridgeCache: TaskRuntimeBridge | undefined;
 
-/** Bridge + storage dir for the host's task-runtime IPC composition (Task 12). */
 export function getTaskBridge(): TaskRuntimeBridge {
-  return taskBridge;
+  taskBridgeCache ??= createTaskRuntimeBridge({
+    taskStorageDir: getTaskStorageDir(),
+    log: (level, msg, data) => logger[level]("task bridge", { msg, data: String(data) }),
+  });
+  return taskBridgeCache;
 }
 
 export function getTaskStorageDir(): string {
-  return taskStorageDir;
+  taskStorageDirCache ??= path.join(app.getPath("userData"), "tasks");
+  return taskStorageDirCache;
 }
+
+const telemetry = createHostTelemetry();
 
 /** S2a：任务路由会话是否运行在宿主管理的工作树中（纯判定见
  *  taskWorktreePredicate——isolated 模式或有效根位于工作树存储目录下）。 */
@@ -412,17 +414,17 @@ const runtime = new HarnessRuntime({
   // anchor to the process install dir; unsafe ids keep the in-package
   // fallback (settings root || process.cwd()).
   workspaceRootFor: async (context) =>
-    (context.taskId ? taskBridge.getRoute(context.taskId, context.routeId)?.workspaceRoot : undefined) ||
+    (context.taskId ? getTaskBridge().getRoute(context.taskId, context.routeId)?.workspaceRoot : undefined) ||
     resolveTaskWorkspaceRoot(context.sessionId, {
       getSessionWorkspaceRoot: (id) => sessions.getSession(id)?.workspaceRoot || undefined,
       fallbackRoot: settings.workspaceRoot,
     }) ||
     (await ensureSessionScratchDir(context.sessionId)),
-  forkRoute: (input) => taskBridge.forkRoute(input),
+  forkRoute: (input) => getTaskBridge().forkRoute(input),
   // S2a 工作树会话判定：与 workspaceRootFor 同一谓词（isolated 模式或有效
   // 根位于任务工作树存储目录下），供 buildSession 驱动子代理片段注册。
   isolatedWorktreeFor: (context) =>
-    isTaskWorktreeSession(taskBridge, {
+    isTaskWorktreeSession(getTaskBridge(), {
       taskId: context.taskId || undefined,
       routeId: context.routeId,
     }) || isForkWorktreeSession(context.sessionId),
@@ -485,7 +487,7 @@ const runtime = new HarnessRuntime({
         ...(context.taskId ? { taskId: context.taskId } : {}),
       },
       {
-        isolatedWorktree: isTaskWorktreeSession(taskBridge, context),
+        isolatedWorktree: isTaskWorktreeSession(getTaskBridge(), context),
         workbenchFocus: () => getWorkbenchFocus(),
         backgroundIsolation:
           !context.taskId && backgroundIsolatedSessions.has(context.sessionId),
@@ -493,7 +495,7 @@ const runtime = new HarnessRuntime({
     )),
     // Route-scoped task sessions get the change-capture middleware bound to
     // the live task's port; plain chat contexts contribute nothing.
-    ...taskPluginsForRoute(taskBridge, context),
+    ...taskPluginsForRoute(getTaskBridge(), context),
   ],
   hooks: {
     ...createRuntimeHooks(pendingAsks),
@@ -669,7 +671,7 @@ export function bindSessionTaskRoute(sessionId: string, taskId: string, routeId:
 
 /** S4：按任务查句柄（taskId → sessionId 绑定，供工作台焦点上报解析会话）。 */
 export function getTaskHandle(taskId: string): { sessionId: string } | undefined {
-  const handle = taskBridge.get(taskId);
+  const handle = getTaskBridge().get(taskId);
   return handle ? { sessionId: handle.sessionId } : undefined;
 }
 
@@ -766,7 +768,7 @@ export async function disposeTelemetry(): Promise<void> {
  *  worktree lease records. Worktrees survive restarts; explicit task
  *  deletion (destroyWorktree) runs only through the task flows. */
 export async function disposeTaskRuntime(): Promise<void> {
-  await taskBridge.disposeAll();
+  await getTaskBridge().disposeAll();
 }
 
 /** Route-bound terminals / code surfaces (Task 9/11): the authoritative
@@ -777,5 +779,5 @@ export async function resolveRouteWorkspaceRoot(
   taskId: string,
   routeId: string,
 ): Promise<string | undefined> {
-  return taskBridge.durableRouteRoot(taskId, routeId);
+  return getTaskBridge().durableRouteRoot(taskId, routeId);
 }
