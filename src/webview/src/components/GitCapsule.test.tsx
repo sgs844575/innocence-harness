@@ -96,7 +96,7 @@ describe("GitCapsule", () => {
     expect(screen.queryByText("任务三")).toBeNull();
   });
 
-  it("智能体段：「查看全部 N ›」显示总数并进入本会话列表", () => {
+  it("智能体段：「查看全部 N ›」显示终态数并进入归档；无终态时不渲染", () => {
     const onOpenSubagents = vi.fn();
     renderCapsule({
       subagents: {
@@ -106,9 +106,17 @@ describe("GitCapsule", () => {
       onOpenSubagents,
     });
     const row = screen.getByRole("button", { name: /capsule.subagents.all/ });
-    expect(row.textContent).toContain("3");
+    // N = 终态数（存活行已直出，不计数）。
+    expect(row.textContent).toContain("2");
     fireEvent.click(row);
     expect(onOpenSubagents).toHaveBeenCalledTimes(1);
+  });
+
+  it("智能体段：只有存活运行时无「查看全部」行（终态才进归档）", () => {
+    renderCapsule({
+      subagents: { running: [item("c_live", "存活任务", "running")], completed: [] },
+    });
+    expect(screen.queryByRole("button", { name: /capsule.subagents.all/ })).toBeNull();
   });
 
   it("终端段：显示存活数，点击打开终端", () => {

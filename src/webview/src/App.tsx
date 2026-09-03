@@ -87,6 +87,8 @@ export function App(): React.JSX.Element {
   dockTabsRef.current = dockTabs;
   const nextTerminalSeqRef = useRef(0);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  /** 子代理列表归档视图开关（true = 已完成的子代理；胶囊「查看全部」直达）。 */
+  const [subagentsArchive, setSubagentsArchive] = useState(false);
   const [dockWidth, setDockWidth] = useState(() => {
     const saved = Number(localStorage.getItem("rightDockWidth"));
     return Number.isFinite(saved) && saved > 0 ? clampDockWidth(saved) : DEFAULT_DOCK_WIDTH;
@@ -129,6 +131,7 @@ export function App(): React.JSX.Element {
     (kind: DockTabKind) => {
       setDockOpen(true);
       if (kind === "subagents" || kind === "review") {
+        if (kind === "subagents") setSubagentsArchive(false);
         setDockTabs((tabs) =>
           tabs.some((tab) => tab.id === kind)
             ? tabs
@@ -205,8 +208,11 @@ export function App(): React.JSX.Element {
     if (!dockOpen) setDockOpen(true);
     newDockTab("subagents");
   }, [activeRuns, dockOpen, newDockTab]);
-  // 切会话清掉定位选择。
-  useEffect(() => setSelectedChildId(null), [sessions.activeId]);
+  // 切会话清掉定位选择与归档视图。
+  useEffect(() => {
+    setSelectedChildId(null);
+    setSubagentsArchive(false);
+  }, [sessions.activeId]);
 
   const openSubagentRun = useCallback((invocationId: string) => {
     newDockTab("subagents");
@@ -223,10 +229,11 @@ export function App(): React.JSX.Element {
     [newDockTab],
   );
 
-  /** 胶囊「查看全部 N ›」行：dock 打开本会话子代理列表（存活/已完成分组，倒序）。 */
+  /** 胶囊「查看全部 N ›」行：dock 打开本会话子代理归档视图（终态列表，倒序）。 */
   const openCapsuleSubagents = useCallback(() => {
     newDockTab("subagents");
     setSelectedChildId(null);
+    setSubagentsArchive(true);
   }, [newDockTab]);
 
   /** 胶囊存活行「暂停」钮：取消该子代理运行（终态经 lifecycle 事件回流面板）。 */
@@ -560,6 +567,8 @@ export function App(): React.JSX.Element {
           runs={activeRuns}
           selectedChildId={selectedChildId}
           onSelect={setSelectedChildId}
+          subagentsArchive={subagentsArchive}
+          onSubagentsArchive={setSubagentsArchive}
           renderAuxTab={(tab) => (
             <AuxChatView
               t={t}

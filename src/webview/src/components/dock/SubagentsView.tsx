@@ -3,7 +3,7 @@
 // 同一 ToolRow 工具轨迹（动词/图标/摘要/展开详情）、Markdown 正文 + 悬停
 // 动作行（复制 + 时间戳）、流式等待行。
 import { useEffect, useRef } from "react";
-import { Bot, ChevronLeft, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
 import { formatRunDuration, groupRunsByLiveness, pairedRunTools, runConversationChunks, type SubagentRun } from "../../state/subagentRuns";
 import { runToolsToTimelineRows } from "../chat/toolRows";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
@@ -165,19 +165,62 @@ export function RunConversation({
   );
 }
 
-/** 列表视图整体（含空态）：两组分类——正在运行的子代理在上、已完成的子代理
- *  在下（失败/取消以各自状态标在该组行内），两组各自按创建时间倒序（新→旧）。 */
+/** 列表视图（含空态）——主列表只展示进行中的子代理；终态（完成/失败/取消）
+ *  全部归档进「查看全部」次级视图（archive=true，胶囊「查看全部」直达），
+ *  返回钮回到进行中列表。两组各自按创建时间倒序（新→旧）。 */
 export function SubagentsList({
   t,
   runs,
   onOpen,
+  archive = false,
+  onArchive,
 }: {
   t: (key: string) => string;
   runs: SubagentRun[];
   onOpen: (childId: string) => void;
+  /** 归档视图（已完成的子代理）。 */
+  archive?: boolean;
+  onArchive?: (open: boolean) => void;
 }): React.JSX.Element {
   const groups = groupRunsByLiveness(runs);
   const groupLabel = "px-1 pb-1 text-[12px] text-(--color-faint) select-none";
+  if (archive) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-hairline) px-2">
+          <button
+            type="button"
+            onClick={() => onArchive?.(false)}
+            aria-label={t("dock.back")}
+            title={t("dock.back")}
+            className="grid size-7 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+          >
+            <ChevronLeft size={15} strokeWidth={1.5} />
+          </button>
+          <span className="min-w-0 flex-1 truncate text-(--color-foreground)">
+            {t("dock.subagents.completedGroup")}
+          </span>
+          <span className="shrink-0 font-mono text-[12px] tabular-nums text-(--color-faint)">
+            {groups.completed.length}
+          </span>
+        </div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+          {groups.completed.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-(--color-faint)">
+              <Bot size={22} strokeWidth={1.3} aria-hidden />
+              <span className="text-[13px]">{t("dock.subagents.completedGroup")}</span>
+            </div>
+          ) : (
+            <div className="space-y-2.5 p-3">
+              {groups.completed.map((run) => (
+                <RunCard key={run.childId} t={t} run={run} onOpen={() => onOpen(run.childId)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
       {runs.length === 0 ? (
@@ -187,7 +230,7 @@ export function SubagentsList({
         </div>
       ) : (
         <div className="space-y-3 p-3">
-          {groups.running.length > 0 && (
+          {groups.running.length > 0 ? (
             <section>
               <div className={groupLabel}>{t("dock.subagents.runningGroup")}</div>
               <div className="space-y-2.5">
@@ -196,16 +239,26 @@ export function SubagentsList({
                 ))}
               </div>
             </section>
+          ) : (
+            <div className="px-1 py-6 text-center text-[13px] text-(--color-faint)">
+              {t("dock.subagents.liveEmpty")}
+            </div>
           )}
+          {/* 「查看全部 N ›」：终态运行全部收进归档视图，主列表不混排。 */}
           {groups.completed.length > 0 && (
-            <section>
-              <div className={groupLabel}>{t("dock.subagents.completedGroup")}</div>
-              <div className="space-y-2.5">
-                {groups.completed.map((run) => (
-                  <RunCard key={run.childId} t={t} run={run} onOpen={() => onOpen(run.childId)} />
-                ))}
-              </div>
-            </section>
+            <button
+              type="button"
+              onClick={() => onArchive?.(true)}
+              title={t("capsule.subagents.openList")}
+              className="flex w-full items-center gap-2 rounded-(--radius-pop) px-1 py-1.5 text-(--color-muted) transition-colors hover:bg-(--color-hover) hover:text-(--color-foreground)"
+            >
+              <Bot size={14} strokeWidth={1.5} className="shrink-0" aria-hidden />
+              <span>{t("dock.subagents.viewAll")}</span>
+              <span className="ml-auto font-mono text-[12px] tabular-nums text-(--color-muted)">
+                {groups.completed.length}
+              </span>
+              <ChevronRight size={12} className="shrink-0 text-(--color-faint)" aria-hidden />
+            </button>
           )}
         </div>
       )}

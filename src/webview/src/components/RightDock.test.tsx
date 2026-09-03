@@ -178,7 +178,7 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByText("1")).toBeTruthy();
   });
 
-  it("列表视图：正在运行/已完成两组分类，各自按创建时间倒序，运行组在上", () => {
+  it("列表主视图：只展示进行中的子代理（倒序），终态全部收进「查看全部」行", () => {
     const oldRunning: SubagentRun = { ...runningRun, childId: "c_older", description: "较早存活", startedAt: 1000 };
     const newRunning: SubagentRun = { ...runningRun, childId: "c_newer", description: "较新存活", startedAt: 2000 };
     const oldDone: SubagentRun = { ...doneRun, childId: "d_older", description: "较早完成", startedAt: 3000 };
@@ -196,26 +196,64 @@ describe("RightDock 子代理标签", () => {
         runs={[oldRunning, oldDone, newRunning, newFailed]} />,
     );
     expect(screen.getByText("dock.subagents.runningGroup")).toBeTruthy();
-    expect(screen.getByText("dock.subagents.completedGroup")).toBeTruthy();
-    // 组内倒序 + 组间次序：较新存活 → 较早存活 →（分组标题）→ 较新失败 → 较早完成。
-    const order = ["较新存活", "较早存活", "dock.subagents.completedGroup", "较新失败", "较早完成"].map((text) =>
-      screen.getByText(text),
-    );
-    for (let index = 0; index < order.length - 1; index += 1) {
-      // Node.DOCUMENT_POSITION_FOLLOWING (4)：后一个元素在文档顺序上位于前一个之后。
-      expect(order[index]!.compareDocumentPosition(order[index + 1]!) & 4).toBeTruthy();
-    }
-    // 失败行保留自身状态标（「已完成」组内含失败/取消，各自状态可见）。
-    expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
-    expect(screen.getByText(/dock\.status\.completed/)).toBeTruthy();
+    // 终态不出现在主列表，也不出该组标题。
+    expect(screen.queryByText("dock.subagents.completedGroup")).toBeNull();
+    expect(screen.queryByText("较早完成")).toBeNull();
+    expect(screen.queryByText("较新失败")).toBeNull();
+    // 组内倒序：较新存活在较早存活之前。
+    const order = [screen.getByText("较新存活"), screen.getByText("较早存活")];
+    expect(order[0]!.compareDocumentPosition(order[1]!) & 4).toBeTruthy();
+    // 「查看全部」行携带终态计数 2。
+    const viewAll = screen.getByRole("button", { name: /dock\.subagents\.viewAll/ });
+    expect(viewAll.textContent).toContain("2");
   });
 
-  it("列表视图：某组为空时不渲染该组标题", () => {
-    render(
+  it("「查看全部」进入归档视图：终态倒序（含各自状态标），返回钮回主列表", () => {
+    const onSubagentsArchive = vi.fn();
+    const oldDone: SubagentRun = { ...doneRun, childId: "d_older", description: "较早完成", startedAt: 3000 };
+    const newFailed: SubagentRun = {
+      ...doneRun,
+      childId: "d_newer",
+      description: "较新失败",
+      status: "failed",
+      final: undefined,
+      error: "出错了",
+      startedAt: 4000,
+    };
+    const { rerender } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[runningRun, oldDone, newFailed]} subagentsArchive={false} onSubagentsArchive={onSubagentsArchive} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /dock\.subagents\.viewAll/ }));
+    expect(onSubagentsArchive).toHaveBeenCalledWith(true);
+    // 归档视图：终态倒序（新→旧），失败/完成各自状态标在行内。
+    rerender(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
+        runs={[runningRun, oldDone, newFailed]} subagentsArchive onSubagentsArchive={onSubagentsArchive} />,
+    );
+    expect(screen.getByText("dock.subagents.completedGroup")).toBeTruthy();
+    // 主列表的运行组标题不再渲染（归档视图不混排存活行）。
+    expect(screen.queryByText("dock.subagents.runningGroup")).toBeNull();
+    expect(screen.queryByText("定位 Write 渲染")).toBeNull();
+    const order = [screen.getByText("较新失败"), screen.getByText("较早完成")];
+    expect(order[0]!.compareDocumentPosition(order[1]!) & 4).toBeTruthy();
+    expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
+    expect(screen.getByText(/dock\.status\.completed/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("dock.back"));
+    expect(onSubagentsArchive).toHaveBeenCalledWith(false);
+  });
+
+  it("主列表无进行中运行时给空态提示；完全无运行给整体空态", () => {
+    const { rerender } = render(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[doneRun]} />,
     );
-    expect(screen.queryByText("dock.subagents.runningGroup")).toBeNull();
-    expect(screen.getByText("dock.subagents.completedGroup")).toBeTruthy();
+    // 只有终态：主列表空态提示 + 「查看全部」入口。
+    expect(screen.getByText("dock.subagents.liveEmpty")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /dock\.subagents\.viewAll/ })).toBeTruthy();
+    rerender(<RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[]} />);
+    // 完全无运行：整体空态，无「查看全部」。
+    expect(screen.getByText("dock.empty")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /dock\.subagents\.viewAll/ })).toBeNull();
   });
 
   it("点击卡片进入对话视图；对话视图含 Markdown 正文 + prompt + 工具轨迹，返回钮回列表", () => {
@@ -310,10 +348,10 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByText(/dock\.status\.failed/)).toBeTruthy();
   });
 
-  it("selectedChildId 无匹配运行时回落到列表视图", () => {
+  it("selectedChildId 无匹配运行时回落到列表主视图", () => {
     render(
       <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents"
-        runs={[doneRun]} selectedChildId="missing" />,
+        runs={[runningRun]} selectedChildId="missing" />,
     );
     expect(screen.getByText("定位 Write 渲染")).toBeTruthy();
     expect(screen.queryByLabelText("dock.back")).toBeNull();

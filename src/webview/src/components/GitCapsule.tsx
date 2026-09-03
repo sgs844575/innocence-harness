@@ -56,7 +56,7 @@ export interface GitCapsuleData {
   onOpenSubagentRun?: (childId: string) => void;
   /** 存活行的暂停钮：取消该子代理运行（终态经 lifecycle 事件回流）。 */
   onCancelSubagent?: (childId: string) => void;
-  /** 「查看全部」行：右侧 dock 打开本会话子代理列表（存活/已完成分组）。 */
+  /** 「查看全部」行：右侧 dock 打开本会话子代理归档视图（终态列表）。 */
   onOpenSubagents?: () => void;
   /** 点击终端行：打开右侧 dock 并激活存活终端标签。 */
   onOpenTerminals?: () => void;
@@ -286,20 +286,23 @@ export function GitCapsule({
                 <ChevronRight size={12} className="shrink-0 text-(--color-faint)" />
               </button>
             ))}
-            {/* 「查看全部 N ›」：进入本会话子代理列表（存活/已完成分组，倒序）。 */}
-            <button
-              type="button"
-              onClick={data.onOpenSubagents}
-              title={t("capsule.subagents.openList")}
-              className={`${summaryRow} mt-[4px]`}
-            >
-              <Bot size={13} strokeWidth={1.5} className="shrink-0 text-(--color-muted)" />
-              <span>{t("capsule.subagents.all")}</span>
-              <span className="ml-auto font-mono text-(--color-muted)">
-                {subagentRunning.length + subagentCompleted.length}
-              </span>
-              <ChevronRight size={12} className="shrink-0 text-(--color-faint)" />
-            </button>
+            {/* 「查看全部 N ›」：N = 终态运行数（直出两条之外的都在归档里），
+                点击进入 dock 子代理归档视图；没有终态运行时不渲染。 */}
+            {subagentCompleted.length > 0 && (
+              <button
+                type="button"
+                onClick={data.onOpenSubagents}
+                title={t("capsule.subagents.openList")}
+                className={`${summaryRow} mt-[4px]`}
+              >
+                <Bot size={13} strokeWidth={1.5} className="shrink-0 text-(--color-muted)" />
+                <span>{t("capsule.subagents.all")}</span>
+                <span className="ml-auto font-mono text-(--color-muted)">
+                  {subagentCompleted.length}
+                </span>
+                <ChevronRight size={12} className="shrink-0 text-(--color-faint)" />
+              </button>
+            )}
           </>
         )}
 

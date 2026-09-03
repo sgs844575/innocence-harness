@@ -45,6 +45,9 @@ interface Props {
   runs: SubagentRun[];
   selectedChildId?: string | null;
   onSelect?: (childId: string | null) => void;
+  /** 列表归档视图开关（true = 已完成的子代理）；胶囊「查看全部」直达。 */
+  subagentsArchive?: boolean;
+  onSubagentsArchive?: (open: boolean) => void;
   /** 「辅助对话」标签内容（App 注入 AuxChatView，持有 settings 等装配）。 */
   renderAuxTab: (tab: DockTabInstance) => React.ReactNode;
   /** 「审查」标签内容（App 注入 ReviewView，持有 workspaceRoot 与刷新信号）。 */
@@ -353,6 +356,8 @@ export function RightDock({
   runs,
   selectedChildId,
   onSelect,
+  subagentsArchive,
+  onSubagentsArchive,
   renderAuxTab,
   renderReviewTab,
   renderTerminalTab,
@@ -398,7 +403,13 @@ export function RightDock({
         (selected ? (
           <RunConversation t={t} run={selected} onBack={() => onSelect?.(null)} code={code} />
         ) : (
-          <SubagentsList t={t} runs={runs} onOpen={(childId) => onSelect?.(childId)} />
+          <SubagentsList
+            t={t}
+            runs={runs}
+            onOpen={(childId) => onSelect?.(childId)}
+            archive={subagentsArchive}
+            onArchive={onSubagentsArchive}
+          />
         ))}
       {/* aux/terminal 标签常驻挂载用 display:none；browser 标签用
           absolute+invisible——display:none 会卸载 <webview> 访客插件。 */}
