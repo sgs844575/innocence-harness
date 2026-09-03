@@ -136,6 +136,40 @@ export class HarnessRuntime {
     return this.cache.isRunning(routeCacheKey(sessionId, routeId || DEFAULT_ROUTE_ID));
   }
 
+  /**
+   * Rewinds one route's in-memory history to its first `keptUserTurns` user
+   * turns (a turn starts at a user message carrying text — the loop's
+   * canonical input shape; tool-result user turns never start a turn). The
+   * edit-and-resend flow uses this so the model context drops the replaced
+   * turn before the new one runs. A route without a cached session is a no-op
+   * (its rebuild seeds from the rewritten transcript); a running route and a
+   * kept count at or beyond the live turns both leave the history untouched.
+   */
+  rewindHistory(sessionId: string, keptUserTurns: number, routeId?: string): void {
+    const key = routeCacheKey(sessionId, routeId || DEFAULT_ROUTE_ID);
+    if (this.cache.isRunning(key)) {
+      throw new Error(`route is running (${key}); rewind refused`);
+    }
+    const cached = this.cache.peek(key);
+    if (!cached) return;
+    const history = cached.session.history;
+    let turns = 0;
+    let cut = history.length;
+    for (let index = 0; index < history.length; index += 1) {
+      const message = history[index]!;
+      const startsTurn =
+        message.role === "user" &&
+        message.parts.some((part) => part.type === "text" && part.text.length > 0);
+      if (!startsTurn) continue;
+      if (turns >= keptUserTurns) {
+        cut = index;
+        break;
+      }
+      turns += 1;
+    }
+    history.length = cut;
+  }
+
   /** Stops the active run of one route (empty routeId = the main route,
    *  like send; omitted route = every route of the chat session). */
   stop(sessionId: string, routeId?: string): void {

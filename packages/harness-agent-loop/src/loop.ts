@@ -515,7 +515,11 @@ export async function runLoop(
         // Permission granted: hand the invocation to the executor, which owns
         // the derived AbortController, middleware chain, real abort-on-timeout
         // and outcome standardization. Raw args stay in this closure and die
-        // with it.
+        // with it. Delegated tools (subagent runs) skip the session deadline:
+        // they own their budget (child maxTurns, caller-set timeouts) and are
+        // stopped by the run signal, never by a wall-clock guess (repo rule:
+        // no default timeout while waiting on subagents).
+        const invocationTimeoutMs = item.tool.sideEffect === "delegated" ? 0 : toolTimeoutMs;
         try {
           const result = await executeToolInvocation(
             {
@@ -526,7 +530,7 @@ export async function runLoop(
             },
             tools.middlewares(),
             {
-              timeoutMs: toolTimeoutMs,
+              timeoutMs: invocationTimeoutMs,
               abortGraceMs: opts.abortGraceMs,
               execute: (_signal, ctx) => item.tool!.execute(part.args, ctx),
             },

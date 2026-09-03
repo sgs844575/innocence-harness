@@ -38,6 +38,8 @@ export interface ModelInfo {
   maxInput?: number;
   maxOutput?: number;
   vision?: boolean;
+  /** 视频输入能力标记（展示用）。 */
+  video?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   reasoningEfforts?: string[];

@@ -23,6 +23,7 @@ export function forwardHarnessEvent(
         id: event.id,
         toolName: event.call.toolName,
         args: event.call.args,
+        invocationId: event.invocationId,
       });
       break;
     case "toolResult":
@@ -32,6 +33,7 @@ export function forwardHarnessEvent(
         content: event.content,
         isError: event.isError === true,
         durationMs: event.durationMs,
+        invocationId: event.invocationId,
       });
       break;
     case "compaction":

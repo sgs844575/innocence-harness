@@ -59,6 +59,14 @@ export interface HarnessSettings {
   uiFontSize?: number;
   /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容用。 */
   codeFontSize?: number;
+  /** 浅色界面代码高亮主题（shiki bundled 名，默认 github-light）。 */
+  codeThemeLight?: string;
+  /** 深色界面代码高亮主题（默认 github-dark）。 */
+  codeThemeDark?: string;
+  /** 代码块行号；缺失默认开。 */
+  codeLineNumbers?: boolean;
+  /** 代码内容长行自动换行；缺失默认关。 */
+  codeWordWrap?: boolean;
   /** Preferred UI language; "" follows the system locale. */
   locale?: UiLocale;
   /** 思考档位（""=跟随模型默认；off/low/medium/high）。 */
@@ -155,6 +163,10 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   locale: "",
   uiFontSize: FONT_SIZE_DEFAULT,
   codeFontSize: FONT_SIZE_DEFAULT,
+  codeThemeLight: "github-light",
+  codeThemeDark: "github-dark",
+  codeLineNumbers: true,
+  codeWordWrap: false,
   reasoningEffort: "",
   activeAgentMode: "default",
   externalSkillDiscovery: true,
@@ -199,6 +211,7 @@ function normalizeModel(raw: unknown, providerName: string): ModelInfo | null {
     maxInput: num(src.maxInput),
     maxOutput: num(src.maxOutput),
     vision: src.vision === true || undefined,
+    video: src.video === true || undefined,
     tools: src.tools === true || undefined,
     reasoning: src.reasoning === true || undefined,
     streaming: src.streaming === false ? false : undefined,
@@ -245,6 +258,11 @@ function normalizeFontSize(raw: unknown): number {
   return typeof raw === "number" && Number.isFinite(raw)
     ? Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(raw)))
     : FONT_SIZE_DEFAULT;
+}
+
+/** 代码高亮主题归一化：非空字符串透传，否则回落给定默认。 */
+function normalizeCodeTheme(raw: unknown, fallback: string): string {
+  return typeof raw === "string" && raw.trim() !== "" ? raw : fallback;
 }
 
 /** 布尔值键保留、非布尔剔除；无有效键回落 undefined（undefined = 默认全开，
@@ -333,6 +351,10 @@ function migrateFromV1(v1: SettingsV1): HarnessSettings {
     activeAgentMode: normalizeActiveAgentMode((v1 as { activeAgentMode?: unknown }).activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery((v1 as { externalSkillDiscovery?: unknown }).externalSkillDiscovery),
     // pluginToggles：v1 不可能含该键，有意不透传（缺省 = 默认全开）。
+    codeThemeLight: "github-light",
+    codeThemeDark: "github-dark",
+    codeLineNumbers: true,
+    codeWordWrap: false,
   };
 }
 
@@ -350,6 +372,10 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       permissionMode: normalizePermissionMode(src.permissionMode),
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
       uiFontSize: normalizeFontSize(src.uiFontSize), codeFontSize: normalizeFontSize(src.codeFontSize),
+      codeThemeLight: normalizeCodeTheme(src.codeThemeLight, "github-light"),
+      codeThemeDark: normalizeCodeTheme(src.codeThemeDark, "github-dark"),
+      codeLineNumbers: src.codeLineNumbers !== false,
+      codeWordWrap: src.codeWordWrap === true,
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
       activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
       externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
@@ -375,6 +401,10 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     locale: normalizeLocale(src.locale),
     uiFontSize: normalizeFontSize(src.uiFontSize),
     codeFontSize: normalizeFontSize(src.codeFontSize),
+    codeThemeLight: normalizeCodeTheme(src.codeThemeLight, "github-light"),
+    codeThemeDark: normalizeCodeTheme(src.codeThemeDark, "github-dark"),
+    codeLineNumbers: src.codeLineNumbers !== false,
+    codeWordWrap: src.codeWordWrap === true,
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
     activeAgentMode: normalizeActiveAgentMode(src.activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),

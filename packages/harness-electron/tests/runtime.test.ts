@@ -824,6 +824,56 @@ describe("HarnessRuntime route forks", () => {
     await turn;
     expect(runtime.isRouteRunning("busy-1")).toBe(false);
   });
+
+  it("rewindHistory drops trailing user turns from the in-memory history (edit-resend context)", async () => {
+    const seenRequests: string[][] = [];
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "答一" }, { text: "答二" }, { text: "答三" }], { workspaceRoot: workspace }),
+      providerFactory: () =>
+        createMockProvider({
+          turns: [{ text: "答" }, { text: "答" }, { text: "答" }],
+          onChat: (req) =>
+            seenRequests.push(
+              req.messages.map((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join("")).filter(Boolean),
+            ),
+        }),
+    });
+
+    await chatTurn(runtime, "rewind-1", "问一", "m-rw1");
+    await chatTurn(runtime, "rewind-1", "问二", "m-rw2");
+    runtime.rewindHistory("rewind-1", 1); // 编辑重发：回到第一轮之后
+
+    await chatTurn(runtime, "rewind-1", "改后的问", "m-rw3");
+    // 模型上下文 = 第一轮 + 新问：被替换的第二轮没有残留。
+    expect(seenRequests.at(-1)).toEqual(["问一", "答", "改后的问"]);
+  });
+
+  it("rewindHistory is a no-op beyond the live turn count and without a cached session", async () => {
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "答" }], { workspaceRoot: workspace }),
+    });
+    await chatTurn(runtime, "rewind-2", "问一", "m-rw2a");
+    runtime.rewindHistory("rewind-2", 5); // 超出实际轮数：保留全部
+    runtime.rewindHistory("rewind-2", 1); // 截到第一轮（keptUserTurns=1 保留该轮）
+    // 无缓存会话：静默 no-op，不抛错。
+    expect(() => runtime.rewindHistory("rewind-missing", 0)).not.toThrow();
+    await runtime.disposeAll();
+  });
+
+  it("rewindHistory refuses a running route", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "ok" }], { workspaceRoot: workspace }),
+      pluginsForSession: () => gate.then(() => []),
+    });
+    const turn = chatTurn(runtime, "rewind-busy", "hi", "m-rw-busy");
+    expect(() => runtime.rewindHistory("rewind-busy", 0)).toThrow(/running/);
+    release();
+    await turn;
+    // 回合结束后同一回退不再拒绝。
+    expect(() => runtime.rewindHistory("rewind-busy", 0)).not.toThrow();
+  });
 });
 
 describe("HarnessRuntime route cache", () => {
