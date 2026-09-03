@@ -1,15 +1,14 @@
 // 「子代理」标签的内容视图（从 RightDock 按职责拆出）：列表 ↔ 对话双视图。
 // 对话视图与主聊天时间线同一表现语言——用户气泡（hover 复制）、思考幽灵行、
 // 同一 ToolRow 工具轨迹（动词/图标/摘要/展开详情）、Markdown 正文 + 悬停
-// 动作行（复制 + 时间戳）、流式等待行、左缘虚线刻度。
-import { useEffect, useRef, useState } from "react";
+// 动作行（复制 + 时间戳）、流式等待行。
+import { useEffect, useRef } from "react";
 import { Bot, ChevronLeft, CircleCheck, CircleSlash, CircleX, LoaderCircle } from "lucide-react";
 import { formatRunDuration, groupRunsByLiveness, pairedRunTools, type SubagentRun } from "../../state/subagentRuns";
 import { runToolsToTimelineRows } from "../chat/toolRows";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
 import { ThinkingRow } from "../chat/ThinkingRow";
 import { WaitingRow } from "../chat/WaitingRow";
-import { ChatDashes } from "../chat/ChatDashes";
 import { ToolTimeline } from "../chat/ToolRow";
 import { CopyButton } from "../MessageItem";
 
@@ -85,21 +84,8 @@ export function RunConversation({
   const body = run.final ?? run.text;
   const stamp = new Date(run.endedAt ?? run.startedAt);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollFraction, setScrollFraction] = useState(0);
   const thinkingLive = running && !body;
-  const hasContent = Boolean(run.prompt || run.thinking || run.tools.length || body || run.error);
 
-  const handleScroll = (): void => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    setScrollFraction(max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0);
-  };
-  const seekTo = (fraction: number): void => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = fraction * (el.scrollHeight - el.clientHeight);
-  };
   // 运行中且用户贴底（<48px）时保持钉底，上滚即释放——与时间线同规则。
   useEffect(() => {
     const el = scrollRef.current;
@@ -127,13 +113,8 @@ export function RunConversation({
           <span className="font-mono tabular-nums">{formatRunDuration(run.startedAt, run.endedAt ?? Date.now())}</span>
         </span>
       </div>
-      <div className="relative min-h-0 flex-1">
-        {hasContent && (
-          <div className="absolute left-[12px] top-1/2 z-[5] -translate-y-1/2">
-            <ChatDashes fraction={scrollFraction} onSeek={seekTo} />
-          </div>
-        )}
-        <div ref={scrollRef} onScroll={handleScroll} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
+      <div className="min-h-0 flex-1">
+        <div ref={scrollRef} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
           {/* 消息渲染与主聊天同语言同节奏（32px 消息间距）：prompt = 用户气泡
               （右对齐、3px 尾角、hover 复制），thinking = 幽灵行，工具 = 同一
               ToolRow 时间线，正文 = Markdown 帧（运行中流式光标），错误 = ⚠ 前缀
