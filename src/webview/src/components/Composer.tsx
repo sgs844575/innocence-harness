@@ -2,11 +2,12 @@
 // 菜单、权限模式、模型两级选择器、思考强度、发送/停止反色方形钮。
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Plus, Square, ArrowUp, AtSign, Paperclip, Slash } from "lucide-react";
-import type { HarnessSettings, PermissionMode } from "../../../shared/ipc";
+import type { ChatContextUsageSnapshot, HarnessSettings, PermissionMode } from "../../../shared/ipc";
 import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
 import { AgentModePicker } from "./composer/AgentModePicker";
 import { ThinkingEffortPicker, type EffortValue } from "./composer/ThinkingEffortPicker";
+import { ContextMeter } from "./composer/ContextMeter";
 import { DropdownMenu, DropdownMenuItem } from "./ui/DropdownMenu";
 import { useAgentModes } from "../state/useAgentModes";
 
@@ -31,6 +32,9 @@ interface Props {
   draft?: ComposerDraft;
   /** 模型选择器「管理模型」入口（跳设置模型分区）。 */
   onManageModels?: () => void;
+  /** 上下文容量快照：undefined = 不渲染指示器（落地页/辅助对话）；
+   *  null = 渲染 0% 灰环（会话内常显，快照未到）。 */
+  contextUsage?: ChatContextUsageSnapshot | null;
 }
 
 export function Composer({
@@ -44,6 +48,7 @@ export function Composer({
   header,
   draft,
   onManageModels,
+  contextUsage,
 }: Props): React.JSX.Element {
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -157,6 +162,9 @@ export function Composer({
           />
 
           <div className="flex-1" />
+
+          {/* 上下文容量环：undefined 不渲染；插在模型选择器左侧。 */}
+          {contextUsage !== undefined && <ContextMeter t={t} snapshot={contextUsage} />}
 
           {settings ? (
             <ModelPicker

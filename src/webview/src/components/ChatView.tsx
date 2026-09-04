@@ -2,7 +2,7 @@
 // 中断的末条助手消息带「继续」图标钮；上滚脱离贴底时出回到底部钮；发送即回贴底。
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
-import type { ChatMessage, ChatPermissionEvent, ChatQuestionEvent, ChatQuestionResponse, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
+import type { ChatMessage, ChatContextUsageSnapshot, ChatPermissionEvent, ChatQuestionEvent, ChatQuestionResponse, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
 import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
@@ -44,6 +44,8 @@ interface Props {
   onOpenFile?: (row: ToolRowModel) => void;
   /** 底部终端面板（顶栏终端钮开合；挂在输入卡之后，聊天列全宽）。 */
   terminalPanel?: React.ReactNode;
+  /** 上下文容量快照（App 从 useChatStream 透传；输入卡常显环 + 明细弹层）。 */
+  contextUsage?: ChatContextUsageSnapshot | null;
 }
 
 export function ChatView({
@@ -64,6 +66,7 @@ export function ChatView({
   onOpenSubagent,
   onOpenFile,
   terminalPanel,
+  contextUsage,
 }: Props): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -275,6 +278,7 @@ export function ChatView({
             onSend={handleSend}
             onStop={onStop}
             onManageModels={onManageModels}
+            contextUsage={contextUsage}
           />
         </div>
       </div>

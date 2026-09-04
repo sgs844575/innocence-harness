@@ -916,6 +916,7 @@ export function App(): React.JSX.Element {
             onManageModels={openModelSettings}
             onOpenSubagent={openSubagentRun}
             onOpenFile={openDockFile}
+            contextUsage={chat.contextUsage}
             terminalPanel={
               <TerminalPanel
                 t={t}
