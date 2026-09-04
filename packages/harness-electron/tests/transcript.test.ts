@@ -3,6 +3,7 @@ import type { Message } from "@innocenceharness/harness-session";
 import {
   canonicalizeHistory,
   decodeTranscript,
+  encodeSessionMeta,
   encodeTurnV2,
   encodeTurnV3,
   type TurnRecordV3,
@@ -13,6 +14,50 @@ const pair = (user: string, answer: string): Message[] => [
   { role: "assistant", parts: [{ type: "text", text: answer }] },
 ];
 const text = (m: Message) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join("");
+
+describe("session-meta self-describing header", () => {
+  it("collects the last session-meta row (last-wins) and keeps turn history intact", () => {
+    const created = encodeSessionMeta(
+      { id: "sess_a", title: "新会话", createdAt: 1234, workspaceRoot: "D:\\proj" },
+      "2026-09-04T00:00:00.000Z",
+    );
+    const retitled = encodeSessionMeta(
+      { id: "sess_a", title: "分析项目", createdAt: 1234, workspaceRoot: "D:\\proj", forkedFrom: { sessionId: "sess_b" } },
+      "2026-09-04T01:00:00.000Z",
+    );
+    const turn = encodeTurnV2("t1", "2026-09-04T02:00:00.000Z", pair("问", "答"));
+    const decoded = decodeTranscript(created + retitled + turn);
+    expect(decoded.meta).toMatchObject({
+      id: "sess_a",
+      title: "分析项目",
+      createdAt: 1234,
+      workspaceRoot: "D:\\proj",
+      forkedFrom: { sessionId: "sess_b" },
+    });
+    expect(decoded.history.map(text)).toEqual(["问", "答"]);
+    // meta 行计入 validRecords（有内容的文件不再被判损坏），但不进历史。
+    expect(decoded.validRecords).toBe(3);
+  });
+
+  it("a meta-only file is a created-but-never-chatted session, not corruption", () => {
+    const decoded = decodeTranscript(
+      encodeSessionMeta({ id: "sess_x", title: "新会话", createdAt: 1 }, "t0"),
+    );
+    expect(decoded.meta?.id).toBe("sess_x");
+    expect(decoded.validRecords).toBe(1);
+    expect(decoded.history).toEqual([]);
+  });
+
+  it("malformed meta rows are ignored, not fatal", () => {
+    const raw = [
+      JSON.stringify({ type: "session-meta", at: "t0", title: 42 }),
+      encodeTurnV2("t1", "t1", pair("问", "答")),
+    ].join("\n");
+    const decoded = decodeTranscript(raw);
+    expect(decoded.meta).toBeUndefined();
+    expect(decoded.history.map(text)).toEqual(["问", "答"]);
+  });
+});
 
 describe("legacy transcript decoding", () => {
   it("累计快照 + 重启独立片段 + 重复用户文本：每行只取本轮，无遗漏无重复", () => {
@@ -63,12 +108,14 @@ describe("legacy transcript decoding", () => {
 });
 
 describe("turn-v2 append-only protocol", () => {
-  it("每条只含本轮，turnId 重复时去重", () => {
+  it("每条只含本轮，turnId 重复时按 last-wins 折叠（实时快照被终稿替换）", () => {
     const line1 = encodeTurnV2("turn-a", "t1", pair("问1", "答1"));
     const line2 = encodeTurnV2("turn-b", "t2", pair("问2", "答2"));
-    const duplicate = encodeTurnV2("turn-b", "t3", pair("问2", "重复答2"));
-    const decoded = decodeTranscript(line1 + line2 + duplicate);
-    expect(decoded.history.map(text)).toEqual(["问1", "答1", "问2", "答2"]);
+    const refreshed = encodeTurnV2("turn-b", "t3", pair("问2", "重复答2"));
+    const decoded = decodeTranscript(line1 + line2 + refreshed);
+    expect(decoded.history.map(text)).toEqual(["问1", "答1", "问2", "重复答2"]);
+    // 轮位只有一个：刷新行替换先前的同轮内容，不产生重复轮。
+    expect(decoded.routes.get("main")?.turnIds).toEqual(["turn-a", "turn-b"]);
   });
 });
 

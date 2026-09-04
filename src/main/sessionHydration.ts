@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import { decodeTranscript } from "@innocenceharness/harness-electron";
 import type { SessionRecord } from "./sessionIndexStore";
-import type { ChatMessage, MessagePart } from "../shared/ipc";
+import { messageText, type ChatMessage, type MessagePart } from "../shared/ipc";
 
 export interface HydrateOptions {
   /** Transcript path for this session; null = no persistence dir (empty store). */
@@ -167,5 +167,16 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
   }
   record.messages = coalesced;
   record.messageCount = coalesced.length;
-  if (record.messageCount !== indexedMessageCount) options.persistIndex();
+  let indexDirty = record.messageCount !== indexedMessageCount;
+  // 索引丢失后由扫描重建的老会话（默认标题）：按首条用户消息重题，与
+  // appendSessionMessage 的实时改题同规则——标题不因索引丢失而退化为占位。
+  if (record.title === "新会话") {
+    const firstUser = record.messages.find((m) => m.role === "user");
+    const text = firstUser ? messageText(firstUser.parts).split("\n")[0].slice(0, 24) : "";
+    if (text) {
+      record.title = text;
+      indexDirty = true;
+    }
+  }
+  if (indexDirty) options.persistIndex();
 }

@@ -9,7 +9,6 @@ import path from "node:path";
 import { encodeTurnV2 } from "@innocenceharness/harness-electron";
 import type { Message, MessagePart as CanonicalPart } from "@innocenceharness/harness-session";
 import type { SessionRecord } from "./sessionIndexStore";
-import { sessionTranscriptFile } from "./sessionIndexStore";
 import type { ChatMessage, MessagePart, Session } from "../shared/ipc";
 
 export interface SessionForkOptions {
@@ -100,19 +99,15 @@ function toCanonicalMessage(message: ChatMessage): Message {
 }
 
 /**
- * Seeds the fork's transcript with the prefix as one turn-v2 row. Empty
- * prefixes write no file — the fork is then indistinguishable from a fresh
- * session (no file = never chatted). Completions are intentionally dropped:
- * they are per-turn run metadata, not conversational content.
+ * Seeds the fork's transcript (facade-resolved date-tree file) with the
+ * prefix as one turn-v2 row. Empty prefixes write no file — the fork is then
+ * indistinguishable from a fresh session (no file = never chatted). The
+ * self-describing session-meta header is appended by the facade right after
+ * this call. Completions are intentionally dropped: they are per-turn run
+ * metadata, not conversational content.
  */
-export function writeForkTranscript(
-  storeDir: string | null,
-  forkId: string,
-  prefix: readonly ChatMessage[],
-): void {
-  if (prefix.length === 0) return;
-  const file = sessionTranscriptFile(storeDir, forkId);
-  if (!file) return;
+export function writeForkTranscript(file: string | null, prefix: readonly ChatMessage[]): void {
+  if (prefix.length === 0 || !file) return;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const row = encodeTurnV2(
     `fork_${Date.now().toString(36)}`,

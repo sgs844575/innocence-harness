@@ -13,7 +13,8 @@ import {
   initSessionStore,
   listMessages,
 } from "./sessions";
-import type { ChatMessage } from "../shared/ipc";
+import { sessionFileInTree, sessionsRoot } from "./sessionFiles";
+import type { ChatMessage, Session } from "../shared/ipc";
 import { messageText } from "../shared/ipc";
 
 let dir: string;
@@ -22,6 +23,11 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), "ic-session-fork-"));
   initSessionStore(dir);
 });
+
+/** 分叉会话在 sessions 日期树里的主转录路径。 */
+function forkFile(fork: Session): string {
+  return sessionFileInTree(sessionsRoot(dir), fork.id, fork.createdAt);
+}
 
 function user(id: string, text: string): ChatMessage {
   return { id, role: "user", parts: [{ type: "text", text }], createdAt: 1 };
@@ -78,7 +84,7 @@ describe("session fork store (M1)", () => {
   it("writes a seed transcript file the hydration path replays", async () => {
     const parentId = seededParent();
     const fork = await forkSession(parentId, { upToMessageId: "u1" });
-    const file = path.join(dir, "transcripts", `${fork!.id}.jsonl`);
+    const file = forkFile(fork!);
     expect(existsSync(file)).toBe(true);
     const raw = readFileSync(file, "utf8");
     expect(raw).toContain("第一问");
@@ -114,18 +120,27 @@ describe("session fork store (M1)", () => {
     const { decodeTranscript } = await import("@innocenceharness/harness-electron");
     const parentId = seededParent();
     const fork = await forkSession(parentId, { upToMessageId: "u2" });
-    const raw = readFileSync(path.join(dir, "transcripts", `${fork!.id}.jsonl`), "utf8");
+    const raw = readFileSync(forkFile(fork!), "utf8");
     const decoded = decodeTranscript(raw);
     expect(decoded.history.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
-    expect(decoded.validRecords).toBe(1);
+    // 种子行 + 自描述 session-meta 行（分叉创建即落盘）。
+    expect(decoded.validRecords).toBe(2);
+    expect(decoded.meta?.id).toBe(fork!.id);
+    expect(decoded.meta?.forkedFrom).toEqual({ sessionId: parentId, messageId: "u2" });
   });
 
-  it("forking an empty session yields an empty fork without a transcript file", async () => {
+  it("forking an empty session yields an empty fork with only a self-describing meta file", async () => {
     const parent = createSession({ title: "空" });
     const fork = await forkSession(parent.id);
     expect(fork).toBeDefined();
     expect(listMessages(fork!.id)).toEqual([]);
-    expect(existsSync(path.join(dir, "transcripts", `${fork!.id}.jsonl`))).toBe(false);
+    // 空分叉无轮行，但创建即自描述（meta-only 文件 = 从未聊过，非损坏）。
+    const file = forkFile(fork!);
+    expect(existsSync(file)).toBe(true);
+    const { decodeTranscript } = await import("@innocenceharness/harness-electron");
+    const decoded = decodeTranscript(readFileSync(file, "utf8"));
+    expect(decoded.meta?.id).toBe(fork!.id);
+    expect(decoded.history).toEqual([]);
   });
 
   it("fork of a fork chains lineage to its own parent", async () => {

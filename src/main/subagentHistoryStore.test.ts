@@ -33,13 +33,15 @@ const started: SubagentLifecycleEvent = {
 };
 
 describe("subagentHistoryStore", () => {
-  it("档案路径位于 transcripts 目录（<id>.subagents.jsonl）；null store 无路径", () => {
-    expect(subagentHistoryFile(dir, "s1")).toBe(path.join(dir, "transcripts", "s1.subagents.jsonl"));
+  it("档案路径与主转录同目录（<id>.subagents.jsonl）；null 主文件无路径", () => {
+    const mainFile = path.join(dir, "2026", "09", "04", "s1.jsonl");
+    expect(subagentHistoryFile(mainFile, "s1")).toBe(path.join(dir, "2026", "09", "04", "s1.subagents.jsonl"));
     expect(subagentHistoryFile(null, "s1")).toBeNull();
   });
 
   it("追加事件按序落盘并可读回；delta/thinkingDelta 事件不落盘，textSegment/thinkingSegment 落盘", () => {
-    const file = subagentHistoryFile(dir, "s1")!;
+    const mainFile = path.join(dir, "2026", "09", "04", "s1.jsonl");
+    const file = subagentHistoryFile(mainFile, "s1")!;
     appendSubagentHistoryEvent(file, started, 1000);
     appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", delta: "流式增量" }, 1100);
     appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: "s1", description: "", status: "running", thinkingDelta: "推理增量" }, 1150);
@@ -70,8 +72,9 @@ describe("subagentHistoryStore", () => {
   });
 
   it("缺文件返回空；坏行/不完整行跳过，好行仍可回放", () => {
-    expect(readSubagentHistory(subagentHistoryFile(dir, "none"))).toEqual([]);
-    const file = subagentHistoryFile(dir, "s1")!;
+    const mainFile = path.join(dir, "2026", "09", "04", "s1.jsonl");
+    expect(readSubagentHistory(subagentHistoryFile(path.join(dir, "none.jsonl"), "none"))).toEqual([]);
+    const file = subagentHistoryFile(mainFile, "s1")!;
     appendSubagentHistoryEvent(file, started, 1000);
     writeFileSync(file, "{ 截断行\n{\"at\":\"x\"}\n" + readFileSync(file, "utf8"), "utf8");
     const entries = readSubagentHistory(file);
@@ -79,13 +82,14 @@ describe("subagentHistoryStore", () => {
   });
 
   it("空 parentSessionId 事件不落盘（无主事件不汇入垃圾档案）", () => {
-    const file = subagentHistoryFile(dir, "")!;
+    const file = subagentHistoryFile(path.join(dir, "s0.jsonl"), "")!;
     appendSubagentHistoryEvent(file, { childId: "c0", parentSessionId: "", description: "", status: "started" }, 1000);
     expect(existsSync(file)).toBe(false);
   });
 
   it("删除档案（force）；null 路径无操作", () => {
-    const file = subagentHistoryFile(dir, "s1")!;
+    const mainFile = path.join(dir, "2026", "09", "04", "s1.jsonl");
+    const file = subagentHistoryFile(mainFile, "s1")!;
     appendSubagentHistoryEvent(file, started, 1000);
     expect(existsSync(file)).toBe(true);
     deleteSubagentHistory(file);

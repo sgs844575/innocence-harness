@@ -50,11 +50,39 @@ export function routeTranscriptFile(persistDir: string, sessionId: string, route
   return path.join(persistDir, `${sessionId}_${routeId}.jsonl`);
 }
 
+/**
+ * Route transcript file placed BESIDE a host-resolved main file (date-
+ * partitioned sessions tree): routes share the session's directory, with the
+ * same safe-segment rule single-sourced above.
+ */
+export function routeFileBeside(mainFile: string, sessionId: string, routeId: string): string | null {
+  if (!SAFE_ROUTE_SEGMENT.test(routeId)) return null;
+  return path.join(path.dirname(mainFile), `${sessionId}_${routeId}.jsonl`);
+}
+
 export interface TurnPersistenceOptions {
   /** Transcript directory; null/undefined = no persistence. */
   persistDir?: string;
+  /**
+   * Host-injected transcript file resolver (wins over the flat persistDir
+   * layout): the host owns session-file placement (date-partitioned tree) and
+   * resolves main and route files alike. Returning null skips persistence.
+   */
+  fileFor?: (sessionId: string, routeId: string) => string | null;
   /** Failure reporting (persistence is best-effort, never breaks a turn). */
   log: (level: "warn", msg: string, data?: unknown) => void;
+}
+
+function resolveTranscriptFile(
+  options: TurnPersistenceOptions,
+  sessionId: string,
+  routeId: string,
+): string | null {
+  if (options.fileFor) return options.fileFor(sessionId, routeId);
+  if (!options.persistDir) return null;
+  return routeId === DEFAULT_ROUTE_ID
+    ? mainTranscriptFile(options.persistDir, sessionId)
+    : routeTranscriptFile(options.persistDir, sessionId, routeId);
 }
 
 export async function persistTurn(
@@ -64,26 +92,26 @@ export async function persistTurn(
     turnId: string;
     routeId: string;
     messages: Message[];
-    completion: TurnCompletion;
+    /** Present on final rows; interim snapshots omit it (turn still open). */
+    completion?: TurnCompletion;
   },
 ): Promise<void> {
-  const { sessionId, turnId, messages, completion } = input;
+  const { sessionId, turnId, messages } = input;
   const routeId = input.routeId || DEFAULT_ROUTE_ID;
-  if (!options.persistDir || messages.length === 0) return;
+  if (messages.length === 0) return;
+  if (!options.persistDir && !options.fileFor) return;
   try {
-    const file = routeId === DEFAULT_ROUTE_ID
-      ? mainTranscriptFile(options.persistDir, sessionId)
-      : routeTranscriptFile(options.persistDir, sessionId, routeId);
+    const file = resolveTranscriptFile(options, sessionId, routeId);
     if (!file) {
       // Best-effort layer: an unsafe route id skips persistence (warn) but
       // never fails the completed turn.
       options.log("warn", "route transcript skipped: unsafe route id", { sessionId, routeId });
       return;
     }
-    await fs.mkdir(options.persistDir, { recursive: true });
+    await fs.mkdir(path.dirname(file), { recursive: true });
     const line =
       routeId === DEFAULT_ROUTE_ID
-        ? encodeTurnV2(turnId, new Date().toISOString(), messages, completion)
+        ? encodeTurnV2(turnId, new Date().toISOString(), messages, input.completion)
         : encodeTurnV3({
             at: new Date().toISOString(),
             eventId: nextEventId(),
@@ -92,10 +120,30 @@ export async function persistTurn(
             parentTurnId: null,
             checkpointId: "",
             messages,
-            completion,
+            completion: input.completion,
           });
     await fs.appendFile(file, line, "utf8");
   } catch (err) {
     options.log("warn", "persist failed", String(err));
   }
+}
+
+/**
+ * Real-time interim snapshot of a running turn (same turnId as the eventual
+ * final row, no completion — the turn is still open): the user prompt is
+ * durable the moment the turn starts, and each structural event boundary
+ * (tool call/result) refreshes the snapshot. The decoder folds same-turn rows
+ * last-wins, so the final row replaces the snapshots and a crash mid-turn
+ * still leaves the turn's latest state on disk.
+ */
+export function persistTurnSnapshot(
+  options: TurnPersistenceOptions,
+  input: {
+    sessionId: string;
+    turnId: string;
+    routeId: string;
+    messages: Message[];
+  },
+): Promise<void> {
+  return persistTurn(options, input);
 }

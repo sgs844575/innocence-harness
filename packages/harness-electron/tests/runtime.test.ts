@@ -47,6 +47,16 @@ function recordingAgentFactory() {
 let persistDir: string;
 let workspace: string;
 
+/** 实时落盘契约：一轮 = 先行的用户快照行（无 completion）+ 终稿行（同
+ *  turnId，解码按 last-wins 折叠）；工具轮另在事件边界追加快照行。 */
+async function readRows(file: string): Promise<Record<string, unknown>[]> {
+  return (await fs.readFile(file, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+async function lastRow(file: string): Promise<Record<string, unknown>> {
+  return (await readRows(file)).at(-1)!;
+}
+
 interface Recorded {
   deltas: string[];
   tools: LiveToolPart[];
@@ -115,7 +125,7 @@ afterAll(async () => {
 });
 
 describe("HarnessRuntime", () => {
-  it("streams a plain-text turn end-to-end and persists one append-only turn-v2 record", async () => {
+  it("streams a plain-text turn end-to-end and persists the realtime snapshot + final turn-v2 rows", async () => {
     const recorded: Recorded = emptyRecorded();
     const runtime = makeRuntime([{ text: "你好，我是回复" }], { workspaceRoot: workspace }, recorded);
 
@@ -126,13 +136,81 @@ describe("HarnessRuntime", () => {
     expect(recorded.errors).toEqual([]);
 
     const file = path.join(persistDir, "sess-1.jsonl");
-    const lines = (await fs.readFile(file, "utf8")).trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const record = JSON.parse(lines[0]);
+    const rows = await readRows(file);
+    expect(rows).toHaveLength(2);
+    // 先行快照：仅用户消息、无 completion（轮仍在进行，提示词已落盘）。
+    expect(rows[0]).toMatchObject({ type: "turn-v2", turnId: "msg_t1" });
+    expect(rows[0].messages).toEqual([
+      { role: "user", parts: [{ type: "text", text: "打个招呼" }] },
+    ]);
+    expect(rows[0].completion).toBeUndefined();
+    // 终稿：完整轮 + completion，解码 last-wins 替换快照。
+    const record = rows[1];
     expect(record.type).toBe("turn-v2");
     expect(record.turnId).toBe("msg_t1");
-    expect(record.messages.map((m: { role: string }) => m.role)).toEqual(["user", "assistant"]);
-    expect(record.messages.at(-1).parts[0].text).toContain("你好，我是回复");
+    const messages = record.messages as Array<{ role: string; parts: Array<{ text?: string }> }>;
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(messages.at(-1)!.parts[0].text).toContain("你好，我是回复");
+    const decoded = decodeTranscript(await fs.readFile(file, "utf8"));
+    expect(decoded.history.map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("refreshes an interim snapshot at every tool event boundary (crash mid-turn keeps the turn-so-far)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const runtime = makeRuntime(
+      [
+        { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+        { text: "读完了" },
+      ],
+      { workspaceRoot: workspace },
+      recorded,
+    );
+
+    await chatTurn(runtime, "sess-realtime", "读一下", "msg_rt");
+
+    const file = path.join(persistDir, "sess-realtime.jsonl");
+    const rows = await readRows(file);
+    // 用户快照行 + 工具事件边界快照（≥1）+ 终稿行；全部同 turnId。
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(rows.map((r) => r.turnId))).toEqual(new Set(["msg_rt"]));
+    expect(rows.at(-1)!.completion).toBeDefined();
+    // 中间快照行不带 completion（轮未闭合）。
+    expect(rows.slice(0, -1).every((r) => r.completion === undefined)).toBe(true);
+    // 解码后一轮只出现一次，且含完整工具轨迹与最终文本。
+    const decoded = decodeTranscript(await fs.readFile(file, "utf8")).history;
+    expect(decoded.filter((m) => m.role === "user" && m.parts.some((p) => p.type === "text" && p.text === "读一下"))).toHaveLength(1);
+    expect(JSON.stringify(decoded)).toContain("hello.txt");
+    expect(JSON.stringify(decoded)).toContain("读完了");
+  });
+
+  it("places transcripts through the host transcriptFileFor port (date-tree main and route files)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const placed: string[] = [];
+    const treeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-tree-"));
+    const mainFile = path.join(treeRoot, "2026", "09", "04", "sess-tree.jsonl");
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "答" }], { workspaceRoot: workspace }, recorded),
+      transcriptFileFor: (sessionId, routeId) => {
+        const file = routeId === "main"
+          ? mainFile
+          : path.join(path.dirname(mainFile), `${sessionId}_${routeId}.jsonl`);
+        placed.push(file);
+        return file;
+      },
+    });
+
+    try {
+      await runtime.send({ sessionId: "sess-tree", routeId: "main", taskId: "", text: "问", messageId: "t-tree-main" });
+      await runtime.send({ sessionId: "sess-tree", routeId: "child", taskId: "", text: "子问", messageId: "t-tree-child" });
+
+      const mainRows = await readRows(mainFile);
+      expect(mainRows.map((r) => r.turnId)).toEqual(["t-tree-main", "t-tree-main"]);
+      const childRows = await readRows(path.join(path.dirname(mainFile), "sess-tree_child.jsonl"));
+      expect(childRows.map((r) => r.type)).toEqual(["turn-v3", "turn-v3"]);
+      expect(placed.length).toBeGreaterThanOrEqual(4); // 写与播种都走同一解析端口
+    } finally {
+      await fs.rm(treeRoot, { recursive: true, force: true });
+    }
   });
 
   it("writes one sanitized completion summary for the host callback and transcript", async () => {
@@ -171,7 +249,7 @@ describe("HarnessRuntime", () => {
     await chatTurn(runtime, "sess-metadata", "请求", "msg_metadata");
 
     const file = path.join(persistDir, "sess-metadata.jsonl");
-    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    const record = await lastRow(file);
     expect(recorded.completed).toBe(1);
     expect(recorded.completions).toEqual([record.completion]);
     expect(record.completion).toEqual({
@@ -225,7 +303,7 @@ describe("HarnessRuntime", () => {
     await chatTurn(runtime, "sess-fatal-metadata", "请求", "msg_fatal_metadata");
 
     const file = path.join(persistDir, "sess-fatal-metadata.jsonl");
-    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    const record = await lastRow(file);
     expect(recorded.errors).toEqual(["Model request failed"]);
     expect(recorded.completed).toBe(1);
     expect(recorded.completions).toEqual([record.completion]);
@@ -268,7 +346,7 @@ describe("HarnessRuntime", () => {
     await sending;
 
     const file = path.join(persistDir, "sess-aborted-metadata.jsonl");
-    const record = JSON.parse((await fs.readFile(file, "utf8")).trim());
+    const record = await lastRow(file);
     expect(recorded.errors).toEqual([]);
     expect(recorded.completed).toBe(1);
     expect(recorded.completions).toEqual([record.completion]);
@@ -298,8 +376,10 @@ describe("HarnessRuntime", () => {
     expect(seenRequests[0]).toEqual(["第一问", "第一答", "第二问"]); // 模型拿到完整上下文且本轮仅一次
     const raw = await fs.readFile(path.join(persistDir, "sess-restart.jsonl"), "utf8");
     const records = raw.trim().split("\n").map((line) => JSON.parse(line));
-    expect(records.map((r) => r.turnId)).toEqual(["turn-1", "turn-2"]);
-    expect(records.map((r) => r.messages.length)).toEqual([2, 2]); // 每行只存本轮，不存全量快照
+    // 实时契约：每轮先落用户快照行，终稿行同 turnId 替换（解码不重复）。
+    expect(records.map((r) => r.turnId)).toEqual(["turn-1", "turn-1", "turn-2", "turn-2"]);
+    expect(records.map((r) => r.messages.length)).toEqual([1, 2, 1, 2]); // 快照仅用户，终稿整轮
+    expect(records.filter((r) => r.completion === undefined)).toHaveLength(2); // 快照行不带 completion
     const decoded = decodeTranscript(raw).history;
     expect(decoded.map((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text).join(""))).toEqual([
       "第一问", "第一答", "第二问", "第二答",
@@ -1001,23 +1081,25 @@ describe("HarnessRuntime route cache", () => {
     await runtime.send({ sessionId: "routes-1", routeId: "child", taskId: "", text: "子轮问题", messageId: "turn-child" });
     await runtime.send({ sessionId: "routes-1", routeId: "child2", taskId: "", text: "子轮问题二", messageId: "turn-child-2" });
 
-    // Main transcript carries ONLY the main route's turn-v2 row — byte-level
-    // zero-regression for the main file.
+    // Main transcript carries ONLY the main route's rows (user snapshot +
+    // final turn-v2, same turnId — realtime contract).
     const mainRaw = await fs.readFile(path.join(persistDir, "routes-1.jsonl"), "utf8");
-    const mainRows = mainRaw.trim().split("\n").map((line) => JSON.parse(line));
-    expect(mainRows.map((r) => r.type)).toEqual(["turn-v2"]);
-    expect(mainRows[0].turnId).toBe("turn-main");
+    const mainRows = await readRows(path.join(persistDir, "routes-1.jsonl"));
+    expect(mainRows.map((r) => r.type)).toEqual(["turn-v2", "turn-v2"]);
+    expect(mainRows.map((r) => r.turnId)).toEqual(["turn-main", "turn-main"]);
+    expect(mainRows.at(-1)!.completion).toBeDefined();
 
     // Each non-main route gets its own file; routes never cross-write.
-    const childRaw = await fs.readFile(path.join(persistDir, "routes-1_child.jsonl"), "utf8");
-    const childRow = JSON.parse(childRaw.trim());
+    const childFile = path.join(persistDir, "routes-1_child.jsonl");
+    const childRaw = await fs.readFile(childFile, "utf8");
+    const childRow = await lastRow(childFile);
     expect(childRow.type).toBe("turn-v3");
     expect(childRow.routeId).toBe("child");
     expect(childRow.turnId).toBe("turn-child");
     expect(childRow.checkpointId).toBe(""); // text layer: no checkpoint backs it
     const child2Raw = await fs.readFile(path.join(persistDir, "routes-1_child2.jsonl"), "utf8");
-    expect(JSON.parse(child2Raw.trim()).turnId).toBe("turn-child-2");
-    expect(childRaw.trim().split("\n")).toHaveLength(1);
+    expect(JSON.parse(child2Raw.trim().split("\n").at(-1)!).turnId).toBe("turn-child-2");
+    expect(childRaw.trim().split("\n")).toHaveLength(2); // 用户快照行 + 终稿行
 
     // decodeTranscript keeps the child routes out of the main history...
     const decoded = decodeTranscript(mainRaw);
@@ -1043,7 +1125,7 @@ describe("HarnessRuntime route cache", () => {
     // non-empty taskId on a non-main route.
     await runtime.send({ sessionId: "task-1", routeId: "child", taskId: "t9", text: "任务轮", messageId: "turn-task" });
 
-    const row = JSON.parse((await fs.readFile(path.join(persistDir, "task-1_child.jsonl"), "utf8")).trim());
+    const row = await lastRow(path.join(persistDir, "task-1_child.jsonl"));
     expect(row.type).toBe("turn-v3");
     expect(row.routeId).toBe("child");
     expect(row.turnId).toBe("turn-task");
@@ -1063,12 +1145,12 @@ describe("HarnessRuntime route cache", () => {
     await runtime.send({ sessionId: "task-main-1", routeId: "main", taskId: "t8", text: "主路由任务轮", messageId: "turn-task-main" });
 
     const file = path.join(persistDir, "task-main-1.jsonl");
-    const lines = (await fs.readFile(file, "utf8")).trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const record = JSON.parse(lines[0]);
+    const rows = await readRows(file);
+    expect(rows).toHaveLength(2);
+    const record = rows.at(-1)!;
     expect(record.type).toBe("turn-v2");
     expect(record.turnId).toBe("turn-task-main");
-    expect(record.messages.map((m: { role: string }) => m.role)).toEqual(["user", "assistant"]);
+    expect((record.messages as Array<{ role: string }>).map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
   it("skips persistence with a warning for an unsafe route id (no file escapes the transcripts dir)", async () => {

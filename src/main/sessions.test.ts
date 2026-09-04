@@ -13,8 +13,12 @@ import {
   listMessages,
   listSessions,
   listSubagentHistory,
+  runtimeTranscriptFileFor,
+  sessionSubagentHistoryFile,
 } from "./sessions";
 import { appendSubagentHistoryEvent, subagentHistoryFile } from "./subagentHistoryStore";
+import { readSessionMetaPrefix, sessionFileInTree, sessionsRoot } from "./sessionFiles";
+import { encodeSessionMeta } from "@innocenceharness/harness-electron";
 import { appendText, messageText } from "../shared/ipc";
 
 let dir: string;
@@ -26,6 +30,11 @@ beforeEach(() => {
 
 function indexEntries(): unknown[] {
   return JSON.parse(readFileSync(path.join(dir, "sessions.json"), "utf8")) as unknown[];
+}
+
+/** 会话在 sessions 日期树里的主转录路径（与外观布局同源）。 */
+function treeFile(session: { id: string; createdAt: number }): string {
+  return sessionFileInTree(sessionsRoot(dir), session.id, session.createdAt);
 }
 
 describe("session store persistence", () => {
@@ -43,7 +52,7 @@ describe("session store persistence", () => {
 
   it("子代理档案随会话可读回，删除会话时连同 sidecar 一并清理", () => {
     const s = createSession();
-    const file = subagentHistoryFile(dir, s.id)!;
+    const file = subagentHistoryFile(treeFile(s), s.id)!;
     appendSubagentHistoryEvent(file, { childId: "c1", parentSessionId: s.id, description: "任务", status: "started" }, 1000);
     expect(listSubagentHistory(s.id)).toEqual([
       { at: 1000, event: { childId: "c1", parentSessionId: s.id, description: "任务", status: "started" } },
@@ -55,9 +64,8 @@ describe("session store persistence", () => {
 
   it("一轮内的多个工具轮归并为一条助手消息（重载后不拆分，对齐 live 形状）", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
     writeFileSync(
-      path.join(dir, "transcripts", `${s.id}.jsonl`),
+      treeFile(s),
       JSON.stringify({
         at: new Date().toISOString(),
         type: "turn",
@@ -114,13 +122,12 @@ describe("session store persistence", () => {
   });
 
   it("corrupt transcript (NUL-filled after power loss) heals aside + surfaces a notice, not a silent blank", () => {    const session = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
-    writeFileSync(path.join(dir, "transcripts", `${session.id}.jsonl`), "\u0000".repeat(512), "utf8");
+    writeFileSync(treeFile(session), "\u0000".repeat(512), "utf8");
     initSessionStore(dir); // restart → hydrate hits the corrupt file
     const msgs = listMessages(session.id);
     expect(msgs).toHaveLength(1);
     expect(messageText(msgs[0]!.parts)).toContain("会话记录损坏");
-    const leftover = readdirSync(path.join(dir, "transcripts")).filter(
+    const leftover = readdirSync(path.dirname(treeFile(session))).filter(
       (f) => f.startsWith(session.id) && f.includes(".corrupt-"),
     );
     expect(leftover).toHaveLength(1); // 坏文件已移开，后续追加写入新文件
@@ -165,7 +172,6 @@ describe("session store persistence", () => {
 
   it("hydrates messages from the JSONL transcript, keeping tool parts", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
     const lines = [
       JSON.stringify({
         at: "2026-08-18T10:00:00.000Z",
@@ -196,7 +202,7 @@ describe("session store persistence", () => {
         ],
       }),
     ];
-    writeFileSync(path.join(dir, "transcripts", `${s.id}.jsonl`), `${lines.join("\n")}\n`, "utf8");
+    writeFileSync(treeFile(s), `${lines.join("\n")}\n`, "utf8");
 
     // Simulate a restart so hydration (not the live array) is exercised.
     initSessionStore(dir);
@@ -215,7 +221,6 @@ describe("session store persistence", () => {
 
   it("hydrates safe completion metadata onto only the final assistant message of a persisted turn", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
     const completion = {
       providerId: "provider-safe",
       modelId: "model-safe",
@@ -226,7 +231,7 @@ describe("session store persistence", () => {
       rawPayload: "must-not-reach-renderer",
     };
     writeFileSync(
-      path.join(dir, "transcripts", `${s.id}.jsonl`),
+      treeFile(s),
       [
         JSON.stringify({
           at: "2026-08-25T10:00:00.000Z",
@@ -274,7 +279,6 @@ describe("session store persistence", () => {
 
   it("短快照之后的独立片段也要追加，不能吞掉后续对话", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
     const full = [
       { role: "user", parts: [{ type: "text", text: "问1" }] },
       { role: "assistant", parts: [{ type: "text", text: "答1" }] },
@@ -286,7 +290,7 @@ describe("session store persistence", () => {
       { role: "assistant", parts: [{ type: "text", text: "答3" }] },
     ];
     writeFileSync(
-      path.join(dir, "transcripts", `${s.id}.jsonl`),
+      treeFile(s),
       [
         JSON.stringify({ at: "2026-08-18T10:00:00.000Z", type: "turn", user: "问2", history: full }),
         JSON.stringify({ at: "2026-08-18T11:00:00.000Z", type: "turn", user: "问3", history: short }),
@@ -301,9 +305,8 @@ describe("session store persistence", () => {
 
   it("hydrate 保留 toolCall/toolResult parts 并按 live 形状配对", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
     writeFileSync(
-      path.join(dir, "transcripts", `${s.id}.jsonl`),
+      treeFile(s),
       JSON.stringify({
         at: new Date().toISOString(),
         type: "turn",
@@ -345,7 +348,7 @@ describe("session store persistence", () => {
     // survives as its own message instead of being dropped or lost.
     const s2 = createSession();
     writeFileSync(
-      path.join(dir, "transcripts", `${s2.id}.jsonl`),
+      treeFile(s2),
       JSON.stringify({
         at: new Date().toISOString(),
         type: "turn",
@@ -371,8 +374,7 @@ describe("session store persistence", () => {
 
   it("deletes the session, its index entry and its transcript file", () => {
     const s = createSession();
-    mkdirSync(path.join(dir, "transcripts"), { recursive: true });
-    const transcript = path.join(dir, "transcripts", `${s.id}.jsonl`);
+    const transcript = treeFile(s);
     writeFileSync(transcript, "{}\n", "utf8");
 
     deleteSession(s.id);
@@ -388,6 +390,81 @@ describe("session store persistence", () => {
     writeFileSync(path.join(dir, "sessions.json"), "not json{{{", "utf8");
     initSessionStore(dir);
     expect(listSessions()).toEqual([]);
+  });
+});
+
+describe("索引可由 sessions 树重建（历史不丢契约）", () => {
+  it("索引文件丢失/损坏后，扫描树内自描述文件恢复全部会话", () => {
+    const a = createSession({ title: "会话A", workspaceRoot: "D:/p/a" });
+    const b = createSession({ title: "会话B", workspaceRoot: "D:/p/b" });
+    // 轮内容由运行时 persistTurn 落盘（此处直写同形 turn-v2 行，追加在
+    // 创建期的 session-meta 自描述行之后）。
+    writeFileSync(treeFile(a), [
+      encodeSessionMeta({ id: a.id, title: "会话A", createdAt: a.createdAt, workspaceRoot: "D:/p/a" }, "t0"),
+      JSON.stringify({ at: "2026-09-04T01:00:00.000Z", type: "turn-v2", turnId: "t1", messages: [
+        { role: "user", parts: [{ type: "text", text: "帮我查一下" }] },
+        { role: "assistant", parts: [{ type: "text", text: "好了" }] },
+      ] }),
+    ].join("\n") + "\n", "utf8");
+
+    // 灾难：索引被删（或损坏为空）。
+    writeFileSync(path.join(dir, "sessions.json"), "", "utf8");
+    initSessionStore(dir);
+
+    const restored = listSessions();
+    expect(restored.map((s) => s.id).sort()).toEqual([a.id, b.id].sort());
+    const ra = restored.find((s) => s.id === a.id)!;
+    expect(ra.title).toBe("会话A");
+    expect(ra.workspaceRoot).toBe("D:/p/a");
+    // 索引吸收重建结果（重启不再重复重建）。
+    expect(JSON.parse(readFileSync(path.join(dir, "sessions.json"), "utf8")).length).toBe(2);
+    // 消息体照常水合。
+    expect(listMessages(a.id).map((m) => messageText(m.parts))).toEqual(["帮我查一下", "好了"]);
+  });
+
+  it("无 meta 行的旧式文件：按 mtime 恢复并从首条用户消息重题", () => {
+    const file = sessionFileInTree(sessionsRoot(dir), "sess_legacy1", new Date(2026, 8, 1).getTime());
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({
+      at: "2026-09-01T10:00:00.000Z",
+      type: "turn",
+      user: "旧会话的问题",
+      history: [
+        { role: "user", parts: [{ type: "text", text: "旧会话的问题" }] },
+        { role: "assistant", parts: [{ type: "text", text: "旧答复" }] },
+      ],
+    }) + "\n", "utf8");
+
+    initSessionStore(dir);
+
+    const restored = listSessions().find((s) => s.id === "sess_legacy1")!;
+    expect(restored).toBeDefined();
+    // 懒水合（读消息）后按首条用户消息重题，与实时改题同规则。
+    expect(listMessages("sess_legacy1").map((m) => messageText(m.parts))).toEqual(["旧会话的问题", "旧答复"]);
+    expect(listSessions().find((s) => s.id === "sess_legacy1")!.title).toBe("旧会话的问题");
+    // 水合自愈：旧文件自此补上 session-meta 自描述头。
+    expect(readSessionMetaPrefix(file)?.id).toBe("sess_legacy1");
+  });
+
+  it("运行时转录解析端口：主文件与同目录路由文件，未知会话 null", () => {
+    const s = createSession();
+    const main = runtimeTranscriptFileFor(s.id, "main")!;
+    expect(main).toBe(treeFile(s));
+    expect(runtimeTranscriptFileFor(s.id, "")).toBe(main);
+    expect(runtimeTranscriptFileFor(s.id, "child")).toBe(
+      path.join(path.dirname(main), `${s.id}_child.jsonl`),
+    );
+    expect(runtimeTranscriptFileFor("sess_missing", "main")).toBeNull();
+    // 不安全路由段拒绝（与包内写路径同规）。
+    expect(runtimeTranscriptFileFor(s.id, "../escape")).toBeNull();
+  });
+
+  it("子代理档案落盘路径与主转录同目录", () => {
+    const s = createSession();
+    expect(sessionSubagentHistoryFile(s.id)).toBe(
+      path.join(path.dirname(treeFile(s)), `${s.id}.subagents.jsonl`),
+    );
+    expect(sessionSubagentHistoryFile("sess_missing")).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
 import type { Route } from "@innocenceharness/task-core";
 import { AgentSession } from "./session";
-import { persistTurn } from "./turn-persistence";
+import { persistTurn, persistTurnSnapshot } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";
 import { RouteSessionCache, routeCacheKey } from "./route-cache";
 import { buildSession, type RouteBuildContext } from "./runtime-session";
@@ -80,9 +80,36 @@ export class HarnessRuntime {
       });
       let fatalError: string | undefined;
       let doneCompletion: TurnCompletion | undefined;
+      // Real-time persistence options (same file resolution as the final row):
+      // the user prompt row lands before the turn runs, and every structural
+      // event boundary refreshes an interim snapshot. All snapshots share the
+      // turn's id, which the decoder folds last-wins into the final row.
+      const persistence = {
+        persistDir: this.options.persistDir,
+        fileFor: this.options.transcriptFileFor,
+        log: (level: "warn", msg: string, data?: unknown) => this.options.hooks.log(level, msg, data),
+      } as const;
+      await persistTurnSnapshot(persistence, {
+        sessionId: request.sessionId,
+        turnId: request.messageId,
+        routeId,
+        messages: [typeof request.text === "string"
+          ? { role: "user", parts: [{ type: "text", text: request.text }] }
+          : { role: request.text.role, parts: [...request.text.parts] }],
+      });
       const unsubscribe = agent.on((event) => {
         if (event.type === "error" && event.fatal) fatalError = event.message;
         if (event.type === "done") doneCompletion = event.completion;
+        if (event.type === "toolCall" || event.type === "toolResult") {
+          void persistTurnSnapshot(persistence, {
+            sessionId: request.sessionId,
+            turnId: request.messageId,
+            routeId,
+            messages: agent.history.slice(historyStart),
+          }).catch(() => {
+            // Best-effort snapshots: the final row remains the authority.
+          });
+        }
         forwardHarnessEvent(this.options.hooks, request.sessionId, request.messageId, event);
       });
       let summary;
@@ -99,16 +126,13 @@ export class HarnessRuntime {
       const completion = fatalError
         ? { ...completionBase, finishReason: "error" as const, aborted: false }
         : completionBase;
-      await persistTurn(
-        { persistDir: this.options.persistDir, log: (level, msg, data) => this.options.hooks.log(level, msg, data) },
-        {
-          sessionId: request.sessionId,
-          turnId: request.messageId,
-          routeId,
-          messages: agent.history.slice(historyStart),
-          completion,
-        },
-      );
+      await persistTurn(persistence, {
+        sessionId: request.sessionId,
+        turnId: request.messageId,
+        routeId,
+        messages: agent.history.slice(historyStart),
+        completion,
+      });
       routeTrace?.complete(completion);
       this.options.hooks.onCompleted(request.sessionId, request.messageId, completion);
       if (fatalError) {

@@ -1,13 +1,14 @@
 // 编辑重发的存储截断：消息表 splice、转录按保留消息整档重写（turn-v2 行/
 // 用户轮分组）、重启 hydration 只回放保留轮——被替换的轮次不得复活。全部
 // 针对临时目录，不启动 electron。
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { encodeTurnV2 } from "@innocenceharness/harness-electron";
 import { appendMessage, createSession, initSessionStore, listMessages, truncateMessagesFrom } from "./sessions";
-import { messageText, type ChatMessage } from "../shared/ipc";
+import { sessionFileInTree, sessionsRoot } from "./sessionFiles";
+import { messageText, type ChatMessage, type Session } from "../shared/ipc";
 
 let dir: string;
 
@@ -16,8 +17,8 @@ beforeEach(() => {
   initSessionStore(dir);
 });
 
-function transcriptFile(id: string): string {
-  return path.join(dir, "transcripts", `${id}.jsonl`);
+function transcriptFile(session: Session): string {
+  return sessionFileInTree(sessionsRoot(dir), session.id, session.createdAt);
 }
 
 function user(id: string, text: string, at = 1): ChatMessage {
@@ -34,16 +35,18 @@ function assistant(id: string, text: string, at = 2, completion = true): ChatMes
   };
 }
 
-/** 直写主转录（turn-v2 行，与运行时 persistTurn 同形）。 */
-function writeTurnRows(id: string, turns: Array<Array<{ role: "user" | "assistant"; parts: unknown[] }>>): void {
-  mkdirSync(path.dirname(transcriptFile(id)), { recursive: true });
+/** 直写主转录（turn-v2 行，与运行时 persistTurn 同形；覆盖创建期的 meta 行，
+ *  hydration 后外观会自愈补写 session-meta）。 */
+function writeTurnRows(session: Session, turns: Array<Array<{ role: "user" | "assistant"; parts: unknown[] }>>): void {
+  const file = transcriptFile(session);
+  writeFileSync(file, "", { flag: "w" }); // 确保目录存在（meta 已建）
   const lines = turns.map((messages, index) =>
     encodeTurnV2(`turn_${index}`, new Date(2026, 0, 1).toISOString(), messages as never, {
       finishReason: "stop",
       aborted: false,
     }),
   );
-  writeFileSync(transcriptFile(id), lines.join(""), "utf8");
+  writeFileSync(file, lines.join(""), "utf8");
 }
 
 describe("edit-resend store rewind", () => {
@@ -63,7 +66,7 @@ describe("edit-resend store rewind", () => {
 
   it("重写转录：重启 hydration 只回放保留轮，被替换轮次不复活", () => {
     const s = createSession();
-    writeTurnRows(s.id, [
+    writeTurnRows(s, [
       [{ role: "user", parts: [{ type: "text", text: "第一问" }] }, { role: "assistant", parts: [{ type: "text", text: "第一答" }] }],
       [{ role: "user", parts: [{ type: "text", text: "第二问" }] }, { role: "assistant", parts: [{ type: "text", text: "第二答" }] }],
     ]);
@@ -82,7 +85,7 @@ describe("edit-resend store rewind", () => {
 
   it("工具轮结构经重写往返保持（canonical 拆分后 hydration 再归并回助手气泡）", () => {
     const s = createSession();
-    writeTurnRows(s.id, [
+    writeTurnRows(s, [
       [
         { role: "user", parts: [{ type: "text", text: "跑一下" }] },
         {
@@ -114,7 +117,7 @@ describe("edit-resend store rewind", () => {
 
   it("截到顶（首条用户消息）：转录重写为空文件，重启回放为空", () => {
     const s = createSession();
-    writeTurnRows(s.id, [
+    writeTurnRows(s, [
       [{ role: "user", parts: [{ type: "text", text: "第一问" }] }, { role: "assistant", parts: [{ type: "text", text: "第一答" }] }],
     ]);
     initSessionStore(dir);
@@ -123,7 +126,7 @@ describe("edit-resend store rewind", () => {
 
     initSessionStore(dir);
     expect(listMessages(s.id)).toHaveLength(0);
-    expect(existsSync(transcriptFile(s.id))).toBe(true);
+    expect(existsSync(transcriptFile(s))).toBe(true);
   });
 
   it("live 直发消息（无既往转录）截断后转录从保留消息生成", () => {
@@ -141,16 +144,19 @@ describe("edit-resend store rewind", () => {
 
   it("未知消息 id 或未知会话返回 undefined，存储与转录原样", () => {
     const s = createSession();
-    writeTurnRows(s.id, [
+    writeTurnRows(s, [
       [{ role: "user", parts: [{ type: "text", text: "第一问" }] }, { role: "assistant", parts: [{ type: "text", text: "第一答" }] }],
     ]);
     initSessionStore(dir);
-    const before = readFileSync(transcriptFile(s.id), "utf8");
+    const turnRowsOf = (raw: string) =>
+      raw.split("\n").filter((line) => line.trim() && !line.includes('"session-meta"'));
+    const before = turnRowsOf(readFileSync(transcriptFile(s), "utf8"));
 
     expect(truncateMessagesFrom(s.id, "missing")).toBeUndefined();
     expect(truncateMessagesFrom("sess_missing", "u1")).toBeUndefined();
 
-    expect(readFileSync(transcriptFile(s.id), "utf8")).toBe(before);
+    // 轮行逐字节原样；允许 hydration 自愈追加 session-meta 自描述行。
+    expect(turnRowsOf(readFileSync(transcriptFile(s), "utf8"))).toEqual(before);
     expect(listMessages(s.id)).toHaveLength(2);
   });
 });

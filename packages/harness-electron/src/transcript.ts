@@ -56,6 +56,28 @@ export interface LegacyTurnRecord {
   history?: unknown;
 }
 
+/**
+ * Self-describing session header row (append-only, last row wins): lets the
+ * session index be rebuilt from the transcript tree alone — the JSONL files
+ * are the source of truth, the index is a rebuildable cache. Emitted at
+ * session creation and re-appended whenever index-worthy metadata changes.
+ */
+export interface SessionMetaRecord {
+  type: "session-meta";
+  at: string;
+  id: string;
+  title: string;
+  createdAt: number;
+  workspaceRoot?: string;
+  aux?: boolean;
+  forkedFrom?: { sessionId: string; messageId?: string };
+}
+
+export function encodeSessionMeta(meta: Omit<SessionMetaRecord, "type" | "at">, at: string): string {
+  const record: SessionMetaRecord = { type: "session-meta", at, ...meta };
+  return `${JSON.stringify(record)}\n`;
+}
+
 export function encodeTurnV2(
   turnId: string,
   at: string,

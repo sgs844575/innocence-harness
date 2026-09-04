@@ -36,6 +36,7 @@ import {
 import type { HarnessSettingsPatch } from "../shared/settingsPatch";
 import { popupMenu } from "./menu";
 import { getMainWindow } from "./appWindow";
+import { appDataRoot } from "./appDataRoot";
 import { currentLogFile, logger } from "./logger";
 import { toAppProcessMetrics } from "./processMetrics";
 import { copyLogFiles } from "./exportLogs";
@@ -43,7 +44,10 @@ import { listWorkspaceDir, listWorkspaceFiles, readWorkspaceFile } from "./works
 import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { TaskIpcHandlers } from "./taskIpcHandlers";
 import { createGitAdapter, type GitAdapter } from "@innocenceharness/task-git";
+import { resolveTerminalFont } from "@innocenceharness/terminal-pty";
 import { workspaceReviewFileDiff, workspaceReviewFiles } from "./workspaceReview";
+import { workspaceGitGraph } from "./workspaceGitGraph";
+import { getDataRoot, setDataRoot } from "./dataRoot";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -174,21 +178,39 @@ export function registerIpcHandlers(): void {
   // 顶栏应用菜单：进程监视器快照（映射在 processMetrics.ts）。
   ipcMain.handle(IPC.appMetrics, () => toAppProcessMetrics(app.getAppMetrics()));
 
-  // 顶栏应用菜单「导出日志」：用户选目录后平铺复制 userData/logs 的日志文件。
+  // 顶栏应用菜单「导出日志」：用户选目录后平铺复制应用数据根 logs 的日志文件。
   ipcMain.handle(IPC.appExportLogs, async () => {
     const picked = await dialog.showOpenDialog(needWindow(), {
       properties: ["openDirectory", "createDirectory"],
     });
     const target = picked.filePaths[0];
     if (picked.canceled || !target) return null;
-    const exported = await copyLogFiles(path.join(app.getPath("userData"), "logs"), target);
+    const exported = await copyLogFiles(path.join(appDataRoot(), "logs"), target);
     return exported > 0 ? { exported } : null;
   });
+
+  // 常规设置「数据存储位置」：当前/默认数据根查询、目录选择、迁移并重启。
+  ipcMain.handle(IPC.appGetDataRoot, () => getDataRoot());
+  ipcMain.handle(IPC.appPickDirectory, async () => {
+    const picked = await dialog.showOpenDialog(needWindow(), {
+      properties: ["openDirectory", "createDirectory"],
+    });
+    const target = picked.filePaths[0];
+    return picked.canceled || !target ? null : target;
+  });
+  ipcMain.handle(IPC.appSetDataRoot, (_e, parentDir: string) => setDataRoot(parentDir));
+
+  // 常规设置「终端字体」：生效字体解析（覆盖/系统终端探测；无 → null）。
+  ipcMain.handle(IPC.terminalResolvedFont, () => resolveTerminalFont(getHarnessSettings()));
 
   ipcMain.handle(IPC.sessionsList, () => sessions.listSessions());
   ipcMain.handle(IPC.sidebarGet, () => sessions.getSidebarState());
   ipcMain.handle(IPC.sidebarArchive, (_e, id: string, archived: boolean) => {
     sessions.archiveSession(id, archived);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarPin, (_e, id: string, pinned: boolean) => {
+    sessions.pinSession(id, pinned);
     broadcastSidebar();
   });
   ipcMain.handle(IPC.sidebarReorder, (_e, container, orderedIds: string[]) => {
@@ -317,6 +339,11 @@ export function registerIpcHandlers(): void {
     typeof root === "string" && root.trim() !== "" && typeof branch === "string"
       ? workspaceGitCheckoutBranch(root.trim(), branch, create === true)
       : { ok: false, error: "invalid arguments" },
+  );
+
+  // Git 图谱对话框：全分支拓扑序提交数据（只读 git 查询，见 workspaceGitGraph.ts）。
+  ipcMain.handle(IPC.workspaceGitGraph, (_e, root: string) =>
+    typeof root === "string" && root.trim() !== "" ? workspaceGitGraph(root.trim()) : null,
   );
 
   // 侧栏文件树：目录列举 / 文本读取 / 全量清单（路径防护在 workspaceFiles.ts）。

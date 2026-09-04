@@ -1,14 +1,15 @@
-// Minimal file-based logger. Writes to userData/logs.
-import { app } from "electron";
+// Minimal file-based logger. Writes to <appDataRoot>/logs (see appDataRoot —
+// the Electron userData stays Chromium's own).
 import fs from "node:fs";
 import path from "node:path";
+import { appDataRoot } from "./appDataRoot";
 
 let logStream: fs.WriteStream | null = null;
 let logFilePath: string | null = null;
 
 function stream(): fs.WriteStream {
   if (!logStream) {
-    const dir = path.join(app.getPath("userData"), "logs");
+    const dir = path.join(appDataRoot(), "logs");
     fs.mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     logFilePath = path.join(dir, `main-${stamp}.log`);

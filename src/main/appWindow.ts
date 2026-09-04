@@ -3,13 +3,21 @@
 // - sandbox + contextIsolation preloads
 // - renderer served from the custom innocenceharness:// scheme in production,
 //   vite dev server during development
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { APP_SCHEME, appIndexUrl } from "./protocol";
 import { logger } from "./logger";
+import { appDataRootOrNull } from "./appDataRoot";
 import { getTheme } from "./theme";
+import { handleMainWindowClose } from "./tray";
 import { IPC } from "../shared/ipc";
+import {
+  fitWindowStateToDisplays,
+  loadWindowState,
+  saveWindowState,
+  windowStateFile,
+} from "./windowState";
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -28,28 +36,51 @@ export function getMainWindow(): BrowserWindow | undefined {
   return mainWindow;
 }
 
-export async function createMainWindow(onRendererReady?: () => void): Promise<BrowserWindow> {
-  const resolved = getTheme().resolved;
-
-  // Dev runs under the stock Electron executable, whose default shell icon
-  // would leak into the taskbar — point the window at our own icon. Packaged
-  // Windows builds already carry the icon in the exe; the resources-path
-  // candidate covers non-Windows packaged builds (assets/ ships via
-  // extraResource).
-  const iconPath = [
-    path.join(__dirname, "..", "..", "assets", "icon.png"), // dev: repo assets/
-    path.join(process.resourcesPath, "assets", "icon.png"), // packaged: resources/assets
-  ].find((candidate) => {
+/**
+ * 应用图标资源解析：dev 取仓库 assets/（stock 运行时的默认 shell 图标会泄
+ * 漏到任务栏/托盘），打包取 resources/assets（assets/ 经 extraResource 随包
+ * 发布）；候选都不存在 → undefined（调用方省略图标）。
+ */
+export function resolveAssetIcon(fileName: string): string | undefined {
+  const candidates = [
+    path.join(__dirname, "..", "..", "assets", fileName), // dev: repo assets/
+  ];
+  // process.resourcesPath 仅 Electron 运行时存在（Node 测试环境为 undefined）。
+  if (typeof process.resourcesPath === "string" && process.resourcesPath !== "") {
+    candidates.push(path.join(process.resourcesPath, "assets", fileName)); // packaged: resources/assets
+  }
+  return candidates.find((candidate) => {
     try {
       return fs.existsSync(candidate);
     } catch {
       return false;
     }
   });
+}
+
+export async function createMainWindow(onRendererReady?: () => void): Promise<BrowserWindow> {
+  const resolved = getTheme().resolved;
+
+  // 窗口图标走统一的资源解析（dev 仓库 assets/，打包 resources/assets；
+  // 打包 Windows 构建的 exe 自带图标，此候选主要覆盖 dev 与非 Windows 打包）。
+  const iconPath = resolveAssetIcon("icon.png");
+
+  // 恢复上次关闭时的窗口几何：存档缺失/损坏/离屏（显示器拔掉）时回退默认。
+  // 窗口状态存档属应用数据（应用数据根，与 Electron 缓存的默认 userData
+  // 分离），路径按规则惰性解析，绝不在模块装载时取。
+  const stateRoot = appDataRootOrNull();
+  const stateFile = stateRoot ? windowStateFile(stateRoot) : null;
+  const restored = stateFile
+    ? fitWindowStateToDisplays(
+        loadWindowState(stateFile) ?? { width: 1280, height: 800, maximized: false },
+        screen.getAllDisplays().map((display) => display.workArea),
+      )
+    : { width: 1280, height: 800, maximized: false };
 
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: restored.width,
+    height: restored.height,
+    ...(restored.x !== undefined && restored.y !== undefined ? { x: restored.x, y: restored.y } : {}),
     minWidth: 760,
     minHeight: 520,
     show: false,
@@ -71,7 +102,35 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    if (restored.maximized) win.maximize();
+  });
+
+  // 窗口几何持久化：普通态尺寸/位置在拖动调整时去抖存档，最大化标志即时
+  // 更新，关闭瞬间同步终写——任何时候杀掉进程都不丢最近状态。
+  const persistGeometry = () => {
+    if (!stateFile || win.isDestroyed()) return;
+    const bounds = win.getNormalBounds();
+    saveWindowState(stateFile, {
+      width: bounds.width,
+      height: bounds.height,
+      x: bounds.x,
+      y: bounds.y,
+      maximized: win.isMaximized(),
+    });
+  };
+  let geometryTimer: ReturnType<typeof setTimeout> | undefined;
+  const persistGeometryDebounced = () => {
+    if (geometryTimer) clearTimeout(geometryTimer);
+    geometryTimer = setTimeout(() => {
+      geometryTimer = undefined;
+      if (win.isDestroyed() || win.isMaximized() || win.isMinimized()) return;
+      persistGeometry();
+    }, 400);
+  };
+  win.on("resize", persistGeometryDebounced);
+  win.on("move", persistGeometryDebounced);
   let rendererReady: Promise<void> | undefined;
   if (onRendererReady) {
     rendererReady = new Promise((resolve) => {
@@ -126,13 +185,28 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
 
   // 自绘控制钮需要最大化状态同步（TitleBar 的还原图标切换）。
   win.on("maximize", () => {
+    if (geometryTimer) {
+      clearTimeout(geometryTimer);
+      geometryTimer = undefined;
+    }
+    persistGeometry();
     if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, true);
   });
   win.on("unmaximize", () => {
+    persistGeometry();
     if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, false);
   });
 
   mainWindow = win;
+  win.on("close", (event) => {
+    if (geometryTimer) {
+      clearTimeout(geometryTimer);
+      geometryTimer = undefined;
+    }
+    persistGeometry();
+    // 关闭到托盘（仅 Windows 且设置开启、非退出流程）：拦截关闭转为隐藏。
+    handleMainWindowClose(event, win);
+  });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
   });

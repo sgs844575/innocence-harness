@@ -134,31 +134,26 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
       session.history.push(
         ...cached.session.history.map((m) => ({ role: m.role, parts: [...m.parts] })),
       );
-    } else if (host.options.persistDir && routeId === DEFAULT_ROUTE_ID) {
-      try {
-        const raw = await fs.readFile(
-          path.join(host.options.persistDir, `${sessionId}.jsonl`),
-          "utf8",
-        );
-        const prior = decodeTranscript(raw).history;
-        if (prior.length > 0) {
-          session.history.push(...prior.map((m) => ({ role: m.role, parts: [...m.parts] })));
-        }
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          host.options.hooks.log("warn", "history seed failed", String(err));
-        }
-      }
-    } else if (host.options.persistDir) {
-      // Route seeding (text layer — same recovery contract as the main route
-      // above): a non-main route replays its own `{sessionId}_{routeId}.jsonl`.
-      // routeTranscriptFile is single-sourced with the write path; an unsafe
-      // route id has no file to seed from (the writer skipped it too).
-      const file = routeTranscriptFile(host.options.persistDir, sessionId, routeId);
-      if (file) {
+    } else {
+      // History seeding (text layer — the recovery contract): a route replays
+      // its own transcript file, resolved through the host's placement port
+      // when present (date-partitioned sessions tree) or the flat persistDir
+      // layout otherwise. An unsafe route id has no file to seed from (the
+      // writer skipped it too).
+      const seedFile = host.options.transcriptFileFor
+        ? host.options.transcriptFileFor(sessionId, routeId)
+        : host.options.persistDir
+          ? routeId === DEFAULT_ROUTE_ID
+            ? path.join(host.options.persistDir, `${sessionId}.jsonl`)
+            : routeTranscriptFile(host.options.persistDir, sessionId, routeId)
+          : null;
+      if (seedFile) {
         try {
-          const raw = await fs.readFile(file, "utf8");
-          const prior = decodeTranscript(raw).routes.get(routeId)?.messages ?? [];
+          const raw = await fs.readFile(seedFile, "utf8");
+          const decoded = decodeTranscript(raw);
+          const prior = routeId === DEFAULT_ROUTE_ID
+            ? decoded.history
+            : decoded.routes.get(routeId)?.messages ?? [];
           if (prior.length > 0) {
             session.history.push(...prior.map((m) => ({ role: m.role, parts: [...m.parts] })));
           }

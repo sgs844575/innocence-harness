@@ -11,6 +11,11 @@ export interface SessionRecord extends Session {
   messages: ChatMessage[];
   /** False for index-restored sessions until their transcript has been read. */
   messagesLoaded: boolean;
+  /**
+   * 主转录文件相对 sessions 根的路径（YYYY/MM/DD/<id>.jsonl）。索引可由
+   * sessions/ 树扫描重建 —— 本字段只是跨启动稳定提示，读取以扫描/映射为准。
+   */
+  file?: string;
 }
 
 /** Persisted index shape (one entry per session; messages never live here). */
@@ -26,16 +31,13 @@ export interface SessionIndexEntry {
   forkedFrom?: { sessionId: string; messageId?: string };
   /** dock 辅助对话会话标记（缺省 = 普通会话）。 */
   aux?: boolean;
+  /** 主转录文件相对路径（见 SessionRecord.file）。 */
+  file?: string;
 }
 
 /** <storeDir>/sessions.json; null while the store has no directory. */
 export function sessionIndexFile(storeDir: string | null): string | null {
   return storeDir ? path.join(storeDir, "sessions.json") : null;
-}
-
-/** <storeDir>/transcripts/<id>.jsonl; null while the store has no directory. */
-export function sessionTranscriptFile(storeDir: string | null, id: string): string | null {
-  return storeDir ? path.join(storeDir, "transcripts", `${id}.jsonl`) : null;
 }
 
 /** Strips the lazy-loading internals off a record for public consumers. */
@@ -53,6 +55,7 @@ export function sessionIndexEntryOf(record: SessionRecord): SessionIndexEntry {
     updatedAt: record.updatedAt,
     messageCount: record.messageCount,
     workspaceRoot: record.workspaceRoot,
+    ...(record.file ? { file: record.file } : {}),
     ...(record.forkedFrom ? { forkedFrom: { ...record.forkedFrom } } : {}),
     ...(record.aux === true ? { aux: true } : {}),
   };
@@ -104,6 +107,7 @@ export function sessionRecordFromEntry(e: SessionIndexEntry): SessionRecord {
     updatedAt: typeof e.updatedAt === "number" ? e.updatedAt : Date.now(),
     messageCount: typeof e.messageCount === "number" ? e.messageCount : 0,
     workspaceRoot: typeof e.workspaceRoot === "string" ? e.workspaceRoot : "",
+    ...(typeof e.file === "string" && e.file ? { file: e.file } : {}),
     ...(e.aux === true ? { aux: true } : {}),
     ...(forked && typeof forked === "object" && typeof forked.sessionId === "string"
       ? {

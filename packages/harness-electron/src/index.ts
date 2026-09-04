@@ -49,15 +49,18 @@ export { WORKTREE_ISOLATION_FRAGMENT } from "./worktree-fragment";
 export {
   canonicalizeHistory,
   decodeTranscript,
+  encodeSessionMeta,
   encodeTurnV2,
   encodeTurnV3,
   type DecodedMessage,
   type DecodedTranscript,
+  type SessionMetaRecord,
   type TranscriptRoute,
   type TurnRecordV2,
   type TurnRecordV3,
   type TurnRecordV3Input,
 } from "./transcript";
+export { persistTurn, persistTurnSnapshot, routeFileBeside } from "./turn-persistence";
 // Session family (moved here when the retired core package was deleted):
 // the conversational AgentSession, its kernel composition, the legacy
 // plugin-registration face and the compat view over the spine services.

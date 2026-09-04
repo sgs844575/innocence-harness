@@ -1,6 +1,6 @@
 // 子代理运行档案的持久化半边（会话外观的存储职责拆分）：lifecycle 事件按
-// 会话追加到 transcripts 目录旁的 sidecar（<id>.subagents.jsonl），启动后按
-// 会话读回回放建档——面板历史由此跨进程重启存活。流式 delta 不落盘（正文
+// 会话追加到主转录文件旁的 sidecar（同目录 <id>.subagents.jsonl），启动后
+// 按会话读回回放建档——面板历史由此跨进程重启存活。流式 delta 不落盘（正文
 // 以终态 final/error 与已闭合的 textSegment 分段回放，思考以已闭合的
 // thinkingSegment 回放，工具轨迹与状态也是档案骨架）；读写均防御式，坏行
 // 跳过不阻断启动。本模块不依赖 Electron（Node 可测）。
@@ -14,9 +14,9 @@ export interface SubagentHistoryEntry {
   event: SubagentLifecycleEvent;
 }
 
-/** <storeDir>/transcripts/<id>.subagents.jsonl；null while the store has no directory. */
-export function subagentHistoryFile(storeDir: string | null, id: string): string | null {
-  return storeDir ? path.join(storeDir, "transcripts", `${id}.subagents.jsonl`) : null;
+/** 与主转录同目录的 sidecar：<dirname(mainFile)>/<id>.subagents.jsonl。 */
+export function subagentHistoryFile(mainFile: string | null, id: string): string | null {
+  return mainFile ? path.join(path.dirname(mainFile), `${id}.subagents.jsonl`) : null;
 }
 
 /** 已确保存在的目录（避免转发热路径上每次 append 都 mkdirSync）。 */

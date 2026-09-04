@@ -177,6 +177,13 @@ export interface RuntimeOptions {
   /** Directory for JSONL session transcripts; omitted = no persistence. */
   persistDir?: string;
   /**
+   * Host-owned transcript file placement (wins over the flat persistDir
+   * layout): resolves a session's main or route transcript file — the host
+   * keeps the date-partitioned sessions tree, so only it can map a session id
+   * onto its file. Returning null skips that file's persistence.
+   */
+  transcriptFileFor?: (sessionId: string, routeId: string) => string | null;
+  /**
    * Ask-boundary classifier factory (S3 权限分类器): consulted once per
    * session build with the build-time settings snapshot. Returning a
    * classifier arms the engine's pre-ask evaluation round; undefined keeps

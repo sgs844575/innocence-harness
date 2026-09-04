@@ -14,7 +14,7 @@ import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
 import { createLazyNotifySink } from "./notifySink";
 import { createAutomationCandidateService, createStructuredOutputPort } from "@innocenceharness/harness-ai-runtime";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
-import { app, dialog, powerMonitor } from "electron";
+import { app, dialog, Notification, powerMonitor } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { openSecureStorage } from "@innocenceharness/secure-storage-node";
@@ -39,13 +39,17 @@ import { createSendToTeammate } from "./teammatePort";
 import { sessionHasFinishedTurn, summarizeSessionUsage } from "./sessionUsage";
 import * as sessions from "./sessions";
 import { ensureSessionScratchDir } from "./sessionScratch";
-import { appendSubagentHistoryEvent, subagentHistoryFile } from "./subagentHistoryStore";
+import { appendSubagentHistoryEvent } from "./subagentHistoryStore";
+import { appDataRoot } from "./appDataRoot";
 import { getMainWindow } from "./appWindow";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
 import { hostShutdownGate } from "./shutdown";
 import { broadcastSessions, broadcastSidebar } from "./sessionEvents";
 import { createCredentialStore } from "./credentialStore";
+import { createDesktopNotifier } from "./desktopNotify";
+import { applyCloseToTray } from "./tray";
+import { applyKeepAwake } from "./powerBlocker";
 import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
 import { getWorkbenchFocus, setWorkbenchFocus } from "./workbenchFocus";
 import { diagnoseFocusedFile, diagnosticFingerprint } from "@innocenceharness/harness-diagnostics";
@@ -95,7 +99,7 @@ const settingsMutationGate = createSettingsMutationGate();
 const pendingAsks: PendingPermissionRegistry = new Map();
 
 function automationFile(): string {
-  return path.join(app.getPath("userData"), "automations.json");
+  return path.join(appDataRoot(), "automations.json");
 }
 
 let automationService: AutomationService | undefined;
@@ -204,7 +208,7 @@ export function getBackgroundJobs(): BackgroundJobsFacade {
       });
       broadcastSessions();
     },
-    scratchRoot: () => path.join(app.getPath("userData"), "background"),
+    scratchRoot: () => path.join(appDataRoot(), "background"),
     // 退出窗口不通知：关机中止的运行会被判失败，此时免打扰。
     notify: (message) =>
       hostShutdownGate.isShuttingDown()
@@ -261,19 +265,15 @@ export function triggerAutomation(input: Parameters<AutomationService["trigger"]
 }
 
 function settingsFile(): string {
-  return path.join(app.getPath("userData"), "harness-settings.json");
+  return path.join(appDataRoot(), "harness-settings.json");
 }
 
 function credentialsDir(): string {
-  return path.join(app.getPath("userData"), "provider-credentials");
+  return path.join(appDataRoot(), "provider-credentials");
 }
 
 async function credentialStore() {
   return createCredentialStore(await openSecureStorage(credentialsDir(), { dirs: ["keys"] }));
-}
-
-function transcriptsDir(): string {
-  return path.join(app.getPath("userData"), "transcripts");
 }
 
 // ---------------------------------------------------------------------------
@@ -353,8 +353,8 @@ export async function disposePluginBoot(): Promise<void> {
 }
 
 /** Bridge + storage dir for the host's task-runtime IPC composition (Task 12).
- *  惰性求值：index.ts 在启动时把 userData 重定向到 ~/.innocence（数据根统
- *  一），模块加载期读 app.getPath 会钉死旧默认根。 */
+ *  惰性求值：启动早期才注入应用数据根（~/.innocence），模块加载期取值会
+ *  钉死未初始化的回落根。 */
 let taskStorageDirCache: string | undefined;
 let taskBridgeCache: TaskRuntimeBridge | undefined;
 
@@ -367,7 +367,7 @@ export function getTaskBridge(): TaskRuntimeBridge {
 }
 
 export function getTaskStorageDir(): string {
-  taskStorageDirCache ??= path.join(app.getPath("userData"), "tasks");
+  taskStorageDirCache ??= path.join(appDataRoot(), "tasks");
   return taskStorageDirCache;
 }
 
@@ -394,9 +394,37 @@ function isForkWorktreeSession(sessionId: string): boolean {
   return normalized.includes("/.innocence/worktrees/");
 }
 
+/** 桌面通知器（taskNotifications 设置）：回合完成/失败与权限请求在主窗口
+ *  未聚焦时发系统通知；点击通知显示并聚焦主窗口。设置惰性读取，live 跟随
+ *  设置变更；关机静默（退出窗口不通知，与后台作业同一纪律）。 */
+const desktopNotifier = createDesktopNotifier({
+  settings: () => settings,
+  windowFocused: () => {
+    const win = getMainWindow();
+    return Boolean(win && !win.isDestroyed() && win.isFocused() && win.isVisible() && !win.isMinimized());
+  },
+  sessionTitle: (sessionId) => sessions.getSession(sessionId)?.title,
+  appName: () => app.getName(),
+  send: ({ title, body, silent }) => {
+    if (hostShutdownGate.isShuttingDown()) return;
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title, body, silent });
+    notification.on("click", () => {
+      const win = getMainWindow();
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
+    notification.show();
+  },
+});
+
 const runtime = new HarnessRuntime({
   settings: () => settings,
-  persistDir: transcriptsDir(),
+  // 会话转写落盘端口：宿主持有 sessions/ 日期树布局（id → 文件映射由
+  // 会话外观解析），主/路由文件、实时快照与终稿行都走同一解析。
+  transcriptFileFor: sessions.runtimeTranscriptFileFor,
   telemetry,
   // Route scopes: every session build mounts into a fresh kernel scope below
   // the plugin-boot root (dynamic staging kernel) — session dispose unwinds
@@ -498,13 +526,14 @@ const runtime = new HarnessRuntime({
     ...taskPluginsForRoute(getTaskBridge(), context),
   ],
   hooks: {
-    ...createRuntimeHooks(pendingAsks),
+    ...createRuntimeHooks(pendingAsks, (kind, sessionId, options) =>
+      desktopNotifier.notify(kind, sessionId, options),
+    ),
     onSubagentLifecycle: (event) => {
       // 广播实况的同时落盘档案（delta 不落盘，见 subagentHistoryStore）——
-      // 渲染层重启后按会话回放建档，历史运行才可再查看。store 根与
-      // initSessionStore 同源（userData；subagentHistoryFile 自拼 transcripts
-      // 段，传 transcriptsDir() 会得到双层嵌套、读回恒空）。
-      appendSubagentHistoryEvent(subagentHistoryFile(app.getPath("userData"), event.parentSessionId), event, Date.now());
+      // 渲染层重启后按会话回放建档，历史运行才可再查看。档案 sidecar 与主
+      // 转录同目录，路径经会话外观的文件映射解析。
+      appendSubagentHistoryEvent(sessions.sessionSubagentHistoryFile(event.parentSessionId), event, Date.now());
       const win = getMainWindow();
       if (win && !win.isDestroyed()) win.webContents.send(IPC.subagentLifecycle, event);
     },
@@ -603,8 +632,24 @@ export function setHarnessSettings(next: HarnessSettingsPatch) {
       const win = getMainWindow();
       if (win && !win.isDestroyed()) broadcastTheme(win);
     }
+    // 常规设置的主进程副作用（托盘/电源阻止）：无条件幂等应用。
+    applyHostSettingsSideEffects();
     return toSettingsMirror(settings);
   });
+}
+
+/** 常规设置的主进程副作用：关闭到托盘（仅 Windows 建托盘）与阻止系统休
+ *  眠。幂等——启动后（initHarness 之后）与每次设置提交后各应用一次。 */
+export function applyHostSettingsSideEffects(): void {
+  applyCloseToTray(settings.closeToTray === true);
+  applyKeepAwake(settings.keepAwake === true);
+}
+
+/** 会话是否有存活回合（主路由 + 任务绑定路由；自动归档的排除条件）。 */
+export function isSessionRunning(sessionId: string): boolean {
+  if (runtime.isRouteRunning(sessionId)) return true;
+  const binding = sessionTaskRoutes.get(sessionId);
+  return binding !== undefined && runtime.isRouteRunning(sessionId, binding.routeId);
 }
 
 /** Stores a key in secure host storage and returns the redacted settings projection. */

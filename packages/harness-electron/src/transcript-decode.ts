@@ -3,7 +3,7 @@
 // message/part shapes and folds JSONL rows into history + the route map.
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message, MessagePart, ToolResultPart } from "@innocenceharness/harness-session";
-import type { LegacyTurnRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
+import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
 
 /**
  * A decoded message: the canonical harness shape plus any parts whose type is
@@ -195,23 +195,6 @@ function legacyCurrentTurn(record: LegacyTurnRecord): Message[] {
 /** turn-v2 rows (and legacy snapshots) belong to the implicit "main" route. */
 const MAIN_ROUTE = "main";
 
-/** Internal mutable accumulator entry (narrowed to TranscriptRoute on return). */
-interface RouteEntry {
-  routeId: string;
-  parentTurnId: string | null;
-  turnIds: string[];
-  messages: DecodedMessage[];
-}
-
-function routeOf(routes: Map<string, RouteEntry>, routeId: string, parentTurnId: string | null): RouteEntry {
-  let entry = routes.get(routeId);
-  if (entry === undefined) {
-    entry = { routeId, parentTurnId, turnIds: [], messages: [] };
-    routes.set(routeId, entry);
-  }
-  return entry;
-}
-
 function isTurnRecordV3Shape(record: Record<string, unknown>): boolean {
   return (
     typeof record.turnId === "string" &&
@@ -230,8 +213,63 @@ export interface DecodedTranscript {
   history: DecodedMessage[];
   /** Route map: v2 rows map to "main"; v3 rows carry explicit route identity. */
   routes: ReadonlyMap<string, TranscriptRoute>;
+  /** Last `session-meta` row of the file (self-describing header), if any. */
+  meta?: SessionMetaRecord;
   lastAt?: string;
   validRecords: number;
+}
+
+/** Internal mutable accumulator entry (narrowed to TranscriptRoute on return). */
+interface RouteEntry {
+  routeId: string;
+  parentTurnId: string | null;
+  turnIds: string[];
+  messages: DecodedMessage[];
+}
+
+function routeOf(routes: Map<string, RouteEntry>, routeId: string, parentTurnId: string | null): RouteEntry {
+  let entry = routes.get(routeId);
+  if (entry === undefined) {
+    entry = { routeId, parentTurnId, turnIds: [], messages: [] };
+    routes.set(routeId, entry);
+  }
+  return entry;
+}
+
+/** One turn's folding slot: rows of the same (route, turnId) collapse onto the
+ * slot and the LAST row wins — interim snapshots (real-time persistence during
+ * a live turn) are replaced by the turn's final row; identical re-appends after
+ * a crash stay idempotent. Order of appearance decides the slot's position. */
+interface TurnSlot {
+  routeId: string;
+  parentTurnId: string | null;
+  order: number;
+  messages: DecodedMessage[];
+}
+
+function validMetaRecord(raw: unknown): SessionMetaRecord | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Partial<SessionMetaRecord> & { type?: unknown };
+  if (record.type !== "session-meta") return null;
+  if (typeof record.id !== "string" || record.id.length === 0) return null;
+  if (typeof record.title !== "string" || typeof record.createdAt !== "number") return null;
+  return {
+    type: "session-meta",
+    at: typeof record.at === "string" ? record.at : "",
+    id: record.id,
+    title: record.title,
+    createdAt: record.createdAt,
+    ...(typeof record.workspaceRoot === "string" ? { workspaceRoot: record.workspaceRoot } : {}),
+    ...(record.aux === true ? { aux: true } : {}),
+    ...(record.forkedFrom && typeof record.forkedFrom === "object" && typeof record.forkedFrom.sessionId === "string"
+      ? {
+          forkedFrom: {
+            sessionId: record.forkedFrom.sessionId,
+            ...(typeof record.forkedFrom.messageId === "string" ? { messageId: record.forkedFrom.messageId } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -239,40 +277,57 @@ export interface DecodedTranscript {
  * "main" route history (old lines are read, never rewritten); turn-v3 rows
  * carry explicit route identity, and ancestry is restored through each route's
  * `parentTurnId`. Messages of non-main routes are reachable via the route map
- * and are NOT merged into the main `history`.
+ * and are NOT merged into the main `history`. Rows sharing one (route,
+ * turnId) fold with last-wins so real-time interim snapshots never duplicate
+ * the turn they precede; `session-meta` header rows are collected the same
+ * way (the file describes its own session — the index is a rebuildable cache).
  */
 export function decodeTranscript(raw: string): DecodedTranscript {
   const history: DecodedMessage[] = [];
   const routes = new Map<string, RouteEntry>();
-  const seenTurnIds = new Set<string>();
+  const slots = new Map<string, TurnSlot>();
   const seenRawLines = new Set<string>();
+  // Stream-order timeline: turn slots at first appearance, legacy pushes
+  // inline — mixed legacy/v2 files keep their historical ordering.
+  const timeline: Array<{ turn: string } | { legacy: DecodedMessage[] }> = [];
   let seededLegacy = false;
+  let meta: SessionMetaRecord | undefined;
   let lastAt: string | undefined;
   let validRecords = 0;
+  let order = 0;
 
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || seenRawLines.has(trimmed)) continue;
     seenRawLines.add(trimmed);
-    let parsed: TurnRecordV2 | TurnRecordV3 | LegacyTurnRecord;
+    let parsed: TurnRecordV2 | TurnRecordV3 | LegacyTurnRecord | SessionMetaRecord;
     try {
-      parsed = JSON.parse(trimmed) as TurnRecordV2 | TurnRecordV3 | LegacyTurnRecord;
+      parsed = JSON.parse(trimmed) as TurnRecordV2 | TurnRecordV3 | LegacyTurnRecord | SessionMetaRecord;
     } catch {
       continue;
     }
     if (typeof parsed.at === "string") lastAt = parsed.at;
 
+    const metaRecord = validMetaRecord(parsed);
+    if (metaRecord) {
+      validRecords += 1;
+      meta = metaRecord;
+      continue;
+    }
+
     if (parsed.type === "turn-v2") {
       const record = parsed as TurnRecordV2;
       if (!Array.isArray(record.messages)) continue;
       validRecords += 1;
-      if (seenTurnIds.has(record.turnId)) continue;
-      seenTurnIds.add(record.turnId);
-      const main = routeOf(routes, MAIN_ROUTE, null);
-      main.turnIds.push(record.turnId);
+      const key = turnSlotKey(MAIN_ROUTE, record.turnId);
       const canonical = attachCompletion(canonicalizeHistory(record.messages), sanitizeCompletion(record.completion));
-      main.messages.push(...canonical);
-      history.push(...canonical);
+      const existing = slots.get(key);
+      if (existing) {
+        existing.messages = canonical;
+      } else {
+        slots.set(key, { routeId: MAIN_ROUTE, parentTurnId: null, order: order++, messages: canonical });
+        timeline.push({ turn: key });
+      }
       continue;
     }
 
@@ -281,14 +336,14 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       if (!isTurnRecordV3Shape(record)) continue;
       const v3Record = parsed as TurnRecordV3;
       validRecords += 1;
-      if (seenTurnIds.has(v3Record.turnId)) continue;
-      seenTurnIds.add(v3Record.turnId);
-      const route = routeOf(routes, v3Record.routeId, v3Record.parentTurnId);
-      route.turnIds.push(v3Record.turnId);
+      const key = turnSlotKey(v3Record.routeId, v3Record.turnId);
       const canonical = attachCompletion(canonicalizeHistory(v3Record.messages), sanitizeCompletion(v3Record.completion));
-      route.messages.push(...canonical);
-      if (v3Record.routeId === MAIN_ROUTE) {
-        history.push(...canonical);
+      const existing = slots.get(key);
+      if (existing) {
+        existing.messages = canonical;
+      } else {
+        slots.set(key, { routeId: v3Record.routeId, parentTurnId: v3Record.parentTurnId, order: order++, messages: canonical });
+        timeline.push({ turn: key });
       }
       continue;
     }
@@ -301,15 +356,44 @@ export function decodeTranscript(raw: string): DecodedTranscript {
     // snapshot is a torn/intermediate row, not a completed conversation turn.
     const completed = allTurns.filter((turn) => turn.some((m) => m.role === "assistant"));
     if (completed.length === 0) continue;
+    let current: DecodedMessage[];
     if (!seededLegacy) {
       // The first surviving record may already be cumulative (earlier JSONL rows
       // were lost/truncated), so seed every completed turn it contains once.
-      history.push(...completed.flat());
+      current = completed.flat();
       seededLegacy = true;
     } else {
-      const current = legacyCurrentTurn(record);
-      if (current.some((m) => m.role === "assistant")) history.push(...current);
+      const tail = legacyCurrentTurn(record);
+      current = tail.some((m) => m.role === "assistant") ? tail : [];
+    }
+    if (current.length > 0) timeline.push({ legacy: current });
+  }
+
+  for (const entry of timeline) {
+    if ("legacy" in entry) {
+      history.push(...entry.legacy);
+      continue;
+    }
+    const slot = slots.get(entry.turn);
+    if (!slot) continue;
+    const route = routeOf(routes, slot.routeId, slot.parentTurnId);
+    route.turnIds.push(slotKeyTurnId(entry.turn));
+    route.messages.push(...slot.messages);
+    if (slot.routeId === MAIN_ROUTE) {
+      history.push(...slot.messages);
     }
   }
-  return { history, routes, lastAt, validRecords };
+  return { history, routes, ...(meta ? { meta } : {}), lastAt, validRecords };
+}
+
+/** Slot key separator: NUL never occurs inside route/turn ids. */
+const SLOT_SEP = String.fromCharCode(0);
+
+function turnSlotKey(routeId: string, turnId: string): string {
+  return routeId + SLOT_SEP + turnId;
+}
+
+/** The turn id half of a slot key. */
+function slotKeyTurnId(key: string): string {
+  return key.slice(key.lastIndexOf(SLOT_SEP) + SLOT_SEP.length);
 }
