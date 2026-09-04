@@ -35,11 +35,22 @@ export interface PromptFragment {
   render(ctx: PromptContext): string;
 }
 
+export interface SystemPromptSegments {
+  /** 完整系统提示词（=== build() 的返回值）。 */
+  text: string;
+  /** 技能索引之前的段落（base + 各桶片段）。 */
+  prompt: string;
+  /** 技能索引段原文（appendSkillIndex 的增量；无技能时为空串）。 */
+  skillIndexText: string;
+}
+
 export interface SystemPromptService {
   setBase(prompt: string | undefined): void;
   registerFragment(fragment: PromptFragment): void;
   /** Assembles base + shared + mode + conditional fragments + skills index. */
   build(skills: readonly Skill[], ctx?: PromptContext): string;
+  /** 同 build 的分段版：text === prompt + skillIndexText。 */
+  buildWithSegments(skills: readonly Skill[], ctx?: PromptContext): SystemPromptSegments;
 }
 
 /**
@@ -58,6 +69,36 @@ export const SystemPromptPlugin: {
     const fragments: PromptFragment[] = [];
     const DEFAULT_CTX: PromptContext = { activeMode: "default", traits: {} };
 
+    // Single assembly pass: bucket classification + (order, id) sorting +
+    // fragment concatenation, then the skills index as a slice delta
+    // (appendSkillIndex returns the whole string; segment text is the
+    // increment past `prompt`, empty when no skill is registered).
+    const assemble = (
+      skills: readonly Skill[],
+      ctx: PromptContext,
+    ): { prompt: string; skillIndexText: string } => {
+      const shared: PromptFragment[] = [];
+      const mode: PromptFragment[] = [];
+      const conditional: PromptFragment[] = [];
+      for (const f of fragments) {
+        const modeHit = !f.modes || f.modes.includes(ctx.activeMode);
+        const traitHit = !f.when || f.when(ctx.traits);
+        if (!modeHit || !traitHit) continue;
+        if (f.modes) mode.push(f);
+        else if (f.when) conditional.push(f);
+        else shared.push(f);
+      }
+      const byOrderThenId = (a: PromptFragment, b: PromptFragment) =>
+        (a.order ?? 0) - (b.order ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      let prompt = base;
+      for (const f of [...shared.sort(byOrderThenId), ...mode.sort(byOrderThenId), ...conditional.sort(byOrderThenId)]) {
+        const rendered = f.render(ctx);
+        if (rendered) prompt = prompt ? `${prompt}\n\n${rendered}` : rendered;
+      }
+      const skillIndexText = appendSkillIndex(prompt, skills).slice(prompt.length);
+      return { prompt, skillIndexText };
+    };
+
     const service: SystemPromptService = {
       setBase: (prompt) => {
         base = prompt ?? "";
@@ -69,25 +110,12 @@ export const SystemPromptPlugin: {
         fragments.push(fragment);
       },
       build: (skills, ctx = DEFAULT_CTX) => {
-        const shared: PromptFragment[] = [];
-        const mode: PromptFragment[] = [];
-        const conditional: PromptFragment[] = [];
-        for (const f of fragments) {
-          const modeHit = !f.modes || f.modes.includes(ctx.activeMode);
-          const traitHit = !f.when || f.when(ctx.traits);
-          if (!modeHit || !traitHit) continue;
-          if (f.modes) mode.push(f);
-          else if (f.when) conditional.push(f);
-          else shared.push(f);
-        }
-        const byOrderThenId = (a: PromptFragment, b: PromptFragment) =>
-          (a.order ?? 0) - (b.order ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-        let prompt = base;
-        for (const f of [...shared.sort(byOrderThenId), ...mode.sort(byOrderThenId), ...conditional.sort(byOrderThenId)]) {
-          const rendered = f.render(ctx);
-          if (rendered) prompt = prompt ? `${prompt}\n\n${rendered}` : rendered;
-        }
-        return appendSkillIndex(prompt, skills);
+        const { prompt, skillIndexText } = assemble(skills, ctx);
+        return prompt + skillIndexText;
+      },
+      buildWithSegments: (skills, ctx = DEFAULT_CTX) => {
+        const { prompt, skillIndexText } = assemble(skills, ctx);
+        return { text: prompt + skillIndexText, prompt, skillIndexText };
       },
     };
 

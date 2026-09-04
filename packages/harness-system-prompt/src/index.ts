@@ -3,5 +3,6 @@ export {
   type ProjectTraits,
   type PromptContext,
   type PromptFragment,
+  type SystemPromptSegments,
   type SystemPromptService,
 } from "./service";

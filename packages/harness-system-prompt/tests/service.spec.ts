@@ -214,3 +214,48 @@ describe("fragment assembly", () => {
     expect(sp.build([])).toContain("OK");
   });
 });
+
+describe("buildWithSegments", () => {
+  it("with skills: text === build() === prompt + skillIndexText, and the index lives only in the skill segment", async () => {
+    const ctx = await withPrompt();
+    ctx.systemPrompt.setBase("BASE");
+    const skills = [skill("review", "代码审查指南")];
+    const whole = ctx.systemPrompt.build(skills);
+    const seg = ctx.systemPrompt.buildWithSegments(skills);
+    expect(seg.text).toBe(whole);
+    expect(seg.text).toBe(seg.prompt + seg.skillIndexText);
+    expect(seg.skillIndexText.length).toBeGreaterThan(0);
+    expect(seg.prompt).toBe(ctx.systemPrompt.build([]));
+    expect(seg.prompt).not.toContain("代码审查指南");
+    expect(seg.skillIndexText).toContain("- review: 代码审查指南");
+  });
+
+  it("with no skills: skillIndexText is empty and text === build()", async () => {
+    const ctx = await withPrompt();
+    ctx.systemPrompt.setBase("BASE");
+    const seg = ctx.systemPrompt.buildWithSegments([]);
+    expect(seg.skillIndexText).toBe("");
+    expect(seg.text).toBe(ctx.systemPrompt.build([]));
+    expect(seg.text).toBe(seg.prompt);
+  });
+
+  it("keeps empty base + no fragments + no skills fully empty", async () => {
+    const ctx = await withPrompt();
+    const seg = ctx.systemPrompt.buildWithSegments([]);
+    expect(seg.text).toBe("");
+    expect(seg.prompt).toBe("");
+    expect(seg.skillIndexText).toBe("");
+  });
+
+  it("keeps segments identical under an explicit ctx with fragments", async () => {
+    const sp = await makeService();
+    sp.setBase("BASE");
+    sp.registerFragment({ id: "m", modes: ["creation"], render: () => "MODE" });
+    const cctx = { activeMode: "creation", traits: {} } as const;
+    const skills = [skill("review", "代码审查指南")];
+    const seg = sp.buildWithSegments(skills, cctx);
+    expect(seg.text).toBe(sp.build(skills, cctx));
+    expect(seg.text).toBe(seg.prompt + seg.skillIndexText);
+    expect(seg.prompt).toContain("MODE");
+  });
+});
