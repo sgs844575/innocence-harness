@@ -51,12 +51,14 @@ export class StructuredOutputError extends Error {
 }
 
 /**
- * JSON-mode instruction sent as a final user message. Chat-completions
- * compatible channels without native structured-output support silently drop
- * the JSON response format, which leaves the model without any JSON
- * constraint and it answers in prose; smaller models also follow format
- * instructions much more reliably in the user turn than in the system
- * prompt, so the schema requirement rides the conversation tail.
+ * JSON-mode instruction sent twice — appended to the system prompt and again
+ * as a final user message. Chat-completions compatible channels without
+ * native structured-output support silently drop the JSON response format,
+ * which leaves the model without any JSON constraint and it answers in prose.
+ * Mid-tier and stronger models honor the system copy; smaller models follow
+ * format instructions much more reliably in the user turn, so the schema
+ * requirement rides both places — redundant on native channels, never
+ * contradictory.
  */
 function schemaInstruction(schema: z.ZodType<unknown>): string | undefined {
   try {
@@ -72,11 +74,17 @@ function schemaInstruction(schema: z.ZodType<unknown>): string | undefined {
   }
 }
 
-function messagesWithSchemaInstruction(
+function systemWithInstruction(system: string | undefined, instruction: string | undefined): string | undefined {
+  const combined = [system, instruction]
+    .filter((part): part is string => typeof part === "string" && part !== "")
+    .join("\n\n");
+  return combined === "" ? undefined : combined;
+}
+
+function messagesWithInstruction(
   messages: readonly Message[],
-  schema: z.ZodType<unknown>,
+  instruction: string | undefined,
 ): readonly Message[] {
-  const instruction = schemaInstruction(schema);
   if (instruction === undefined) return messages;
   return [...messages, { role: "user", parts: [{ type: "text", text: instruction }] }];
 }
@@ -121,11 +129,13 @@ export function createStructuredOutputPort(): StructuredOutputPort {
       if (input.model.capabilities?.structuredOutput === false) {
         throw new StructuredOutputError("provider-unsupported");
       }
+      const instruction = schemaInstruction(input.schema);
+      const system = systemWithInstruction(input.system, instruction);
       try {
         const result = await generateObject({
           model: input.model.value as LanguageModel,
-          ...(input.system ? { system: input.system } : {}),
-          messages: toSdkMessages(messagesWithSchemaInstruction(input.messages, input.schema)),
+          ...(system !== undefined ? { system } : {}),
+          messages: toSdkMessages(messagesWithInstruction(input.messages, instruction)),
           abortSignal: input.signal,
           schema: input.schema,
           experimental_repairText: repairJsonText,

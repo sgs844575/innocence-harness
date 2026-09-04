@@ -114,7 +114,7 @@ describe("createStructuredOutputPort", () => {
     });
   });
 
-  it("appends the JSON Schema instruction as a final user message for channels without native JSON mode", async () => {
+  it("sends the JSON Schema instruction in both the system prompt and a final user message", async () => {
     const model = new MockLanguageModelV3({
       doGenerate: {
         content: [{ type: "text", text: '{"answer":"ok"}' }],
@@ -130,11 +130,13 @@ describe("createStructuredOutputPort", () => {
     });
 
     const prompt = model.doGenerateCalls[0]!.prompt;
-    const serialized = JSON.stringify(prompt);
-    expect(serialized).toContain("Base system prompt.");
-    expect(serialized).toContain("conforms to this JSON Schema");
-    expect(serialized).toContain("additionalProperties");
     const messages = Array.isArray(prompt) ? prompt : [prompt];
+    const systemTurn = messages.find((entry) => (entry as { role?: string }).role === "system") as
+      | { content: string }
+      | undefined;
+    expect(systemTurn?.content).toContain("Base system prompt.");
+    expect(systemTurn?.content).toContain("Output format requirement");
+    expect(systemTurn?.content).toContain("additionalProperties");
     const userTurns = messages.filter((entry) => (entry as { role?: string }).role === "user");
     expect(userTurns).toHaveLength(2);
     expect(JSON.stringify(userTurns[0])).toContain("Respond.");
