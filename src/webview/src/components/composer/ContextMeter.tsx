@@ -50,15 +50,18 @@ function Ring({ pct }: { pct: number }): React.JSX.Element {
   return (
     <svg width={18} height={18} viewBox="0 0 18 18" style={{ transform: "rotate(-90deg)" }} aria-hidden>
       <circle cx={9} cy={9} r={RING_RADIUS} fill="none" strokeWidth={2.5} style={{ stroke: "var(--color-border)" }} />
-      <circle
-        cx={9}
-        cy={9}
-        r={RING_RADIUS}
-        fill="none"
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        style={{ stroke: color, strokeDasharray: `${dash} ${RING_CIRCUMFERENCE}` }}
-      />
+      {/* dash 为 0 时不渲染弧：round 线帽 + 零长虚线会在 Chromium 画出一粒圆点。 */}
+      {dash > 0 && (
+        <circle
+          cx={9}
+          cy={9}
+          r={RING_RADIUS}
+          fill="none"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          style={{ stroke: color, strokeDasharray: `${dash} ${RING_CIRCUMFERENCE}` }}
+        />
+      )}
     </svg>
   );
 }

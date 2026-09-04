@@ -37,6 +37,13 @@ describe("ContextMeter", () => {
     expect(screen.getByTestId("chat-context-meter")).toBeDefined();
   });
 
+  it("pct=0 不渲染弧 circle（round 线帽 + 零长虚线会画出圆点）；pct>0 底环+弧", () => {
+    const zero = render(<ContextMeter t={t} snapshot={null} />);
+    expect(zero.container.querySelectorAll("circle")).toHaveLength(1); // 只有底环
+    const filled = render(<ContextMeter t={t} snapshot={snap()} />);
+    expect(filled.container.querySelectorAll("circle")).toHaveLength(2); // 底环 + 弧
+  });
+
   it("open=false 不渲染任何内容", () => {
     render(<ContextMeter t={t} snapshot={snap()} open={false} />);
     expect(screen.queryByTestId("chat-context-meter")).toBeNull();

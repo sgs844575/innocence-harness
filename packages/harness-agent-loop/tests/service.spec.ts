@@ -6,9 +6,10 @@ import {
 } from "@innocenceharness/harness-agent-loop";
 import { Context } from "@innocenceharness/kernel";
 import { PermissionEngine } from "@innocenceharness/harness-permissions";
-import type { Delta, Provider } from "@innocenceharness/harness-providers";
-import { textMessage } from "@innocenceharness/harness-session";
+import type { Delta, Provider, ProviderModel } from "@innocenceharness/harness-providers";
+import { textMessage, type HarnessEvent } from "@innocenceharness/harness-session";
 import { ToolsPlugin, type Tool } from "@innocenceharness/harness-tools";
+import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 
 function fakeTool(
@@ -160,5 +161,85 @@ describe("createRunLoop binding", () => {
     await run(textMessage("user", "q1"));
     await run(textMessage("user", "q2"));
     expect(deps.history.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+});
+
+describe("createRunLoop systemSegments production wiring", () => {
+  /** SDK 形态 provider（带 model 载体），单文本轮 finish 携带 usage——
+   *  生产路径上唯一会产生 contextUsage 事件的形态。 */
+  function usageProvider(inputTokens: {
+    total: number;
+    noCache: number;
+    cacheRead: number;
+  }): Provider & { model: ProviderModel } {
+    const model = new MockLanguageModelV3({
+      provider: "sdk-test",
+      modelId: "sdk-model",
+      async doStream() {
+        return {
+          stream: convertArrayToReadableStream([
+            { type: "stream-start", warnings: [] },
+            { type: "text-start", id: "text-1" },
+            { type: "text-delta", id: "text-1", delta: "done" },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { ...inputTokens, cacheWrite: 0 },
+                outputTokens: { total: 5, text: 5, reasoning: 0 },
+              },
+              finishReason: { unified: "stop", raw: "stop" },
+            },
+          ]),
+        };
+      },
+    });
+    return {
+      id: "sdk-test",
+      model: { value: model, providerId: "sdk-test", modelId: "sdk-model" },
+      async *chat(): AsyncIterable<Delta> {
+        throw new Error("legacy provider path must not run when a model is available");
+      },
+    };
+  }
+
+  const contextUsages = (events: HarnessEvent[]) =>
+    events.filter(
+      (event): event is Extract<HarnessEvent, { type: "contextUsage" }> =>
+        event.type === "contextUsage",
+    );
+
+  it("经 createRunLoop 转发 systemSegments 后技能类计量非零（生产路径）", async () => {
+    const events: HarnessEvent[] = [];
+    const { deps } = await makeDeps({
+      provider: usageProvider({ total: 500, noCache: 250, cacheRead: 250 }),
+      onEvent: (event) => events.push(event),
+      systemSegments: () => ({ skills: "技能索引段：review —— 代码审查指南" }),
+    });
+    const run = createRunLoop(deps);
+    await run(textMessage("user", "hi"));
+
+    const usages = contextUsages(events);
+    expect(usages).toHaveLength(1);
+    const snapshot = usages[0]!.snapshot;
+    // LoopDeps.systemSegments 缺位时技能恒并入系统提示词类；转发后单列。
+    expect(snapshot.breakdown.skills).toBeGreaterThan(0);
+    expect(snapshot.inputTokens).toBe(500);
+    // 校准不变量：六类之和恒等于真实输入。
+    const sum = Object.values(snapshot.breakdown).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(500);
+  });
+
+  it("deps 缺省 systemSegments 时技能类为零（并入系统提示词类）", async () => {
+    const events: HarnessEvent[] = [];
+    const { deps } = await makeDeps({
+      provider: usageProvider({ total: 500, noCache: 250, cacheRead: 250 }),
+      onEvent: (event) => events.push(event),
+    });
+    const run = createRunLoop(deps);
+    await run(textMessage("user", "hi"));
+
+    const usages = contextUsages(events);
+    expect(usages).toHaveLength(1);
+    expect(usages[0]!.snapshot.breakdown.skills).toBe(0);
   });
 });

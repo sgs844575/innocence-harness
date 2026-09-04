@@ -52,6 +52,8 @@ export class AgentSession {
   private activeRun: Promise<unknown> | undefined;
   /** Frozen first system-prompt assembly (see buildSystemPrompt). */
   private assembledPrompt: string | undefined;
+  /** 技能索引段原文，与 assembledPrompt 同批冻结（见 buildSystemPrompt）。 */
+  private assembledSkillIndex: string | undefined;
   /** Set as soon as dispose() starts: a released session never runs again. */
   private disposed = false;
   private disposeInFlight: Promise<void> | undefined;
@@ -82,6 +84,12 @@ export class AgentSession {
       provider: this.provider,
       history: this.history,
       systemPrompt: () => this.buildSystemPrompt(),
+      // 计量分段：技能索引段原文随 prompt 同点冻结（同一批 buildWithSegments
+      // 组装），loop 据此把技能单列；无技能时为空（并入系统提示词类）。
+      systemSegments: () => {
+        this.buildSystemPrompt();
+        return this.assembledSkillIndex ? { skills: this.assembledSkillIndex } : {};
+      },
       workspaceRoot: this.workspaceRoot,
       onEvent: (event) => kernel.services.session.emit(event),
       compactor: kernel.services.session.compactor,
@@ -137,6 +145,7 @@ export class AgentSession {
     this.kernel.services.systemPrompt.setBase(prompt);
     // The base change must reach the next assembly — drop the frozen string.
     this.assembledPrompt = undefined;
+    this.assembledSkillIndex = undefined;
   }
 
   setPermissionMode(mode: PermissionMode): void {
@@ -145,12 +154,17 @@ export class AgentSession {
 
   /** Base prompt + registered sections + the skills index (descriptions only).
    *  会话内字节冻结：inputs（插件集/模式/特征/技能）在会话生命周期内不变，
-   *  首次组装后缓存（缓存纪律——逐轮复用同一前缀）。 */
+   *  首次组装后缓存（缓存纪律——逐轮复用同一前缀）。分段版组装：text ===
+   *  build()，技能索引段与最终提示词同批冻结（计量分段与 systemPrompt 同源）。 */
   private buildSystemPrompt(): string {
-    this.assembledPrompt ??= this.kernel.services.systemPrompt.build(
-      this.kernel.services.skills.all(),
-      { activeMode: this.agentMode, traits: this.traits },
-    );
+    if (this.assembledPrompt === undefined) {
+      const segments = this.kernel.services.systemPrompt.buildWithSegments(
+        this.kernel.services.skills.all(),
+        { activeMode: this.agentMode, traits: this.traits },
+      );
+      this.assembledPrompt = segments.text;
+      this.assembledSkillIndex = segments.skillIndexText;
+    }
     return this.assembledPrompt;
   }
 

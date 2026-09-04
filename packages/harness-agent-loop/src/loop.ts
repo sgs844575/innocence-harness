@@ -22,7 +22,11 @@ import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innoce
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
-import { breakdownFromRequest, calibrate } from "@innocenceharness/harness-context-meter";
+import {
+  breakdownFromRequest,
+  calibrate,
+  type RawBreakdown,
+} from "@innocenceharness/harness-context-meter";
 import type { PendingInputMailbox } from "./pending-inputs";
 
 export interface LoopOptions {
@@ -227,10 +231,7 @@ function providerModel(provider: Provider): ProviderModel | undefined {
 
 /** Best-effort model id probe for meter metadata (absent on legacy providers). */
 function providerModelId(provider: Provider): string | undefined {
-  const model = (provider as Provider & { model?: unknown }).model as
-    | Partial<ProviderModel>
-    | undefined;
-  return typeof model?.modelId === "string" ? model.modelId : undefined;
+  return providerModel(provider)?.modelId;
 }
 
 /**
@@ -338,6 +339,21 @@ export async function runLoop(
   let terminalBlock: string | undefined;
   const compactionProvider = providerForCompaction(provider, telemetry);
 
+  // 计量构造（主循环与收尾步共用，仅工具清单实参不同）：技能索引段缺省并入
+  // 系统提示词类（LoopOptions.systemSegments 未提供该段时）。
+  const measure = (toolSpecs: ToolSpec[]): RawBreakdown =>
+    breakdownFromRequest({
+      systemSegments: {
+        prompt: systemPrompt,
+        ...(opts.systemSegments?.skills ? { skills: opts.systemSegments.skills } : {}),
+      },
+      tools: toolSpecs.map((spec) => ({
+        name: spec.name,
+        schemaText: `${spec.description}\n${JSON.stringify(spec.parameters ?? {})}`,
+      })),
+      messages: history,
+    });
+
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
       if (signal?.aborted) break;
@@ -357,17 +373,7 @@ export async function runLoop(
       }
 
       const specs = tools.specs();
-      const rawBreakdown = breakdownFromRequest({
-        systemSegments: {
-          prompt: systemPrompt,
-          ...(opts.systemSegments?.skills ? { skills: opts.systemSegments.skills } : {}),
-        },
-        tools: specs.map((spec) => ({
-          name: spec.name,
-          schemaText: `${spec.description}\n${JSON.stringify(spec.parameters ?? {})}`,
-        })),
-        messages: history,
-      });
+      const rawBreakdown = measure(specs);
       const step = await runModelStep({
         provider,
         system: systemPrompt,
@@ -656,14 +662,7 @@ export async function runLoop(
       tail?.role === "user" &&
       tail.parts.some((part) => part.type === "toolResult")
     ) {
-      const epilogueRawBreakdown = breakdownFromRequest({
-        systemSegments: {
-          prompt: systemPrompt,
-          ...(opts.systemSegments?.skills ? { skills: opts.systemSegments.skills } : {}),
-        },
-        tools: [],
-        messages: history,
-      });
+      const epilogueRawBreakdown = measure([]);
       const epilogue = await runModelStep({
         provider,
         system: systemPrompt,

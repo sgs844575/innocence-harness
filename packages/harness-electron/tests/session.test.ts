@@ -809,6 +809,67 @@ describe("AgentSession agent-mode prompt assembly", () => {
     expect(systems).toHaveLength(2);
     expect(systems[0]).toBe(systems[1]);
   });
+
+  it("把冻结的技能索引段经 deps.systemSegments 交给 loop（生产计量接线）", async () => {
+    // Marker module：记录 deps.systemSegments 在 run 时机交给 loop 的分段
+    // （与真实 createRunLoop 的 LoopOptions 组装同点解析）。
+    const segmentsSeen: Array<{ skills?: string } | undefined> = [];
+    const markedLoop: typeof loopModule = {
+      ...loopModule,
+      createRunLoop: (deps) => {
+        const run = loopModule.createRunLoop(deps);
+        return async (input, opts) => {
+          segmentsSeen.push(deps.systemSegments?.());
+          return run(input, opts);
+        };
+      },
+    };
+    const skillPlugin: HarnessPlugin = {
+      name: "skills",
+      activate(ctx) {
+        ctx.registerSkill({
+          name: "review",
+          description: "代码审查指南",
+          loadBody: async () => "审查正文内容",
+        });
+      },
+    };
+    const session = await createTestSession({
+      plugins: [skillPlugin],
+      provider: echoProvider(),
+      spine: { ...staticSpineSuite(), loop: markedLoop },
+    });
+    await session.run("问题");
+    await session.dispose();
+
+    expect(segmentsSeen).toHaveLength(1);
+    // 技能索引段非空且来自同一批 buildWithSegments 组装（与最终 systemPrompt 同源）。
+    expect(segmentsSeen[0]?.skills).toContain("- review: 代码审查指南");
+  });
+
+  it("无技能注册时 systemSegments 不携带技能段（并入系统提示词类）", async () => {
+    const segmentsSeen: Array<{ skills?: string } | undefined> = [];
+    const markedLoop: typeof loopModule = {
+      ...loopModule,
+      createRunLoop: (deps) => {
+        const run = loopModule.createRunLoop(deps);
+        return async (input, opts) => {
+          segmentsSeen.push(deps.systemSegments?.());
+          return run(input, opts);
+        };
+      },
+    };
+    const session = await createTestSession({
+      plugins: [],
+      provider: echoProvider(),
+      spine: { ...staticSpineSuite(), loop: markedLoop },
+    });
+    await session.run("问题");
+    await session.dispose();
+
+    expect(segmentsSeen).toHaveLength(1);
+    expect(segmentsSeen[0]?.skills).toBeUndefined();
+  });
 });
 
 describe("AgentSession injected scope", () => {

@@ -34,6 +34,12 @@ export interface LoopDeps {
   history: Message[];
   /** System prompt for each provider turn; a function is resolved once per run. */
   systemPrompt: string | (() => string);
+  /**
+   * 系统提示词分段（技能索引段原文，供计量把技能单列；缺省并入系统提示词类）。
+   * 懒取：与函数形态的 systemPrompt 同点解析——每次 run 组装 LoopOptions 时各取
+   * 一次，分段与该 run 实际使用的最终 systemPrompt 同源同批。
+   */
+  systemSegments?: () => { skills?: string };
   workspaceRoot: string;
   /** Listener receiving every HarnessEvent of every run. */
   onEvent: HarnessEventListener;
@@ -80,7 +86,10 @@ export function createRunLoop(deps: LoopDeps): RunLoopFunction {
       tools: deps.tools,
       permission: deps.permission,
       provider: deps.provider,
+      // 同点解析：prompt 与 segments 在每次 run 的 LoopOptions 组装处各取一次，
+      // 计量分段与该 run 的最终 systemPrompt 同源同批（冻结语义一致）。
       systemPrompt: typeof deps.systemPrompt === "function" ? deps.systemPrompt() : deps.systemPrompt,
+      ...(deps.systemSegments ? { systemSegments: deps.systemSegments() } : {}),
       workspaceRoot: deps.workspaceRoot,
       onEvent: deps.onEvent,
       compactor: deps.compactor,
