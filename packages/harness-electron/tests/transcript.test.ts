@@ -3,6 +3,7 @@ import type { Message } from "@innocenceharness/harness-session";
 import {
   canonicalizeHistory,
   decodeTranscript,
+  encodeContextUsage,
   encodeSessionMeta,
   encodeTurnV2,
   encodeTurnV3,
@@ -217,6 +218,27 @@ describe("turn-v3 route-aware decoding", () => {
     expect(decoded.routes.get("main")?.turnIds).toEqual(["turn-9"]);
     expect(decoded.history).toHaveLength(3);
     expect(decoded.lastAt).toBe("t9");
+  });
+});
+
+describe("context-usage rows", () => {
+  it("context-usage 行解码 last-wins", () => {
+    const row1 = encodeContextUsage(
+      { inputTokens: 100, breakdown: { systemPrompt: 60, skills: 0, systemTools: 20, mcpTools: 0, messages: 20, other: 0 }, cache: { inputTokens: 100, cachedInputTokens: 50 }, modelId: "m" },
+      "2026-09-04T10:00:00.000Z",
+    );
+    const row2 = encodeContextUsage(
+      { inputTokens: 200, breakdown: { systemPrompt: 60, skills: 10, systemTools: 20, mcpTools: 10, messages: 90, other: 10 }, cache: { inputTokens: 300, cachedInputTokens: 150 }, modelId: "m" },
+      "2026-09-04T10:01:00.000Z",
+    );
+    const decoded = decodeTranscript(`${row1}${row2}`);
+    expect(decoded.contextUsage?.inputTokens).toBe(200);
+    expect(decoded.contextUsage?.cache.cachedInputTokens).toBe(150);
+  });
+
+  it("损坏的 context-usage 行被忽略（validRecords 计入既有语义）", () => {
+    const decoded = decodeTranscript(`{"type":"context-usage","snapshot":{"inputTokens":"x"}}\n`);
+    expect(decoded.contextUsage).toBeUndefined();
   });
 });
 

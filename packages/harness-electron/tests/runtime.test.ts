@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentSession } from "../src";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import { createMockProvider, type MockTurn } from "@innocenceharness/provider-mock";
 import { FsPlugin } from "@innocenceharness/tools-fs";
 import { ShellPlugin } from "@innocenceharness/tools-shell";
@@ -33,6 +34,9 @@ function chatTurn(
   return runtime.send({ sessionId, taskId: "", routeId: "main", text, messageId });
 }
 
+/** 富化后的计量快照（runtime 附加 contextWindow；会话级 cache 累计）。 */
+type EnrichedContextUsageSnapshot = ContextUsageSnapshot & { contextWindow?: number };
+
 /** agentFactory seam wrapper: records each built AgentSession by cache key. */
 function recordingAgentFactory() {
   const sessions = new Map<string, AgentSession>();
@@ -46,6 +50,57 @@ function recordingAgentFactory() {
 
 let persistDir: string;
 let workspace: string;
+
+/** SDK 模型步流事件的剧本单元（复用 ai/test 的 MockLanguageModelV3 形状）。 */
+type MockStreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part>
+  ? Part
+  : never;
+
+/** finish 流事件 + 真实 usage（驱动 loop 发 contextUsage；cacheRead → cachedInputTokens）。 */
+const usageFinish = (inputTotal: number, cacheRead: number, reason: "stop" | "tool-calls"): MockStreamPart => ({
+  type: "finish",
+  usage: {
+    inputTokens: { total: inputTotal, noCache: inputTotal - cacheRead, cacheRead, cacheWrite: 0 },
+    outputTokens: { total: 1, text: 1, reasoning: 0 },
+  },
+  finishReason: { unified: reason, raw: reason },
+});
+
+/** 带 model 载体的 provider 工厂：每步 usage 让 loop 走 SDK 路径并发 contextUsage。 */
+function meterProviderFactory(steps: MockStreamPart[][]): NonNullable<RuntimeOptions["providerFactory"]> {
+  let cursor = 0;
+  const model = new MockLanguageModelV3({
+    provider: "meter-provider",
+    modelId: "meter-model",
+    async doStream() {
+      const step = steps[Math.min(cursor, steps.length - 1)] ?? [];
+      cursor += 1;
+      return { stream: convertArrayToReadableStream(step) };
+    },
+  });
+  return () => ({
+    id: "meter-provider",
+    model: { value: model, providerId: "meter-provider", modelId: "meter-model" },
+    async *chat() {
+      throw new Error("legacy chat must not run");
+    },
+  });
+}
+
+/** 模型目录含 meter-model（contextWindow: 1000）的设置面，供 contextWindow 解析命中。 */
+const meterSettings: Partial<HarnessSettings> = {
+  activeProfileId: "preset_meter",
+  activeModel: "meter-model",
+  profiles: [{
+    id: "preset_meter",
+    name: "Meter",
+    kind: "openai",
+    apiKey: "",
+    baseURL: "",
+    enabled: true,
+    models: [{ id: "meter-model", contextWindow: 1000, source: "manual" }],
+  }],
+};
 
 /** 实时落盘契约：一轮 = 先行的用户快照行（无 completion）+ 终稿行（同
  *  turnId，解码按 last-wins 折叠）；工具轮另在事件边界追加快照行。 */
@@ -64,9 +119,10 @@ interface Recorded {
   completions: unknown[];
   errors: string[];
   asks: Array<{ toolName: string; answer: AskResponse }>;
+  contextUsages: Array<{ sessionId: string; snapshot: EnrichedContextUsageSnapshot }>;
 }
 
-const emptyRecorded = (): Recorded => ({ deltas: [], tools: [], completed: 0, completions: [], errors: [], asks: [] });
+const emptyRecorded = (): Recorded => ({ deltas: [], tools: [], completed: 0, completions: [], errors: [], asks: [], contextUsages: [] });
 
 function makeHooks(recorded: Recorded, answer: AskResponse = "allow"): RuntimeHooks {
   return {
@@ -78,6 +134,7 @@ function makeHooks(recorded: Recorded, answer: AskResponse = "allow"): RuntimeHo
       recorded.completions.push(completion);
     },
     onError: (_s, _m, error) => recorded.errors.push(error),
+    onContextUsage: (sessionId, snapshot) => recorded.contextUsages.push({ sessionId, snapshot }),
     askPermission: async (_s, _m, ask) => {
       recorded.asks.push({ toolName: ask.call.toolName, answer });
       return answer;
@@ -1330,5 +1387,88 @@ describe("HarnessRuntime route scopes", () => {
     await chatTurn(runtime, "rt-scope-3", "二", "m-b");
     expect(scopes).toBe(1);
     await runtime.disposeAll();
+  });
+});
+
+describe("HarnessRuntime context usage metering", () => {
+  it("主路由 contextUsage 事件：富化缓存累计与 contextWindow 后落钩子并落盘", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const contextUsageBaseFor = vi.fn((): { inputTokens: number; cachedInputTokens: number } => ({ inputTokens: 10, cachedInputTokens: 10 }));
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([], { workspaceRoot: workspace, ...meterSettings }, recorded),
+      providerFactory: meterProviderFactory([
+        [
+          { type: "stream-start", warnings: [] },
+          { type: "tool-call", toolCallId: "call-1", toolName: "Read", input: JSON.stringify({ path: "hello.txt" }) },
+          usageFinish(100, 50, "tool-calls"),
+        ],
+        [
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "读完了" },
+          usageFinish(200, 50, "stop"),
+        ],
+      ]),
+      contextUsageBaseFor,
+    });
+
+    await chatTurn(runtime, "sess-meter", "读一下", "msg-meter");
+
+    expect(recorded.completed).toBe(1);
+    expect(recorded.errors).toEqual([]);
+    // 两次模型步 → 两个富化后的钩子事件：会话级缓存累计跨事件递增
+    //（步级 100/50 与 200/50，基数 10/10 → 首事件 110/60，末事件 310/110）。
+    expect(recorded.contextUsages).toHaveLength(2);
+    expect(recorded.contextUsages[0]!.sessionId).toBe("sess-meter");
+    expect(recorded.contextUsages[0]!.snapshot.cache).toEqual({ inputTokens: 110, cachedInputTokens: 60 });
+    expect(recorded.contextUsages[1]!.snapshot.cache).toEqual({ inputTokens: 310, cachedInputTokens: 110 });
+    // contextWindow 从模型目录按步的 modelId 解析附加。
+    expect(recorded.contextUsages[1]!.snapshot.contextWindow).toBe(1000);
+    expect(recorded.contextUsages[1]!.snapshot.modelId).toBe("meter-model");
+    // 步级真实输入不被累计值覆盖。
+    expect(recorded.contextUsages[1]!.snapshot.inputTokens).toBe(200);
+    expect(contextUsageBaseFor).toHaveBeenCalledWith("sess-meter");
+    // 会话转录末行为 context-usage 行，snapshot 与钩子一致（last-wins 折叠同值）。
+    const file = path.join(persistDir, "sess-meter.jsonl");
+    const rows = await readRows(file);
+    const meterRows = rows.filter((r) => r.type === "context-usage");
+    expect(meterRows).toHaveLength(2);
+    const lastMeter = meterRows.at(-1)!.snapshot as EnrichedContextUsageSnapshot;
+    expect(lastMeter.cache).toEqual({ inputTokens: 310, cachedInputTokens: 110 });
+    expect(lastMeter.contextWindow).toBe(1000);
+    expect(lastMeter.inputTokens).toBe(200);
+    expect(decodeTranscript(await fs.readFile(file, "utf8")).contextUsage?.cache).toEqual({
+      inputTokens: 310,
+      cachedInputTokens: 110,
+    });
+  });
+
+  it("非 main 路由的 contextUsage 不落钩子不落盘", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const contextUsageBaseFor = vi.fn((): { inputTokens: number; cachedInputTokens: number } => ({ inputTokens: 10, cachedInputTokens: 10 }));
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([], { workspaceRoot: workspace, ...meterSettings }, recorded),
+      providerFactory: meterProviderFactory([
+        [
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "子路由答" },
+          usageFinish(200, 50, "stop"),
+        ],
+      ]),
+      contextUsageBaseFor,
+    });
+
+    await runtime.send({ sessionId: "sess-meter-child", taskId: "", routeId: "route_x", text: "子路由问", messageId: "msg-meter-child" });
+
+    expect(recorded.completed).toBe(1);
+    // 计量仅主路由采纳：钩子与基数查询都不触发。
+    expect(recorded.contextUsages).toEqual([]);
+    expect(contextUsageBaseFor).not.toHaveBeenCalled();
+    // 路由转录只有 turn-v3 行；主转录文件根本不存在。
+    const routeRows = await readRows(path.join(persistDir, "sess-meter-child_route_x.jsonl"));
+    expect(routeRows.length).toBeGreaterThanOrEqual(1);
+    expect(routeRows.every((r) => r.type === "turn-v3")).toBe(true);
+    await expect(fs.access(path.join(persistDir, "sess-meter-child.jsonl"))).rejects.toThrow();
   });
 });

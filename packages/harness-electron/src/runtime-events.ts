@@ -2,6 +2,7 @@
 // responsibility): maps one AgentSession event onto the streaming UI hooks
 // (text deltas, thinking, structured tool parts, compaction/error notices).
 import type { HarnessEvent } from "@innocenceharness/harness-session";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { RuntimeHooks } from "./runtime-types";
 
 export function forwardHarnessEvent(
@@ -9,6 +10,7 @@ export function forwardHarnessEvent(
   sessionId: string,
   messageId: string,
   event: HarnessEvent,
+  onContextUsage?: (sessionId: string, snapshot: ContextUsageSnapshot) => void,
 ): void {
   switch (event.type) {
     case "token":
@@ -35,6 +37,9 @@ export function forwardHarnessEvent(
         durationMs: event.durationMs,
         invocationId: event.invocationId,
       });
+      break;
+    case "contextUsage":
+      onContextUsage?.(sessionId, event.snapshot);
       break;
     case "compaction":
       hooks.onDelta(sessionId, messageId, "\n\n> 🗜️ 已压缩较早的对话历史\n");

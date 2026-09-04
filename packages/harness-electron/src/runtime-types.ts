@@ -9,6 +9,7 @@ import type { Provider, TurnCompletion } from "@innocenceharness/harness-provide
 import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
 import type { SubagentLifecycleEvent } from "@innocenceharness/harness-agent";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { AgentSession } from "./session";
 import type { SessionPlugin } from "./registry";
 import type { SessionSpineSuite } from "./session-spine";
@@ -58,6 +59,8 @@ export interface RuntimeHooks {
   onError(sessionId: string, messageId: string, error: string): void;
   /** Optional host-neutral child-agent lifecycle sink. */
   onSubagentLifecycle?(event: SubagentLifecycleEvent): void;
+  /** 主路由上下文计量快照（已富化：会话级缓存累计 + contextWindow）。 */
+  onContextUsage?(sessionId: string, snapshot: ContextUsageSnapshot): void;
   /** Ask the user about a tool call; resolves with their choice. */
   askPermission(sessionId: string, messageId: string, ask: PermissionAsk): Promise<AskResponse>;
   log(level: "info" | "warn" | "error", msg: string, data?: unknown): void;
@@ -212,6 +215,10 @@ export interface RuntimeOptions {
    * onto its file. Returning null skips that file's persistence.
    */
   transcriptFileFor?: (sessionId: string, routeId: string) => string | null;
+  /** 会话级缓存累计基数（重启恢复）；缺省 = 0 基。 */
+  contextUsageBaseFor?(
+    sessionId: string,
+  ): { inputTokens: number; cachedInputTokens: number } | undefined;
   /**
    * Ask-boundary classifier factory (S3 权限分类器): consulted once per
    * session build with the build-time settings snapshot. Returning a

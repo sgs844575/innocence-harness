@@ -52,4 +52,24 @@ describe("forwardHarnessEvent", () => {
       invocationId: "inv-7",
     });
   });
+
+  it("contextUsage 事件经可选回调透传（未提供回调时静默跳过）", () => {
+    const hooks = captureHooks();
+    const seen: Array<{ sessionId: string; snapshot: unknown }> = [];
+    const event: HarnessEvent = {
+      type: "contextUsage",
+      snapshot: {
+        inputTokens: 100,
+        breakdown: { systemPrompt: 60, skills: 0, systemTools: 20, mcpTools: 0, messages: 20, other: 0 },
+        cache: { inputTokens: 100, cachedInputTokens: 50 },
+        modelId: "m",
+      },
+    };
+
+    forwardHarnessEvent(hooks, "s1", "m1", event, (sessionId, snapshot) => seen.push({ sessionId, snapshot }));
+    // 未提供回调：不得抛错。
+    forwardHarnessEvent(hooks, "s1", "m1", event);
+
+    expect(seen).toEqual([{ sessionId: "s1", snapshot: event.snapshot }]);
+  });
 });

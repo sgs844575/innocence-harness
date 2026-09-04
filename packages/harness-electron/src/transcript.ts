@@ -6,6 +6,7 @@
 // snapshots.
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message } from "@innocenceharness/harness-session";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import { canonicalizeHistory, type DecodedMessage } from "./transcript-decode";
 
 export {
@@ -121,4 +122,9 @@ export function encodeTurnV3(input: TurnRecordV3Input): string {
     ...(input.completion ? { completion: input.completion } : {}),
   };
   return `${JSON.stringify(record)}\n`;
+}
+
+/** context-usage 行：每模型步追加，解码 last-wins 折叠成单值。 */
+export function encodeContextUsage(snapshot: ContextUsageSnapshot, at: string): string {
+  return `${JSON.stringify({ type: "context-usage", at, snapshot })}\n`;
 }

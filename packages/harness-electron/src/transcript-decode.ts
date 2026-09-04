@@ -3,6 +3,7 @@
 // message/part shapes and folds JSONL rows into history + the route map.
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message, MessagePart, ToolResultPart } from "@innocenceharness/harness-session";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
 
 /**
@@ -215,6 +216,8 @@ export interface DecodedTranscript {
   routes: ReadonlyMap<string, TranscriptRoute>;
   /** Last `session-meta` row of the file (self-describing header), if any. */
   meta?: SessionMetaRecord;
+  /** Last valid `context-usage` row's snapshot (meter rows fold last-wins). */
+  contextUsage?: ContextUsageSnapshot;
   lastAt?: string;
   validRecords: number;
 }
@@ -272,6 +275,23 @@ function validMetaRecord(raw: unknown): SessionMetaRecord | null {
   };
 }
 
+/** Only meter-shaped snapshots hydrate; anything else ignores the row (no throw). */
+function validContextUsageSnapshot(raw: unknown): ContextUsageSnapshot | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const snapshot = raw as Partial<ContextUsageSnapshot>;
+  if (
+    typeof snapshot.inputTokens === "number" &&
+    snapshot.breakdown &&
+    typeof snapshot.breakdown === "object" &&
+    snapshot.cache &&
+    typeof snapshot.cache === "object" &&
+    typeof snapshot.cache.cachedInputTokens === "number"
+  ) {
+    return snapshot as ContextUsageSnapshot;
+  }
+  return null;
+}
+
 /**
  * Decodes transcript JSONL text. turn-v2 rows and legacy snapshots feed the
  * "main" route history (old lines are read, never rewritten); turn-v3 rows
@@ -292,6 +312,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
   const timeline: Array<{ turn: string } | { legacy: DecodedMessage[] }> = [];
   let seededLegacy = false;
   let meta: SessionMetaRecord | undefined;
+  let contextUsage: ContextUsageSnapshot | undefined;
   let lastAt: string | undefined;
   let validRecords = 0;
   let order = 0;
@@ -348,6 +369,18 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       continue;
     }
 
+    // context-usage rows carry no turn history: last valid row wins, illegal
+    // shapes are ignored (never thrown) per the codec's defensive contract.
+    const meterRecord = parsed as unknown as Record<string, unknown>;
+    if (meterRecord.type === "context-usage") {
+      const snapshot = validContextUsageSnapshot(meterRecord.snapshot);
+      if (snapshot) {
+        validRecords += 1;
+        contextUsage = snapshot; // last-wins：后行覆盖前行
+      }
+      continue;
+    }
+
     const record = parsed as LegacyTurnRecord;
     if (!Array.isArray(record.history)) continue;
     validRecords += 1;
@@ -383,7 +416,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       history.push(...slot.messages);
     }
   }
-  return { history, routes, ...(meta ? { meta } : {}), lastAt, validRecords };
+  return { history, routes, ...(meta ? { meta } : {}), ...(contextUsage ? { contextUsage } : {}), lastAt, validRecords };
 }
 
 /** Slot key separator: NUL never occurs inside route/turn ids. */

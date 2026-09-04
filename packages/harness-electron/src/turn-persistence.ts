@@ -19,7 +19,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message } from "@innocenceharness/harness-session";
-import { encodeTurnV2, encodeTurnV3 } from "./transcript";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
+import { encodeContextUsage, encodeTurnV2, encodeTurnV3 } from "./transcript";
 import { DEFAULT_ROUTE_ID } from "./runtime-types";
 
 let persistSeq = 0;
@@ -85,6 +86,31 @@ function resolveTranscriptFile(
     : routeTranscriptFile(options.persistDir, sessionId, routeId);
 }
 
+/**
+ * Per-file append chains: best-effort writers (interim snapshots, meter rows,
+ * final rows) fire concurrently, and unordered threadpool completion would
+ * let rows land out of initiation order. Each writer enqueues its whole
+ * mkdir+append SYNCHRONOUSLY at initiation, so "initiated first lands first"
+ * stays deterministic; different files stay parallel.
+ */
+const appendChains = new Map<string, Promise<void>>();
+
+function enqueueAppend(file: string, write: () => Promise<void>): Promise<void> {
+  const next = (appendChains.get(file) ?? Promise.resolve()).then(write, write);
+  appendChains.set(file, next);
+  void next.catch(() => {}).then(() => {
+    if (appendChains.get(file) === next) appendChains.delete(file);
+  });
+  return next;
+}
+
+async function appendLine(file: string, line: string): Promise<void> {
+  return enqueueAppend(file, async () => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.appendFile(file, line, "utf8");
+  });
+}
+
 export async function persistTurn(
   options: TurnPersistenceOptions,
   input: {
@@ -108,7 +134,6 @@ export async function persistTurn(
       options.log("warn", "route transcript skipped: unsafe route id", { sessionId, routeId });
       return;
     }
-    await fs.mkdir(path.dirname(file), { recursive: true });
     const line =
       routeId === DEFAULT_ROUTE_ID
         ? encodeTurnV2(turnId, new Date().toISOString(), messages, input.completion)
@@ -122,7 +147,7 @@ export async function persistTurn(
             messages,
             completion: input.completion,
           });
-    await fs.appendFile(file, line, "utf8");
+    await appendLine(file, line);
   } catch (err) {
     options.log("warn", "persist failed", String(err));
   }
@@ -146,4 +171,24 @@ export function persistTurnSnapshot(
   },
 ): Promise<void> {
   return persistTurn(options, input);
+}
+
+/**
+ * Appends one enriched context-usage row to the session's MAIN transcript
+ * (metering is only produced on the main route — the caller gates it).
+ * Best-effort like every write here: a failure is logged, never thrown.
+ */
+export async function persistContextUsage(
+  options: TurnPersistenceOptions,
+  input: { sessionId: string; snapshot: ContextUsageSnapshot },
+): Promise<void> {
+  if (!options.persistDir && !options.fileFor) return;
+  try {
+    const file = resolveTranscriptFile(options, input.sessionId, DEFAULT_ROUTE_ID);
+    if (!file) return;
+    const line = encodeContextUsage(input.snapshot, new Date().toISOString());
+    await appendLine(file, line);
+  } catch (err) {
+    options.log("warn", "context usage persist failed", String(err));
+  }
 }

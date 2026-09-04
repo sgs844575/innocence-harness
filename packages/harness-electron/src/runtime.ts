@@ -7,9 +7,10 @@ import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
 import type { Route } from "@innocenceharness/task-core";
 import type { Message } from "@innocenceharness/harness-session";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import { createPendingInputMailbox, type PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 import { AgentSession } from "./session";
-import { persistTurn, persistTurnSnapshot } from "./turn-persistence";
+import { persistContextUsage, persistTurn, persistTurnSnapshot } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";
 import { RouteSessionCache, routeCacheKey, routeKeyPrefix, sessionDisposedError } from "./route-cache";
 import { buildSession, type RouteBuildContext } from "./runtime-session";
@@ -54,6 +55,8 @@ export class HarnessRuntime {
   /** Steer sends parked during the currently active run of each route
    *  (same ParkedSend objects the mailbox carries as data). */
   private readonly steerParked = new Map<string, ParkedSend[]>();
+  /** 会话级上下文计量缓存累计（事件内 cache 是步级值，这里折叠成会话级）。 */
+  private readonly contextUsageCache = new Map<string, { inputTokens: number; cachedInputTokens: number }>();
 
   constructor(options: RuntimeOptions) {
     this.options = options;
@@ -155,6 +158,13 @@ export class HarnessRuntime {
             // Best-effort snapshots: the final row remains the authority.
           });
         }
+        if (event.type === "contextUsage" && routeId === DEFAULT_ROUTE_ID) {
+          // 计量仅主路由采纳：富化（会话级缓存累计 + contextWindow）后落盘
+          // 并进钩子；事件本身仍按原样走 forwardHarnessEvent。
+          const enriched = this.enrichContextUsage(request.sessionId, event.snapshot);
+          void persistContextUsage(persistence, { sessionId: request.sessionId, snapshot: enriched }).catch(() => {});
+          this.options.hooks.onContextUsage?.(request.sessionId, enriched);
+        }
         forwardHarnessEvent(this.options.hooks, request.sessionId, request.messageId, event);
       });
       let summary;
@@ -208,6 +218,39 @@ export class HarnessRuntime {
       this.cache.endRun(key);
       this.advanceRoute(key);
     }
+  }
+
+  /**
+   * Enriches one step-level meter snapshot into the session-level face: the
+   * event's cache fields are step-local, so they accumulate onto the
+   * session's running totals (seeded once from contextUsageBaseFor for
+   * restart recovery, else zero-based), and the model catalog supplies the
+   * context window for the step's model id when it knows one.
+   */
+  private enrichContextUsage(
+    sessionId: string,
+    snapshot: ContextUsageSnapshot,
+  ): ContextUsageSnapshot & { contextWindow?: number } {
+    const base =
+      this.options.contextUsageBaseFor?.(sessionId) ??
+      this.contextUsageCache.get(sessionId) ??
+      { inputTokens: 0, cachedInputTokens: 0 };
+    const acc = this.contextUsageCache.get(sessionId) ?? { ...base };
+    acc.inputTokens += snapshot.cache.inputTokens;
+    acc.cachedInputTokens += snapshot.cache.cachedInputTokens;
+    this.contextUsageCache.set(sessionId, acc);
+    let contextWindow: number | undefined;
+    if (snapshot.modelId) {
+      for (const profile of this.options.settings().profiles) {
+        const hit = profile.models.find((m) => m.id === snapshot.modelId);
+        if (hit?.contextWindow !== undefined) {
+          contextWindow = hit.contextWindow;
+          break;
+        }
+      }
+    }
+    // cache 传快照拷贝：钩子/落盘载荷是时点值，不得与内部累计对象别名。
+    return { ...snapshot, cache: { ...acc }, ...(contextWindow !== undefined ? { contextWindow } : {}) };
   }
 
   /** Delegates durable isolated route creation to the host task adapter. */
