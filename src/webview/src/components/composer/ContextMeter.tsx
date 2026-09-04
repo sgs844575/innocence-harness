@@ -14,18 +14,26 @@ interface Props {
 const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-/** 占用比例 → 弧色 token（<60% 蓝 / 60–85% 警示橙 / ≥85% 危险红）。 */
-export function contextAccentVar(pct: number): string {
-  if (pct >= 0.85) return "var(--color-tool-err)";
-  if (pct >= 0.6) return "var(--color-tool-warn)";
-  return "var(--color-accent)";
-}
+// 阈值分档（单一来源）：<60% 蓝 / 60–85% 警示橙 / ≥85% 危险红。
+export type ContextAccentTier = "accent" | "warn" | "err";
 
-/** 测试锚点：阈值分档名（accent/warn/err），边界与 contextAccentVar 同源。 */
-export function contextAccentClass(pct: number): string {
+/** 测试锚点：占用比例 → 分档名，渲染用色由它派生。 */
+export function contextAccentClass(pct: number): ContextAccentTier {
   if (pct >= 0.85) return "err";
   if (pct >= 0.6) return "warn";
   return "accent";
+}
+
+/** 档位 → 弧色 token 映射。 */
+const TIER_VAR: Record<ContextAccentTier, string> = {
+  accent: "var(--color-accent)",
+  warn: "var(--color-tool-warn)",
+  err: "var(--color-tool-err)",
+};
+
+/** 占用比例 → 弧色 token（contextAccentClass 分档派生，无平行阈值链）。 */
+export function contextAccentVar(pct: number): string {
+  return TIER_VAR[contextAccentClass(pct)];
 }
 
 /** token 数 compact 格式：≥1亿 → 亿、≥1万 → 万、≥1000 → k（1 位小数去尾零），其余原值。 */
