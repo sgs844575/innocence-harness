@@ -34,6 +34,12 @@ const LIBS = [
   "packages/harness-system-prompt",
   "packages/harness-agent",
   "packages/harness-agent-loop",
+  // 上下文计量库：harness-agent-loop dist 对它的运行时值导入
+  // （breakdownFromRequest/calibrate）须经 staging node_modules 解析（同为
+  // LIBS 条目，产物先落 @innocenceharness/harness-context-meter）。缺位时
+  // 裸说明符只剩仓库根 node_modules 工作区链偶然可达，staged 运行时会解析到
+  // 无后缀相对导入的 src 源码并 ERR_MODULE_NOT_FOUND（同 tools-fs 补位先例）。
+  "packages/harness-context-meter",
   // 改编子代理预设库：plugin-subagent dist 对它的运行时导入经 staging
   // node_modules 解析（同为 LIBS 条目，产物先落 @innocenceharness/agent-presets）。
   "packages/agent-presets",
