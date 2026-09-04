@@ -41,14 +41,20 @@ export interface Tool {
   readOnly: boolean;
   /** Coarse side-effect class for audit records and UI hints. */
   sideEffect?: ToolSideEffect;
+  /**
+   * True for tools whose execution may block indefinitely on a HUMAN response
+   * (e.g. a structured question card). The session tool deadline does not
+   * apply to them — only the run signal stops the wait (repo discipline: no
+   * wall-clock timeout while waiting on the user or a subagent).
+   */
+  awaitsUser?: boolean;
   parameters: JsonSchema;
 
   /**
-   * Executor chain (fixed order, fail-closed):
-   *   raw args → validateArgs(raw) → permissionResource(raw) →
-   *   validateResource(resource) → persistArgs(raw) once →
-   *   persisted request / policy / mode / ask / audit → execute(raw).
-   * Raw execution args exist only for the current invocation.
+   * Executor chain (fixed order): raw args → validateArgs(raw) →
+   * permissionResource(raw) → validateResource(resource) →
+   * request / policy / mode / ask / audit → execute(raw). The complete
+   * invocation args are used consistently throughout the chain.
    */
 
   /** Cheap structural validation of RAW args; throws on bad input. */
@@ -62,16 +68,6 @@ export interface Tool {
     args: Record<string, unknown>,
     ctx: ToolContext,
   ): PermissionResource | Promise<PermissionResource>;
-
-  /**
-   * Persisted copy of the args: the shape that enters history, events,
-   * permission requests, audit and transcripts. Tools keep the full values
-   * needed for display (commands, file bodies); declared credential fields
-   * (passwords, private keys) never persist. Required for every tool
-   * regardless of side effects (fail-closed SPI) — the registry rejects
-   * registrations missing it.
-   */
-  persistArgs(args: Record<string, unknown>): Record<string, unknown>;
 
   /**
    * Runs the tool. Thrown/reported error messages flow into history and

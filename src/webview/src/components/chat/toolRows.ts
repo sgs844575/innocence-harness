@@ -33,6 +33,7 @@ export function verbKeyFor(toolName: string): string {
   // 顺序敏感：todowrite 同时含 write/read 子串，todo/task 必须先判。
   if (name.includes("todo")) return "tool.verb.todo";
   if (name.includes("task") || name.includes("agent")) return "tool.verb.task";
+  if (name.includes("ask")) return "tool.verb.ask";
   if (name.includes("edit")) return "tool.verb.edit";
   if (name.includes("write")) return "tool.verb.write";
   if (name.includes("read")) return "tool.verb.read";
@@ -97,6 +98,12 @@ function summarize(call: ToolCallPart): Omit<ToolRowModel, "running" | "isError"
     detail = todos.length > 0 ? `${done}/${todos.length}` : undefined;
   } else if (verbKey === "tool.verb.task") {
     title = typeof args.description === "string" ? args.description : typeof args.prompt === "string" ? String(args.prompt).slice(0, 60) : "";
+  } else if (verbKey === "tool.verb.ask") {
+    // 询问行标题 = 首个问题；多题时以 +N 提示还有几题。
+    const questions = Array.isArray(args.questions) ? args.questions : [];
+    const first = questions[0] as { question?: unknown } | undefined;
+    title = typeof first?.question === "string" ? first.question : "";
+    detail = questions.length > 1 ? `+${questions.length - 1}` : undefined;
   }
 
   return {
@@ -146,7 +153,7 @@ export interface RunToolRowInput {
   done: boolean;
   isError?: boolean;
   title?: string;
-  /** call 阶段参数的**有界投影**（harness-agent clipToolArgs 截断）；有值时
+  /** call 阶段的完整参数；有值时
    *  复用主时间线 summarize() 产出富工具行（diff/±计数/命令/todo 展开）。 */
   args?: Record<string, unknown>;
   result?: string;

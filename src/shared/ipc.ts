@@ -11,6 +11,14 @@ export const IPC = {
   appMetrics: "app:metrics",
   /** 顶栏应用菜单「导出日志」：选目录后复制 userData/logs 全部日志文件。 */
   appExportLogs: "app:export-logs",
+  /** 常规设置「数据存储位置」：当前数据根与默认根。 */
+  appGetDataRoot: "app:get-data-root",
+  /** 常规设置「数据存储位置」：目录选择对话框（取消 → null）。 */
+  appPickDirectory: "app:pick-directory",
+  /** 常规设置「数据存储位置」：迁移数据根并重启（失败 → ok:false 不重启）。 */
+  appSetDataRoot: "app:set-data-root",
+  /** 常规设置「终端字体」：生效字体解析（覆盖/系统终端探测；无 → null）。 */
+  terminalResolvedFont: "terminal:resolved-font",
   themeGet: "theme:get",
   themeSet: "theme:set",
   themeChanged: "theme:changed",
@@ -25,6 +33,7 @@ export const IPC = {
   sessionsList: "sessions:list",
   sessionCreate: "session:create",
   sessionDelete: "session:delete",
+  sessionRename: "session:rename",
   sessionFork: "session:fork",
   backgroundStart: "background:start",
   sessionsChanged: "sessions:changed",
@@ -39,6 +48,13 @@ export const IPC = {
   // Harness additions (M3) — additive only, existing channels untouched.
   chatPermission: "chat:permission",
   chatPermissionRespond: "chat:permission-respond",
+  /** 询问卡（ask_user 工具）：主进程推送结构化问题，渲染层作答后回传。 */
+  chatQuestion: "chat:question",
+  chatQuestionRespond: "chat:question-respond",
+  /** 询问卡落定通知：非渲染层落定（超时跳过/停止/关机）时主进程广播清卡。 */
+  chatQuestionSettled: "chat:question-settled",
+  /** 询问卡回放：会话激活时拉取该会话仍挂起的问题卡（切会话回来补卡）。 */
+  chatPendingQuestions: "chat:pending-questions",
   chatTool: "chat:tool",
   chatThinking: "chat:thinking",
   subagentLifecycle: "subagent:lifecycle",
@@ -55,6 +71,14 @@ export const IPC = {
   workspaceGitBranches: "workspace:git-branches",
   /** 分支面板：切换或新建并检出分支（用户从分支面板显式触发）。 */
   workspaceGitCheckout: "workspace:git-checkout",
+  /** Git 图谱对话框：全分支提交图数据（非仓库/失败 → null）。 */
+  workspaceGitGraph: "workspace:git-graph",
+  /** 提交面板：提交（stageAll 时先 add -A；message 为空时自动生成）。 */
+  workspaceGitCommit: "workspace:git-commit",
+  /** 提交面板：推送（无上游时自动 --set-upstream origin HEAD）。 */
+  workspaceGitPush: "workspace:git-push",
+  /** 提交面板：AI 生成提交信息（基于 status + diff --stat 摘要）。 */
+  workspaceGitCommitMessage: "workspace:git-commit-message",
   /** 侧栏文件树：单级目录列举（懒加载）。 */
   workspaceListDir: "workspace:list-dir",
   /** 侧栏文件树：受限文本读取（大小/二进制闸门）。 */
@@ -208,6 +232,43 @@ export interface ReviewFileEntry {
 /** 单文件 diff：patch = git unified diff 文本；untracked = 新文件全文。 */
 export type ReviewFileDiffResult = { kind: "patch"; patch: string } | { kind: "untracked"; text: string } | null;
 
+/** 提交/推送操作结果：summary = git 输出末行摘要；error = 失败摘要。 */
+export interface WorkspaceGitActionResult {
+  ok: boolean;
+  summary?: string;
+  error?: string;
+}
+
+/** AI 提交信息生成结果。 */
+export interface WorkspaceGitCommitMessageResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/** Git 图谱提交上的引用徽标（branch = 本地分支，remote = 远端跟踪，tag = 标签）。 */
+export interface GitGraphRef {
+  name: string;
+  kind: "branch" | "remote" | "tag";
+}
+
+/** Git 图谱单条提交（at = Unix 秒；parents 为全哈希）。 */
+export interface GitGraphCommit {
+  hash: string;
+  parents: string[];
+  author: string;
+  at: number;
+  subject: string;
+  refs: GitGraphRef[];
+}
+
+/** Git 图谱数据：head = 当前分支名（分离头/空仓 → null）；truncated = 历史超限截断。 */
+export interface GitGraphData {
+  head: string | null;
+  commits: GitGraphCommit[];
+  truncated: boolean;
+}
+
 /** dock 浏览器设备仿真请求：width/height 为 null = 清除覆盖（适应窗口）。 */
 export interface BrowserEmulateRequest {
   /** <webview> 访客 id（webview.getWebContentsId()）。 */
@@ -294,7 +355,7 @@ export interface SubagentLifecycleEvent {
     phase: "call" | "result";
     isError?: boolean;
     title?: string;
-    /** Call-phase bounded args projection (harness-agent clipToolArgs). */
+    /** Complete call-phase arguments. */
     args?: Record<string, unknown>;
     result?: string;
   };
@@ -431,12 +492,65 @@ export interface ChatPermissionEvent {
   resource: PermissionResourceInfo;
 }
 
+// 镜像契约：以下询问卡类型复制自 packages/plugin-ask/src/askUser.ts 的
+// AskUser* 纯数据形状（shared 不 import 包），修改任何一侧时必须同步另一侧。
+/** 询问卡一个选项（IPC chat:question 载荷）。 */
+export interface ChatQuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** 询问卡一个问题（1–4 个/次，选项 1–4 个/题，multiSelect 控制单多选）。 */
+export interface ChatQuestionItem {
+  question: string;
+  header?: string;
+  options: ChatQuestionOption[];
+  multiSelect?: boolean;
+}
+
+/** 询问卡一题的作答：answers 为选中选项 label 或自定义文本。 */
+export interface ChatQuestionAnswerItem {
+  question: string;
+  answers: string[];
+}
+
+export interface ChatQuestionEvent {
+  sessionId: string;
+  messageId: string;
+  requestId: string;
+  toolName: string;
+  questions: ChatQuestionItem[];
+}
+
+/** 询问卡应答：answers 与请求的 questions 对齐；null = 用户跳过/取消/会话停止。 */
+export type ChatQuestionResponse = { answers: ChatQuestionAnswerItem[] } | null;
+
+/** 询问卡落定通知（chat:question-settled 载荷）：该 requestId 已在主进程了结。 */
+export interface ChatQuestionSettledEvent {
+  requestId: string;
+}
+
+export function isChatQuestionResponse(value: unknown): value is ChatQuestionResponse {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const answers = (value as { answers?: unknown }).answers;
+  if (!Array.isArray(answers)) return false;
+  return answers.every(
+    (item) =>
+      !!item &&
+      typeof item === "object" &&
+      typeof (item as { question?: unknown }).question === "string" &&
+      Array.isArray((item as { answers?: unknown }).answers) &&
+      (item as { answers: unknown[] }).answers.every((a) => typeof a === "string"),
+  );
+}
+
 /** One configured platform (preset or custom). */
 export interface ProviderProfile {
   id: string;
   name: string;
   kind: ProviderKind;
-  /** Renderer never receives a credential. It submits updates only through setProviderApiKey. */
+  /** Provider credential as configured by the user. */
   apiKey: string;
   /** Opaque host storage reference; safe to persist and mirror. */
   apiKeyRef?: string;
@@ -462,9 +576,9 @@ export interface HarnessSettings {
   /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容
    *  注入 --font-size-code，与 harness-electron 同步持久化。 */
   codeFontSize?: number;
-  /** 浅色界面的代码高亮主题（shiki bundled 名，默认 github-light）。 */
+  /** 浅色界面的代码高亮主题（shiki bundled 名）。 */
   codeThemeLight?: string;
-  /** 深色界面的代码高亮主题（默认 github-dark）。 */
+  /** 深色界面的代码高亮主题。 */
   codeThemeDark?: string;
   /** 代码块显示行号；默认开。 */
   codeLineNumbers?: boolean;
@@ -484,6 +598,56 @@ export interface HarnessSettings {
   /** 外部编辑器启动命令（工作台入口，Task 11）；"" = 未配置。与
    * harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
   externalEditorCommand?: string;
+  /** 继承系统终端 Profile（登录环境 + 系统终端字体）；默认开。与 harness-electron 同步。 */
+  terminalInheritProfile?: boolean;
+  /** 终端字体覆盖；"" = 自动。与 harness-electron 同步。 */
+  terminalFontFamily?: string;
+  /** 集成终端 shell；默认 "auto"。与 harness-electron 同步。 */
+  terminalShell?: "auto" | "cmd" | "powershell" | "gitbash" | "wsl";
+  /** 增强 Find/Grep（外部引擎优先，关闭 = 内置扫描）；仅新会话生效，默认开。与 harness-electron 同步。 */
+  enhancedFindGrep?: boolean;
+  /** 出口流量 HTTP 代理；"" = 直连。重启生效。与 harness-electron 同步。 */
+  httpProxy?: string;
+  /** 代理绕过主机列表（逗号分隔）。重启生效。与 harness-electron 同步。 */
+  proxyBypass?: string;
+  /** 自定义 PEM 根证书路径。重启生效。与 harness-electron 同步。 */
+  customCaCert?: string;
+  /** Chromium 硬件加速；默认开，重启生效。与 harness-electron 同步。 */
+  hardwareAcceleration?: boolean;
+  /** 预览版更新通道；默认关。与 harness-electron 同步。 */
+  previewUpdates?: boolean;
+  /** 自动下载更新；默认开。与 harness-electron 同步。 */
+  autoDownloadUpdates?: boolean;
+  /** 任务桌面通知；默认开。与 harness-electron 同步。 */
+  taskNotifications?: boolean;
+  /** 任务通知提示音；默认开。与 harness-electron 同步。 */
+  notificationSound?: boolean;
+  /** 关闭窗口隐藏到托盘（仅 Windows）；默认关。与 harness-electron 同步。 */
+  closeToTray?: boolean;
+  /** 阻止系统空闲休眠；默认关。与 harness-electron 同步。 */
+  keepAwake?: boolean;
+  /** 运行中后续消息："queue" 排队（默认）|"steer" 引导运行。与 harness-electron 同步。 */
+  interactionMode?: "queue" | "steer";
+  /** Agent 提问 5 分钟未答自动继续；默认关。与 harness-electron 同步。 */
+  questionAutoContinue?: boolean;
+  /** 展示完整思考内容；默认开。与 harness-electron 同步。 */
+  showThinking?: boolean;
+  /** 展示 Todo 工具卡片；默认开。与 harness-electron 同步。 */
+  showTodos?: boolean;
+  /** 连续读取/搜索聚合为 Explore 分组；默认开。与 harness-electron 同步。 */
+  groupExploreTools?: boolean;
+  /** 连续非只读 Shell 聚合为 Terminal 分组；默认开。与 harness-electron 同步。 */
+  groupTerminalCommands?: boolean;
+  /** 连续 Write/Edit/ApplyPatch 聚合为 Changes 分组；默认关。与 harness-electron 同步。 */
+  groupFileChanges?: boolean;
+  /** 自动归档过期任务；默认关。与 harness-electron 同步。 */
+  autoArchiveTasks?: boolean;
+  /** 自动归档保留时长（天；1/3/7/14/30，默认 7）。与 harness-electron 同步。 */
+  archiveRetentionDays?: number;
+  /** 首次引导完成标记；新装默认 false，旧文件缺失键归一化为 true。与 harness-electron 同步。 */
+  onboarded?: boolean;
+  /** 体验优化计划授权；默认关。与 harness-electron 同步。 */
+  telemetryOptIn?: boolean;
 }
 
 /** AddProviderDialog 的预设选项（PROVIDER_PRESET_MIRROR 的条目形状）。 */
@@ -525,6 +689,14 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   getAppMetrics(): Promise<AppProcessMetric[]>;
   /** 导出日志：选目录后复制全部日志文件；返回复制数，取消/无日志 → null。 */
   exportLogs(): Promise<{ exported: number } | null>;
+  /** 数据存储位置：当前生效数据根与默认根（常规设置页展示）。 */
+  getDataRoot(): Promise<{ path: string; defaultPath: string }>;
+  /** 目录选择对话框（数据存储位置迁移目标）；取消 → null。 */
+  pickDirectory(): Promise<string | null>;
+  /** 迁移数据根到 <parentDir>/.innocence 并重启；失败 → ok:false（不重启）。 */
+  setDataRoot(parentDir: string): Promise<{ ok: boolean; error?: string }>;
+  /** 终端生效字体：显式覆盖优先，其次系统终端探测；无 → null（等宽默认）。 */
+  getTerminalFont(): Promise<string | null>;
   getTheme(): Promise<{ mode: ThemeMode; resolved: ResolvedTheme }>;
   setTheme(mode: ThemeMode): Promise<void>;
   onThemeChanged(cb: (mode: ThemeMode, resolved: ResolvedTheme) => void): () => void;
@@ -536,6 +708,7 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   listSessions(): Promise<Session[]>;
   createSession(options?: { title?: string; workspaceRoot?: string; aux?: boolean }): Promise<Session>;
   deleteSession(id: string): Promise<void>;
+  renameSession(id: string, title: string): Promise<Session>;
   /** M1 会话 fork：按用户消息切口分叉出新会话；无效切口/父会话缺失返回 null。
    *  worktree=true 为工作树分叉（父 Git 工作区自 HEAD 建分离工作树并绑定为
    *  新会话根；非 Git/失败返回 null）。 */
@@ -572,15 +745,31 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   cancelSubagent(sessionId: string, childId: string): Promise<boolean>;
   onChatPermission(cb: (e: ChatPermissionEvent) => void): () => void;
   respondChatPermission(requestId: string, choice: PermissionChoice): Promise<void>;
+  /** 询问卡（ask_user）：结构化问题推送，按激活会话过滤渲染。 */
+  onChatQuestion(cb: (e: ChatQuestionEvent) => void): () => void;
+  /** 询问卡作答：answers 与请求问题对齐；null = 用户跳过。 */
+  respondChatQuestion(requestId: string, response: ChatQuestionResponse): Promise<void>;
+  /** 询问卡落定通知：超时跳过/停止/关机等非渲染层落定广播（清掉对应卡）。 */
+  onChatQuestionSettled(cb: (e: ChatQuestionSettledEvent) => void): () => void;
+  /** 会话激活时回放：该会话仍挂起的问题卡（切会话回来补卡）。 */
+  listPendingQuestions(sessionId: string): Promise<ChatQuestionEvent[]>;
   pickWorkspace(): Promise<string>;
   /** 探测项目根的当前 Git 分支；非 Git 仓库或探测失败返回 null（胶囊隐藏）。 */
   workspaceGitBranch(root: string): Promise<string | null>;
-  /** 工作区相对 HEAD 的 diff 概览（更改文件数/增删行）；非 Git 或失败返回 null。 */
-  workspaceGitChanges(root: string): Promise<{ changedFiles: number; additions: number; deletions: number } | null>;
+  /** 工作区相对 HEAD 的 diff 概览（更改文件数/增删行 + 暂存/未暂存拆分）；非 Git 或失败返回 null。 */
+  workspaceGitChanges(root: string): Promise<{ changedFiles: number; additions: number; deletions: number; stagedFiles: number; unstagedFiles: number } | null>;
   /** 本地分支列表与当前分支；非 Git 仓库或失败返回 null。 */
   workspaceGitBranches(root: string): Promise<{ current: string | null; branches: string[] } | null>;
   /** 切换分支（create=true 时新建并检出）；失败返回 error 摘要。 */
   workspaceGitCheckout(root: string, branch: string, create?: boolean): Promise<{ ok: boolean; branch?: string; error?: string }>;
+  /** Git 图谱：全分支拓扑序提交列表（封顶截断）；非 Git 仓库或失败返回 null。 */
+  workspaceGitGraph(root: string): Promise<GitGraphData | null>;
+  /** 提交更改（stageAll=true 时先暂存全部；message 为空时 AI 生成提交信息）。 */
+  workspaceGitCommit(root: string, message: string, stageAll: boolean): Promise<WorkspaceGitActionResult>;
+  /** 推送当前分支（无上游时自动 --set-upstream origin HEAD）。 */
+  workspaceGitPush(root: string): Promise<WorkspaceGitActionResult>;
+  /** AI 生成提交信息（基于 status + diff --stat 摘要；无更改 → 失败结果）。 */
+  workspaceGitCommitMessage(root: string): Promise<WorkspaceGitCommitMessageResult>;
   /** 侧栏文件树：单级目录列举（目录在前、按名排序）。 */
   listWorkspaceDir(root: string, relDir: string): Promise<WorkspaceDirEntry[]>;
   /** 侧栏文件树：读取文本文件（超限截断；二进制只回标记）。 */
@@ -600,9 +789,9 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   /** 会话产物路径：任务转录文件与当前日志文件（不存在 → null）。 */
   getSessionPaths(id: string): Promise<{ taskPath: string | null; logPath: string | null }>;
   getHarnessSettings(): Promise<HarnessSettings>;
-  /** Applies a settings patch to the latest committed host settings and returns its redacted projection. */
+  /** Applies a settings patch and returns the complete committed settings. */
   setHarnessSettings(settings: HarnessSettingsPatch): Promise<HarnessSettings>;
-  /** Stores or clears a key in host-only secured storage; it is never returned to the renderer. */
+  /** Stores or clears a provider key and returns the complete settings. */
   setProviderApiKey(profileId: string, apiKey: string): Promise<HarnessSettings>;
   /** 插件清单投影（main 按当前 toggles 现算；设置写入后重拉即刷新）。 */
   getPluginInventory(): Promise<PluginInventory>;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "../../../shared/ipc";
+import type { ChatMessage, HarnessSettings } from "../../../shared/ipc";
 import { ChatView } from "./ChatView";
 import { zhCN } from "../lib/i18n";
 
@@ -21,6 +21,18 @@ function message(overrides: Partial<ChatMessage> & { id: string; role: "user" | 
 
 const capsule = { branch: "main", isGitRepo: true, changes: { changedFiles: 2, additions: 7, deletions: 3 }, todos: [] };
 
+/** 最小合法设置（Composer/ModelPicker 需要 profiles 等必填键）。 */
+function settingsWith(overrides: Partial<HarnessSettings>): HarnessSettings {
+  return {
+    profiles: [],
+    activeProfileId: "",
+    activeModel: "",
+    workspaceRoot: "",
+    permissionMode: "ask",
+    ...overrides,
+  };
+}
+
 function renderChat(messages: ChatMessage[], extra: Partial<Parameters<typeof ChatView>[0]> = {}) {
   return render(
     <ChatView
@@ -28,12 +40,14 @@ function renderChat(messages: ChatMessage[], extra: Partial<Parameters<typeof Ch
       messages={messages}
       streaming={false}
       permission={null}
+      question={null}
       settings={null}
       onPatchSettings={() => {}}
       onSend={() => {}}
       onEditResend={() => {}}
       onStop={() => {}}
       onPermissionRespond={() => {}}
+      onQuestionRespond={() => {}}
       capsule={capsule}
       {...extra}
     />,
@@ -148,5 +162,83 @@ describe("ChatView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "允许一次" }));
     expect(onPermissionRespond).toHaveBeenCalledWith("r1", "allow");
+  });
+
+  it("询问卡：单选即选、多选切换、全部作答后提交、跳过回 null", () => {
+    const onQuestionRespond = vi.fn();
+    renderChat([message({ id: "u1", role: "user" })], {
+      question: {
+        sessionId: "s1",
+        messageId: "m1",
+        requestId: "q1",
+        toolName: "ask_user",
+        questions: [
+          {
+            question: "用哪个数据库？",
+            header: "数据库",
+            options: [{ label: "PostgreSQL" }, { label: "SQLite" }],
+          },
+          {
+            question: "要哪些迁移脚本？",
+            multiSelect: true,
+            options: [{ label: "schema" }, { label: "seed" }],
+          },
+        ],
+      },
+      onQuestionRespond,
+    });
+    // 未全作答时提交禁用。
+    const submit = screen.getByRole("button", { name: "提交" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /PostgreSQL/ }));
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /schema/ }));
+    fireEvent.click(screen.getByRole("button", { name: /seed/ }));
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(onQuestionRespond).toHaveBeenCalledWith("q1", {
+      answers: [
+        { question: "用哪个数据库？", answers: ["PostgreSQL"] },
+        { question: "要哪些迁移脚本？", answers: ["schema", "seed"] },
+      ],
+    });
+    // 跳过直接回 null。
+    fireEvent.click(screen.getByRole("button", { name: "跳过" }));
+    expect(onQuestionRespond).toHaveBeenCalledWith("q1", null);
+  });
+
+  it("消息流设置生效：showTodos=false 隐藏 todo 行，showThinking=false 只留首个思考块", () => {
+    const settings = settingsWith({ showTodos: false, showThinking: false });
+    const assistant = {
+      ...message({ id: "a1", role: "assistant", streaming: false }),
+      parts: [
+        { type: "thinking", text: "先想" },
+        { type: "toolCall", id: "c1", toolName: "TodoWrite", args: { todos: [{ content: "待办一", status: "pending" }] } },
+        { type: "text", text: "再想" },
+        { type: "thinking", text: "后想" },
+      ],
+      completion: { finishReason: "stop", aborted: false },
+    } as ChatMessage;
+    renderChat([message({ id: "u1", role: "user" }), assistant], { settings });
+    expect(screen.queryByText("待办一")).toBeNull();
+    // 思考行只剩首个（label 文案只出现一次）。
+    expect(screen.getAllByText(zhCN["chat.thinking.label"])).toHaveLength(1);
+    expect(screen.getByText("再想")).toBeTruthy();
+  });
+
+  it("工具分组默认开启（explore/terminal）：连续读取行聚合，连续写入行不聚合", () => {
+    const assistant = {
+      ...message({ id: "a1", role: "assistant", streaming: false }),
+      parts: [
+        { type: "toolCall", id: "c1", toolName: "Read", args: { file_path: "src/a.ts" } },
+        { type: "toolCall", id: "c2", toolName: "Grep", args: { pattern: "foo" } },
+        { type: "toolCall", id: "c3", toolName: "Write", args: { file_path: "src/x.ts", content: "x" } },
+        { type: "toolCall", id: "c4", toolName: "Edit", args: { file_path: "src/y.ts", old_string: "a", new_string: "b" } },
+      ],
+      completion: { finishReason: "stop", aborted: false },
+    } as ChatMessage;
+    renderChat([message({ id: "u1", role: "user" }), assistant], { settings: settingsWith({}) });
+    expect(screen.getByRole("button", { name: "展开探索" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "展开更改" })).toBeNull();
   });
 });

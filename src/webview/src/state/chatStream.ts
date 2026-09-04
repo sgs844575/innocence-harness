@@ -6,6 +6,7 @@ import {
   type ChatCompletionMetadata,
   type ChatMessage,
   type ChatPermissionEvent,
+  type ChatQuestionEvent,
   type ToolCallPart,
   type ToolResultPart,
 } from "../../../shared/ipc";
@@ -14,12 +15,14 @@ export interface ChatStreamState {
   messages: ChatMessage[];
   streaming: boolean;
   permission: ChatPermissionEvent | null;
+  question: ChatQuestionEvent | null;
 }
 
 export const initialChatStreamState: ChatStreamState = {
   messages: [],
   streaming: false,
   permission: null,
+  question: null,
 };
 
 export type ChatStreamAction =
@@ -33,7 +36,11 @@ export type ChatStreamAction =
   | { type: "done"; messageId: string; completion?: ChatCompletionMetadata }
   | { type: "error"; messageId: string; error: string }
   | { type: "permission"; event: ChatPermissionEvent }
-  | { type: "permission-clear" };
+  | { type: "permission-clear" }
+  | { type: "question"; event: ChatQuestionEvent }
+  | { type: "question-clear" }
+  /** 询问卡落定通知：仅当匹配当前卡（迟到/他卡的落定不误清）。 */
+  | { type: "question-settled"; requestId: string };
 
 function withAssistant(state: ChatStreamState, messageId: string, at: number): ChatMessage[] {
   const existing = state.messages.find((m) => m.id === messageId);
@@ -65,7 +72,7 @@ function appendThinking(parts: ChatMessage["parts"], delta: string): ChatMessage
 export function reduceChatStream(state: ChatStreamState, action: ChatStreamAction): ChatStreamState {
   switch (action.type) {
     case "load":
-      return { ...state, messages: action.messages, streaming: false, permission: null };
+      return { ...state, messages: action.messages, streaming: false, permission: null, question: null };
     case "reset":
       return initialChatStreamState;
     case "send-local":
@@ -117,6 +124,10 @@ export function reduceChatStream(state: ChatStreamState, action: ChatStreamActio
       return {
         ...state,
         streaming: false,
+        // 回合结束兜底清卡：停止路径下权限/询问卡可能未经渲染层落定
+        //（停止先于 done 在主进程取消挂起项，这里保证 UI 不残留死卡）。
+        permission: null,
+        question: null,
         messages: patchMessage(state.messages, action.messageId, (m) => ({
           ...m,
           streaming: false,
@@ -127,6 +138,8 @@ export function reduceChatStream(state: ChatStreamState, action: ChatStreamActio
       return {
         ...state,
         streaming: false,
+        permission: null,
+        question: null,
         messages: patchMessage(state.messages, action.messageId, (m) => ({
           ...m,
           streaming: false,
@@ -137,6 +150,14 @@ export function reduceChatStream(state: ChatStreamState, action: ChatStreamActio
       return { ...state, permission: action.event };
     case "permission-clear":
       return { ...state, permission: null };
+    case "question":
+      return { ...state, question: action.event };
+    case "question-clear":
+      return { ...state, question: null };
+    case "question-settled":
+      return state.question?.requestId === action.requestId
+        ? { ...state, question: null }
+        : state;
     default:
       return state;
   }

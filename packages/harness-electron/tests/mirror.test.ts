@@ -6,7 +6,13 @@ import {
   MOCK_MODEL,
   MOCK_PROFILE_ID,
   PROVIDER_PRESET_MIRROR,
+  isChatQuestionResponse,
   type ChatPermissionEvent,
+  type ChatQuestionAnswerItem,
+  type ChatQuestionEvent,
+  type ChatQuestionItem,
+  type ChatQuestionOption,
+  type ChatQuestionResponse,
   type DiscoveredSkillMirror as SharedDiscoveredSkill,
   type HarnessSettings as SharedHarnessSettings,
   type McpImportResultMirror,
@@ -15,6 +21,12 @@ import {
   type SubagentLifecycleEvent as SharedSubagentLifecycleEvent,
   type SubagentStatus as SharedSubagentStatus,
 } from "../../../src/shared/ipc";
+import type {
+  AskUserAnswerItem,
+  AskUserItem,
+  AskUserOption,
+  AskUserResponse,
+} from "@innocenceharness/plugin-ask";
 import type { DiscoveredSkill } from "../../../src/main/skillDiscovery";
 import type { McpImportResult, McpServerEntry } from "../../../src/main/mcpImport";
 import type { PermissionResource } from "@innocenceharness/harness-permissions";
@@ -158,6 +170,56 @@ describe("ChatPermissionEvent.resource 对齐 harness-permissions PermissionReso
     const mirror: ChatPermissionEvent["resource"] = core;
     expect(core).toEqual({ action: "write", kind: "file", scope: "src/a.ts" });
     expect(mirror.scope).toBe("src/a.ts");
+  });
+});
+
+describe("shared ChatQuestion* 镜像对齐 plugin-ask AskUser*", () => {
+  // shared 不 import 包，询问卡 DTO 手工镜像（plugin-ask askUser.ts 的
+  // AskUser* 纯数据形状）：任一侧增删字段或改可选性而忘了同步另一侧时，
+  // 双向赋值会让 typecheck 失败（漂移不再静默）。
+  const option: ChatQuestionOption = { label: "PostgreSQL", description: "recommended" };
+  const item: ChatQuestionItem = {
+    question: "Which database?",
+    header: "Database",
+    options: [option],
+    multiSelect: true,
+  };
+  const answer: ChatQuestionAnswerItem = { question: "Which database?", answers: ["PostgreSQL"] };
+
+  it("类型漂移守卫：option/item/answer/response 双向兼容", () => {
+    const pkgOption: AskUserOption = option;
+    const backOption: ChatQuestionOption = pkgOption;
+    expect(backOption).toEqual(option);
+    const pkgItem: AskUserItem = item;
+    const backItem: ChatQuestionItem = pkgItem;
+    expect(backItem).toEqual(item);
+    const pkgAnswer: AskUserAnswerItem = answer;
+    const backAnswer: ChatQuestionAnswerItem = pkgAnswer;
+    expect(backAnswer).toEqual(answer);
+    const response: ChatQuestionResponse = { answers: [answer] };
+    const pkgResponse: AskUserResponse = response;
+    const backResponse: ChatQuestionResponse = pkgResponse;
+    expect(backResponse).toEqual(response);
+  });
+
+  it("事件载荷直通：ChatQuestionEvent.questions 即插件问题形状", () => {
+    const event: ChatQuestionEvent = {
+      sessionId: "s1",
+      messageId: "m1",
+      requestId: "q1",
+      toolName: "ask_user",
+      questions: [item],
+    };
+    const questions: AskUserItem[] = event.questions;
+    expect(questions[0]?.options[0]?.label).toBe("PostgreSQL");
+  });
+
+  it("应答守卫：answers 数组与 null 均合法，坏形状拒绝", () => {
+    expect(isChatQuestionResponse(null)).toBe(true);
+    expect(isChatQuestionResponse({ answers: [answer] })).toBe(true);
+    expect(isChatQuestionResponse({ answers: [{ question: "q", answers: [] }] })).toBe(true);
+    expect(isChatQuestionResponse({ answers: "nope" })).toBe(false);
+    expect(isChatQuestionResponse({ answers: [{ question: "q", answers: [1] }] })).toBe(false);
   });
 });
 

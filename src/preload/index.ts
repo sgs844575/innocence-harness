@@ -36,6 +36,10 @@ const api: InnocenceCodeApi = {
   getAppInfo: () => ipcRenderer.invoke(IPC.appInfo),
   getAppMetrics: () => ipcRenderer.invoke(IPC.appMetrics),
   exportLogs: () => ipcRenderer.invoke(IPC.appExportLogs),
+  getDataRoot: () => ipcRenderer.invoke(IPC.appGetDataRoot),
+  pickDirectory: () => ipcRenderer.invoke(IPC.appPickDirectory),
+  setDataRoot: (parentDir) => ipcRenderer.invoke(IPC.appSetDataRoot, parentDir),
+  getTerminalFont: () => ipcRenderer.invoke(IPC.terminalResolvedFont),
   getTheme: () => ipcRenderer.invoke(IPC.themeGet),
   setTheme: (mode: ThemeMode) => ipcRenderer.invoke(IPC.themeSet, mode),
   onThemeChanged: (cb) => subscribe(IPC.themeChanged, cb as never),
@@ -48,6 +52,7 @@ const api: InnocenceCodeApi = {
   createSession: (options?: { title?: string; workspaceRoot?: string }) =>
     ipcRenderer.invoke(IPC.sessionCreate, options),
   deleteSession: (id) => ipcRenderer.invoke(IPC.sessionDelete, id),
+  renameSession: (id, title) => ipcRenderer.invoke(IPC.sessionRename, id, title),
   forkSession: (id, options?: { upToMessageId?: string }) =>
     ipcRenderer.invoke(IPC.sessionFork, id, options),
   startBackgroundJob: (prompt: string, options?: { workspaceRoot?: string }) =>
@@ -55,6 +60,8 @@ const api: InnocenceCodeApi = {
   onSessionsChanged: (cb) => subscribe(IPC.sessionsChanged, cb as never),
   getSidebarState: () => ipcRenderer.invoke(IPC.sidebarGet),
   archiveSession: (id, archived) => ipcRenderer.invoke(IPC.sidebarArchive, id, archived),
+  pinSession: (id, pinned) => ipcRenderer.invoke(IPC.sidebarPin, id, pinned),
+  markSessionUnread: (id, unread) => ipcRenderer.invoke(IPC.sidebarUnread, id, unread),
   reorderSessions: (container, orderedIds) => ipcRenderer.invoke(IPC.sidebarReorder, container, orderedIds),
   moveSession: (id, target, beforeId) => ipcRenderer.invoke(IPC.sidebarMove, id, target, beforeId),
   reorderContainers: (kind, orderedIds) => ipcRenderer.invoke(IPC.sidebarContainersReorder, kind, orderedIds),
@@ -79,12 +86,23 @@ const api: InnocenceCodeApi = {
   onChatPermission: (cb) => subscribe(IPC.chatPermission, cb as never),
   respondChatPermission: (requestId, choice) =>
     ipcRenderer.invoke(IPC.chatPermissionRespond, requestId, choice),
+  onChatQuestion: (cb) => subscribe(IPC.chatQuestion, cb as never),
+  respondChatQuestion: (requestId, response) =>
+    ipcRenderer.invoke(IPC.chatQuestionRespond, requestId, response),
+  onChatQuestionSettled: (cb) => subscribe(IPC.chatQuestionSettled, cb as never),
+  listPendingQuestions: (sessionId) =>
+    ipcRenderer.invoke(IPC.chatPendingQuestions, sessionId),
   pickWorkspace: () => ipcRenderer.invoke(IPC.workspacePick),
   workspaceGitBranch: (root) => ipcRenderer.invoke(IPC.workspaceGitBranch, root),
   workspaceGitChanges: (root) => ipcRenderer.invoke(IPC.workspaceGitChanges, root),
   workspaceGitBranches: (root) => ipcRenderer.invoke(IPC.workspaceGitBranches, root),
   workspaceGitCheckout: (root, branch, create) =>
     ipcRenderer.invoke(IPC.workspaceGitCheckout, root, branch, create),
+  workspaceGitGraph: (root) => ipcRenderer.invoke(IPC.workspaceGitGraph, root),
+  workspaceGitCommit: (root, message, stageAll) =>
+    ipcRenderer.invoke(IPC.workspaceGitCommit, root, message, stageAll),
+  workspaceGitPush: (root) => ipcRenderer.invoke(IPC.workspaceGitPush, root),
+  workspaceGitCommitMessage: (root) => ipcRenderer.invoke(IPC.workspaceGitCommitMessage, root),
   listWorkspaceDir: (root, relDir) => ipcRenderer.invoke(IPC.workspaceListDir, root, relDir),
   readWorkspaceFile: (root, rel) => ipcRenderer.invoke(IPC.workspaceReadFile, root, rel),
   listWorkspaceFiles: (root) => ipcRenderer.invoke(IPC.workspaceListFiles, root),

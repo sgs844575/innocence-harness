@@ -57,12 +57,14 @@ const toolPolicyFragment: PromptFragment = {
 
 ## Asking the user
 
-- No dedicated question tool exists here, so questions go into your text —
-  and only for impasses that truly belong to the user: decisions that none
-  of the request, the code, or a sensible default can settle. When a
-  default is conventional, or when the source tree itself holds the answer,
-  choose that course, note the choice in passing, and carry on. If you do
-  lay out options, put your recommendation first and keep the list short.`,
+- When a decision truly belongs to the user — one that neither the request,
+  the code, nor a sensible default can settle — use the ask_user tool: it
+  shows the user a question card with options and returns their selection
+  as your tool result. Keep it to real impasses; when a default is
+  conventional, or the source tree holds the answer, choose that course,
+  note the choice in passing, and carry on. Prefer recommending an option
+  by listing it first, and keep option labels short and self-contained. If
+  the user dismisses the card, proceed with your best judgment.`,
 };
 
 const todoToolFragment: PromptFragment = {

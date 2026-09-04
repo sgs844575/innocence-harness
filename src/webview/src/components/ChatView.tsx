@@ -2,16 +2,19 @@
 // 中断的末条助手消息带「继续」图标钮；上滚脱离贴底时出回到底部钮；发送即回贴底。
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
-import type { ChatMessage, ChatPermissionEvent, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
+import type { ChatMessage, ChatPermissionEvent, ChatQuestionEvent, ChatQuestionResponse, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
 import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
+import { QuestionCard } from "./QuestionCard";
 import { GitCapsule, type GitCapsuleData } from "./GitCapsule";
 import { ChatDashes } from "./chat/ChatDashes";
 import { WaitingRow } from "./chat/WaitingRow";
 import { capsuleHasContent, capsuleRightGutter, CAPSULE_SQUEEZE_MIN_WIDTH } from "./chat/chatLayout";
+import { streamDisplayFromSettings } from "./chat/toolGrouping";
 import type { ToolRowModel } from "./chat/toolRows";
 import type { TaskRowClue } from "../state/subagentRuns";
+import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../../shared/codeThemes";
 
 // 内容列宽度：默认 896px（max-w-4xl）；宽窗分档放宽，最大化时不显窄——
 // 视口 ≥1280 放宽到 1024（5xl），≥1536 放宽到 1152（6xl）。三处共用保持一致。
@@ -22,6 +25,7 @@ interface Props {
   messages: ChatMessage[];
   streaming: boolean;
   permission: ChatPermissionEvent | null;
+  question: ChatQuestionEvent | null;
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
@@ -29,6 +33,8 @@ interface Props {
   onEditResend: (messageId: string, text: string) => void;
   onStop: () => void;
   onPermissionRespond: (requestId: string, choice: PermissionChoice) => void;
+  /** 询问卡作答（null = 跳过）。 */
+  onQuestionRespond: (requestId: string, response: ChatQuestionResponse) => void;
   capsule: GitCapsuleData;
   onManageModels?: () => void;
   /** 子代理工具行：在右侧面板中查看该次运行（载荷含关联键/标题/结果文本，
@@ -45,12 +51,14 @@ export function ChatView({
   messages,
   streaming,
   permission,
+  question,
   settings,
   onPatchSettings,
   onSend,
   onEditResend,
   onStop,
   onPermissionRespond,
+  onQuestionRespond,
   capsule,
   onManageModels,
   onOpenSubagent,
@@ -138,14 +146,14 @@ export function ChatView({
 
   // 中断检测：末轮助手消息无完成元数据且不在流式 → 该消息挂「继续」图标钮。
   const showContinue = useMemo(() => {
-    if (streaming || permission || messages.length === 0) return false;
+    if (streaming || permission || question || messages.length === 0) return false;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i]!;
       if (message.role !== "assistant") continue;
       return message.streaming !== true && message.completion == null;
     }
     return false;
-  }, [messages, streaming, permission]);
+  }, [messages, streaming, permission, question]);
 
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -175,10 +183,12 @@ export function ChatView({
 
   // 外观设置 → 代码块高亮主题对与行号开关。
   const codeAppearance = {
-    light: settings?.codeThemeLight ?? "github-light",
-    dark: settings?.codeThemeDark ?? "github-dark",
+    light: settings?.codeThemeLight ?? DEFAULT_CODE_THEME_LIGHT,
+    dark: settings?.codeThemeDark ?? DEFAULT_CODE_THEME_DARK,
     lineNumbers: settings?.codeLineNumbers !== false,
   };
+  // 消息流显示开关（思考/todo/工具分组）。
+  const streamDisplay = streamDisplayFromSettings(settings);
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -210,6 +220,7 @@ export function ChatView({
                   continuable={showContinue && message.id === lastAssistantId}
                   onContinue={() => handleSend(t("chat.continue.prompt"))}
                   code={codeAppearance}
+                  stream={streamDisplay}
                   onOpenSubagent={onOpenSubagent}
                   onOpenFile={onOpenFile}
                 />
@@ -240,10 +251,15 @@ export function ChatView({
         )}
       </div>
 
-      {permission && (
-        <div className="shrink-0 pb-2" style={{ paddingLeft: 24, paddingRight: 24 + rightGutter }}>
+      {(permission || question) && (
+        <div className="shrink-0 space-y-2 pb-2" style={{ paddingLeft: 24, paddingRight: 24 + rightGutter }}>
           <div className={columnClass}>
-            <PermissionCard t={t} request={permission} onRespond={onPermissionRespond} />
+            {permission && (
+              <PermissionCard t={t} request={permission} onRespond={onPermissionRespond} />
+            )}
+            {question && (
+              <QuestionCard key={question.requestId} t={t} request={question} onRespond={onQuestionRespond} />
+            )}
           </div>
         </div>
       )}

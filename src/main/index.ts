@@ -25,6 +25,7 @@ import {
   disposePluginBoot,
   disposeTaskRuntime,
   rejectPendingPermissionAsks,
+  rejectAllPendingQuestions,
   resolveRouteWorkspaceRoot,
 } from "./harnessGlue";
 import { defaultUserPluginRoot } from "./pluginBoot/compose";
@@ -249,6 +250,7 @@ if (!gotLock) {
     blockStartup: appLifecycle.startup.block,
     waitForStartup: () => appLifecycle.startup.completion,
     rejectPendingPermissionAsks,
+    rejectAllPendingQuestions,
     disposeAutomationLifecycle,
     disposeAllRuntime,
     disposeTelemetry,

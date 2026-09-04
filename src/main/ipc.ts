@@ -2,7 +2,7 @@
 import { app, dialog, ipcMain, shell, webContents } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IPC, isPermissionChoice, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
+import { IPC, isChatQuestionResponse, isPermissionChoice, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
@@ -16,6 +16,7 @@ import {
   getHarnessSettings,
   getPluginInventory,
   generateAutomationCandidate,
+  generateCommitMessage,
   confirmAutomation,
   updateAutomation,
   deleteAutomation,
@@ -23,7 +24,9 @@ import {
   triggerAutomation,
   listProviderModelsById,
   pickWorkspace,
+  listPendingQuestionCards,
   respondPermission,
+  respondQuestion,
   resendChatTurn,
   sendChatTurn,
   setHarnessSettings,
@@ -47,6 +50,7 @@ import { createGitAdapter, type GitAdapter } from "@innocenceharness/task-git";
 import { resolveTerminalFont } from "@innocenceharness/terminal-pty";
 import { workspaceReviewFileDiff, workspaceReviewFiles } from "./workspaceReview";
 import { workspaceGitGraph } from "./workspaceGitGraph";
+import { countPorcelain, workspaceGitCommit, workspaceGitPush, workspaceGitSummary } from "./workspaceCommit";
 import { getDataRoot, setDataRoot } from "./dataRoot";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -65,13 +69,13 @@ async function detectWorkspaceGitBranch(root: string): Promise<string | null> {
   }
 }
 
-/** Git 面板「更改」统计：porcelain 计文件数，shortstat 取增删行（失败 → null）。 */
+/** Git 面板「更改」统计：porcelain 计文件数（含暂存/未暂存拆分），shortstat 取增删行（失败 → null）。 */
 async function workspaceGitChangesStat(
   root: string,
-): Promise<{ changedFiles: number; additions: number; deletions: number } | null> {
+): Promise<{ changedFiles: number; additions: number; deletions: number; stagedFiles: number; unstagedFiles: number } | null> {
   try {
     const { stdout: status } = await execFileAsync("git", ["-C", root, "status", "--porcelain"], { windowsHide: true });
-    const changedFiles = status.split("\n").filter((line) => line.trim() !== "").length;
+    const counts = countPorcelain(status);
     let shortstat = "";
     try {
       ({ stdout: shortstat } = await execFileAsync("git", ["-C", root, "diff", "--shortstat", "HEAD"], { windowsHide: true }));
@@ -82,9 +86,11 @@ async function workspaceGitChangesStat(
     const additions = /(\d+) insertion/.exec(shortstat);
     const deletions = /(\d+) deletion/.exec(shortstat);
     return {
-      changedFiles,
+      changedFiles: counts.changed,
       additions: additions ? Number(additions[1]) : 0,
       deletions: deletions ? Number(deletions[1]) : 0,
+      stagedFiles: counts.staged,
+      unstagedFiles: counts.unstaged,
     };
   } catch {
     return null;
@@ -204,6 +210,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.terminalResolvedFont, () => resolveTerminalFont(getHarnessSettings()));
 
   ipcMain.handle(IPC.sessionsList, () => sessions.listSessions());
+  ipcMain.handle(IPC.sessionRename, (_e, id: string, title: string) => {
+    const session = sessions.renameSession(id, title);
+    broadcastSessions();
+    broadcastSidebar();
+    return session;
+  });
   ipcMain.handle(IPC.sidebarGet, () => sessions.getSidebarState());
   ipcMain.handle(IPC.sidebarArchive, (_e, id: string, archived: boolean) => {
     sessions.archiveSession(id, archived);
@@ -211,6 +223,10 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC.sidebarPin, (_e, id: string, pinned: boolean) => {
     sessions.pinSession(id, pinned);
+    broadcastSidebar();
+  });
+  ipcMain.handle(IPC.sidebarUnread, (_e, id: string, unread: boolean) => {
+    sessions.markSessionUnread(id, unread);
     broadcastSidebar();
   });
   ipcMain.handle(IPC.sidebarReorder, (_e, container, orderedIds: string[]) => {
@@ -321,6 +337,19 @@ export function registerIpcHandlers(): void {
     await respondPermission(requestId, choice);
   });
 
+  // 询问卡作答：载荷校验后直达 harnessGlue 的挂起问题注册表（未知 id 幂等）。
+  ipcMain.handle(IPC.chatQuestionRespond, async (_e, requestId: string, response: unknown): Promise<void> => {
+    if (!isChatQuestionResponse(response)) throw new Error("invalid question response");
+    await respondQuestion(requestId, response);
+  });
+
+  // 询问卡回放：会话激活时拉取该会话仍挂起的问题卡（切会话回来补卡）。
+  ipcMain.handle(IPC.chatPendingQuestions, (_e, sessionId: string) =>
+    typeof sessionId === "string" && sessionId.trim() !== ""
+      ? listPendingQuestionCards(sessionId)
+      : [],
+  );
+
   ipcMain.handle(IPC.workspacePick, () => pickWorkspace());
 
   ipcMain.handle(IPC.workspaceGitBranch, (_e, root: string) =>
@@ -344,6 +373,32 @@ export function registerIpcHandlers(): void {
   // Git 图谱对话框：全分支拓扑序提交数据（只读 git 查询，见 workspaceGitGraph.ts）。
   ipcMain.handle(IPC.workspaceGitGraph, (_e, root: string) =>
     typeof root === "string" && root.trim() !== "" ? workspaceGitGraph(root.trim()) : null,
+  );
+
+  // 提交面板：AI 生成提交信息（无更改 → nothing to commit；模型/供应商失败 → error）。
+  ipcMain.handle(IPC.workspaceGitCommitMessage, async (_e, root: string) => {
+    if (typeof root !== "string" || root.trim() === "") return { ok: false, error: "invalid arguments" };
+    try {
+      const summary = await workspaceGitSummary(root.trim());
+      if (summary === null) return { ok: false, error: "nothing to commit" };
+      return { ok: true, message: await generateCommitMessage(summary) };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+  });
+
+  // 提交面板：提交（stageAll 时先 add -A；message 为空时自动生成提交信息）。
+  ipcMain.handle(IPC.workspaceGitCommit, (_e, root: string, message: unknown, stageAll: unknown) =>
+    typeof root === "string" && root.trim() !== ""
+      ? workspaceGitCommit(root.trim(), typeof message === "string" ? message : "", stageAll === true, {
+          generate: generateCommitMessage,
+        })
+      : { ok: false, error: "invalid arguments" },
+  );
+
+  // 提交面板：推送（无上游时自动 --set-upstream origin HEAD）。
+  ipcMain.handle(IPC.workspaceGitPush, (_e, root: string) =>
+    typeof root === "string" && root.trim() !== "" ? workspaceGitPush(root.trim()) : { ok: false, error: "invalid arguments" },
   );
 
   // 侧栏文件树：目录列举 / 文本读取 / 全量清单（路径防护在 workspaceFiles.ts）。

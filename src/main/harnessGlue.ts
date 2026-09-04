@@ -12,7 +12,7 @@ import { createAutomationLifecycle, type AutomationLifecycle } from "./automatio
 import { createAutomationStore } from "./automationStore";
 import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
 import { createLazyNotifySink } from "./notifySink";
-import { createAutomationCandidateService, createStructuredOutputPort } from "@innocenceharness/harness-ai-runtime";
+import { createAutomationCandidateService, createCommitMessageService, createStructuredOutputPort, type CommitMessageService } from "@innocenceharness/harness-ai-runtime";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { app, dialog, Notification, powerMonitor } from "electron";
 import fs from "node:fs/promises";
@@ -27,7 +27,7 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocenceharness/harness-electron";
-import { IPC, type AgentModeInfo, type PermissionChoice, type PluginInventory } from "../shared/ipc";
+import { IPC, type AgentModeInfo, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { isWorktreeSession } from "./taskWorktreePredicate";
@@ -35,6 +35,14 @@ import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTraits";
 import { createHostTelemetry } from "./telemetry";
 import { createRuntimeHooks, cancelPendingAsks, type PendingPermissionRegistry } from "./runtimeHooks";
+import {
+  cancelPendingQuestions,
+  createAskUserPort,
+  pendingQuestionEvents,
+  rejectPendingQuestions,
+  type AskUserQueueRegistry,
+  type PendingQuestionRegistry,
+} from "./askUserPort";
 import { createSendToTeammate } from "./teammatePort";
 import { sessionHasFinishedTurn, summarizeSessionUsage } from "./sessionUsage";
 import * as sessions from "./sessions";
@@ -97,6 +105,36 @@ import { reduceTask } from "@innocenceharness/task-core";
 let settings: PkgSettings = DEFAULT_SETTINGS;
 const settingsMutationGate = createSettingsMutationGate();
 const pendingAsks: PendingPermissionRegistry = new Map();
+const pendingQuestions: PendingQuestionRegistry = new Map();
+// 会话内询问串行化尾链：同一会话一次只浮出一张卡（渲染层单卡 UI）。
+const askQueues: AskUserQueueRegistry = new Map();
+
+/** 询问卡关联的助手消息 id：取该会话最后一条助手消息（提问总发生在流式
+ *  回合内，末条助手消息即当前轮；无历史时为空串——卡片渲染不依赖它）。 */
+function currentAssistantMessageId(sessionId: string): string {
+  const messages = sessions.listMessages(sessionId);
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]!.role === "assistant") return messages[i]!.id;
+  }
+  return messages.length > 0 ? messages[messages.length - 1]!.id : "";
+}
+
+/** 广播一张询问卡（主窗口 webContents；无窗口时仍挂起等待应答）。 */
+function sendChatQuestionEvent(event: ChatQuestionEvent): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) win.webContents.send(IPC.chatQuestion, event);
+}
+
+/** 广播询问落定（超时跳过/停止/关机等非渲染层落定；渲染层据此清卡）。 */
+function sendChatQuestionSettled(requestId: string): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) win.webContents.send(IPC.chatQuestionSettled, { requestId });
+}
+
+/** 会话激活时回放：该会话仍挂起的问题卡（切会话回来补卡）。 */
+export function listPendingQuestionCards(sessionId: string): ChatQuestionEvent[] {
+  return pendingQuestionEvents(pendingQuestions, sessionId);
+}
 
 function automationFile(): string {
   return path.join(appDataRoot(), "automations.json");
@@ -236,6 +274,16 @@ export function generateAutomationCandidate(prompt: string): Promise<AutomationC
   return getAutomationService().generateCandidate(prompt);
 }
 
+let commitMessageService: CommitMessageService | undefined;
+
+/** Git 提交信息生成：活动供应商模型 + 结构化输出端口（同 automation candidate 的惰性解析）。 */
+export async function generateCommitMessage(context: string): Promise<string> {
+  const provider = await buildProviderFromSettings(await ensureBoot(), settings);
+  if (!("model" in provider)) throw new Error("configured provider does not expose a model");
+  commitMessageService ??= createCommitMessageService(createStructuredOutputPort());
+  return (await commitMessageService.generate({ model: provider.model, context })).message;
+}
+
 export function confirmAutomation(candidate: AutomationCandidate, name: string, targetSessionId?: string) {
   if (targetSessionId && !sessions.getSession(targetSessionId)) throw new Error("automation session not found");
   return getAutomationLifecycle().confirm(candidate, name, targetSessionId);
@@ -319,6 +367,22 @@ const sessionComposition = createSessionComposition({
         listTeammateRoutes: async (taskId) => [
           ...reduceTask(await getTaskBridge().listEvents(taskId)).routes.keys(),
         ],
+      },
+      identity,
+    ),
+  // ask_user 询问端口（绑定当次路由会话身份）：一轮提问 = 一次 chat:question
+  // 推送 + pendingQuestions 挂起，渲染层作答/停止/超时经 askUserPort 落定；
+  // 同一会话的提问串行（一次一张卡）。
+  createAskUserPort: (identity) =>
+    createAskUserPort(
+      {
+        pendingQuestions,
+        askQueues,
+        send: sendChatQuestionEvent,
+        sendSettled: sendChatQuestionSettled,
+        resolveMessageId: currentAssistantMessageId,
+        questionAutoContinue: () => settings.questionAutoContinue === true,
+        notify: (sessionId) => desktopNotifier.notify("permission", sessionId),
       },
       identity,
     ),
@@ -526,8 +590,13 @@ const runtime = new HarnessRuntime({
     ...taskPluginsForRoute(getTaskBridge(), context),
   ],
   hooks: {
-    ...createRuntimeHooks(pendingAsks, (kind, sessionId, options) =>
-      desktopNotifier.notify(kind, sessionId, options),
+    ...createRuntimeHooks(
+      pendingAsks,
+      (kind, sessionId, options) =>
+        desktopNotifier.notify(kind, sessionId, options),
+      // questionAutoContinue：提问超时策略现读当前设置快照（5 分钟自动
+      // 拒绝 vs 一直等待），不随会话构建快照冻结。
+      () => settings.questionAutoContinue === true,
     ),
     onSubagentLifecycle: (event) => {
       // 广播实况的同时落盘档案（delta 不落盘，见 subagentHistoryStore）——
@@ -652,7 +721,7 @@ export function isSessionRunning(sessionId: string): boolean {
   return binding !== undefined && runtime.isRouteRunning(sessionId, binding.routeId);
 }
 
-/** Stores a key in secure host storage and returns the redacted settings projection. */
+/** Stores a key in host storage and returns the complete settings projection. */
 export function updateProviderApiKey(profileId: string, apiKey: string) {
   return settingsMutationGate.enqueue(async () => {
     const committed = await setProfileCredential(settings, profileId, apiKey, await credentialStore(), async (durable) => {
@@ -699,6 +768,19 @@ export async function respondPermission(requestId: string, choice: PermissionCho
   pending.finish(choice);
 }
 
+/** 询问卡应答：作答载荷直达挂起端口；未知 id 幂等空操作（同权限语义）。 */
+export async function respondQuestion(
+  requestId: string,
+  response: ChatQuestionResponse,
+): Promise<void> {
+  const pending = pendingQuestions.get(requestId);
+  if (!pending) {
+    logger.warn("question response for settled request ignored", { requestId });
+    return;
+  }
+  pending.finish(response);
+}
+
 let nextMsg = 0;
 const messageId = () => `msg_${Date.now().toString(36)}_${(nextMsg++).toString(36)}`;
 
@@ -722,17 +804,27 @@ export function getTaskHandle(taskId: string): { sessionId: string } | undefined
 
 /** Starts an agent turn; returns the assistant message id immediately. Plain
  * chat turns run on the main route without task identity; a session with a
- * live task binding sends on the task's active route. */
+ * live task binding sends on the task's active route. A send while the route
+ * runs is queued or steered by the runtime per the interactionMode setting:
+ * queued turns get their assistant placeholder up front (it streams when the
+ * turn starts); a steered message merges into the running turn, so its
+ * placeholder is skipped unless the runtime upgrades it to a queued
+ * follow-up (onDisposition) when the run settles without draining it. */
 export function sendChatTurn(sessionId: string, text: string): string {
   const id = messageId();
-  sessions.appendMessage(sessionId, {
-    id,
-    role: "assistant",
-    parts: [],
-    createdAt: Date.now(),
-    streaming: true,
-  });
-  broadcastSessions();
+  let placeholderAppended = false;
+  const ensureAssistantPlaceholder = () => {
+    if (placeholderAppended) return;
+    placeholderAppended = true;
+    sessions.appendMessage(sessionId, {
+      id,
+      role: "assistant",
+      parts: [],
+      createdAt: Date.now(),
+      streaming: true,
+    });
+    broadcastSessions();
+  };
   const binding = sessionTaskRoutes.get(sessionId);
   void runtime.send({
     sessionId,
@@ -740,12 +832,19 @@ export function sendChatTurn(sessionId: string, text: string): string {
     routeId: binding?.routeId ?? DEFAULT_ROUTE_ID,
     text,
     messageId: id,
+    interactionMode: settings.interactionMode ?? "queue",
+    // 同步落定通知：started/queued 立即落助手占位（与既有行为一致）；
+    // steered 跳过——并入在跑回合；运行结束未消费被升级为 queued 时补落。
+    onDisposition: (disposition) => {
+      if (disposition !== "steered") ensureAssistantPlaceholder();
+    },
   });
   return id;
 }
 
 export function stopChatTurn(sessionId: string): void {
   cancelPendingAsks(pendingAsks, sessionId);
+  cancelPendingQuestions(pendingQuestions, sessionId);
   runtime.stop(sessionId);
 }
 
@@ -786,6 +885,7 @@ export function resendChatTurn(sessionId: string, fromMessageId: string, text: s
  * plugins). Never rejects — failures surface through the harness log. */
 export async function disposeSession(sessionId: string): Promise<void> {
   cancelPendingAsks(pendingAsks, sessionId);
+  cancelPendingQuestions(pendingQuestions, sessionId);
   sessionTaskRoutes.delete(sessionId);
   await runtime.dispose(sessionId);
 }
@@ -796,6 +896,11 @@ export async function disposeSession(sessionId: string): Promise<void> {
 export function rejectPendingPermissionAsks(): void {
   for (const pending of pendingAsks.values()) pending.finish("deny");
   pendingAsks.clear();
+}
+
+/** Skips every unanswered question card (app shutdown; same rule as asks). */
+export function rejectAllPendingQuestions(): void {
+  rejectPendingQuestions(pendingQuestions);
 }
 
 /** Releases every agent session's resources (app shutdown): aborts active

@@ -13,6 +13,7 @@ function shutdownDeps(overrides: Partial<Parameters<typeof createOwnedShutdown>[
     blockStartup: vi.fn(),
     waitForStartup: vi.fn(async () => {}),
     rejectPendingPermissionAsks: vi.fn(),
+    rejectAllPendingQuestions: vi.fn(),
     disposeAutomationLifecycle: vi.fn(async () => {}),
     disposeAllRuntime: vi.fn(async () => {}),
     disposeTelemetry: vi.fn(async () => {}),
@@ -53,6 +54,7 @@ describe("owned shutdown", () => {
       }),
       waitForStartup: () => startup.completion,
       rejectPendingPermissionAsks: vi.fn(() => events.push("reject-permissions")),
+      rejectAllPendingQuestions: vi.fn(() => events.push("reject-questions")),
       disposeAutomationLifecycle: vi.fn(async () => {
         events.push("dispose-automation");
         resources.timers = 0;
@@ -67,7 +69,7 @@ describe("owned shutdown", () => {
     await flush();
     const release = shutdown();
     await flush();
-    expect(events).toEqual(["recover-start", "block-startup", "reject-permissions"]);
+    expect(events).toEqual(["recover-start", "block-startup", "reject-permissions", "reject-questions"]);
 
     releaseRecovery?.();
     await release;
@@ -75,6 +77,7 @@ describe("owned shutdown", () => {
       "recover-start",
       "block-startup",
       "reject-permissions",
+      "reject-questions",
       "recover-complete",
       "start-automation",
       "dispose-automation",

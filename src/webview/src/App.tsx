@@ -18,7 +18,9 @@ import { SearchDialog } from "./components/SearchDialog";
 import { useSessions, projectName } from "./state/useSessions";
 import { useChatStream } from "./state/useChatStream";
 import { useSettings } from "./state/useSettings";
+import { useTerminalFont } from "./state/useTerminalFont";
 import { useSidebarState } from "./state/useSidebarState";
+import { loadUiState, patchUiState } from "./state/uiState";
 import { useSubagentRuns } from "./state/useSubagentRuns";
 import { groupRunsByLiveness, runForTaskRow, runsForSession, type SubagentRun, type TaskRowClue } from "./state/subagentRuns";
 import { RightDock } from "./components/RightDock";
@@ -29,11 +31,16 @@ import { DockTerminalView } from "./components/DockTerminalView";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { BrowserView } from "./components/BrowserView";
 import { latestTodos, type ToolRowModel } from "./components/chat/toolRows";
+import { streamDisplayFromSettings } from "./components/chat/toolGrouping";
 import type { ComposerDraft } from "./components/Composer";
 import type { CapsuleSubagentItem, GitCapsuleData } from "./components/GitCapsule";
 import { BranchPicker } from "./components/BranchPicker";
+import { GitGraphDialog } from "./components/GitGraphDialog";
 import { AppMenu } from "./components/AppMenu";
+import { CallTraceDialog } from "./components/CallTraceDialog";
+import { OnboardingDialog, type OnboardingChoice } from "./components/onboarding/OnboardingDialog";
 import type { TitleBarMenuItem } from "./components/TitleBar";
+import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../shared/codeThemes";
 
 const APP_NAME = "InnocenceHarness";
 /** 「…」菜单「反馈问题」入口。 */
@@ -45,11 +52,20 @@ export function App(): React.JSX.Element {
   const { settings, patch } = useSettings();
   const sessions = useSessions();
   const sidebar = useSidebarState();
-  const [view, setView] = useState<ShellView>("chat");
+  // 外壳视图随 uiState 持久化——重启后回到上次关闭时所在视图。
+  const [view, setView] = useState<ShellView>(() => loadUiState().shellView);
+  useEffect(() => {
+    patchUiState({ shellView: view });
+  }, [view]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [draft, setDraft] = useState<ComposerDraft | undefined>(undefined);
+  // 首次启动引导：设置装载后检测到 onboarded === false 自动弹出一次（之后可从常规设置重开）。
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  // 数据存储根（常规设置页展示）；桥缺失时保持 null（对应卡片隐藏）。
+  const [dataRoot, setDataRoot] = useState<string | null>(null);
 
   const lang = settings?.locale || appInfo?.locale || "zh-CN";
   const t = useMemo(() => createT(lang), [lang]);
@@ -100,6 +116,8 @@ export function App(): React.JSX.Element {
     () => runsForSession(subagentRunsState, sessions.activeId),
     [subagentRunsState, sessions.activeId],
   );
+  /** 已见过的运行 id：自动顶开 dock 只针对真正的新运行（回放档案不算）。 */
+  const seenRunsRef = useRef<ReadonlySet<string>>(new Set());
   // 重启/切会话后按会话回放落盘档案（实况优先），面板历史由此可再查看。
   useEffect(() => {
     if (!hasBridge() || sessions.activeId === null) return;
@@ -107,7 +125,13 @@ export function App(): React.JSX.Element {
     api
       .listSubagentHistory(sessions.activeId)
       .then((entries) => {
-        if (!cancelled) hydrateSubagentRuns(entries);
+        if (cancelled) return;
+        // 先标记已见再回放：档案条目不是"新运行"，不应自动顶开 dock。
+        seenRunsRef.current = new Set([
+          ...seenRunsRef.current,
+          ...entries.map((entry) => entry.event.childId),
+        ]);
+        hydrateSubagentRuns(entries);
       })
       .catch(() => undefined);
     return () => {
@@ -189,7 +213,6 @@ export function App(): React.JSX.Element {
     setDockTabs((tabs) => tabs.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
   }, []);
 
-  const seenRunsRef = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
     const fresh = activeRuns.filter((run) => !seenRunsRef.current.has(run.childId));
     if (fresh.length === 0) return;
@@ -238,8 +261,12 @@ export function App(): React.JSX.Element {
     [sessions.activeId],
   );
 
-  /** 顶栏终端钮：开合聊天页底部终端面板（右侧 dock 的终端标签走 dock 首页/＋ 菜单）。 */
-  const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
+  /** 顶栏终端钮：开合聊天页底部终端面板（右侧 dock 的终端标签走 dock 首页/＋ 菜单）。
+      开合状态随 uiState 持久化；恢复为开时 TerminalPanel 会自动拉起一个终端。 */
+  const [terminalPanelOpen, setTerminalPanelOpen] = useState(() => loadUiState().terminalPanelOpen);
+  useEffect(() => {
+    patchUiState({ terminalPanelOpen });
+  }, [terminalPanelOpen]);
   const toggleTerminalPanel = useCallback(() => setTerminalPanelOpen((value) => !value), []);
   /** 底部面板内存活的终端数（TerminalPanel 上报；收合不杀 shell，仍计为存活）。 */
   const [panelTerminalCount, setPanelTerminalCount] = useState(0);
@@ -266,6 +293,7 @@ export function App(): React.JSX.Element {
       path: row.filePath,
       diff: row.diff,
       originalText: row.verbKey === "tool.verb.read" ? row.resultText : undefined,
+      numbered: row.verbKey === "tool.verb.read",
     };
     setDockOpen(true);
     setDockTabs((tabs) =>
@@ -349,6 +377,61 @@ export function App(): React.JSX.Element {
     [patchSettings],
   );
 
+  // 首启引导：设置首次装载时只检查一次（跳过/完成都会落 onboarded，不再自动弹）。
+  const onboardingCheckedRef = useRef(false);
+  useEffect(() => {
+    if (onboardingCheckedRef.current || settings === null) return;
+    onboardingCheckedRef.current = true;
+    if (settings.onboarded === false) setShowOnboarding(true);
+  }, [settings]);
+
+  const finishOnboarding = useCallback(
+    (choice: OnboardingChoice) => {
+      // 主题走主题通道（与 SettingsView 的 onSetTheme 同路径），其余字段直接补丁。
+      setThemeMode(choice.themeMode);
+      patchSettings({ locale: choice.locale, permissionMode: choice.permissionMode, onboarded: true });
+      setShowOnboarding(false);
+    },
+    [patchSettings, setThemeMode],
+  );
+
+  const skipOnboarding = useCallback(() => {
+    patchSettings({ onboarded: true });
+    setShowOnboarding(false);
+  }, [patchSettings]);
+
+  // 数据根：挂载与进入设置视图时刷新（常规页展示用）。
+  const settingsViewOpen = view === "settings";
+  // 进入设置视图时自动收起右侧 dock（设置页不占聊天列，dock 内容是聊天上下文）。
+  useEffect(() => {
+    if (settingsViewOpen) setDockOpen(false);
+  }, [settingsViewOpen]);
+  useEffect(() => {
+    if (!hasBridge()) return;
+    let cancelled = false;
+    void api
+      .getDataRoot()
+      .then((info) => {
+        if (!cancelled) setDataRoot(info.path);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsViewOpen]);
+
+  // 迁移数据根：选目录 → main 落指针并重启（成功无需 UI）；失败弹错误 toast。
+  const changeDataRoot = useCallback(async () => {
+    if (!hasBridge()) return;
+    const dir = await api.pickDirectory().catch(() => null);
+    if (!dir) return;
+    const res = await api.setDataRoot(dir).catch(() => null);
+    if (!res || !res.ok) showError(t("settings.general.dataRoot.error"));
+  }, [showError, t]);
+
+  // 终端生效字体（显式覆盖 > 系统终端继承 > null = 沿用 --font-mono token）。
+  const terminalFont = useTerminalFont(settings);
+
   // 落地页分支胶囊：探测落地态选中项目根的分支。
   const [landingBranch, setLandingBranch] = useState<string | null>(null);
   useEffect(() => {
@@ -380,6 +463,8 @@ export function App(): React.JSX.Element {
   const [capsuleGit, setCapsuleGit] = useState<Pick<GitCapsuleData, "branch" | "changes">>({ branch: null });
   // 分支面板检出成功后自增，驱动 Git 数据重拉。
   const [gitTick, setGitTick] = useState(0);
+  // Git 图谱对话框：非 null = 打开（值为目标工作区根）。
+  const [graphRoot, setGraphRoot] = useState<string | null>(null);
   useEffect(() => {
     if (!hasBridge() || sessionRoot === "") {
       setCapsuleGit({ branch: null });
@@ -407,6 +492,7 @@ export function App(): React.JSX.Element {
       childId: run.childId,
       title: run.description || run.agentType || t("dock.subagents"),
       status: run.status,
+      startedAt: run.startedAt,
     });
     return {
       branch: capsuleGit.branch,
@@ -423,6 +509,13 @@ export function App(): React.JSX.Element {
           }
         : {}),
       ...(terminalCount > 0 ? { terminals: { count: terminalCount } } : {}),
+      // 分支行交互选择器：root + 检出回调 + 错误回调 + 图谱入口。
+      root: sessionRoot,
+      onBranchSwitched: () => setGitTick((tick) => tick + 1),
+      // 提交面板：提交/推送成功后同样自增重拉 Git 数据。
+      onCommitted: () => setGitTick((tick) => tick + 1),
+      onError: showError,
+      onOpenGraph: sessionRoot !== "" ? () => setGraphRoot(sessionRoot) : undefined,
       onOpenSubagentRun: openSubagentChild,
       onCancelSubagent: hasBridge() ? cancelSubagent : undefined,
       onOpenSubagents: openCapsuleSubagents,
@@ -434,6 +527,8 @@ export function App(): React.JSX.Element {
     activeRuns,
     dockTabs,
     panelTerminalCount,
+    sessionRoot,
+    showError,
     t,
     openSubagentChild,
     cancelSubagent,
@@ -498,26 +593,59 @@ export function App(): React.JSX.Element {
     [activeSession],
   );
 
+  // 归档当前任务后立即离开它；否则侧栏已隐藏该任务，主区和下次启动却仍会
+  // 通过 activeId/lastSessionId 停留在已归档任务上。
+  const archiveActiveSession = useCallback(async () => {
+    if (!activeSession) return;
+    await sidebar.archive(activeSession.id);
+    sessions.newSession();
+    setView("chat");
+  }, [activeSession, sessions, sidebar]);
+
+  const renameActiveSession = useCallback(async () => {
+    if (!activeSession) return;
+    const title = window.prompt(t("rename.prompt"), activeSession.title)?.trim();
+    if (!title || title === activeSession.title) return;
+    await api.renameSession(activeSession.id, title).catch(() => showError(t("rename.failed")));
+  }, [activeSession, showError, t]);
+
+  const markActiveSessionUnread = useCallback(async () => {
+    if (!activeSession) return;
+    await sidebar.markUnread(activeSession.id, true);
+    sessions.newSession();
+    setView("chat");
+  }, [activeSession, sessions, sidebar]);
+
+  const selectSession = useCallback((id: string) => {
+    void sidebar.markUnread(id, false);
+    sessions.selectSession(id);
+    setView("chat");
+  }, [sessions, sidebar]);
+
   const titleMenuItems: TitleBarMenuItem[] | undefined = useMemo(() => {
     if (landing || !activeSession) return undefined;
-    const soon = t("titlebar.menu.comingSoon");
+    const pinned = sidebar.pinned[activeSession.id] === true;
     return [
-      { id: "pin", label: t("titlebar.menu.pin"), disabled: true, description: soon },
-      { id: "rename", label: t("titlebar.menu.rename"), disabled: true, description: soon },
-      { id: "archive", label: t("titlebar.menu.archive"), onSelect: () => void sidebar.archive(activeSession.id) },
-      { id: "markUnread", label: t("titlebar.menu.markUnread"), disabled: true, description: soon },
+      {
+        id: "pin",
+        label: pinned ? t("titlebar.menu.unpin") : t("titlebar.menu.pin"),
+        onSelect: () => void sidebar.setPinned(activeSession.id, !pinned),
+      },
+      { id: "rename", label: t("titlebar.menu.rename"), onSelect: () => void renameActiveSession() },
+      { id: "archive", label: t("titlebar.menu.archive"), onSelect: () => void archiveActiveSession() },
+      { id: "markUnread", label: t("titlebar.menu.markUnread"), onSelect: () => void markActiveSessionUnread() },
       {
         id: "openExplorer",
         label: t("titlebar.menu.openExplorer"),
         separatorBefore: true,
-        disabled: sessionRoot === "",
-        onSelect: () => void api.revealPath(sessionRoot).catch(() => undefined),
+        disabled: titleProjectRoot === "",
+        onSelect: () => void api.revealPath(titleProjectRoot).catch(() => undefined),
       },
       {
         id: "copyPath",
         label: t("titlebar.menu.copyPath"),
-        disabled: sessionRoot === "",
-        onSelect: () => void navigator.clipboard?.writeText(sessionRoot).catch(() => undefined),
+        disabled: titleProjectRoot === "",
+        onSelect: () => void navigator.clipboard?.writeText(titleProjectRoot).catch(() => undefined),
       },
       { id: "copyTaskPath", label: t("titlebar.menu.copyTaskPath"), onSelect: () => copySessionPath("taskPath") },
       { id: "copyLogPath", label: t("titlebar.menu.copyLogPath"), onSelect: () => copySessionPath("logPath") },
@@ -527,14 +655,14 @@ export function App(): React.JSX.Element {
         onSelect: () => void navigator.clipboard?.writeText(activeSession.id).catch(() => undefined),
       },
       { id: "goSettings", label: t("titlebar.menu.goSettings"), onSelect: openSettings },
-      { id: "viewTrace", label: t("titlebar.menu.viewTrace"), separatorBefore: true, disabled: true, description: soon },
+      { id: "viewTrace", label: t("titlebar.menu.viewTrace"), separatorBefore: true, onSelect: () => setTraceOpen(true) },
       {
         id: "feedback",
         label: t("titlebar.menu.feedback"),
         onSelect: () => void api.openExternal(ISSUES_URL).catch(() => undefined),
       },
     ];
-  }, [landing, activeSession, t, sessionRoot, sidebar, copySessionPath, openSettings]);
+  }, [landing, activeSession, t, titleProjectRoot, sidebar, copySessionPath, archiveActiveSession, renameActiveSession, markActiveSessionUnread, openSettings]);
 
   return (
     <AppShell
@@ -550,10 +678,11 @@ export function App(): React.JSX.Element {
           tabs={dockTabs}
           activeTabId={activeDockTabId}
           code={{
-            light: settings?.codeThemeLight ?? "github-light",
-            dark: settings?.codeThemeDark ?? "github-dark",
+            light: settings?.codeThemeLight ?? DEFAULT_CODE_THEME_LIGHT,
+            dark: settings?.codeThemeDark ?? DEFAULT_CODE_THEME_DARK,
             lineNumbers: settings?.codeLineNumbers !== false,
           }}
+          grouping={streamDisplayFromSettings(settings).grouping}
           onActivateTab={setActiveDockTabId}
           onCloseTab={closeDockTab}
           onNewTab={newDockTab}
@@ -589,6 +718,7 @@ export function App(): React.JSX.Element {
               workspaceRoot={tab.cwd ?? ""}
               visible={tab.id === activeDockTabId}
               fontSize={settings?.codeFontSize}
+              fontFamily={terminalFont}
             />
           )}          renderBrowserTab={(tab) => (
             <BrowserView
@@ -625,6 +755,7 @@ export function App(): React.JSX.Element {
                 current={capsuleGit.branch}
                 onSwitched={() => setGitTick((tick) => tick + 1)}
                 onError={showError}
+                onOpenGraph={titleProjectRoot !== "" ? () => setGraphRoot(titleProjectRoot) : undefined}
               />
             )
           }
@@ -665,11 +796,10 @@ export function App(): React.JSX.Element {
             activeId={sessions.activeId}
             runningIds={runningIds}
             archived={sidebar.archived}
+            pinned={sidebar.pinned}
+            unread={sidebar.unread}
             groups={sidebar.groups}
-            onSelect={(id) => {
-              sessions.selectSession(id);
-              setView("chat");
-            }}
+            onSelect={selectSession}
             onNew={() => {
               sessions.newSession();
               setView("chat");
@@ -738,6 +868,9 @@ export function App(): React.JSX.Element {
               onFeedback={
                 hasBridge() ? () => void api.openExternal(ISSUES_URL).catch(() => undefined) : undefined
               }
+              dataRoot={dataRoot}
+              onChangeDataRoot={() => void changeDataRoot()}
+              onOpenOnboarding={() => setShowOnboarding(true)}
               resolvedTheme={resolvedTheme}
             />
           );
@@ -772,12 +905,14 @@ export function App(): React.JSX.Element {
             messages={chat.messages}
             streaming={chat.streaming}
             permission={chat.permission}
+            question={chat.question}
             settings={settings}
             onPatchSettings={patchSettings}
             onSend={(text) => void chat.send(text)}
             onEditResend={(messageId, text) => void chat.resend(messageId, text)}
             onStop={() => void chat.stop()}
             onPermissionRespond={(requestId, choice) => void chat.respondPermission(requestId, choice)}
+            onQuestionRespond={(requestId, response) => void chat.respondQuestion(requestId, response)}
             capsule={capsule}
             onManageModels={openModelSettings}
             onOpenSubagent={openSubagentRun}
@@ -788,6 +923,7 @@ export function App(): React.JSX.Element {
                 open={terminalPanelOpen}
                 workspaceRoot={sessionRoot}
                 fontSize={settings?.codeFontSize}
+                fontFamily={terminalFont}
                 onClose={() => setTerminalPanelOpen(false)}
                 onTerminalsChange={handlePanelTerminalsChange}
               />
@@ -796,29 +932,40 @@ export function App(): React.JSX.Element {
         );
       }}
       overlay={
-        <SearchDialog
-          t={t}
-          open={searchOpen}
-          sessions={sessions.sessions}
-          commands={[
-            {
-              id: "new-task",
-              label: t("sidebar.nav.newChat"),
-              kbd: "Ctrl+N",
-              onSelect: () => {
-                sessions.newSession();
-                setView("chat");
+        <>
+          <SearchDialog
+            t={t}
+            open={searchOpen}
+            sessions={sessions.sessions}
+            commands={[
+              {
+                id: "new-task",
+                label: t("sidebar.nav.newChat"),
+                kbd: "Ctrl+N",
+                onSelect: () => {
+                  sessions.newSession();
+                  setView("chat");
+                },
               },
-            },
-            { id: "automation", label: t("sidebar.nav.automation"), onSelect: () => setView("automation") },
-            { id: "settings", label: t("sidebar.settings"), onSelect: () => setView("settings") },
-          ]}
-          onSelect={(id) => {
-            sessions.selectSession(id);
-            setView("chat");
-          }}
-          onClose={() => setSearchOpen(false)}
-        />
+              { id: "automation", label: t("sidebar.nav.automation"), onSelect: () => setView("automation") },
+              { id: "settings", label: t("sidebar.settings"), onSelect: () => setView("settings") },
+            ]}
+            onSelect={selectSession}
+            onClose={() => setSearchOpen(false)}
+          />
+          {graphRoot !== null && (
+            <GitGraphDialog t={t} root={graphRoot} onClose={() => setGraphRoot(null)} />
+          )}
+          {traceOpen && <CallTraceDialog t={t} messages={chat.messages} onClose={() => setTraceOpen(false)} />}
+          {showOnboarding && settings !== null && (
+            <OnboardingDialog
+              t={t}
+              settings={settings}
+              onFinish={finishOnboarding}
+              onSkip={skipOnboarding}
+            />
+          )}
+        </>
       }
     />
   );

@@ -15,10 +15,17 @@ import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { UsageMetadata } from "@innocenceharness/harness-providers";
 import { WORKTREE_ISOLATION_FRAGMENT } from "@innocenceharness/harness-electron";
+import type { FsPluginConfig } from "@innocenceharness/tools-fs";
+import type { ShellPluginConfig } from "@innocenceharness/tools-shell";
+import { resolveCommandShell } from "@innocenceharness/terminal-pty";
 import {
   unavailableTeammatePort,
   type SendToTeammatePort,
 } from "@innocenceharness/plugin-team";
+import {
+  unavailableAskUserPort,
+  type AskUserPort,
+} from "@innocenceharness/plugin-ask";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_ROUTE_ID,
@@ -74,6 +81,13 @@ export interface SessionCompositionOptions {
    * every send_message call answers the no-teammates error.
    */
   createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort;
+  /**
+   * Ask-user port factory (ask_user 工具): binds one ask port to the identity
+   * of the route session being composed. Absent — or a composition without
+   * session identity — still mounts the ask plugin, and every ask_user call
+   * answers the no-question-surface error.
+   */
+  createAskUserPort?: (identity: ComposeSessionIdentity) => AskUserPort;
   /**
    * Reads one session's cumulative token usage from the host session store
    * (batch 4F): feeds the reminders factory's usage-level getter. Absent
@@ -318,7 +332,7 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell",
   options: () =>
     | { dirs: string[] }
     | { servers: Record<string, unknown> }
@@ -334,7 +348,10 @@ function factoryPlugin(
         getWorkspaceRoot: () => string;
         isHostShuttingDown?: () => boolean;
       }
-    | { sendToTeammate: SendToTeammatePort },
+    | { sendToTeammate: SendToTeammatePort }
+    | { askUser: AskUserPort }
+    | FsPluginConfig
+    | ShellPluginConfig,
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -414,8 +431,38 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // getter (batch 5 fix 1) rides the same channel into its stop face. "team"
 // receives the teammate delivery port bound to the composing route session's
 // identity (createTeammatePort + composePlugins' session identity) — never
-// from group config.
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team"]);
+// from group config. "ask" receives the ask-user port bound the same way
+// (createAskUserPort + the same session identity) — the ask_user question
+// bridge is host-owned, so a group child cannot bare-load the factory either.
+// "fs"/"shell" receive the settings-snapshot tool configs
+// (enhancedFindGrep/terminalShell — same composePlugins channel).
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team", "ask", "fs", "shell"]);
+
+/**
+ * fs 工厂入参（当次 settings 快照 → 工具行为）：
+ * enhancedFindGrep（默认开）→ "auto" 探测外部搜索引擎（回退 Node 扫描），
+ * 关闭 → "builtin" 恒走内置 Node 扫描。
+ */
+export function fsFactoryConfigFor(settings?: HarnessSettings): FsPluginConfig {
+  return {
+    searchEngine: settings?.enhancedFindGrep === false ? "builtin" : "auto",
+  };
+}
+
+/**
+ * shell 工厂入参：terminalShell（默认 "auto"）经 terminal-pty 解析为命令
+ * shell 前缀模板（win32 auto 优先 Git Bash --login -c，回退 comspec
+ * /d /s /c；POSIX 恒 sh -c）。tools-shell 只消费模板，不感知 shell 种类。
+ */
+export function shellFactoryConfigFor(settings?: HarnessSettings): ShellPluginConfig {
+  return { commandShell: resolveCommandShell(settings?.terminalShell ?? "auto") };
+}
+
+/** composePlugins 装配进 fs/shell 工厂条目的配置袋（同一次 settings 快照）。 */
+export interface BuiltinToolFactoryConfigs {
+  fs: FsPluginConfig;
+  shell: ShellPluginConfig;
+}
 
 async function resolveGroupEntries(
   boot: PluginBoot,
@@ -470,10 +517,12 @@ async function builtinLoaderEntryFor(
   ecosystemPlugin?: ObjectPlugin,
   sessionIdentity?: ComposeSessionIdentity,
   createTeammatePort?: (identity: ComposeSessionIdentity) => SendToTeammatePort,
+  createAskUserPort?: (identity: ComposeSessionIdentity) => AskUserPort,
   reminderState?: {
     getSessionUsage?: () => UsageMetadata | undefined;
     isContinuationSession?: () => boolean;
   },
+  toolFactoryConfigs?: BuiltinToolFactoryConfigs,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -483,6 +532,17 @@ async function builtinLoaderEntryFor(
     // resolver——该布局无 dist/index.js，直载必失败）。native 条目不传
     // 适配器，走既有 resolver 路径（零改动）。
     plugin = ecosystemPlugin;
+  } else if (!entry.disabled && id === "fs") {
+    // Factory builtin like skills/mcp: the staged default export is the fs
+    // factory; the config comes from the settings snapshot composePlugins
+    // received for this session build (enhancedFindGrep — absent
+    // settings = the zero-config defaults, which match the settings defaults).
+    plugin = factoryPlugin(boot, "fs", () => toolFactoryConfigs?.fs ?? {});
+  } else if (!entry.disabled && id === "shell") {
+    // Same factory shape as fs: the staged default export is the shell
+    // factory; commandShell is the terminalShell snapshot resolved through
+    // terminal-pty by composePlugins (absent settings = platform default).
+    plugin = factoryPlugin(boot, "shell", () => toolFactoryConfigs?.shell ?? {});
   } else if (!entry.disabled && id === "skills") {
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
@@ -550,6 +610,18 @@ async function builtinLoaderEntryFor(
         createTeammatePort && sessionIdentity
           ? createTeammatePort(sessionIdentity)
           : unavailableTeammatePort,
+    }));
+  } else if (!entry.disabled && id === "ask") {
+    // Same factory shape as team: the staged default export is the ask plugin
+    // factory. The host injects the askUser port bound to THIS route session's
+    // identity (question cards attribute to the asking session); without the
+    // host hook — or without session identity — the plugin still mounts and
+    // every ask_user answers the no-question-surface error.
+    plugin = factoryPlugin(boot, "ask", () => ({
+      askUser:
+        createAskUserPort && sessionIdentity
+          ? createAskUserPort(sessionIdentity)
+          : unavailableAskUserPort,
     }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
@@ -691,6 +763,13 @@ export function createSessionComposition(
       // plan 档提醒）。快照语义与 provider 组装一致：会话中途改档下一会话
       // 生效。
       const resolvePermissionMode = (): string => settings?.permissionMode ?? "auto";
+      // fs/shell 工厂入参：与 provider/权限档同一 settings 快照通道——会话
+      // 中途改设置下一会话生效（settingsKey 重建语义）。terminalShell 经
+      // terminal-pty 现解析（auto 的 Git Bash 探测随快照现取）。
+      const toolFactoryConfigs: BuiltinToolFactoryConfigs = {
+        fs: fsFactoryConfigFor(settings),
+        shell: shellFactoryConfigFor(settings),
+      };
       // reminders 工厂的会话状态 getter（批次 4F）：usage 对任意路由的会话身份
       // 绑定（按会话累计，与路由无关）；continuation 仅 main 路由（transcript
       // 种子只在 main 路由回灌——runtime-session 重建路径，非 main 路由首轮
@@ -781,7 +860,9 @@ export function createSessionComposition(
             : undefined,
           sessionIdentity,
           options.createTeammatePort,
+          options.createAskUserPort,
           reminderState,
+          toolFactoryConfigs,
         ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。

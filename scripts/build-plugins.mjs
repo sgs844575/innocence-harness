@@ -119,6 +119,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "memory", dependencies: [] },
   { id: "hooks", dependencies: [] },
   { id: "team", dependencies: [] },
+  { id: "ask", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -153,6 +154,7 @@ const PLUGINS = [
   { dir: "packages/plugin-memory", id: "memory" },
   { dir: "packages/plugin-hooks", id: "hooks" },
   { dir: "packages/plugin-team", id: "team" },
+  { dir: "packages/plugin-ask", id: "ask" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

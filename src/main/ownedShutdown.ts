@@ -2,6 +2,8 @@ export interface OwnedShutdownOptions {
   blockStartup(): void;
   waitForStartup(): Promise<void>;
   rejectPendingPermissionAsks(): void;
+  /** Skips every unanswered question card (ask_user) at shutdown. */
+  rejectAllPendingQuestions(): void;
   disposeAutomationLifecycle(): Promise<void>;
   disposeAllRuntime(): Promise<void>;
   disposeTelemetry(): Promise<void>;
@@ -15,6 +17,7 @@ export function createOwnedShutdown(options: OwnedShutdownOptions): () => Promis
   return async () => {
     options.blockStartup();
     options.rejectPendingPermissionAsks();
+    options.rejectAllPendingQuestions();
     await options.waitForStartup();
     await options.disposeAutomationLifecycle();
     await options.disposeAllRuntime();

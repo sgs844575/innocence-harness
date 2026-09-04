@@ -1,6 +1,6 @@
 // 会话聊天流：按激活会话装载消息 + 订阅流式事件进 reducer。
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { ChatMessage, PermissionChoice } from "../../../shared/ipc";
+import type { ChatMessage, ChatQuestionResponse, PermissionChoice } from "../../../shared/ipc";
 import { api, hasBridge } from "../lib/ipc";
 import { initialChatStreamState, reduceChatStream, type ChatStreamState } from "./chatStream";
 
@@ -11,6 +11,8 @@ export interface ChatStreamController extends ChatStreamState {
   resend: (messageId: string, text: string) => Promise<void>;
   stop: () => Promise<void>;
   respondPermission: (requestId: string, choice: PermissionChoice) => Promise<void>;
+  /** 询问卡作答：answers 与请求问题对齐；null = 跳过。 */
+  respondQuestion: (requestId: string, response: ChatQuestionResponse) => Promise<void>;
 }
 
 /** 乐观用户气泡 id：渲染层生成并透传给主进程落账（同 id），后续编辑重发
@@ -33,7 +35,8 @@ export function useChatStream({
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // 切会话：重载消息。
+  // 切会话：重载消息；随后回放该会话仍挂起的问题卡（提问可能跨越会话
+  // 切换——卡片是瞬态推送，回来时从主进程注册表补卡，提问不至于悬死）。
   useEffect(() => {
     if (!hasBridge()) return;
     if (activeId === null) {
@@ -45,6 +48,13 @@ export function useChatStream({
       .listMessages(activeId)
       .then((messages: ChatMessage[]) => {
         if (!cancelled) dispatch({ type: "load", messages });
+      })
+      .catch(() => undefined);
+    void api
+      .listPendingQuestions(activeId)
+      .then((events) => {
+        if (cancelled || events.length === 0) return;
+        dispatch({ type: "question", event: events[events.length - 1]! });
       })
       .catch(() => undefined);
     return () => {
@@ -74,6 +84,13 @@ export function useChatStream({
       }),
       api.onChatPermission((e) => {
         if (forActive(e.sessionId)) dispatch({ type: "permission", event: e });
+      }),
+      api.onChatQuestion((e) => {
+        if (forActive(e.sessionId)) dispatch({ type: "question", event: e });
+      }),
+      // 非渲染层落定（超时跳过/停止/关机）：按 requestId 精确清卡。
+      api.onChatQuestionSettled((e) => {
+        dispatch({ type: "question-settled", requestId: e.requestId });
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -163,5 +180,10 @@ export function useChatStream({
     await api.respondChatPermission(requestId, choice).catch(() => undefined);
   }, []);
 
-  return { ...state, send, resend, stop, respondPermission };
+  const respondQuestion = useCallback(async (requestId: string, response: ChatQuestionResponse) => {
+    dispatch({ type: "question-clear" });
+    await api.respondChatQuestion(requestId, response).catch(() => undefined);
+  }, []);
+
+  return { ...state, send, resend, stop, respondPermission, respondQuestion };
 }

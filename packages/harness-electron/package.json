@@ -30,6 +30,7 @@
     "@innocenceharness/task-core": "^0.1.0"
   },
   "devDependencies": {
+    "@innocenceharness/plugin-ask": "*",
     "@innocenceharness/provider-mock": "*",
     "@innocenceharness/tools-fs": "*",
     "@innocenceharness/tools-shell": "*"

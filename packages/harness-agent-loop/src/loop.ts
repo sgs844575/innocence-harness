@@ -22,7 +22,7 @@ import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innoce
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { classifyModelRequestError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
-import { createDsmlTokenFilter, recoverDsmlToolCalls } from "./dsml-recovery";
+import type { PendingInputMailbox } from "./pending-inputs";
 
 export interface LoopOptions {
   provider: Provider;
@@ -46,6 +46,14 @@ export interface LoopOptions {
   scope?: ExecutionScopeIdentity;
   /** Optional allow-listed observability port injected by the host. */
   telemetry?: TraceAdapter;
+  /**
+   * Steer mailbox (interactionMode "steer"): user messages parked by the host
+   * while this run is active. Drained at every turn top — after the previous
+   * turn's inflight tools settled, before the next model step — each entry
+   * injected as its own user turn. A remainder when the run ends stays in the
+   * mailbox for the host (it becomes a queued follow-up run).
+   */
+  pendingInputs?: PendingInputMailbox;
 }
 
 export interface LoopResult {
@@ -59,7 +67,7 @@ export interface LoopResult {
   finishReason?: FinishReason;
   /** Cumulative normalized usage across native model steps. */
   usage?: UsageMetadata;
-  /** The one sanitized terminal summary emitted to downstream layers. */
+  /** The terminal summary emitted to downstream layers. */
   completion: TurnCompletion;
 }
 
@@ -90,16 +98,8 @@ interface ModelStepRequest {
  * persistence, permission, and execution policy stays below this boundary.
  */
 async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
-  // token 展示走标记过滤器（漏出的原生工具调用标记不进展示流；部件累积
-  // 保留全文，落账前由 recoverDsmlToolCalls 回收）。
-  const tokenFilter = createDsmlTokenFilter();
   const emitToken = (text: string): void => {
-    const safe = tokenFilter.push(text);
-    if (safe) request.onEvent?.({ type: "token", text: safe });
-  };
-  const flushTokens = (): void => {
-    const tail = tokenFilter.flush();
-    if (tail) request.onEvent?.({ type: "token", text: tail });
+    request.onEvent?.({ type: "token", text });
   };
   const model = providerModel(request.provider);
   const trace = model
@@ -146,12 +146,10 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         }
       }
     } catch (_error) {
-      flushTokens();
       return request.signal?.aborted
         ? { parts, aborted: true }
         : { parts, aborted: false, error: classifyModelRequestError(_error) };
     }
-    flushTokens();
     return { parts, aborted: request.signal?.aborted === true };
   }
 
@@ -189,7 +187,6 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         metadata = event.metadata;
         break;
       case "abort":
-        flushTokens();
         completeTrace(metadata, true);
         return { parts, metadata, aborted: true };
       case "error":
@@ -204,7 +201,6 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         break;
     }
   }
-  flushTokens();
   completeTrace(metadata, request.signal?.aborted === true, error !== undefined);
   return { parts, metadata, aborted: request.signal?.aborted === true, ...(error ? { error } : {}) };
 }
@@ -314,11 +310,6 @@ export async function runLoop(
     log: () => {}, // session installs a real logger over onEvent
   };
 
-  // 漏到文本通道的原生工具调用标记（DSML 信封）回收后的调用 id 序列。
-  let dsmlCallSeq = 0;
-  const nextDsmlCallId = (): string =>
-    `call_dsml_${Date.now().toString(36)}_${(dsmlCallSeq++).toString(36)}`;
-
   let aborted = false;
   let turns = 0;
   const stepMetadata: TurnMetadata[] = [];
@@ -332,6 +323,13 @@ export async function runLoop(
       if (signal?.aborted) break;
       turns = turn;
       onEvent({ type: "turnStart", turn });
+
+      // Steer 注入：运行中泊入的用户消息在下一轮模型步之前入账（在飞工具
+      // 已于上一轮末尾落定）——每条各自成一个 user 轮，不经消息处理器。
+      const steered = opts.pendingInputs?.drain() ?? [];
+      for (const input of steered) {
+        history.push({ role: "user", parts: [...input.message.parts] });
+      }
 
       if (compactor) {
         const compacted = await compactor.maybeCompact(history, compactionProvider, signal);
@@ -362,23 +360,15 @@ export async function runLoop(
         break;
       }
 
-      // 文本通道漏出的原生工具调用标记先回收成结构化调用：被漏出的
-      // invoke 照常走权限/执行/落账管线，正文不再携带标记。
-      const parts = recoverDsmlToolCalls(step.parts, nextDsmlCallId);
+      const parts = step.parts;
       if (parts.length === 0) break;
 
       const calls = parts.filter(
         (part): part is ToolCallPart => part.type === "toolCall",
       );
 
-      /**
-       * Per-call preparation, in the fixed executor-chain order:
-       *   raw → validateArgs(raw) → permissionResource(raw) → persistArgs(raw)
-       * persistArgs runs exactly ONCE per invocation; its output is the args
-       * shape carried by history/events/permission/audit. Tools persist full
-       * display values (commands, file bodies); declared credential fields
-       * never persist.
-       */
+      /** Per-call preparation. Complete args are carried unchanged by
+       * history, events, permission requests and audit records. */
       interface PreparedCall {
         part: ToolCallPart;
         tool?: Tool;
@@ -391,7 +381,7 @@ export async function runLoop(
       for (const part of calls) {
         const tool = tools.get(part.toolName);
         if (!tool) {
-          prepared.set(part.id, { part, tool: undefined, persistedArgs: {} });
+          prepared.set(part.id, { part, tool: undefined, persistedArgs: { ...part.args } });
           continue;
         }
         // Fresh scope per invocation — never a session-level reused one —
@@ -410,20 +400,16 @@ export async function runLoop(
         try {
           await tool.validateArgs?.(part.args);
           const resource = await tool.permissionResource(part.args, invocationCtx);
-          const persistedArgs = tool.persistArgs(part.args);
+          const persistedArgs = { ...part.args };
           prepared.set(part.id, { part, tool, ctx: invocationCtx, resource, persistedArgs });
         } catch (error) {
-          // The call record keeps empty persisted args (the raw shape never
-          // enters history), but the diagnostic itself flows to the result:
-          // validateArgs/permissionResource errors are tool-authored
-          // (argument NAME, never content) and hiding the cause made
-          // preparation failures undiagnosable from the transcript.
+          // Keep the original invocation visible even when preparation fails.
           const reason = error instanceof Error ? error.message : String(error);
           prepared.set(part.id, {
             part,
             tool,
             ctx: invocationCtx,
-            persistedArgs: {},
+            persistedArgs: { ...part.args },
             failure: `工具调用准备失败：${reason}`,
           });
         }
@@ -432,7 +418,7 @@ export async function runLoop(
       // Persisted assistant message: args enter history in persistArgs shape.
       const toPersisted = (part: MessagePart): MessagePart =>
         part.type === "toolCall"
-          ? { ...part, args: prepared.get(part.id)?.persistedArgs ?? {} }
+          ? { ...part, args: prepared.get(part.id)?.persistedArgs ?? { ...part.args } }
           : part;
       history.push({ role: "assistant", parts: mergeTextParts(parts).map(toPersisted) });
       onEvent({ type: "assistantMessage", parts: parts.map(toPersisted) });
@@ -526,10 +512,8 @@ export async function runLoop(
             readOnly: item.tool.readOnly,
             sideEffect: item.tool.sideEffect,
           });
-        } catch (_error) {
-          // Resource validation uses persisted values, but its diagnostic may
-          // still be provider/tool-controlled; keep transcript output neutral.
-          failClosed("资源校验未通过");
+        } catch (error) {
+          failClosed(error instanceof Error ? error.message : String(error));
           continue;
         }
         onEvent({
@@ -550,8 +534,13 @@ export async function runLoop(
         // with it. Delegated tools (subagent runs) skip the session deadline:
         // they own their budget (child maxTurns, caller-set timeouts) and are
         // stopped by the run signal, never by a wall-clock guess (repo rule:
-        // no default timeout while waiting on subagents).
-        const invocationTimeoutMs = item.tool.sideEffect === "delegated" ? 0 : toolTimeoutMs;
+        // no default timeout while waiting on subagents). Tools that await a
+        // HUMAN answer (ask_user) skip it for the same reason — the question
+        // card has no honest deadline, only the stop signal ends the wait.
+        const invocationTimeoutMs =
+          item.tool.sideEffect === "delegated" || item.tool.awaitsUser === true
+            ? 0
+            : toolTimeoutMs;
         // 写类（非只读且非 none/delegated 副作用）独占执行：等所有在飞的
         // 共享调用落定再启动，等待期间停止则失败关闭（停止不得再开新工具）。
         const exclusive =
@@ -589,10 +578,9 @@ export async function runLoop(
             );
           } catch (err) {
             // Tool failures feed back to the model instead of killing the loop.
-            // With the run stopped, any failure shape counts as aborted. Do not
-            // persist executor diagnostics: real tools received raw args.
+            // With the run stopped, any failure shape counts as aborted.
             const outcome = toolErrorOutcome(err, { parentAborted: signal?.aborted === true });
-            finish(safeToolFailureMessage(outcome), true, outcome);
+            finish(toolFailureMessage(err, outcome), true, outcome);
           }
         })();
         // 独占调用在此直接等落定（启动阶段顺序推进 = 后续调用不会插进来）；
@@ -636,9 +624,8 @@ export async function runLoop(
       if (epilogue.aborted) {
         aborted = true;
       } else if (!epilogue.error) {
-        // 收尾步只取文本/思考（标记同样回收剥离）；模型在无工具定义下
-        // 仍执意发的调用轮被丢弃。
-        const textParts = recoverDsmlToolCalls(epilogue.parts, nextDsmlCallId).filter(
+        // 收尾步只取文本/思考；模型在无工具定义下仍执意发的调用轮被丢弃。
+        const textParts = epilogue.parts.filter(
           (part) => part.type === "text" || part.type === "thinking",
         );
         if (textParts.length > 0) {
@@ -688,7 +675,9 @@ export async function runLoop(
   };
 }
 
-function safeToolFailureMessage(outcome: ToolOutcome): string {
+function toolFailureMessage(error: unknown, outcome: ToolOutcome): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
   switch (outcome) {
     case "aborted":
       return "工具执行已中止";

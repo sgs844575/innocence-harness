@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ToolCallPart } from "../../../shared/ipc";
+import type { ChatQuestionEvent, ToolCallPart } from "../../../shared/ipc";
 import { initialChatStreamState, reduceChatStream } from "./chatStream";
 
 const toolCall: ToolCallPart = { type: "toolCall", id: "tc1", toolName: "Edit", args: { file_path: "a.ts" } };
@@ -71,6 +71,63 @@ describe("reduceChatStream", () => {
     expect(state.permission?.requestId).toBe("r1");
     state = reduceChatStream(state, { type: "permission-clear" });
     expect(state.permission).toBeNull();
+  });
+
+  it("question 事件置位/清除询问卡；load/reset 一并清空", () => {
+    const event: ChatQuestionEvent = {
+      sessionId: "s1",
+      messageId: "m1",
+      requestId: "q1",
+      toolName: "ask_user",
+      questions: [{ question: "选哪个？", options: [{ label: "A" }, { label: "B" }] }],
+    };
+    let state = reduceChatStream(initialChatStreamState, { type: "question", event });
+    expect(state.question?.requestId).toBe("q1");
+    expect(state.question?.questions[0]?.options).toHaveLength(2);
+    state = reduceChatStream(state, { type: "question-clear" });
+    expect(state.question).toBeNull();
+    // load（切会话回读）同样清掉挂起卡，避免残留到下一会话。
+    state = reduceChatStream(state, { type: "question", event });
+    state = reduceChatStream(state, { type: "load", messages: [] });
+    expect(state.question).toBeNull();
+    state = reduceChatStream(state, { type: "question", event });
+    state = reduceChatStream(state, { type: "reset" });
+    expect(state.question).toBeNull();
+  });
+
+  it("question-settled 仅清匹配当前卡的落定；done/error 兜底清权限与询问卡", () => {
+    const event: ChatQuestionEvent = {
+      sessionId: "s1",
+      messageId: "m1",
+      requestId: "q1",
+      toolName: "ask_user",
+      questions: [{ question: "选哪个？", options: [{ label: "A" }] }],
+    };
+    let state = reduceChatStream(initialChatStreamState, { type: "question", event });
+    // 他人/迟到的落定不清当前卡。
+    state = reduceChatStream(state, { type: "question-settled", requestId: "other" });
+    expect(state.question?.requestId).toBe("q1");
+    state = reduceChatStream(state, { type: "question-settled", requestId: "q1" });
+    expect(state.question).toBeNull();
+    // done/error 兜底：停止/超时路径下未经渲染层落定的卡不残留。
+    state = reduceChatStream(state, { type: "question", event });
+    state = reduceChatStream(state, {
+      type: "permission",
+      event: {
+        sessionId: "s1",
+        messageId: "m1",
+        requestId: "r1",
+        toolName: "Edit",
+        args: {},
+        resource: { kind: "path", action: "write", scope: "a.ts" },
+      },
+    });
+    state = reduceChatStream(state, { type: "done", messageId: "m1" });
+    expect(state.question).toBeNull();
+    expect(state.permission).toBeNull();
+    state = reduceChatStream(initialChatStreamState, { type: "question", event });
+    state = reduceChatStream(state, { type: "error", messageId: "m1", error: "boom" });
+    expect(state.question).toBeNull();
   });
 
   it("resend-local 截断被编辑消息起的全部消息并换成新用户消息", () => {
