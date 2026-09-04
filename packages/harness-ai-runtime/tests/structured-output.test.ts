@@ -65,7 +65,7 @@ describe("createStructuredOutputPort", () => {
     await expect(createStructuredOutputPort().generate(requestFor(model))).rejects.toMatchObject({
       name: "StructuredOutputError",
       code: "schema-mismatch",
-      message: "Structured output did not match the required schema",
+      message: expect.stringContaining("No object generated"),
     });
   });
 
@@ -83,7 +83,7 @@ describe("createStructuredOutputPort", () => {
 
     await expect(createStructuredOutputPort().generate(requestFor(invalidJson))).rejects.toMatchObject({
       code: "invalid-json",
-      message: "Structured output was not valid JSON",
+      message: expect.stringContaining("could not parse the response"),
     });
     await expect(createStructuredOutputPort().generate({ ...requestFor(invalidJson), signal: aborted.signal })).rejects.toMatchObject({
       code: "aborted",
@@ -110,8 +110,58 @@ describe("createStructuredOutputPort", () => {
 
     await expect(createStructuredOutputPort().generate(requestFor(partial))).rejects.toMatchObject({
       code: "partial-output",
-      message: "Structured output was incomplete",
+      message: expect.stringContaining("No object generated"),
     });
+  });
+
+  it("appends the JSON Schema instruction as a final user message for channels without native JSON mode", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: {
+        content: [{ type: "text", text: '{"answer":"ok"}' }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage,
+        warnings: [],
+      },
+    });
+
+    await createStructuredOutputPort().generate({
+      ...requestFor(model),
+      system: "Base system prompt.",
+    });
+
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    const serialized = JSON.stringify(prompt);
+    expect(serialized).toContain("Base system prompt.");
+    expect(serialized).toContain("conforms to this JSON Schema");
+    expect(serialized).toContain("additionalProperties");
+    const messages = Array.isArray(prompt) ? prompt : [prompt];
+    const userTurns = messages.filter((entry) => (entry as { role?: string }).role === "user");
+    expect(userTurns).toHaveLength(2);
+    expect(JSON.stringify(userTurns[0])).toContain("Respond.");
+    expect(JSON.stringify(userTurns[1])).toContain("Output format requirement");
+  });
+
+  it("recovers JSON wrapped in prose, fences, strings with braces or escaped quotes, and nested objects", async () => {
+    const cases: Array<{ text: string; expected: object }> = [
+      { text: 'Sure, here you go:\n```json\n{"answer":"ok"}\n```', expected: { answer: "ok" } },
+      { text: 'result: {"answer":"she said \\"hi {ok}\\""}', expected: { answer: "she said \"hi {ok}\"" } },
+      { text: 'nested {"answer":"x","extra":{"deep":{"braced":"}"}}} tail', expected: { answer: "x", extra: { deep: { braced: "}" } } } },
+    ];
+    for (const { text, expected } of cases) {
+      const model = new MockLanguageModelV3({
+        doGenerate: {
+          content: [{ type: "text", text }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage,
+          warnings: [],
+        },
+      });
+      const result = await createStructuredOutputPort().generate({
+        ...requestFor(model),
+        schema: z.object({ answer: z.string(), extra: z.unknown().optional() }),
+      });
+      expect(result.object).toEqual(expected);
+    }
   });
 
   it("generates an automation candidate with trigger, actions, constraints, and review summary only", async () => {

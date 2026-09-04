@@ -199,7 +199,7 @@ describe("streamOneHarnessStep", () => {
       );
 
       expect(events).toEqual([
-        { type: "error", error: { message: "Model request failed" } },
+        { type: "error", error: { message: "upstream unavailable" } },
         {
           type: "finish",
           metadata: {
@@ -215,7 +215,7 @@ describe("streamOneHarnessStep", () => {
     }
   });
 
-  it("does not expose sensitive provider error content in events or metadata", async () => {
+  it("exposes complete provider error content in events", async () => {
     const sensitiveMessage = 'apiKey=secret prompt=private-prompt args={"path":"private-tool-args"}';
     const model = new MockLanguageModelV3({
       doStream: {
@@ -236,18 +236,13 @@ describe("streamOneHarnessStep", () => {
           tools: [],
         }),
       );
-      const exposed = JSON.stringify(events);
-
-      expect(events).toContainEqual({ type: "error", error: { message: "Model request failed" } });
-      expect(exposed).not.toContain("apiKey=secret");
-      expect(exposed).not.toContain("private-prompt");
-      expect(exposed).not.toContain("private-tool-args");
+      expect(events).toContainEqual({ type: "error", error: { message: sensitiveMessage } });
     } finally {
       consoleError.mockRestore();
     }
   });
 
-  it("classifies HTTP status failures into actionable messages without the provider body", async () => {
+  it("keeps the provider message and falls back to the status code when absent", async () => {
     const upstream = "无权访问 max 分组（服务商原始响应，绝不外泄）";
     const withStatus = Object.assign(new Error(upstream), { statusCode: 403 });
     const model = new MockLanguageModelV3({
@@ -269,15 +264,32 @@ describe("streamOneHarnessStep", () => {
     );
     const errorEvent = events.find((event) => event.type === "error");
     const message = errorEvent && errorEvent.type === "error" ? errorEvent.error.message : "";
-    expect(message).toContain("HTTP 403");
-    expect(message).toContain("拒绝访问");
-    expect(message).not.toContain(upstream);
-    expect(JSON.stringify(events)).not.toContain("max 分组");
+    expect(message).toContain(upstream);
+    const bare = Object.assign(new Error(""), { statusCode: 403 });
+    const bareModel = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "error", error: bare },
+        ]),
+      },
+    });
+    const bareEvents = await collect(
+      streamOneHarnessStep({
+        model: { value: bareModel, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [],
+      }),
+    );
+    const bareError = bareEvents.find((event) => event.type === "error");
+    const bareMessage = bareError && bareError.type === "error" ? bareError.error.message : "";
+    expect(bareMessage).toContain("HTTP 403");
   });
 
-  it("classifies rate limits and network failures", async () => {
+  it("keeps provider messages and appends network errno causes", async () => {
     const cases: Array<{ error: Error; expectText: string }> = [
-      { error: Object.assign(new Error("rate limited"), { statusCode: 429 }), expectText: "HTTP 429" },
+      { error: Object.assign(new Error("rate limited"), { statusCode: 429 }), expectText: "rate limited" },
       {
         error: Object.assign(new Error("fetch failed"), {
           cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
@@ -485,7 +497,10 @@ describe("streamOneHarnessStep", () => {
       consoleError.mockRestore();
     }
 
-    expect(events).toContainEqual({ type: "error", error: { message: "Model request failed" } });
+    expect(events).toContainEqual({
+      type: "error",
+      error: { message: "Invalid prompt: messages must not be empty" },
+    });
     expect(model.doStreamCalls).toHaveLength(0);
   });
 

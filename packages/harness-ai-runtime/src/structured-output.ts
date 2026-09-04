@@ -1,5 +1,5 @@
 import type { Message, ProviderModel, TurnMetadata } from "@innocenceharness/harness-providers";
-import { generateText, NoObjectGeneratedError, Output, RetryError, type LanguageModel } from "ai";
+import { generateObject, NoObjectGeneratedError, RetryError, type LanguageModel } from "ai";
 import { JSONParseError, TypeValidationError, UnsupportedFunctionalityError } from "@ai-sdk/provider";
 import { z } from "zod";
 import { toSdkMessages } from "./message-mapping";
@@ -22,7 +22,6 @@ export interface StructuredOutputPort {
   generate<T>(input: StructuredOutputRequest<T>): Promise<StructuredOutputResult<T>>;
 }
 
-/** A sanitized output error that never retains model text or provider payloads. */
 export type StructuredOutputErrorCode =
   | "invalid-json"
   | "schema-mismatch"
@@ -43,11 +42,76 @@ const ERROR_MESSAGES: Record<StructuredOutputErrorCode, string> = {
 export class StructuredOutputError extends Error {
   readonly code: StructuredOutputErrorCode;
 
-  constructor(code: StructuredOutputErrorCode = "generation-failed") {
-    super(ERROR_MESSAGES[code]);
+  constructor(code: StructuredOutputErrorCode = "generation-failed", cause?: unknown) {
+    const detail = cause instanceof Error ? cause.message : cause === undefined ? "" : String(cause);
+    super(detail || ERROR_MESSAGES[code], cause === undefined ? undefined : { cause });
     this.name = "StructuredOutputError";
     this.code = code;
   }
+}
+
+/**
+ * JSON-mode instruction sent as a final user message. Chat-completions
+ * compatible channels without native structured-output support silently drop
+ * the JSON response format, which leaves the model without any JSON
+ * constraint and it answers in prose; smaller models also follow format
+ * instructions much more reliably in the user turn than in the system
+ * prompt, so the schema requirement rides the conversation tail.
+ */
+function schemaInstruction(schema: z.ZodType<unknown>): string | undefined {
+  try {
+    const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+    return [
+      "Output format requirement: your entire response must be one JSON object that",
+      `conforms to this JSON Schema:\n${jsonSchema}`,
+      "Output the JSON object only — no explanations, no markdown code fences, no",
+      "text before or after it.",
+    ].join("\n");
+  } catch {
+    return undefined;
+  }
+}
+
+function messagesWithSchemaInstruction(
+  messages: readonly Message[],
+  schema: z.ZodType<unknown>,
+): readonly Message[] {
+  const instruction = schemaInstruction(schema);
+  if (instruction === undefined) return messages;
+  return [...messages, { role: "user", parts: [{ type: "text", text: instruction }] }];
+}
+
+/**
+ * Repair hook for models that wrap the JSON object in prose or a markdown
+ * code fence despite the prompt instruction: strips fences and returns the
+ * first balanced JSON object found in the raw text.
+ */
+async function repairJsonText({ text }: { text: string }): Promise<string | null> {
+  const unfenced = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1");
+  const start = unfenced.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < unfenced.length; i += 1) {
+    const char = unfenced[i]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString && char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    else if (char === "}" && (depth -= 1) === 0) return unfenced.slice(start, i + 1);
+  }
+  return null;
 }
 
 export function createStructuredOutputPort(): StructuredOutputPort {
@@ -58,18 +122,19 @@ export function createStructuredOutputPort(): StructuredOutputPort {
         throw new StructuredOutputError("provider-unsupported");
       }
       try {
-        const result = await generateText({
+        const result = await generateObject({
           model: input.model.value as LanguageModel,
           ...(input.system ? { system: input.system } : {}),
-          messages: toSdkMessages(input.messages),
+          messages: toSdkMessages(messagesWithSchemaInstruction(input.messages, input.schema)),
           abortSignal: input.signal,
-          output: Output.object({ schema: input.schema }),
+          schema: input.schema,
+          experimental_repairText: repairJsonText,
         });
         if (result.finishReason === "length") {
           throw new StructuredOutputError("partial-output");
         }
         return {
-          object: result.output,
+          object: result.object,
           metadata: {
             providerId: input.model.providerId,
             modelId: input.model.modelId,
@@ -86,23 +151,23 @@ export function createStructuredOutputPort(): StructuredOutputPort {
 }
 
 function classifyStructuredOutputError(error: unknown, signal: AbortSignal | undefined): StructuredOutputError {
-  if (signal?.aborted) return new StructuredOutputError("aborted");
+  if (signal?.aborted) return new StructuredOutputError("aborted", error);
   if (error instanceof StructuredOutputError) return error;
   if (hasCause(
     error,
     (value) => NoObjectGeneratedError.isInstance(value) && value.finishReason === "length",
   )) {
-    return new StructuredOutputError("partial-output");
+    return new StructuredOutputError("partial-output", error);
   }
-  if (hasCause(error, JSONParseError.isInstance)) return new StructuredOutputError("invalid-json");
-  if (hasCause(error, TypeValidationError.isInstance)) return new StructuredOutputError("schema-mismatch");
+  if (hasCause(error, JSONParseError.isInstance)) return new StructuredOutputError("invalid-json", error);
+  if (hasCause(error, TypeValidationError.isInstance)) return new StructuredOutputError("schema-mismatch", error);
   if (hasCause(error, UnsupportedFunctionalityError.isInstance)) {
-    return new StructuredOutputError("provider-unsupported");
+    return new StructuredOutputError("provider-unsupported", error);
   }
-  return new StructuredOutputError("generation-failed");
+  return new StructuredOutputError("generation-failed", error);
 }
 
-/** Inspects only an error-class tree; error text and payload fields never escape. */
+/** Inspects the error-class tree while retaining the original failure as the cause. */
 function hasCause(error: unknown, matches: (value: unknown) => boolean): boolean {
   const pending: unknown[] = [error];
   const seen = new Set<unknown>();

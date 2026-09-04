@@ -28,6 +28,15 @@ export {
   type StructuredOutputResult,
 } from "./structured-output";
 export {
+  COMMIT_MESSAGE_SYSTEM,
+  COMMIT_MESSAGE_TASK,
+  CommitMessageSchema,
+  createCommitMessageService,
+  type CommitMessageRequest,
+  type CommitMessageResult,
+  type CommitMessageService,
+} from "./commit-message";
+export {
   PERMISSION_VERDICT_SYSTEM,
   PermissionVerdictSchema,
   createPermissionVerdictService,
