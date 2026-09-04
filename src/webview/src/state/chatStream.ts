@@ -4,6 +4,7 @@
 import {
   appendText,
   type ChatCompletionMetadata,
+  type ChatContextUsageSnapshot,
   type ChatMessage,
   type ChatPermissionEvent,
   type ChatQuestionEvent,
@@ -16,6 +17,8 @@ export interface ChatStreamState {
   streaming: boolean;
   permission: ChatPermissionEvent | null;
   question: ChatQuestionEvent | null;
+  /** 最近一次上下文计量快照（chat:context 推送/切会话查询）。 */
+  contextUsage: ChatContextUsageSnapshot | null;
 }
 
 export const initialChatStreamState: ChatStreamState = {
@@ -23,6 +26,7 @@ export const initialChatStreamState: ChatStreamState = {
   streaming: false,
   permission: null,
   question: null,
+  contextUsage: null,
 };
 
 export type ChatStreamAction =
@@ -40,7 +44,9 @@ export type ChatStreamAction =
   | { type: "question"; event: ChatQuestionEvent }
   | { type: "question-clear" }
   /** 询问卡落定通知：仅当匹配当前卡（迟到/他卡的落定不误清）。 */
-  | { type: "question-settled"; requestId: string };
+  | { type: "question-settled"; requestId: string }
+  /** null = 查询确认该会话尚无快照，清掉残留。 */
+  | { type: "context-usage"; snapshot: ChatContextUsageSnapshot | null };
 
 function withAssistant(state: ChatStreamState, messageId: string, at: number): ChatMessage[] {
   const existing = state.messages.find((m) => m.id === messageId);
@@ -158,6 +164,8 @@ export function reduceChatStream(state: ChatStreamState, action: ChatStreamActio
       return state.question?.requestId === action.requestId
         ? { ...state, question: null }
         : state;
+    case "context-usage":
+      return { ...state, contextUsage: action.snapshot };
     default:
       return state;
   }

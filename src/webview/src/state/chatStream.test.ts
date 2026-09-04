@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatQuestionEvent, ToolCallPart } from "../../../shared/ipc";
+import type { ChatContextUsageSnapshot, ChatQuestionEvent, ToolCallPart } from "../../../shared/ipc";
 import { initialChatStreamState, reduceChatStream } from "./chatStream";
 
 const toolCall: ToolCallPart = { type: "toolCall", id: "tc1", toolName: "Edit", args: { file_path: "a.ts" } };
@@ -162,5 +162,18 @@ describe("reduceChatStream", () => {
       message: { id: "u2", role: "user", parts: [{ type: "text", text: "新问" }], createdAt: 2 },
     });
     expect(state.messages.map((m) => m.id)).toEqual(["u1", "u2"]);
+  });
+
+  it("context-usage action 更新快照；reset 清空", () => {
+    const snap: ChatContextUsageSnapshot = {
+      inputTokens: 200,
+      breakdown: { systemPrompt: 60, skills: 10, systemTools: 20, mcpTools: 10, messages: 90, other: 10 },
+      cache: { inputTokens: 300, cachedInputTokens: 150 },
+      contextWindow: 1000,
+    };
+    let state = reduceChatStream(initialChatStreamState, { type: "context-usage", snapshot: snap });
+    expect(state.contextUsage).toEqual(snap);
+    state = reduceChatStream(state, { type: "reset" });
+    expect(state.contextUsage).toBeNull();
   });
 });

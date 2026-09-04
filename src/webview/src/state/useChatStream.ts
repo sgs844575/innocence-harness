@@ -57,6 +57,13 @@ export function useChatStream({
         dispatch({ type: "question", event: events[events.length - 1]! });
       })
       .catch(() => undefined);
+    // 切会话补查最近一次计量快照（推送是瞬态的，回来时向主进程回读）。
+    void api
+      .queryContextUsage(activeId)
+      .then((snapshot) => {
+        if (!cancelled) dispatch({ type: "context-usage", snapshot: snapshot ?? null });
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -81,6 +88,9 @@ export function useChatStream({
       }),
       api.onChatError((e) => {
         if (forActive(e.sessionId)) dispatch({ type: "error", messageId: e.messageId, error: e.error });
+      }),
+      api.onChatContextUsage((e) => {
+        if (forActive(e.sessionId)) dispatch({ type: "context-usage", snapshot: e.snapshot });
       }),
       api.onChatPermission((e) => {
         if (forActive(e.sessionId)) dispatch({ type: "permission", event: e });
