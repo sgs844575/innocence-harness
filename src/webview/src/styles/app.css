@@ -59,6 +59,12 @@
   --color-tool-err: #e03131;
   --color-tool-warn: #e07b00;
   --color-inline-code: #e6e6e6;
+  --color-markdown-code: #f6f6f7;
+  --color-markdown-code-header: #eeeeef;
+  --color-markdown-table: #ffffff;
+  --color-markdown-table-header: #f3f3f4;
+  --color-markdown-table-border: #0d0d0d1a;
+  --color-markdown-table-backdrop: #0d0d0db8;
   /* 分组颜色（用户内容着色；灰阶取 muted 色系，彩色浅底可读）。 */
   --color-group-gray: #6b7280;
   --color-group-red: #dc2626;
@@ -108,6 +114,12 @@
   --color-tool-err: #ff5c5c;
   --color-tool-warn: #ff8a30;
   --color-inline-code: #3f3f3f;
+  --color-markdown-code: #171717;
+  --color-markdown-code-header: #202020;
+  --color-markdown-table: #171717;
+  --color-markdown-table-header: #191919;
+  --color-markdown-table-border: #ffffff1a;
+  --color-markdown-table-backdrop: #000000b8;
   --color-group-gray: #9ca3af;
   --color-group-red: #f87171;
   --color-group-orange: #fb923c;
@@ -148,6 +160,12 @@
   --color-tool-err: #e03131;
   --color-tool-warn: #e07b00;
   --color-inline-code: #e6e6e6;
+  --color-markdown-code: #f6f6f7;
+  --color-markdown-code-header: #eeeeef;
+  --color-markdown-table: #ffffff;
+  --color-markdown-table-header: #f3f3f4;
+  --color-markdown-table-border: #0d0d0d1a;
+  --color-markdown-table-backdrop: #0d0d0db8;
   --color-group-gray: #6b7280;
   --color-group-red: #dc2626;
   --color-group-orange: #ea580c;
@@ -238,7 +256,7 @@
   }
   /* 段间距由 MessageItem 的 flex gap-4 承担，不再用兄弟 margin。 */
 
-  /* markdown 排版映射（参考规格）：标题/列表/引用/行内代码。 */
+  /* Markdown 排版映射：正文层级与界面语义色保持一致。 */
   .msg-body h1,
   .msg-body h2,
   .msg-body h3,
@@ -248,6 +266,8 @@
     margin-top: 24px;
     margin-bottom: 16px;
     font-weight: 600;
+    color: var(--color-foreground-strong);
+    line-height: 1.35;
   }
   .msg-body h1 { font-size: 18px; }
   .msg-body h2 { font-size: 16px; }
@@ -262,18 +282,38 @@
   .msg-body ul li::marker { color: var(--color-faint); }
   .msg-body ol {
     margin: 12px 0;
-    list-style: decimal inside;
+    list-style: decimal outside;
+    padding-left: 20px;
   }
-  .msg-body ol li { margin-top: 6px; }
+  .msg-body ol li { margin-top: 6px; padding-left: 4px; }
+  .msg-body ol li::marker { color: var(--color-muted); }
+  .msg-body strong { color: var(--color-foreground-strong); font-weight: 600; }
+  .msg-body a {
+    color: var(--color-accent);
+    text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    text-decoration-line: underline;
+    text-underline-offset: 3px;
+  }
+  .msg-body a:hover {
+    text-decoration-color: var(--color-accent);
+  }
   .msg-body blockquote {
     margin: 16px 0;
-    border-left: 2px solid var(--color-border);
-    padding-left: 12px;
+    border-left: 2px solid var(--color-border-hover);
+    border-radius: 0 8px 8px 0;
+    background: var(--color-surface);
+    padding: 8px 12px;
     color: var(--color-muted);
+    font-style: normal;
+  }
+  .msg-body hr {
+    margin: 24px 0;
+    border-color: var(--color-hairline);
   }
   .msg-body :not(pre) > code {
     border-radius: 6px;
-    background: color-mix(in srgb, var(--color-inline-code) 50%, transparent);
+    background: color-mix(in srgb, var(--color-inline-code) 58%, transparent);
+    color: var(--color-foreground-strong);
     margin: 0 2px;
     padding: 2px 6px;
     font-family: var(--font-mono);
@@ -574,17 +614,220 @@
    @layer components 里的 .msg-body 规则；背景声明提到层外（无层样式优先于所有层）
    才能真正生效：深色下垫 #262626 的暗色胶囊，而非 muted 灰。 */
 .msg-body :not(pre) > code {
-  background: color-mix(in srgb, var(--color-inline-code) 50%, transparent);
+  background: color-mix(in srgb, var(--color-inline-code) 58%, transparent);
 }
 
-/* 代码块底色消费高亮插件下发的双主题槽变量（浅槽 --sdm-bg / 深槽 --shiki-dark-bg）。
-   深色规则必须在此显式声明：代码块组件的深色底色工具类字符串缺右括号，
-   Tailwind 不会为其生成样式；插件侧也已移除内联主题色（内联会压过本规则）。 */
+/* Markdown 的复杂块统一使用应用表面层级；高亮色仍来自用户选择的主题。 */
+.msg-body [data-streamdown="code-block"] {
+  position: relative;
+  gap: 0;
+  overflow: hidden;
+  border-color: var(--color-border);
+  border-radius: var(--radius-pop);
+  background: var(--color-markdown-code-header);
+  padding: 0;
+}
+.msg-body [data-streamdown="code-block-header"] {
+  height: 34px;
+  border-bottom: 1px solid var(--color-hairline);
+  padding: 0 12px;
+  color: var(--color-muted);
+}
+.msg-body [data-streamdown="code-block-header"] > span {
+  margin-left: 0;
+}
+.msg-body [data-streamdown="code-block-body"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+.msg-body [data-streamdown="code-block-actions"] {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+/* 上游把操作区做成 sticky 悬浮胶囊；将其收回代码块标题栏，避免覆盖
+   右上角代码内容。标题栏为固定高度，因此操作区只参与该行布局。 */
+.msg-body [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+  position: absolute;
+  top: 1px;
+  right: 8px;
+  z-index: 1;
+  height: 32px;
+  margin-top: 0;
+}
+/* 表格不套用代码块/侧栏的灰色容器。正文与放大预览共享同一组表格
+   语义色，使深色保持低对比黑面，浅色则自然镜像成白色卡片。 */
+.msg-body [data-streamdown="table-wrapper"] {
+  position: relative;
+  gap: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+.msg-body [data-streamdown="table-wrapper"] > :first-child:not(:last-child) {
+  position: absolute;
+  right: 4px;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+}
+.msg-body [data-streamdown="table-wrapper"] > :last-child {
+  overflow: hidden auto;
+  border: 1px solid var(--color-markdown-table-border);
+  border-radius: var(--radius-pop);
+  background: var(--color-markdown-table);
+}
+.msg-body [data-streamdown="table"] {
+  color: var(--color-foreground);
+}
+.msg-body [data-streamdown="table-header"],
+[data-streamdown="table-fullscreen"] [data-streamdown="table-header"] {
+  background: var(--color-markdown-table-header);
+  color: var(--color-muted);
+}
+.msg-body [data-streamdown="table-header-cell"] {
+  padding: 10px 14px;
+  font-weight: 400;
+}
+.msg-body [data-streamdown="table-cell"] {
+  padding: 9px 14px;
+  vertical-align: top;
+}
+.msg-body [data-streamdown="table-row"],
+.msg-body [data-streamdown="table-body"],
+[data-streamdown="table-fullscreen"] [data-streamdown="table-row"],
+[data-streamdown="table-fullscreen"] [data-streamdown="table-body"] {
+  border-color: var(--color-markdown-table-border);
+}
+
+/* 放大表格保持对话框形态，避免整块亮/暗底覆盖窗口。streamdown 的 portal
+   位于 .msg-body 外，因此这里使用 data 属性并只消费主题 token。 */
+[data-streamdown="table-fullscreen"] {
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--color-markdown-table-backdrop);
+  backdrop-filter: blur(4px);
+}
+[data-streamdown="table-fullscreen"] > div {
+  width: min(720px, 100%);
+  height: auto;
+  max-height: min(78vh, 720px);
+  overflow: hidden;
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-pop);
+  background: var(--color-popup);
+  box-shadow: var(--shadow-card);
+}
+[data-streamdown="table-fullscreen"] > div > :first-child {
+  min-height: 48px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+[data-streamdown="table-fullscreen"] > div > :last-child {
+  padding: 0 16px 16px;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table"] {
+  overflow: hidden;
+  border-color: var(--color-markdown-table-border);
+  border-radius: 8px;
+  background: var(--color-markdown-table);
+  color: var(--color-foreground);
+}
+
+/* 代码块底色消费高亮插件下发的双主题槽变量，确保设置中的主题不仅
+   改 token 颜色，也完整保留主题自己的背景色。应用 token 只作加载回落。 */
 .msg-body pre {
-  background-color: var(--sdm-bg, inherit);
+  margin: 0;
+  background-color: var(--sdm-bg, var(--color-markdown-code));
+  padding: 1rem;
 }
 .dark .msg-body pre {
-  background-color: var(--shiki-dark-bg, var(--sdm-bg, inherit));
+  background-color: var(--shiki-dark-bg, var(--sdm-bg, var(--color-markdown-code)));
+}
+.msg-body pre span[style*="--sdm-c"] {
+  color: var(--sdm-c, inherit);
+}
+.dark .msg-body pre span[style*="--shiki-dark"] {
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+}
+
+/* 深色应用中的浅色预览必须完整回到浅色槽，包括代码 token。 */
+.dark .light-scope .msg-body pre {
+  background-color: var(--sdm-bg, var(--color-markdown-code));
+}
+.dark .light-scope .msg-body pre span[style*="--shiki-dark"] {
+  color: var(--sdm-c, inherit);
+}
+
+/* Mermaid 图块：token 化容器（圆角/边/底色），与代码块同语义。mermaid
+   自渲染 SVG，自带背景与字体色；只在容器层加底/边/留白，让 SVG 居中且
+   暗色下不会与背景撞色。 */
+.msg-body [data-streamdown="mermaid"] {
+  margin: 12px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-raised);
+  padding: 16px;
+  overflow: hidden;
+  color: var(--color-foreground);
+}
+.msg-body [data-streamdown="mermaid"] svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+/* Mermaid 加载占位（旋转 spinner + 文案）。 */
+.msg-body [data-streamdown="mermaid-loading"] {
+  margin: 12px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-raised);
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+/* Mermaid 错误块：浅红底 + 暗红文本，沿用代码块错误风格。 */
+.msg-body [data-streamdown="mermaid-error"] {
+  margin: 12px 0;
+  border: 1px solid var(--color-diff-del);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-diff-del) 10%, transparent);
+  padding: 12px 16px;
+  color: var(--color-diff-del);
+  font-size: 13px;
+}
+
+/* 文件读取预览复用正文代码主题，但不重复显示语言头和复制操作。 */
+.file-code-view [data-streamdown="code-block"] {
+  margin: 0;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+}
+.file-code-view [data-streamdown="code-block-header"],
+.file-code-view [data-streamdown="code-block-actions"] {
+  display: none;
+}
+.file-code-view [data-streamdown="code-block-body"] {
+  border: 0;
+  padding: 0;
+}
+.file-code-view .msg-body pre {
+  padding: 0.625rem;
+}
+.file-code-view-bounded {
+  max-height: 15rem;
+  overflow: auto;
+}
+.file-code-note {
+  padding: 0.5rem 0.625rem;
 }
 
 /* 会话行标题悬停轮播：超长文本缓慢来回滚动（距离/时长由组件内联变量注入）。 */
