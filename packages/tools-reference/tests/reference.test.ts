@@ -33,9 +33,6 @@ describe("read_reference tool", () => {
       scope: "prompt-caching",
     });
   });
-  it("persists only the requested id", () => {
-    expect(readReferenceTool.persistArgs({ id: "verify" })).toEqual({ id: "verify" });
-  });
   it("registers via the plugin", () => {
     const registered: string[] = [];
     ReferencePlugin.apply({ tools: { register: (t: { name: string }) => registered.push(t.name) } } as never);

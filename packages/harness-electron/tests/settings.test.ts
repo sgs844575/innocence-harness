@@ -18,6 +18,21 @@ describe("mergeSettings", () => {
     expect(mergeSettings("junk").permissionMode).toBe("ask");
   });
 
+  it("uses current code-theme defaults and migrates persisted legacy aliases", () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({
+      codeThemeLight: "github-light-default",
+      codeThemeDark: "github-dark-default",
+    });
+    expect(mergeSettings({
+      profiles: [],
+      codeThemeLight: "github-light",
+      codeThemeDark: "github-dark",
+    })).toMatchObject({
+      codeThemeLight: "github-light-default",
+      codeThemeDark: "github-dark-default",
+    });
+  });
+
   it("migrates v1 single-provider settings to v2 profiles", () => {
     const v1 = {
       providerId: "openai",
@@ -94,6 +109,31 @@ describe("mergeSettings", () => {
       externalSkillDiscovery: true,
       externalEditorCommand: "code --wait",
       permissionClassifier: false,
+      terminalInheritProfile: false,
+      terminalFontFamily: "Sarasa Mono SC, monospace",
+      terminalShell: "gitbash" as const,
+      enhancedFindGrep: true,
+      httpProxy: "http://127.0.0.1:7890",
+      proxyBypass: "localhost,127.0.0.1",
+      customCaCert: "D:/certs/root-ca.pem",
+      hardwareAcceleration: false,
+      previewUpdates: true,
+      autoDownloadUpdates: false,
+      taskNotifications: false,
+      notificationSound: false,
+      closeToTray: true,
+      keepAwake: true,
+      interactionMode: "steer" as const,
+      questionAutoContinue: true,
+      showThinking: false,
+      showTodos: false,
+      groupExploreTools: false,
+      groupTerminalCommands: false,
+      groupFileChanges: true,
+      autoArchiveTasks: true,
+      archiveRetentionDays: 30,
+      onboarded: true,
+      telemetryOptIn: true,
     };
     expect(mergeSettings(input)).toEqual(input);
   });
@@ -221,6 +261,63 @@ describe("mergeSettings", () => {
     expect(
       mergeSettings({ profiles: [], pluginToggles: { example: false, todo: true } }).pluginToggles,
     ).toEqual({ example: false, todo: true });
+  });
+
+  it("常规页功能项缺失时物化出厂默认（onboarded 例外：缺失 = 老用户 = true）", () => {
+    expect(mergeSettings({ profiles: [] })).toMatchObject({
+      terminalInheritProfile: true,
+      terminalFontFamily: "",
+      terminalShell: "auto",
+      enhancedFindGrep: true,
+      httpProxy: "",
+      proxyBypass: "",
+      customCaCert: "",
+      hardwareAcceleration: true,
+      previewUpdates: false,
+      autoDownloadUpdates: true,
+      taskNotifications: true,
+      notificationSound: true,
+      closeToTray: false,
+      keepAwake: false,
+      interactionMode: "queue",
+      questionAutoContinue: false,
+      showThinking: true,
+      showTodos: true,
+      groupExploreTools: true,
+      groupTerminalCommands: true,
+      groupFileChanges: false,
+      autoArchiveTasks: false,
+      archiveRetentionDays: 7,
+      onboarded: true,
+      telemetryOptIn: false,
+    });
+  });
+
+  it("常规页功能项非法值归一化（枚举/时长/布尔/字符串）", () => {
+    const s = mergeSettings({
+      profiles: [],
+      terminalShell: "fish",
+      interactionMode: "inject",
+      archiveRetentionDays: 6,
+      keepAwake: "yes",
+      terminalFontFamily: 42,
+      onboarded: false,
+    });
+    expect(s).toMatchObject({
+      terminalShell: "auto",
+      interactionMode: "queue",
+      archiveRetentionDays: 7,
+      keepAwake: false,
+      terminalFontFamily: "",
+      onboarded: false,
+    });
+    expect(mergeSettings({ profiles: [], archiveRetentionDays: 14 }).archiveRetentionDays).toBe(14);
+    expect(mergeSettings({ profiles: [], terminalShell: "wsl" }).terminalShell).toBe("wsl");
+  });
+
+  it("新装出厂默认 onboarded:false（无设置文件 = 走 DEFAULT_SETTINGS）", () => {
+    expect(DEFAULT_SETTINGS.onboarded).toBe(false);
+    expect(mergeSettings(null).onboarded).toBe(false);
   });
 });
 

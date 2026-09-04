@@ -51,15 +51,6 @@ describe("make_archive tool", () => {
     expect(() => archiveTool.validateArgs?.({ paths: ["a"], output: "" })).toThrow("output");
   });
 
-  it("persists full original args but never the passphrase", () => {
-    const persisted = archiveTool.persistArgs?.({
-      paths: ["a", "b", "c"],
-      output: "bundle.zip",
-      passphrase: "super-secret",
-    });
-    expect(persisted).toMatchObject({ output: "bundle.zip", paths: ["a", "b", "c"], encrypted: true });
-    expect(JSON.stringify(persisted)).not.toContain("super-secret");
-  });
 });
 
 describe("archive plugin", () => {

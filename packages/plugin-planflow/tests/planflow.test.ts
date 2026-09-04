@@ -10,7 +10,7 @@ import {
   type PermissionResolution,
   type PermissionsService,
 } from "@innocenceharness/harness-permissions";
-import { sha256Hex, ToolsPlugin } from "@innocenceharness/harness-tools";
+import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import type { Message, MessageProcessor } from "@innocenceharness/harness-session";
 import {
   APPROVAL_BASE_BODY,
@@ -115,10 +115,10 @@ describe("plan_submit tool", () => {
     await expect(planSubmitTool.validateArgs?.({ plan: "step 1" })).resolves.toBeUndefined();
     await expect(planSubmitTool.validateArgs?.({ plan: "step 1", summary: 7 })).rejects.toThrow(/summary/);
     await expect(planSubmitTool.validateArgs?.({ plan: "step 1", summary: "one line" })).resolves.toBeUndefined();
-    // 错误只列字段名，不回显入参内容（错误文案进 history/audit 未脱敏）。
+    // Validation errors preserve the complete invalid value for diagnostics.
     await expect(
       planSubmitTool.validateArgs?.({ plan: "", summary: "SECRET-PLAN-VALUE" }),
-    ).rejects.not.toThrow(/SECRET-PLAN-VALUE/);
+    ).rejects.toThrow(/SECRET-PLAN-VALUE/);
   });
 
   it("maps every call to the canonical session-level plan submission resource", () => {
@@ -134,21 +134,6 @@ describe("plan_submit tool", () => {
     });
   });
 
-  it("persists the full plan plus a stable sha256, including summary only when given", () => {
-    const persisted = planSubmitTool.persistArgs({ plan: "step 1\nstep 2" });
-    expect(persisted).toEqual({ plan: "step 1\nstep 2", planSha256: sha256Hex("step 1\nstep 2") });
-    expect("summary" in persisted).toBe(false);
-    const withSummary = planSubmitTool.persistArgs({ plan: "step 1", summary: "one line" });
-    expect(withSummary).toEqual({ summary: "one line", plan: "step 1", planSha256: sha256Hex("step 1") });
-    // sha256 稳定性：同文本同摘要，异文本异摘要。
-    expect(planSubmitTool.persistArgs({ plan: "step 1" }).planSha256).toBe(
-      planSubmitTool.persistArgs({ plan: "step 1" }).planSha256,
-    );
-    expect(planSubmitTool.persistArgs({ plan: "step 1" }).planSha256).not.toBe(
-      planSubmitTool.persistArgs({ plan: "step 1 " }).planSha256,
-    );
-  });
-
   it("executes into a mode-neutral English confirmation", async () => {
     const result = await planSubmitTool.execute({ plan: "step 1" }, toolCtx());
     expect(result.isError).toBeFalsy();
@@ -162,7 +147,7 @@ describe("plan_submit tool", () => {
 });
 
 describe("planflow plugin mounting", () => {
-  it("registers the tool through the real persistence gate and one order-910 processor", async () => {
+  it("registers the tool through the real permission gate and one order-910 processor", async () => {
     const mounted = await mountPlanflow();
     expect(mounted.ctx.tools.get(PLAN_SUBMIT_TOOL_NAME)).toBe(planSubmitTool);
     expect(mounted.processors).toHaveLength(1);

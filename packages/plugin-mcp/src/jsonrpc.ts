@@ -29,24 +29,6 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const DISPOSE_GRACE_MS = 2_000;
 /** How long dispose waits after the force kill for the exit event. */
 const FORCE_KILL_WAIT_MS = 5_000;
-/** Hard cap on server-provided error text forwarded to callers/history. */
-const SERVER_ERROR_MAX_CHARS = 500;
-
-/**
- * Server error text is UNTRUSTED input: a hostile or buggy server may echo
- * raw call arguments (secrets included) into its error messages, and those
- * texts flow into isError tool results → history/audit. Secret content
- * cannot be recognized reliably, so the trust boundary is mechanical: strip
- * control characters and hard-truncate; the truncation marker keeps the
- * loss visible instead of silent.
- */
-function sanitizeServerMessage(raw: string | undefined): string {
-  const text = (raw ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  if (text.length === 0) return "MCP 错误";
-  if (text.length <= SERVER_ERROR_MAX_CHARS) return text;
-  return `${text.slice(0, SERVER_ERROR_MAX_CHARS)}…[已截断，共 ${text.length} 字符]`;
-}
-
 function requestAbortedError(method: string): Error {
   const err = new Error(`MCP 请求已中止：${method}`);
   err.name = "AbortError";
@@ -85,6 +67,7 @@ export class StdioJsonRpcClient {
   private nextId = 0;
   private pending = new Map<number, Pending>();
   private buffer = "";
+  private stderr = "";
   private exited = false;
   private disposed = false;
   private disposePromise: Promise<void> | undefined;
@@ -112,11 +95,17 @@ export class StdioJsonRpcClient {
       detached: process.platform !== "win32",
     });
     this.proc.stdout?.on("data", (chunk: Buffer) => this.onStdout(chunk));
-    this.proc.stderr?.on("data", () => {}); // keep the pipe draining
+    this.proc.stderr?.on("data", (chunk: Buffer) => {
+      this.stderr += chunk.toString("utf8");
+    });
     this.proc.on("error", (err) => this.failAll(new Error(`启动失败：${err.message}`)));
-    this.proc.on("exit", () => {
+    this.proc.on("exit", (code, signal) => {
       this.exited = true;
-      this.failAll(new Error("MCP 服务器进程已退出"));
+      const diagnostic = [
+        `MCP 服务器进程已退出（code=${String(code)}, signal=${String(signal)}）`,
+        this.stderr,
+      ].filter(Boolean).join("\n");
+      this.failAll(new Error(diagnostic));
       this.onExit?.();
     });
     // Probe liveness: a spawn error (missing command) surfaces on next tick.
@@ -245,7 +234,7 @@ export class StdioJsonRpcClient {
       const line = this.buffer.slice(0, nl).trim();
       this.buffer = this.buffer.slice(nl + 1);
       if (!line) continue;
-      let msg: { id?: number; result?: unknown; error?: { message?: string } };
+      let msg: { id?: number; result?: unknown; error?: Record<string, unknown> };
       try {
         msg = JSON.parse(line);
       } catch {
@@ -257,8 +246,7 @@ export class StdioJsonRpcClient {
       this.pending.delete(msg.id);
       pending.detach();
       clearTimeout(pending.timer);
-      // Untrusted text crosses the client boundary only through this gate.
-      if (msg.error) pending.reject(new Error(sanitizeServerMessage(msg.error.message)));
+      if (msg.error) pending.reject(jsonRpcError(msg.error));
       else pending.resolve(msg.result);
     }
   }
@@ -271,4 +259,10 @@ export class StdioJsonRpcClient {
     }
     this.pending.clear();
   }
+}
+
+function jsonRpcError(error: Record<string, unknown>): Error {
+  const message = typeof error.message === "string" ? error.message : "MCP 错误";
+  const detail = JSON.stringify(error);
+  return new Error(detail && detail !== "{}" ? `${message}\n${detail}` : message);
 }

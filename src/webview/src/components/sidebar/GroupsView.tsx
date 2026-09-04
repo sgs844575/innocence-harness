@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, ChevronUp, Hash, Plus, Trash2 } from "lucide-react";
 import type { Session } from "../../../../shared/ipc";
 import type { SidebarGroup } from "../../../../shared/sidebarIpc";
+import { pinnedFirst } from "../../state/sidebarTree";
 import { Popover } from "../ui/Popover";
 import { SessionRow } from "../SessionRow";
 
@@ -111,6 +112,8 @@ export function GroupsView({
   groups,
   sessions,
   archived,
+  pinned = {},
+  unread = {},
   activeId,
   runningIds,
   collapsed,
@@ -123,6 +126,9 @@ export function GroupsView({
   groups: readonly SidebarGroup[];
   sessions: Session[];
   archived: Readonly<Record<string, boolean>>;
+  /** 置顶标记（组内/未分组区内稳定排前 + 行首 Pin 图标）。 */
+  pinned?: Readonly<Record<string, boolean>>;
+  unread?: Readonly<Record<string, boolean>>;
   activeId: string | null;
   runningIds?: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
@@ -138,7 +144,10 @@ export function GroupsView({
     return session && archived[session.id] !== true ? session : null;
   };
   const groupedIds = new Set(groups.flatMap((group) => group.sessionIds));
-  const ungrouped = sessions.filter((session) => !groupedIds.has(session.id) && archived[session.id] !== true);
+  const ungrouped = pinnedFirst(
+    sessions.filter((session) => !groupedIds.has(session.id) && archived[session.id] !== true),
+    pinned,
+  );
 
   /** HTML5 DnD：dragover 放行 + 放置高亮；drop 移动归属。 */
   const allowDrop = (target: string) => (event: React.DragEvent) => {
@@ -157,7 +166,10 @@ export function GroupsView({
   return (
     <>
       {groups.map((group) => {
-        const members = group.sessionIds.map(visible).filter((session): session is Session => session !== null);
+        const members = pinnedFirst(
+          group.sessionIds.map(visible).filter((session): session is Session => session !== null),
+          pinned,
+        );
         const isCollapsed = collapsed.has(group.id);
         return (
           <section
@@ -233,6 +245,8 @@ export function GroupsView({
                       session={session}
                       active={session.id === activeId}
                       running={runningIds?.has(session.id) === true}
+                      pinned={pinned[session.id] === true}
+                      unread={unread[session.id] === true}
                       onSelect={onSelect}
                       onArchive={onArchive}
                       archiveLabel={t("sidebar.archive")}
@@ -261,6 +275,8 @@ export function GroupsView({
               session={session}
               active={session.id === activeId}
               running={runningIds?.has(session.id) === true}
+              pinned={pinned[session.id] === true}
+              unread={unread[session.id] === true}
               onSelect={onSelect}
               onArchive={onArchive}
               archiveLabel={t("sidebar.archive")}

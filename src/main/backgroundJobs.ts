@@ -78,7 +78,11 @@ export function createBackgroundJobs(options: BackgroundJobsOptions): Background
           messageId,
         });
         const reply = endObservedReply(messageId);
-        return { replyText: ownReplyText(reply.text), errored: reply.errored };
+        return {
+          replyText: ownReplyText(reply.text),
+          errored: reply.errored,
+          ...(reply.error !== undefined ? { error: reply.error } : {}),
+        };
       } catch (error) {
         endObservedReply(messageId);
         throw error;

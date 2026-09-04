@@ -80,6 +80,26 @@ describe("Composer", () => {
     expect(screen.queryByRole("button", { name: "chat.send" })).toBeNull();
   });
 
+  it("流式中回车仍可发送（主进程排队/引导），输入框清空", () => {
+    const onSend = vi.fn();
+    renderComposer({ streaming: true, onSend });
+    const ta = screen.getByRole("textbox");
+    fireEvent.change(ta, { target: { value: "后续消息" } });
+    fireEvent.keyDown(ta, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("后续消息");
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("流式中输入框有内容时动作钮仍是停止", () => {
+    const onStop = vi.fn();
+    const onSend = vi.fn();
+    renderComposer({ streaming: true, onStop, onSend });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "chat.stop" }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("权限/模型/思考选择器齐全且走设置补丁", async () => {
     const onPatchSettings = vi.fn();
     renderComposer({ onPatchSettings });

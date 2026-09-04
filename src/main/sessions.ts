@@ -395,6 +395,7 @@ export function getSidebarState(): SidebarState {
     order: [],
     archived: {},
     pinned: {},
+    unread: {},
     groups: [],
     ungrouped: [],
     projectOrder: [],
@@ -412,6 +413,26 @@ export function archiveSession(id: string, archived: boolean): void {
 export function pinSession(id: string, pinned: boolean): void {
   if (!sidebarStore) throw new Error("sidebar store not initialized");
   sidebarStore.pinSession(id, pinned);
+}
+
+export function markSessionUnread(id: string, unread: boolean): void {
+  if (!sidebarStore) throw new Error("sidebar store not initialized");
+  sidebarStore.markSessionUnread(id, unread);
+}
+
+export function renameSession(id: string, title: string): Session {
+  const record = sessions.get(id);
+  const normalized = title.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!record) throw new Error("unknown session");
+  if (!normalized) throw new Error("session title is empty");
+  record.title = normalized;
+  record.updatedAt = Date.now();
+  order.splice(order.indexOf(id), 1);
+  order.unshift(id);
+  persistIndex();
+  syncSidebar();
+  syncSessionMeta(record);
+  return publicSessionView(record);
 }
 
 export function reorderSessions(container: SidebarContainer, orderedIds: readonly string[]): void {

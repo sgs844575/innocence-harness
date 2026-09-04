@@ -23,7 +23,7 @@ export interface ProviderModel {
   readonly capabilities?: Readonly<Record<string, boolean | "unknown">>;
 }
 
-/** Token accounting normalized without exposing a provider wire payload. */
+/** Token accounting normalized across provider adapters. */
 export interface UsageMetadata {
   inputTokens?: number;
   outputTokens?: number;
@@ -44,7 +44,7 @@ export interface TurnMetadata {
   responseId?: string;
 }
 
-/** Sanitized completion shared by events, persistence, and host callbacks. */
+/** Completion shared by events, persistence, and host callbacks. */
 export interface TurnCompletion {
   providerId?: string;
   modelId?: string;

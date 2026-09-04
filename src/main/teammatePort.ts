@@ -49,8 +49,7 @@ export interface TeammateIdentity {
 
 const NO_TASK_ERROR =
   "No named teammates are available in this session (it is not bound to a task); use the one-shot subagent tool instead.";
-const TURN_FAILED_ERROR =
-  "The teammate turn failed before producing a reply; no reply is available.";
+const withMessage = (error: string, message: string) => `${error} Message: ${message}`;
 
 let teamSeq = 0;
 const mintMessageId = (routeId: string) =>
@@ -67,27 +66,27 @@ export function createSendToTeammate(
   identity: TeammateIdentity,
 ): SendToTeammatePort {
   return async (teammate: string, message: string): Promise<TeamSendResult> => {
-    if (!identity.taskId) return { ok: false, error: NO_TASK_ERROR };
+    if (!identity.taskId) return { ok: false, error: withMessage(NO_TASK_ERROR, message) };
     const routes = await deps.listTeammateRoutes(identity.taskId);
     const others = routes.filter((routeId) => routeId !== identity.routeId);
     if (!routes.includes(teammate)) {
       return {
         ok: false,
-        error: others.length > 0
+        error: withMessage(others.length > 0
           ? `Unknown teammate "${teammate}"; available teammates: ${others.join(", ")}.`
-          : `Unknown teammate "${teammate}"; this task has no other named routes.`,
+          : `Unknown teammate "${teammate}"; this task has no other named routes.`, message),
       };
     }
     if (teammate === identity.routeId) {
       return {
         ok: false,
-        error: "A route cannot send a message to itself; address a different teammate.",
+        error: withMessage("A route cannot send a message to itself; address a different teammate.", message),
       };
     }
     if (deps.runtime.isRouteRunning?.(identity.sessionId, teammate)) {
       return {
         ok: false,
-        error: `Teammate "${teammate}" is busy running another turn; wait for that turn to finish before sending again (a teammate answers as its turn text — it does not need a message back).`,
+        error: withMessage(`Teammate "${teammate}" is busy running another turn; wait for that turn to finish before sending again (a teammate answers as its turn text — it does not need a message back).`, message),
       };
     }
     const messageId = mintMessageId(identity.routeId);
@@ -112,7 +111,12 @@ export function createSendToTeammate(
       };
     }
     // 错误标记优先：失败回合即使镜像了文本也判为投递失败。
-    if (reply.errored) return { ok: false, error: TURN_FAILED_ERROR };
+    if (reply.errored) {
+      return {
+        ok: false,
+        error: reply.error ?? (reply.text || "The teammate turn failed before producing a reply."),
+      };
+    }
     // 剥离宿主镜像的通知行（runtime-events 把压缩/非致命错误以
     // "> 🗜️/⚠️" 合成 delta 送进 onDelta——它们不是队友自述文本）；
     // 剥离后为空（无正文但触发压缩的回合）回落占位符。

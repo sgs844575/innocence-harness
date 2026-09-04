@@ -1,24 +1,48 @@
-// 标题栏分支面板（对齐参考）：胶囊触发 → 搜索 + 本地分支列表（当前分支置顶、
-// 带未提交更改统计）+ 创建并检出新分支 + Git 图谱（占位）。检出走 workspaceGitCheckout。
+// 分支面板（对齐参考）：触发器 → 搜索 + 本地分支列表（当前分支置顶、带未提交
+// 更改统计）+ 创建并检出新分支 + Git 图谱（打开图谱对话框）。检出走
+// workspaceGitCheckout。BranchPicker = 标题栏胶囊触发器；BranchPickerPopover
+// 是共享主体，任意触发器（如 Git 胶囊分支行）可复用同一面板。
 import { useEffect, useRef, useState } from "react";
 import * as RadixPopover from "@radix-ui/react-popover";
 import { Check, ChevronDown, GitBranch, Network, Plus, Search } from "lucide-react";
 import { api, hasBridge } from "../lib/ipc";
 
-interface Props {
+export interface BranchPickerBaseProps {
   t: (key: string) => string;
-  /** 会话工作区根；空 = 无项目上下文（退化为不可点的静态胶囊）。 */
+  /** 会话工作区根；空 = 无项目上下文（退化为不可点的静态触发器）。 */
   root: string;
-  /** 当前分支（null = 未检测/非仓库，整体隐藏，对齐参考规则）。 */
+  /** 当前分支（null = 未检测/空仓：列表无勾选项，面板仍可打开）。 */
   current: string | null;
   onSwitched: (branch: string) => void;
   onError: (message: string) => void;
+  /** 「Git 图谱」入口（缺省 = 禁用占位）。 */
+  onOpenGraph?: () => void;
+}
+
+interface PopoverProps extends BranchPickerBaseProps {
+  /** 触发器元素（必须是可挂 ref 的单元素，如 button）。 */
+  trigger: React.ReactNode;
+  /** 浮层相对触发器的方向；标题栏默认向下，侧边浮动卡可指定向左。 */
+  side?: RadixPopover.PopoverContentProps["side"];
+  /** 浮层在所选方向上的对齐方式。 */
+  align?: RadixPopover.PopoverContentProps["align"];
 }
 
 const pill =
   "app-no-drag ml-3 flex h-7 shrink-0 items-center gap-2 rounded-full bg-(--color-raised) px-3 whitespace-nowrap text-(--color-foreground)";
 
-export function BranchPicker({ t, root, current, onSwitched, onError }: Props): React.JSX.Element | null {
+/** 分支面板主体：任意触发器 + 搜索/列表/新建/图谱内容。 */
+export function BranchPickerPopover({
+  t,
+  root,
+  current,
+  onSwitched,
+  onError,
+  onOpenGraph,
+  trigger,
+  side = "bottom",
+  align = "start",
+}: PopoverProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [branches, setBranches] = useState<string[] | null>(null);
@@ -60,18 +84,6 @@ export function BranchPicker({ t, root, current, onSwitched, onError }: Props): 
     if (creating) requestAnimationFrame(() => createRef.current?.focus());
   }, [creating]);
 
-  if (current === null) return null;
-
-  const interactive = hasBridge() && root !== "";
-  const trigger = (
-    <button type="button" disabled={!interactive} title={current} className={`${pill} outline-none ${interactive ? "hover:bg-(--color-hover)" : ""}`}>
-      <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-muted)" />
-      <span className="max-w-[140px] truncate font-mono">{current}</span>
-      <ChevronDown size={12} className="text-(--color-faint)" />
-    </button>
-  );
-  if (!interactive) return trigger;
-
   const checkout = (name: string, create: boolean): void => {
     const branch = name.trim();
     if (!branch) return;
@@ -98,8 +110,8 @@ export function BranchPicker({ t, root, current, onSwitched, onError }: Props): 
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
       <RadixPopover.Portal>
         <RadixPopover.Content
-          align="start"
-          side="bottom"
+          align={align}
+          side={side}
           sideOffset={6}
           className="dropdown-in z-50 w-[300px] rounded-(--radius-pop) border border-(--color-border) bg-(--color-popup) p-1.5 shadow-(--shadow-pop)"
         >
@@ -169,10 +181,14 @@ export function BranchPicker({ t, root, current, onSwitched, onError }: Props): 
           )}
           <button
             type="button"
-            disabled
-            aria-description={t("titlebar.menu.comingSoon")}
-            title={t("titlebar.menu.comingSoon")}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--color-muted) disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!onOpenGraph}
+            aria-description={onOpenGraph ? undefined : t("titlebar.menu.comingSoon")}
+            title={onOpenGraph ? t("branch.graph") : t("titlebar.menu.comingSoon")}
+            onClick={() => {
+              setOpen(false);
+              onOpenGraph?.();
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--color-muted) outline-none hover:bg-(--color-hover) hover:text-(--color-foreground) disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-(--color-muted)"
           >
             <Network size={13} className="shrink-0" />
             {t("branch.graph")}
@@ -180,5 +196,24 @@ export function BranchPicker({ t, root, current, onSwitched, onError }: Props): 
         </RadixPopover.Content>
       </RadixPopover.Portal>
     </RadixPopover.Root>
+  );
+}
+
+/** 标题栏分支胶囊：current 为 null 时整体隐藏（对齐参考规则）。 */
+export function BranchPicker({ t, root, current, onSwitched, onError, onOpenGraph }: BranchPickerBaseProps): React.JSX.Element | null {
+  if (current === null) return null;
+
+  const interactive = hasBridge() && root !== "";
+  const trigger = (
+    <button type="button" disabled={!interactive} title={current} className={`${pill} outline-none ${interactive ? "hover:bg-(--color-hover)" : ""}`}>
+      <GitBranch size={14} strokeWidth={1.3} className="shrink-0 text-(--color-muted)" />
+      <span className="max-w-[140px] truncate font-mono">{current}</span>
+      <ChevronDown size={12} className="text-(--color-faint)" />
+    </button>
+  );
+  if (!interactive) return trigger;
+
+  return (
+    <BranchPickerPopover t={t} root={root} current={current} onSwitched={onSwitched} onError={onError} onOpenGraph={onOpenGraph} trigger={trigger} />
   );
 }

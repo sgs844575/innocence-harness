@@ -14,16 +14,30 @@ import type { SessionPlugin } from "./registry";
 import type { SessionSpineSuite } from "./session-spine";
 import type { Context } from "@innocenceharness/kernel";
 import type { Route } from "@innocenceharness/task-core";
-import type { HarnessSettings } from "./settings";
+import type { HarnessSettings, InteractionMode } from "./settings";
 
 /** Route id plain chat turns run on; the transcript codec maps v2 rows here. */
 export const DEFAULT_ROUTE_ID = "main";
 
 export type AskResponse = "allow" | "allowSession" | "deny";
 
+/**
+ * What a send() call did with the request, reported through
+ * RuntimeSendRequest.onDisposition:
+ * - "started": the turn started immediately (the route was idle), or a
+ *   parked queued send left the FIFO and its turn began;
+ * - "queued": the route was busy — the request parked in the per-route FIFO
+ *   and starts automatically when the current run settles (also reported
+ *   when a parked steer input is upgraded to a queued follow-up at settle);
+ * - "steered": the route was busy in steer mode — the message parked in the
+ *   running loop's mailbox for mid-run injection and no separate turn will
+ *   carry this messageId unless it is later upgraded to "queued".
+ */
+export type RuntimeSendDisposition = "started" | "queued" | "steered";
+
 export interface PermissionAsk {
   requestId: string;
-  /** The persisted (redacted) permission request — raw args never reach the host. */
+  /** The complete persisted permission request. */
   call: PermissionRequest;
 }
 
@@ -39,7 +53,7 @@ export interface RuntimeHooks {
   onTool(sessionId: string, messageId: string, part: LiveToolPart): void;
   /** Thinking deltas (the session spine does not emit these yet; the channel is ready). */
   onThinking(sessionId: string, messageId: string, delta: string): void;
-  /** One sanitized summary shared with transcript persistence and the done event. */
+  /** Completion metadata shared with transcript persistence and the done event. */
   onCompleted(sessionId: string, messageId: string, completion: TurnCompletion): void;
   onError(sessionId: string, messageId: string, error: string): void;
   /** Optional host-neutral child-agent lifecycle sink. */
@@ -108,6 +122,21 @@ export interface RuntimeSendRequest {
   routeId: string;
   text: string | Message;
   messageId: string;
+  /**
+   * Behavior when the target route is already running a turn (host passes the
+   * session's settings snapshot value; absent normalizes to "queue"):
+   * "queue" parks the request in the per-route FIFO, "steer" parks it in the
+   * running loop's mailbox for mid-run injection. A busy route NEVER starts a
+   * second concurrent run regardless of mode.
+   */
+  interactionMode?: InteractionMode;
+  /**
+   * Synchronous disposition notice (see RuntimeSendDisposition): fired before
+   * send() first yields for the initial decision, and once more with "queued"
+   * when a parked steer input outlives its run and becomes a queued follow-up
+   * (the host then needs the assistant placeholder it skipped for "steered").
+   */
+  onDisposition?: (disposition: RuntimeSendDisposition) => void;
 }
 
 /** Route identity a host needs to resolve a route-scoped workspace root. */

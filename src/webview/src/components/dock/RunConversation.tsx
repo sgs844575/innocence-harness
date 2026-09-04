@@ -2,13 +2,14 @@
 // 同一表现语言——prompt 用户气泡（hover 复制）、思考幽灵行、富工具行（动词/
 // 文件名/路径/±diff 计数/可展开明细，文件簇点开 dock 文件标签）、正文按段
 // 与工具轨迹穿插（textSegment 闭合段 Markdown 帧 + 未闭合流式帧，旧档案回退
-// 为末尾整段正文）、等待行与错误块。段间距同主时间线：轮内 16px、prompt 气泡
-// 相邻 32px；滚动同主时间线方向感知钉底（上滚释放、<48px 回钉、钉底时后续
-// 消息与异步高度增长即时跟踪到底）。
+// 为末尾整段正文）、运行空档的无转圈耐心提示与错误块。段间距同主时间线：轮内
+// 16px、prompt 气泡相邻 32px；滚动同主时间线方向感知钉底（上滚释放、<48px
+// 回钉、钉底时后续消息与异步高度增长即时跟踪到底）。
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { formatRunDuration, pairedRunTools, runConversationChunks, type SubagentRun } from "../../state/subagentRuns";
 import { runToolsToTimelineRows, type ToolRowModel } from "../chat/toolRows";
+import type { ToolGroupingOptions } from "../chat/toolGrouping";
 import { MarkdownView, type CodeAppearance } from "../chat/MarkdownView";
 import { ThinkingRow } from "../chat/ThinkingRow";
 import { WaitingRow } from "../chat/WaitingRow";
@@ -77,6 +78,7 @@ export function RunConversation({
   onBack,
   code,
   onOpenFile,
+  grouping,
 }: {
   t: (key: string) => string;
   run: SubagentRun;
@@ -84,6 +86,8 @@ export function RunConversation({
   code?: CodeAppearance;
   /** 文件行（编辑/写入/读取）：文件簇点击在右侧 dock 打开文件标签。 */
   onOpenFile?: (row: ToolRowModel) => void;
+  /** 工具分组开关（与主时间线同一 ToolTimeline 管线）；缺省 = 平铺。 */
+  grouping?: ToolGroupingOptions;
 }): React.JSX.Element {
   const running = isRunning(run);
   const stamp = new Date(run.endedAt ?? run.startedAt);
@@ -168,8 +172,8 @@ export function RunConversation({
         <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin h-full min-w-0 overflow-y-auto">
           {/* 段间距与主时间线同律：轮内（思考幽灵行/正文段帧/富工具时间线）统一
               16px；prompt 气泡（初始/续跑）与相邻内容之间为消息级 32px。未闭合
-              尾部 = 流式 Markdown 帧（流式光标），错误 = ⚠ 前缀正文行，空等 =
-              轮换耐心提示。 */}
+              尾部 = 流式 Markdown 帧（流式光标），错误 = ⚠ 前缀正文行，运行空档 =
+              无转圈的轮换耐心提示（末段 live 思考幽灵行自带动态标签时不重复）。 */}
           <div className="px-3 py-4">
             {run.prompt && <PromptBubble t={t} text={run.prompt} />}
             {chunks.map((chunk, index) => {
@@ -197,7 +201,9 @@ export function RunConversation({
                     <ToolTimeline
                       t={t}
                       rows={runToolsToTimelineRows(pairedRunTools(chunk.tools))}
+                      code={code}
                       onOpenFile={onOpenFile}
+                      grouping={grouping}
                     />
                   )}
                 </div>
@@ -206,6 +212,10 @@ export function RunConversation({
             {(() => {
               const lastKind = chunks.length > 0 ? chunks[chunks.length - 1]!.kind : run.prompt ? ("prompt" as const) : undefined;
               const tailGap = lastKind === undefined ? "" : lastKind === "prompt" ? "mt-8" : "mt-4";
+              // 运行中且无未闭合流式正文时给出轮换耐心提示：末段为 thinking 时
+              // 幽灵行自身已带 live「正在思考」渐变标签，等待行不重复；提示只留
+              // 文案（无转圈加载）。
+              const waiting = running && !openText && lastKind !== "thinking";
               return (
                 <>
                   {openText && (
@@ -221,9 +231,9 @@ export function RunConversation({
                       <AssistantFrame t={t} text={fallbackBody} code={code} stamp={stamp} hoverActions />
                     </div>
                   )}
-                  {!openText && running && chunks.length === 0 && (
+                  {waiting && (
                     <div className={tailGap}>
-                      <WaitingRow t={t} />
+                      <WaitingRow t={t} spinner={false} />
                     </div>
                   )}
                   {run.error && (

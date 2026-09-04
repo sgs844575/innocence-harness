@@ -12,13 +12,19 @@ const mocks = vi.hoisted(() => ({
   onDockTerminalOutput: vi.fn(() => () => {}),
   onDockTerminalExit: vi.fn(() => () => {}),
   termDispose: vi.fn(),
+  /** 每次 new Terminal 的构造选项（按序），用于断言字体/字号注入。 */
+  constructedOptions: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
-    options: Record<string, unknown> = {};
+    options: Record<string, unknown>;
     cols = 80;
     rows = 24;
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = options;
+      mocks.constructedOptions.push(options);
+    }
     loadAddon(): void {}
     open(): void {}
     write(): void {}
@@ -60,6 +66,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.constructedOptions.length = 0;
   bridgeState.available = true;
 });
 
@@ -85,5 +92,28 @@ describe("DockTerminalView", () => {
     bridgeState.available = false;
     render(<DockTerminalView t={t} terminalId="term_1" workspaceRoot="D:/proj" visible />);
     expect(mocks.dockCreate).not.toHaveBeenCalled();
+  });
+
+  it("fontFamily 覆盖：非空值注入 xterm 构造选项", async () => {
+    render(<DockTerminalView t={t} terminalId="term_1" workspaceRoot="D:/proj" visible fontFamily="Custom Mono" />);
+    await waitFor(() => expect(mocks.constructedOptions.length).toBeGreaterThan(0));
+    expect(mocks.constructedOptions.at(-1)?.fontFamily).toBe("Custom Mono");
+  });
+
+  it("fontFamily 为 null/缺省：沿用 --font-mono token（jsdom 无该 token → undefined）", async () => {
+    render(<DockTerminalView t={t} terminalId="term_1" workspaceRoot="D:/proj" visible fontFamily={null} />);
+    await waitFor(() => expect(mocks.constructedOptions.length).toBeGreaterThan(0));
+    expect(mocks.constructedOptions.at(-1)?.fontFamily).toBeUndefined();
+  });
+
+  it("fontFamily 变更重建终端（旧实例 dispose，与 fontSize 同路径）", async () => {
+    const { rerender } = render(
+      <DockTerminalView t={t} terminalId="term_1" workspaceRoot="D:/proj" visible fontFamily="Font A" />,
+    );
+    await waitFor(() => expect(mocks.constructedOptions.at(-1)?.fontFamily).toBe("Font A"));
+    rerender(<DockTerminalView t={t} terminalId="term_1" workspaceRoot="D:/proj" visible fontFamily="Font B" />);
+    await waitFor(() => expect(mocks.constructedOptions.at(-1)?.fontFamily).toBe("Font B"));
+    expect(mocks.constructedOptions).toHaveLength(2);
+    expect(mocks.termDispose).toHaveBeenCalledOnce();
   });
 });

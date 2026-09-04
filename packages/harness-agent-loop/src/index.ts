@@ -6,6 +6,11 @@ export {
   type LoopResult,
 } from "./loop";
 export {
+  createPendingInputMailbox,
+  type PendingInput,
+  type PendingInputMailbox,
+} from "./pending-inputs";
+export {
   createRunLoop,
   createAgentLoopPlugin,
   type AgentLoopPlugin,
@@ -13,4 +18,3 @@ export {
   type LoopRunOptions,
   type RunLoopFunction,
 } from "./service";
-export { recoverDsmlToolCalls } from "./dsml-recovery";

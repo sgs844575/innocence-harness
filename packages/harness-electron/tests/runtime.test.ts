@@ -304,7 +304,7 @@ describe("HarnessRuntime", () => {
 
     const file = path.join(persistDir, "sess-fatal-metadata.jsonl");
     const record = await lastRow(file);
-    expect(recorded.errors).toEqual(["Model request failed"]);
+    expect(recorded.errors).toEqual(["upstream failure"]);
     expect(recorded.completed).toBe(1);
     expect(recorded.completions).toEqual([record.completion]);
     expect(record.completion).toEqual({
@@ -1188,7 +1188,6 @@ describe("HarnessRuntime route cache", () => {
       sideEffect: "none" as const,
       parameters: { type: "object" as const, properties: {} },
       permissionResource: () => ({ action: "read" as const, kind: "path" as const, scope: "probe.txt" }),
-      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
       async execute(
         _args: Record<string, unknown>,
         ctx: { scope: { taskId?: string; routeId?: string } },

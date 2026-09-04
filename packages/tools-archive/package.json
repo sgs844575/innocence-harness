@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/tools-archive",
   "version": "0.1.0",
-  "description": "InnocenceHarness archive tool plugin: workspace file bundling into zip with optional passphrase encryption",
+  "description": "InnocenceHarness archive tool plugin: workspace file bundling into zip",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -17,7 +17,6 @@
     "@innocenceharness/harness-tools": "^0.1.0",
     "@innocenceharness/kernel": "^0.1.0",
     "@innocenceharness/tools-fs": "^0.1.0",
-    "node-forge": "^1.4.0",
     "yazl": "^3.3.1"
   },
   "license": "AGPL-3.0-only",

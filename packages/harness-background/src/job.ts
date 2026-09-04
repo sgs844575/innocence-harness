@@ -56,6 +56,7 @@ export interface BackgroundJobPorts {
   runJob(input: { sessionId: string; messageId: string; envelope: string }): Promise<{
     replyText: string;
     errored: boolean;
+    error?: string;
   }>;
   /** 终态通知（结构化；宿主格式化为用户文案）。失败不致命，走 onNotifyError。 */
   notify(payload: { jobTitle: string; outcome: BackgroundJobOutcome }): Promise<void> | void;
@@ -99,7 +100,7 @@ export function createBackgroundJobService(ports: BackgroundJobPorts): Backgroun
         prompt: input.prompt,
       });
       const reply = await ports.runJob({ sessionId: input.sessionId, messageId, envelope });
-      const outcome = backgroundOutcomeOf(reply.replyText, reply.errored);
+      const outcome = backgroundOutcomeOf(reply.replyText, reply.errored, reply.error);
       record.status = outcome.status;
       record.endedAt = now();
       record.headline = outcome.headline;

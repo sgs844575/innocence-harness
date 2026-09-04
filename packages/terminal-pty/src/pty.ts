@@ -56,6 +56,9 @@ export interface PtySessionInit {
   readonly cwd: string;
   readonly cols: number;
   readonly rows: number;
+  /** 显式 shell 启动命令（集成终端 shell 设置）；缺省 = 平台默认
+   *  （win32 comspec/cmd.exe，posix $SHELL//bin/sh）。 */
+  readonly shell?: { readonly file: string; readonly args?: readonly string[] };
 }
 
 export interface LivePtySessionOptions {
@@ -126,11 +129,11 @@ export class LivePtySession implements PtySession {
     this.routeId = init.routeId;
     this.cwd = init.cwd;
     this.options = options;
-    const shell =
-      process.platform === "win32"
+    const shell = init.shell?.file ??
+      (process.platform === "win32"
         ? (process.env.comspec || "cmd.exe")
-        : (process.env.SHELL || "/bin/sh");
-    this.pty = spawnPty(shell, [], {
+        : (process.env.SHELL || "/bin/sh"));
+    this.pty = spawnPty(shell, [...(init.shell?.args ?? [])], {
       name: "xterm-256color",
       cwd: init.cwd,
       cols: init.cols,

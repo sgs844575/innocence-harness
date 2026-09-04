@@ -4,6 +4,7 @@
 // 未就绪时返回 null（streamdown 先显示原文），就绪后经回调替换为高亮结果。
 import { createHighlighter, createJavaScriptRegexEngine, type Highlighter } from "shiki";
 import type { BundledLanguage, BundledTheme, CodeHighlighterPlugin, ThemeInput } from "streamdown";
+import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../../shared/codeThemes";
 
 /** 预加载语言（覆盖会话常见代码块）；其余语言首次见到时懒加载，失败回落 text。 */
 const PRELOAD_LANGS = [
@@ -20,12 +21,12 @@ const failedLangs = new Set<string>();
 
 function acquireHighlighter(): Promise<Highlighter> {
   highlighterPromise ??= createHighlighter({
-    themes: ["github-light", "github-dark"],
+    themes: [DEFAULT_CODE_THEME_LIGHT, DEFAULT_CODE_THEME_DARK],
     langs: [...PRELOAD_LANGS] as BundledLanguage[],
     engine: createJavaScriptRegexEngine(),
   }).then((highlighter) => {
-    loadedThemes.add("github-light");
-    loadedThemes.add("github-dark");
+    loadedThemes.add(DEFAULT_CODE_THEME_LIGHT);
+    loadedThemes.add(DEFAULT_CODE_THEME_DARK);
     for (const lang of PRELOAD_LANGS) loadedLangs.add(lang);
     return highlighter;
   });

@@ -93,7 +93,7 @@ export async function* streamOneHarnessStep(
     if (request.signal?.aborted) {
       yield { type: "abort" };
     } else {
-      yield { type: "error", error: toNeutralError(error) };
+      yield { type: "error", error: toError(error) };
     }
   }
 }
@@ -128,7 +128,7 @@ function mapStreamEvent(
         type: "toolResult",
         id: event.toolCallId,
         toolName: event.toolName,
-        content: toNeutralError(event.error).message,
+        content: toError(event.error).message,
         isError: true,
       };
     case "finish-step": {
@@ -151,7 +151,7 @@ function mapStreamEvent(
     case "abort":
       return { type: "abort" };
     case "error":
-      return { type: "error", error: toNeutralError(event.error) };
+      return { type: "error", error: toError(event.error) };
     default:
       return undefined;
   }
@@ -168,55 +168,52 @@ function stringifyToolOutput(output: unknown): string {
   return JSON.stringify(output);
 }
 
-const SAFE_MODEL_ERROR_MESSAGE = "Model request failed";
-
-/**
- * Classifies a model-request failure into a specific, actionable message.
- * Safety boundary: classification keys ONLY off the HTTP status code, the
- * network errno, and known error names — provider message/response bodies are
- * read solely for the context-length heuristic and never flow onward, so no
- * credentials, prompt text, or tool arguments can leak through this path.
- */
-export function classifyModelRequestError(error: unknown): string {
+/** Serializes a thrown value for events and transcripts: the original
+ * diagnostic verbatim (no redaction), with the cause errno appended when the
+ * message does not already carry it. Empty messages fall back to the HTTP
+ * status, then the cause errno, then String(value). */
+export function formatUnknownError(error: unknown): string {
+  if (typeof error === "string") return error;
   const shape = error as
     | {
-        name?: string;
-        message?: string;
-        statusCode?: number;
-        status?: number;
-        responseBody?: unknown;
-        cause?: { code?: string; name?: string; cause?: { code?: string } };
+        message?: unknown;
+        statusCode?: unknown;
+        status?: unknown;
+        cause?: { code?: unknown; cause?: unknown } | null;
       }
     | null
     | undefined;
-  const status = shape?.statusCode ?? shape?.status;
-  const causeCode = shape?.cause?.code ?? shape?.cause?.cause?.code;
-  const name = shape?.name ?? "";
-
-  if (status === 401) return "模型服务鉴权失败（HTTP 401）：API Key 无效或已过期";
-  if (status === 403)
-    return "模型服务拒绝访问（HTTP 403）：Key 无权使用该模型或分组，请到服务商后台检查分组/套餐权限";
-  if (status === 404) return "模型或端点不存在（HTTP 404）：请检查模型名与服务地址";
-  if (status === 429) return "模型服务限流（HTTP 429）：请求过于频繁或额度耗尽，请稍后重试";
-  if (status !== undefined && status >= 500)
-    return `模型服务错误（HTTP ${status}）：供应商暂时不可用，请稍后重试`;
-  if (status === 400) {
-    const hint = `${String(shape?.responseBody ?? "")} ${shape?.message ?? ""}`;
-    if (/context length|token limit|too many tokens|maximum context/i.test(hint)) {
-      return "上下文超出模型限制（HTTP 400）：请压缩对话或新建会话";
+  if (shape !== null && typeof shape === "object") {
+    const message = typeof shape.message === "string" ? shape.message.trim() : "";
+    const errno = causeErrno(shape.cause);
+    if (message.length > 0) {
+      return errno !== undefined && !message.includes(errno) ? `${message} (${errno})` : message;
     }
+    const status = shape.statusCode ?? shape.status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    if (errno !== undefined) return errno;
   }
-  if (causeCode === "ECONNREFUSED" || causeCode === "ETIMEDOUT" || causeCode === "ECONNRESET" || causeCode === "ENOTFOUND" || causeCode === "EAI_AGAIN") {
-    return `网络错误（${causeCode}）：无法连接模型服务`;
-  }
-  if (/fetch failed|network error/i.test(shape?.message ?? "")) {
-    return "网络错误：无法连接模型服务";
-  }
-  if (name === "TimeoutError") return "模型请求超时";
-  return SAFE_MODEL_ERROR_MESSAGE;
+  return String(error);
 }
 
-function toNeutralError(error: unknown): { message: string } {
+/** First errno found on the cause chain (capped at 3 hops). */
+function causeErrno(cause: unknown): string | undefined {
+  let hop = 0;
+  while (cause !== null && typeof cause === "object" && hop < 3) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === "string" && code.length > 0) return code;
+    cause = (cause as { cause?: unknown }).cause;
+    hop += 1;
+  }
+  return undefined;
+}
+
+/** Formats a model-request failure without removing provider diagnostics. */
+export function classifyModelRequestError(error: unknown): string {
+  return formatUnknownError(error);
+}
+
+function toError(error: unknown): { message: string } {
   return { message: classifyModelRequestError(error) };
 }
 

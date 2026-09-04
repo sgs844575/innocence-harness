@@ -85,6 +85,13 @@ export interface RunCommandOptions {
   signal?: AbortSignal;
   maxOutputChars?: number;
   onOutput?: (stream: "stdout" | "stderr", data: string) => void;
+  /**
+   * Host-resolved command shell prefix（terminalShell 设置经组合根解析注入）：
+   * 提供时以 `spawn(file, [...args, command], { shell: false })` 执行——file
+   * 即 shell 本体、args 已含命令行标志；缺省保持 Node 的 `{ shell: true }`
+   * 平台默认展开。tools-shell 不感知具体 shell 种类，只消费这个模板。
+   */
+  commandShell?: { file: string; args: string[] };
 }
 
 export interface RunCommandResult {
@@ -103,12 +110,20 @@ export async function runCommand(options: RunCommandOptions): Promise<RunCommand
   const isWindows = process.platform === "win32";
   // 先取代码页再 spawn：仅 Windows 首次调用有一次 chcp 探测，之后走缓存。
   const ansiEncoding = await windowsAnsiEncoding();
-  const child = spawn(command, {
-    shell: true,
-    cwd,
-    windowsHide: true,
-    env: { ...process.env, ...(isWindows ? {} : { shell: "/bin/sh" }) },
-  });
+  const env = { ...process.env, ...(isWindows ? {} : { shell: "/bin/sh" }) };
+  const child = options.commandShell
+    ? spawn(options.commandShell.file, [...options.commandShell.args, command], {
+      shell: false,
+      cwd,
+      windowsHide: true,
+      env,
+    })
+    : spawn(command, {
+      shell: true,
+      cwd,
+      windowsHide: true,
+      env,
+    });
 
   return new Promise((resolve) => {
     let stdout = "";
@@ -171,76 +186,83 @@ export async function runCommand(options: RunCommandOptions): Promise<RunCommand
   });
 }
 
+/** shell 插件工厂配置：宿主按 terminalShell 设置解析的命令 shell 模板。 */
+export interface ShellPluginConfig {
+  commandShell?: { file: string; args: string[] };
+}
+
 /** Bash-like shell tool: runs commands in the workspace root. */
-export const bashTool: Tool = {
-  name: "Bash",
-  description:
-    "在工作区目录执行 shell 命令（Windows 用 cmd，其他平台用 sh）。适合跑测试、构建、装依赖。" +
-    "输出超长会截断；命令有超时上限。失败时读取 stderr 自行修正。",
-  readOnly: false,
-  sideEffect: "process",
-  parameters: {
-    type: "object",
-    properties: {
-      command: { type: "string", description: "要执行的命令" },
-      timeoutMs: { type: "integer", description: "超时毫秒数（可选，默认 120000）" },
+export function createBashTool(config: ShellPluginConfig = {}): Tool {
+  const commandShell = config.commandShell;
+  return {
+    name: "Bash",
+    description:
+      "在工作区目录执行 shell 命令（Windows 用 cmd，其他平台用 sh）。适合跑测试、构建、装依赖。" +
+      "输出超长会截断；命令有超时上限。失败时读取 stderr 自行修正。",
+    readOnly: false,
+    sideEffect: "process",
+    parameters: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "要执行的命令" },
+        timeoutMs: { type: "integer", description: "超时毫秒数（可选，默认 120000）" },
+      },
+      required: ["command"],
     },
-    required: ["command"],
-  },
-  async validateArgs(args) {
-    const command = args.command;
-    if (typeof command !== "string" || command.trim().length === 0) {
-      throw new Error("缺少必填参数 command（字符串）");
-    }
-  },
-  permissionResource(args) {
-    // scope 与持久化同粒度：完整命令原文（项目规则按 token 前缀匹配）。
-    return {
-      action: "execute",
-      kind: "command",
-      scope: String(args.command ?? ""),
-    };
-  },
-  persistArgs(args) {
-    const command = requireCommand(args);
-    // 完整命令原文持久化（开源本地工具，无脱敏）：聊天工具行与权限卡直接展示。
-    return { command };
-  },
-  async execute(args, ctx: ToolContext) {
-    const command = requireCommand(args);
-    const scope = ctx.scope;
-    const identity = {
-      sessionId: scope.sessionId ?? "",
-      taskId: scope.taskId ?? "",
-      routeId: scope.routeId ?? "main",
-      invocationId: scope.invocationId,
-    };
-    publishShellTranscript({ type: "started", ...identity, command });
-    const result = await runCommand({
-      command,
-      cwd: ctx.workspaceRoot,
-      timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
-      signal: ctx.signal,
-      onOutput: (stream, data) => publishShellTranscript({ type: "output", ...identity, data, stream }),
-    });
-    const parts: string[] = [];
-    if (result.stdout) parts.push(result.stdout);
-    if (result.stderr) parts.push(`[stderr]\n${result.stderr}`);
-    if (result.timedOut) parts.push(`[命令超时被终止（>${Math.round((typeof args.timeoutMs === "number" ? args.timeoutMs : DEFAULT_TIMEOUT_MS) / 1000)}s）]`);
-    const ok = !result.timedOut && result.exitCode === 0;
-    publishShellTranscript({
-      type: "completed",
-      ...identity,
-      exitCode: result.exitCode,
-      timedOut: result.timedOut,
-      ...(ok ? {} : { error: result.timedOut ? "command timed out" : "command failed" }),
-    });
-    return {
-      content: parts.join("\n") || "[无输出，退出码 0]",
-      isError: !ok,
-    };
-  },
-};
+    async validateArgs(args) {
+      const command = args.command;
+      if (typeof command !== "string" || command.trim().length === 0) {
+        throw new Error("缺少必填参数 command（字符串）");
+      }
+    },
+    permissionResource(args) {
+      // scope 与持久化同粒度：完整命令原文（项目规则按 token 前缀匹配）。
+      return {
+        action: "execute",
+        kind: "command",
+        scope: String(args.command ?? ""),
+      };
+    },
+    async execute(args, ctx: ToolContext) {
+      const command = requireCommand(args);
+      const scope = ctx.scope;
+      const identity = {
+        sessionId: scope.sessionId ?? "",
+        taskId: scope.taskId ?? "",
+        routeId: scope.routeId ?? "main",
+        invocationId: scope.invocationId,
+      };
+      publishShellTranscript({ type: "started", ...identity, command });
+      const result = await runCommand({
+        command,
+        cwd: ctx.workspaceRoot,
+        timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+        signal: ctx.signal,
+        onOutput: (stream, data) => publishShellTranscript({ type: "output", ...identity, data, stream }),
+        ...(commandShell ? { commandShell } : {}),
+      });
+      const parts: string[] = [];
+      if (result.stdout) parts.push(result.stdout);
+      if (result.stderr) parts.push(`[stderr]\n${result.stderr}`);
+      if (result.timedOut) parts.push(`[命令超时被终止（>${Math.round((typeof args.timeoutMs === "number" ? args.timeoutMs : DEFAULT_TIMEOUT_MS) / 1000)}s）]`);
+      const ok = !result.timedOut && result.exitCode === 0;
+      publishShellTranscript({
+        type: "completed",
+        ...identity,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        ...(ok ? {} : { error: result.timedOut ? "command timed out" : "command failed" }),
+      });
+      return {
+        content: parts.join("\n") || "[无输出，退出码 0]",
+        isError: !ok,
+      };
+    },
+  };
+}
+
+/** Zero-config Bash tool（默认 { shell: true } 平台展开）。 */
+export const bashTool: Tool = createBashTool();
 
 function requireCommand(args: Record<string, unknown>): string {
   const command = args.command;
@@ -250,11 +272,24 @@ function requireCommand(args: Record<string, unknown>): string {
   return command;
 }
 
-/** Shell tools plugin — registers the Bash tool. */
-export const ShellPlugin = {
-  name: "shell",
-  apply(ctx: Context) {
-    ctx.tools.register(bashTool);
-  },
-};
-export default ShellPlugin;
+/**
+ * Shell tools plugin factory — registers the Bash tool. The staged default
+ * export is THIS factory: hosts assemble the command shell from the session's
+ * settings snapshot (terminalShell → resolveCommandShell in the composition
+ * root); zero-config keeps the platform default `{ shell: true }` spawn.
+ */
+export function createShellPlugin(config: ShellPluginConfig = {}) {
+  return {
+    name: "shell",
+    apply(ctx: Context) {
+      ctx.tools.register(createBashTool(config));
+    },
+  };
+}
+
+/** Zero-config plugin（默认 { shell: true } 平台展开）。 */
+export const ShellPlugin = createShellPlugin();
+
+// Distribution default (kernel-loader unwrapExports convention): the factory,
+// so a disk-loaded module resolves to the single entry point hosts configure.
+export default createShellPlugin;

@@ -90,6 +90,7 @@ const MANIFEST_IDS = [
   "memory",
   "hooks",
   "team",
+  "ask",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -145,6 +146,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       memory: "memory",
       hooks: "hooks",
       team: "team",
+      ask: "ask",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
@@ -713,7 +715,6 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       sideEffect?: string;
       validateArgs?: (args: Record<string, unknown>) => void;
       permissionResource: (args: Record<string, unknown>, ctx: unknown) => { action: string; kind: string; scope: string };
-      persistArgs: (args: Record<string, unknown>) => Record<string, unknown>;
     }> = [];
     await plugin.apply({ tools: { register: (t: unknown) => registered.push(t as never) } });
     expect(registered.map((t) => t.name)).toEqual(["web_fetch"]);
@@ -729,7 +730,8 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       kind: "web",
       scope: "example.com",
     });
-    expect(tool.persistArgs({ url: "https://example.com/a" })).toEqual({ url: "https://example.com/a" });
+    // 无脱敏契约：工具不再提供 persistArgs 投影，完整参数原样持久化。
+    expect("persistArgs" in tool).toBe(false);
   });
 
   // ---- pluginInventory（清单投影，PluginsSection 数据源）------------------
@@ -1075,11 +1077,12 @@ maybeDescribe("composePlugins external ecosystem adapter", () => {
     try {
       const ws = await tempWorkspace({});
       const plugins = await composition.composePlugins(ws);
-      // 清单条目胜出：skills 仍是宿主工厂装配，fs 仍走 resolver（无 plugin）。
+      // 清单条目胜出：skills 与 fs 都仍是宿主工厂装配（fs/shell 现为工厂内件，
+      // 经 builtinLoaderEntryFor 携带 factory:* 插件对象装载——同 skills 机制）。
       const skills = plugins.find((p) => p.name === "skills");
       expect(skills && "plugin" in skills && skills.plugin?.name).toBe("factory:skills");
       const coreFs = plugins.find((p) => p.name === "fs");
-      expect(coreFs && ("plugin" in coreFs ? coreFs.plugin : undefined)).toBeUndefined();
+      expect(coreFs && "plugin" in coreFs && coreFs.plugin?.name).toBe("factory:fs");
       // 全装配无任何适配器条目（冲突目录两处均不得复活为 ecosystem:*）。
       expect(plugins.some((p) => "plugin" in p && p.plugin?.name?.startsWith("ecosystem:"))).toBe(false);
     } finally {

@@ -470,7 +470,7 @@ export interface ModelInfo {
 // 镜像契约：以下资源类型镜像 packages/harness-permissions/src/policy.ts 的
 // PermissionResource（shared 不 import 包），修改任何一侧时必须同步另一侧
 // （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
-/** 持久化资源：工具调用作用的对象摘要（与 persistArgs 同粒度）。 */
+/** 持久化资源：工具调用作用的规范对象。 */
 export interface PermissionResourceInfo {
   /** 资源类别（path/command/url…）。 */
   kind: string;
@@ -554,8 +554,6 @@ export interface ProviderProfile {
   apiKey: string;
   /** Opaque host storage reference; safe to persist and mirror. */
   apiKeyRef?: string;
-  /** Whether the host has a legacy or secured credential for this profile. */
-  apiKeyConfigured?: boolean;
   baseURL: string;
   enabled: boolean;
   models: ModelInfo[];

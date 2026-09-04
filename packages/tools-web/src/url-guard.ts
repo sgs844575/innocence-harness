@@ -138,31 +138,27 @@ export interface ParsedWebTarget {
   host: string;
 }
 
-/**
- * Syntax + SSRF baseline validation. Error messages echo the protocol and
- * host only (both non-sensitive and useful for correction) — never the path
- * or query.
- */
+/** Syntax + SSRF baseline validation with the complete target in diagnostics. */
 export function parseWebTarget(raw: string): ParsedWebTarget {
   if (typeof raw !== "string" || raw.trim() === "") {
-    throw new Error("url 必须是合法的 http/https 绝对地址");
+    throw new Error(`url 必须是合法的 http/https 绝对地址；收到 ${String(raw)}`);
   }
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new Error("url 必须是合法的 http/https 绝对地址");
+    throw new Error(`url 必须是合法的 http/https 绝对地址；收到 ${raw}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(
-      `目标地址不允许：仅支持 http/https 协议（收到 ${url.protocol.replace(/:$/, "")}，主机 ${url.hostname}）`,
+      `目标地址不允许：仅支持 http/https 协议；收到 ${url.toString()}`,
     );
   }
   if (url.username !== "" || url.password !== "") {
-    throw new Error(`目标地址不允许：URL 内嵌登录凭据（主机 ${url.hostname}）`);
+    throw new Error(`目标地址不允许：URL 内嵌登录凭据；收到 ${url.toString()}`);
   }
   if (isPrivateHost(url.hostname)) {
-    throw new Error(`目标地址不允许：内网/环回地址 ${url.hostname}`);
+    throw new Error(`目标地址不允许：内网/环回地址；收到 ${url.toString()}`);
   }
   return { url, host: url.hostname };
 }
@@ -188,16 +184,15 @@ class DnsScreenTimeout extends Error {}
  * predicates. Fail closed — a private hit, an empty result set, a lookup
  * error, or an expired time budget all reject. IP literals are skipped
  * (already judged as literals); a host that normalizes to the empty name is
- * rejected outright. Error messages echo the hostname only, never the path
- * or query.
+ * rejected outright. The complete target is retained in every diagnostic.
  */
 export async function screenResolvedHost(
-  hostname: string,
+  target: URL,
   lookup: DnsLookupLike = defaultDnsLookup,
   timeoutMs: number = DEFAULT_DNS_LOOKUP_TIMEOUT_MS,
 ): Promise<void> {
-  const host = stripTrailingDots(hostname);
-  if (host === "") throw new Error("目标地址不允许：域名为空");
+  const host = stripTrailingDots(target.hostname);
+  if (host === "") throw new Error(`目标地址不允许：域名为空；收到 ${target.toString()}`);
   if (isIpLiteralHost(host)) return;
   const lookupPromise = lookup(host, { all: true });
   // The race loser must carry its own rejection sink — a lookup that fails
@@ -215,14 +210,14 @@ export async function screenResolvedHost(
     ]);
   } catch (err) {
     if (err instanceof DnsScreenTimeout) {
-      throw new Error(`目标地址不允许：域名 ${host} 解析超时（>${Math.round(timeoutMs / 1000)}s）`);
+      throw new Error(`目标地址不允许：${target.toString()} 的域名 ${host} 解析超时（>${Math.round(timeoutMs / 1000)}s）`);
     }
-    throw new Error(`目标地址不允许：域名 ${host} 解析失败`);
+    throw new Error(`目标地址不允许：${target.toString()} 的域名 ${host} 解析失败：${String(err)}`);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
-  if (resolved.length === 0) throw new Error(`目标地址不允许：域名 ${host} 解析失败`);
+  if (resolved.length === 0) throw new Error(`目标地址不允许：${target.toString()} 的域名 ${host} 未返回解析结果`);
   if (resolved.some((entry) => isPrivateIpLiteral(stripTrailingDots(entry.address)))) {
-    throw new Error(`目标地址不允许：域名 ${host} 的解析结果命中内网/环回地址`);
+    throw new Error(`目标地址不允许：${target.toString()} 的域名 ${host} 解析结果 ${JSON.stringify(resolved)} 命中内网/环回地址`);
   }
 }

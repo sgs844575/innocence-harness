@@ -192,6 +192,7 @@ export class PermissionEngine {
   ): void {
     this.recentDenials.push({
       toolName: request.toolName,
+      args: { ...request.args },
       resource: request.resource,
       via,
       reason,

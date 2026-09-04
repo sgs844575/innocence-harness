@@ -6,7 +6,7 @@
 // pushes output/exit events to the renderer through an injected send port.
 // registerTerminalIpc() is the only Electron touchpoint and is imported
 // lazily so this module stays loadable in Node tests.
-import { createPtyManager, type PtyEvent, type PtyManager } from "@innocenceharness/terminal-pty";
+import { createPtyManager, LivePtySession, type PtyEvent, type PtyManager, type ShellLaunch } from "@innocenceharness/terminal-pty";
 import { subscribeShellTranscript, type ShellTranscriptEvent as ToolsShellTranscriptEvent } from "@innocenceharness/tools-shell";
 import {
   TerminalIpcChannels,
@@ -54,6 +54,12 @@ export interface TerminalIpcDeps {
   resolveRouteCwd(taskId: string, routeId: string): Promise<string | undefined>;
   /** Renderer push port (webContents.send wrapper for the main window). */
   send(channel: string, payload: unknown): void;
+  /**
+   * 集成终端 shell 启动命令解析口（常规设置 terminalShell；宿主按当前设置
+   * 惰性解析）。仅新建终端生效——存活会话不受影响（「仅新会话生效」）。
+   * 缺省 = 平台默认 shell。
+   */
+  getShellLaunch?: () => ShellLaunch | undefined;
   /** Manager factory override (tests); defaults to the real node-pty manager. */
   createManager?: (onEvent: (event: PtyEvent) => void) => PtyManager;
 }
@@ -78,7 +84,13 @@ export function createTerminalIpcService(deps: TerminalIpcDeps): TerminalIpcServ
   };
 
   const manager: PtyManager =
-    deps.createManager?.(forward) ?? createPtyManager({ onEvent: forward });
+    deps.createManager?.(forward) ??
+    createPtyManager({
+      onEvent: forward,
+      // 把设置解析的 shell 注入每个新会话（undefined = 平台默认，同 LivePtySession 回落）。
+      createSession: (init, options) =>
+        new LivePtySession({ ...init, shell: deps.getShellLaunch?.() }, options),
+    });
   const offShellTranscript = subscribeShellTranscript((event: ToolsShellTranscriptEvent) => {
     deps.send(TerminalIpcChannels.terminalShell, event satisfies ShellTranscriptEvent);
   });

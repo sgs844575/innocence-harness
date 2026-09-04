@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitCapsule, type CapsuleSubagentItem, type GitCapsuleData } from "./GitCapsule";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete (window as unknown as { innocencecode?: unknown }).innocencecode;
+});
 
 const t = (key: string) => key;
 
 function item(childId: string, title: string, status: CapsuleSubagentItem["status"]): CapsuleSubagentItem {
-  return { childId, title, status };
+  return { childId, title, status, startedAt: Date.now() };
 }
 
 function renderCapsule(data: Partial<GitCapsuleData> = {}) {
@@ -23,6 +26,24 @@ function renderCapsule(data: Partial<GitCapsuleData> = {}) {
 }
 
 describe("GitCapsule", () => {
+  it("分支弹窗从卡片左侧展开", async () => {
+    (window as unknown as { innocencecode: unknown }).innocencecode = {
+      workspaceGitBranches: vi.fn(async () => ({ current: "main", branches: ["main"] })),
+      workspaceGitChanges: vi.fn(async () => ({ changedFiles: 1, additions: 7, deletions: 3 })),
+      workspaceGitCheckout: vi.fn(),
+    };
+    renderCapsule({
+      root: "D:/x",
+      onBranchSwitched: () => {},
+      onError: () => {},
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /main/ }));
+    const popover = await screen.findByRole("dialog");
+    expect(popover).toHaveAttribute("data-side", "left");
+    expect(popover).toHaveAttribute("data-align", "start");
+  });
+
   it("Git 仓库：标题「Git 工具」+ 更改/分支/提交或推送行", () => {
     renderCapsule();
     expect(screen.getByText("capsule.git")).toBeTruthy();
@@ -136,5 +157,39 @@ describe("GitCapsule", () => {
     renderCapsule({ subagents: { running: [], completed: [] } });
     expect(screen.queryByText("capsule.subagents")).toBeNull();
     expect(screen.queryByText("capsule.subagents.all")).toBeNull();
+  });
+
+  it("分支行：无 root 时保持静态（不挂弹层）", () => {
+    renderCapsule();
+    expect(screen.getByText("main").closest("button")).toBeNull();
+  });
+
+  it("分支行：有 root + 桥时为交互选择器（列分支、检出成功回调）", async () => {
+    const bridge = {
+      workspaceGitBranches: vi.fn(async () => ({ current: "main", branches: ["main", "dev"] })),
+      workspaceGitChanges: vi.fn(async () => ({ changedFiles: 0, additions: 0, deletions: 0 })),
+      workspaceGitCheckout: vi.fn(async (_root: string, branch: string) => ({ ok: true, branch })),
+    };
+    (window as unknown as { innocencecode: unknown }).innocencecode = bridge;
+    const onBranchSwitched = vi.fn();
+    renderCapsule({ root: "D:/x", onBranchSwitched, onError: vi.fn() });
+    fireEvent.click(screen.getByRole("button", { name: /main/ }));
+    await waitFor(() => screen.getByText("dev"));
+    fireEvent.click(screen.getByText("dev"));
+    await waitFor(() => expect(onBranchSwitched).toHaveBeenCalledWith("dev"));
+    expect(bridge.workspaceGitCheckout).toHaveBeenCalledWith("D:/x", "dev", false);
+  });
+
+  it("分支行：交互态提供图谱入口（onOpenGraph 透传）", async () => {
+    (window as unknown as { innocencecode: unknown }).innocencecode = {
+      workspaceGitBranches: vi.fn(async () => ({ current: "main", branches: ["main"] })),
+      workspaceGitChanges: vi.fn(async () => ({ changedFiles: 0, additions: 0, deletions: 0 })),
+    };
+    const onOpenGraph = vi.fn();
+    renderCapsule({ root: "D:/x", onBranchSwitched: vi.fn(), onError: vi.fn(), onOpenGraph });
+    fireEvent.click(screen.getByRole("button", { name: /main/ }));
+    const entry = await waitFor(() => screen.getByRole("button", { name: /branch.graph/ }));
+    fireEvent.click(entry);
+    expect(onOpenGraph).toHaveBeenCalledTimes(1);
   });
 });

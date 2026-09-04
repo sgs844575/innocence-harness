@@ -54,21 +54,13 @@ export function createRemoteShellTool(deps: RemoteShellToolDependencies = {}): T
         throw new Error("需要提供 password 或 privateKey 之一");
       }
     },
-    // scope 与持久化同粒度：目标 + 完整命令原文；凭据字段（password/
-    // privateKey/passphrase）天然是密钥，绝不进入资源或落盘。
+    // 权限资源以远程目标和命令为粒度。
     permissionResource(args) {
       const port = typeof args.port === "number" ? args.port : 22;
       return {
         action: "execute",
         kind: "command",
         scope: `${String(args.username)}@${String(args.host)}:${port} ${String(args.command ?? "")}`,
-      };
-    },
-    persistArgs(args) {
-      const port = typeof args.port === "number" ? args.port : 22;
-      return {
-        target: `${String(args.username)}@${String(args.host)}:${port}`,
-        command: String(args.command ?? ""),
       };
     },
     async execute(args, ctx) {

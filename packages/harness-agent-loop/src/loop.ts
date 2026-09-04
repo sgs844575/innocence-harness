@@ -21,7 +21,7 @@ import {
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
-import { classifyModelRequestError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { PendingInputMailbox } from "./pending-inputs";
 
 export interface LoopOptions {
@@ -103,16 +103,24 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
   };
   const model = providerModel(request.provider);
   const trace = model
-    ? request.telemetry?.startModelStep({ providerId: model.providerId, modelId: model.modelId })
+    ? request.telemetry?.startModelStep({
+        providerId: model.providerId,
+        modelId: model.modelId,
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+      })
     : undefined;
-  const completeTrace = (metadata: TurnMetadata | undefined, aborted: boolean, errored = false) => {
+  const completeTrace = (metadata: TurnMetadata | undefined, aborted: boolean, error?: string) => {
     if (!trace || !model) return;
     trace.complete({
       providerId: model.providerId,
       modelId: model.modelId,
       ...(metadata?.usage ? { usage: metadata.usage } : {}),
-      finishReason: aborted ? "aborted" : errored ? "error" : metadata?.finishReason ?? "other",
+      finishReason: aborted ? "aborted" : error !== undefined ? "error" : metadata?.finishReason ?? "other",
       aborted,
+      ...(error !== undefined ? { error } : {}),
+      response: parts,
       ...(metadata?.responseId ? { responseId: metadata.responseId } : {}),
     });
   };
@@ -190,8 +198,6 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         completeTrace(metadata, true);
         return { parts, metadata, aborted: true };
       case "error":
-        // Classified to a status/network category (harness-ai-runtime), so no
-        // provider payload, prompt, credentials, or raw tool arguments escape.
         error = event.error.message;
         break;
       case "usage":
@@ -201,7 +207,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
         break;
     }
   }
-  completeTrace(metadata, request.signal?.aborted === true, error !== undefined);
+  completeTrace(metadata, request.signal?.aborted === true, error);
   return { parts, metadata, aborted: request.signal?.aborted === true, ...(error ? { error } : {}) };
 }
 
@@ -316,6 +322,9 @@ export async function runLoop(
   let usage: UsageMetadata | undefined;
   let finishReason: FinishReason | undefined;
   let terminalError = false;
+  /** Transcript block appended by the fatal-error path; diagnostic chrome,
+   *  stripped from finalText (the model's own answer text). */
+  let terminalBlock: string | undefined;
   const compactionProvider = providerForCompaction(provider, telemetry);
 
   try {
@@ -356,6 +365,7 @@ export async function runLoop(
       }
       if (step.error) {
         terminalError = true;
+        terminalBlock = appendTerminalError(history, step.parts, step.error, onEvent);
         onEvent({ type: "error", message: step.error, fatal: true });
         break;
       }
@@ -374,14 +384,15 @@ export async function runLoop(
         tool?: Tool;
         ctx?: ToolContext;
         resource?: PermissionResource;
-        persistedArgs: Record<string, unknown>;
+        args: Record<string, unknown>;
         failure?: string;
       }
       const prepared = new Map<string, PreparedCall>();
       for (const part of calls) {
+        const completeArgs = structuredClone(part.args);
         const tool = tools.get(part.toolName);
         if (!tool) {
-          prepared.set(part.id, { part, tool: undefined, persistedArgs: { ...part.args } });
+          prepared.set(part.id, { part, tool: undefined, args: completeArgs });
           continue;
         }
         // Fresh scope per invocation — never a session-level reused one —
@@ -398,30 +409,29 @@ export async function runLoop(
             : undefined,
         };
         try {
-          await tool.validateArgs?.(part.args);
-          const resource = await tool.permissionResource(part.args, invocationCtx);
-          const persistedArgs = { ...part.args };
-          prepared.set(part.id, { part, tool, ctx: invocationCtx, resource, persistedArgs });
+          await tool.validateArgs?.(structuredClone(completeArgs));
+          const resource = await tool.permissionResource(structuredClone(completeArgs), invocationCtx);
+          prepared.set(part.id, { part, tool, ctx: invocationCtx, resource, args: completeArgs });
         } catch (error) {
           // Keep the original invocation visible even when preparation fails.
-          const reason = error instanceof Error ? error.message : String(error);
+          const reason = formatUnknownError(error);
           prepared.set(part.id, {
             part,
             tool,
             ctx: invocationCtx,
-            persistedArgs: { ...part.args },
+            args: completeArgs,
             failure: `工具调用准备失败：${reason}`,
           });
         }
       }
 
-      // Persisted assistant message: args enter history in persistArgs shape.
-      const toPersisted = (part: MessagePart): MessagePart =>
+      // Persisted assistant message: tool arguments enter history unchanged.
+      const withCompleteArgs = (part: MessagePart): MessagePart =>
         part.type === "toolCall"
-          ? { ...part, args: prepared.get(part.id)?.persistedArgs ?? { ...part.args } }
+          ? { ...part, args: structuredClone(prepared.get(part.id)?.args ?? part.args) }
           : part;
-      history.push({ role: "assistant", parts: mergeTextParts(parts).map(toPersisted) });
-      onEvent({ type: "assistantMessage", parts: parts.map(toPersisted) });
+      history.push({ role: "assistant", parts: mergeTextParts(parts).map(withCompleteArgs) });
+      onEvent({ type: "assistantMessage", parts: parts.map(withCompleteArgs) });
 
       if (calls.length === 0) break;
 
@@ -439,12 +449,16 @@ export async function runLoop(
           ? telemetry?.startMcpCall({
               sessionId: opts.scope?.sessionId,
               invocationId: item.ctx?.scope.invocationId,
+              args: part.args,
+              resource: item.resource,
             })
           : telemetry?.startToolInvocation({
               sessionId: opts.scope?.sessionId,
               taskId: opts.scope?.taskId,
               routeId: opts.scope?.routeId,
               invocationId: item.ctx?.scope.invocationId,
+              args: part.args,
+              resource: item.resource,
             });
         const invocationId = item.ctx?.scope.invocationId;
         const finish = (
@@ -472,14 +486,17 @@ export async function runLoop(
             resource: item.resource,
             outcome,
           });
-          toolTrace?.complete(outcome === "aborted" ? "aborted" : outcome === "error" ? "error" : "stop");
+          toolTrace?.complete(
+            outcome === "aborted" ? "aborted" : outcome === "error" ? "error" : "stop",
+            { content, isError, outcome, images, durationMs: Date.now() - started },
+          );
         };
         const failClosed = (content: string) => finish(content, true, "error");
 
         onEvent({
           type: "toolCall",
           id: part.id,
-          call: { toolName: part.toolName, args: item.persistedArgs },
+          call: { toolName: part.toolName, args: item.args },
           invocationId,
         });
 
@@ -504,7 +521,7 @@ export async function runLoop(
         const request: PermissionRequest = {
           toolName: item.tool.name,
           resource: item.resource!,
-          args: item.persistedArgs,
+          args: structuredClone(item.args),
         };
         let resolution;
         try {
@@ -513,7 +530,7 @@ export async function runLoop(
             sideEffect: item.tool.sideEffect,
           });
         } catch (error) {
-          failClosed(error instanceof Error ? error.message : String(error));
+          failClosed(formatUnknownError(error));
           continue;
         }
         onEvent({
@@ -530,8 +547,8 @@ export async function runLoop(
 
         // Permission granted: hand the invocation to the executor, which owns
         // the derived AbortController, middleware chain, real abort-on-timeout
-        // and outcome standardization. Raw args stay in this closure and die
-        // with it. Delegated tools (subagent runs) skip the session deadline:
+        // and outcome standardization. Complete args are retained in history,
+        // events, audit and telemetry. Delegated tools (subagent runs) skip the session deadline:
         // they own their budget (child maxTurns, caller-set timeouts) and are
         // stopped by the run signal, never by a wall-clock guess (repo rule:
         // no default timeout while waiting on subagents). Tools that await a
@@ -559,7 +576,7 @@ export async function runLoop(
             const result = await executeToolInvocation(
               {
                 toolName: item.tool!.name,
-                persistedArgs: item.persistedArgs,
+                args: structuredClone(item.args),
                 ctx: item.ctx!,
                 parentSignal: signal,
               },
@@ -567,7 +584,7 @@ export async function runLoop(
               {
                 timeoutMs: invocationTimeoutMs,
                 abortGraceMs: opts.abortGraceMs,
-                execute: (_signal, ctx) => item.tool!.execute(part.args, ctx),
+                execute: (_signal, ctx) => item.tool!.execute(structuredClone(item.args), ctx),
               },
             );
             finish(
@@ -623,7 +640,11 @@ export async function runLoop(
       }
       if (epilogue.aborted) {
         aborted = true;
-      } else if (!epilogue.error) {
+      } else if (epilogue.error) {
+        terminalError = true;
+        terminalBlock = appendTerminalError(history, epilogue.parts, epilogue.error, onEvent);
+        onEvent({ type: "error", message: epilogue.error, fatal: true });
+      } else {
         // 收尾步只取文本/思考；模型在无工具定义下仍执意发的调用轮被丢弃。
         const textParts = epilogue.parts.filter(
           (part) => part.type === "text" || part.type === "thinking",
@@ -639,9 +660,11 @@ export async function runLoop(
       aborted = true;
     } else {
       terminalError = true;
+      const message = formatUnknownError(err);
+      terminalBlock = appendTerminalError(history, [], message, onEvent);
       onEvent({
         type: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message,
         fatal: true,
       });
     }
@@ -652,8 +675,12 @@ export async function runLoop(
   if (signal?.aborted) aborted = true;
 
   const last = [...history].reverse().find((message) => message.role === "assistant");
-  const finalText =
+  const lastText =
     last?.parts.filter((part) => part.type === "text").map((part) => part.text).join("") ?? "";
+  const finalText =
+    terminalBlock !== undefined && lastText.endsWith(terminalBlock)
+      ? lastText.slice(0, lastText.length - terminalBlock.length)
+      : lastText;
   const finalStep = stepMetadata.at(-1);
   const completion: TurnCompletion = {
     ...(finalStep?.providerId ? { providerId: finalStep.providerId } : {}),
@@ -675,9 +702,49 @@ export async function runLoop(
   };
 }
 
+/** Keeps every streamed text/thinking fragment plus the complete fatal
+ * diagnostic in canonical history so transcript replay matches the live UI.
+ * Returns the appended diagnostic block so callers can strip it from
+ * answer-text views. */
+function appendTerminalError(
+  history: Message[],
+  streamedParts: readonly MessagePart[],
+  error: string,
+  onEvent: HarnessEventListener,
+): string {
+  const block = `\n\n> ⚠️ ${error}\n`;
+  const completeParts = structuredClone([...streamedParts]);
+  history.push({
+    role: "assistant",
+    parts: mergeTextParts([...completeParts, { type: "text", text: block }]),
+  });
+  const calls = completeParts.filter((part): part is ToolCallPart => part.type === "toolCall");
+  if (calls.length === 0) return block;
+  const results: ToolResultPart[] = calls.map((call) => ({
+    type: "toolResult",
+    toolCallId: call.id,
+    content: `模型响应在工具调用执行前失败：${error}`,
+    isError: true,
+  }));
+  history.push({ role: "user", parts: results });
+  for (let index = 0; index < calls.length; index += 1) {
+    const call = calls[index]!;
+    const result = results[index]!;
+    onEvent({ type: "toolCall", id: call.id, call: { toolName: call.toolName, args: call.args } });
+    onEvent({
+      type: "toolResult",
+      toolCallId: call.id,
+      content: result.content,
+      isError: true,
+      durationMs: 0,
+      outcome: "error",
+    });
+  }
+  return block;
+}
+
 function toolFailureMessage(error: unknown, outcome: ToolOutcome): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
+  if (error !== undefined && error !== null && error !== "") return formatUnknownError(error);
   switch (outcome) {
     case "aborted":
       return "工具执行已中止";

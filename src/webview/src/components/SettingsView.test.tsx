@@ -17,8 +17,8 @@ const settings = {
   themeMode: "dark",
   uiFontSize: 14,
   codeFontSize: 14,
-  codeThemeLight: "github-light",
-  codeThemeDark: "github-dark",
+  codeThemeLight: "github-light-default",
+  codeThemeDark: "github-dark-default",
   codeLineNumbers: true,
   codeWordWrap: false,
 } as unknown as HarnessSettings;

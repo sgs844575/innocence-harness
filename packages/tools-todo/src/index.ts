@@ -23,10 +23,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
   completed: "已完成",
 };
 
-/**
- * Parses and validates the raw todos array. Throws name the failing field
- * (never its content) — tool errors enter history/audit unredacted.
- */
+/** Parses and validates the raw todos array. */
 function requireTodos(args: Record<string, unknown>): TodoItem[] {
   const todos = args.todos;
   if (!Array.isArray(todos)) {
@@ -107,11 +104,6 @@ export const todoWriteTool: Tool = {
   permissionResource() {
     // 纯会话状态：清单只存在于 transcript，资源恒为 session 级 todo 写入。
     return { action: "write", kind: "todo", scope: "session" };
-  },
-  persistArgs(args) {
-    // 模型自拟任务文本，持久化安全：复用已验证路径重建对象数组——
-    // 剥离多余字段，且与 raw args 不共享任何嵌套引用。
-    return { todos: requireTodos(args) };
   },
   async execute(args) {
     const todos = requireTodos(args);

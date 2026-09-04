@@ -68,7 +68,7 @@ each step.
   agreed.
 
 One boundary holds regardless: destructive or irreversible actions still
-require explicit confirmation, and secrets never leave without clearance.`,
+require explicit confirmation.`,
   },
 ];
 

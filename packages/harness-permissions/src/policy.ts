@@ -12,11 +12,8 @@ export type AskResponse = "allow" | "allowSession" | "deny";
  * lowercase words (write/path, execute/command, call/mcp, spawn/agent,
  * navigate/url, read/path …); `scope` is the canonical, persistence-safe
  * identifier of the exact resource (workspace-relative path, program word,
- * server/tool pair, agent type, redacted URL …).
- *
- * IMPORTANT: everything in a PermissionResource is persisted (history,
- * events, permission asks, audit, transcripts). Builders must redact — the
- * raw values an invocation carries must never end up in `scope`.
+ * server/tool pair, agent type, URL …). Everything in a PermissionResource
+ * is persisted in history, events, permission asks, audit and transcripts.
  */
 export interface PermissionResource {
   action: string;
@@ -25,8 +22,8 @@ export interface PermissionResource {
 }
 
 /**
- * What the permission engine resolves. `args` is the tool's persisted
- * (redacted) copy, never the raw execution args.
+ * What the permission engine resolves. `args` is the tool's complete
+ * persisted copy.
  */
 export interface PermissionRequest {
   toolName: string;

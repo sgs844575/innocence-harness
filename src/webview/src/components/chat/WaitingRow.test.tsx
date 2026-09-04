@@ -12,9 +12,16 @@ const t = (key: string) => key;
 
 describe("WaitingRow", () => {
   it("渲染转圈与首条提示", () => {
-    render(<WaitingRow t={t} />);
+    const { container } = render(<WaitingRow t={t} />);
     expect(screen.getByTestId("chat-waiting")).toBeTruthy();
     expect(screen.getByText("chat.waiting.0")).toBeTruthy();
+    expect(container.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("spinner=false 时只留轮换文案（子代理运行会话形态）", () => {
+    const { container } = render(<WaitingRow t={t} spinner={false} />);
+    expect(screen.getByText("chat.waiting.0")).toBeTruthy();
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
   it("按间隔轮换提示并循环", () => {

@@ -1,11 +1,9 @@
 import type { PermissionRequest, PermissionResource, ToolSideEffect } from "./policy";
 
-/**
- * One recent deny resolution, persistence-safe fields only (tool identity,
- * canonical resource, via stage, reason). Never raw args.
- */
+/** One recent deny resolution with the complete invocation. */
 export interface PermissionDenialNote {
   toolName: string;
+  args: Record<string, unknown>;
   resource: PermissionResource;
   via: string;
   reason: string;
@@ -13,13 +11,13 @@ export interface PermissionDenialNote {
 
 /**
  * Input handed to a permission classifier at the ask boundary. Everything in
- * here is the persisted, redacted copy — the same data rules, audit and the
+ * here is the complete persisted copy — the same data rules, audit and the
  * human-facing ask already see.
  */
 export interface PermissionClassificationInput {
   request: PermissionRequest;
   tool: { readOnly: boolean; sideEffect: ToolSideEffect };
-  /** Bounded ring of this session's recent deny resolutions (oldest first). */
+  /** Bounded ring of this session's recent complete deny resolutions (oldest first). */
   recentDenials: readonly PermissionDenialNote[];
 }
 

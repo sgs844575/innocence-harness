@@ -23,7 +23,6 @@ function fakeTool(
     parameters: { type: "object" },
     calls: 0,
     permissionResource: () => ({ action: "write" as const, kind: "test", scope: name }),
-    persistArgs: (args: Record<string, unknown>) => ({ ...args }),
     async execute(args: Record<string, unknown>) {
       t.calls += 1;
       return behavior(args);

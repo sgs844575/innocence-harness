@@ -5,7 +5,7 @@
 // 分组视图为只读分组列表。
 // 项目行悬停出三个动作：… 菜单（在资源管理器中打开/复制路径）/ 文件树 / 新建任务。
 // 归档图标把内容区整切为归档列表（标题+时间+项目+恢复/删除），再点返回。
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -27,8 +27,9 @@ import {
 import logoUrl from "../../../../logo.svg";
 import type { Session } from "../../../shared/ipc";
 import type { SidebarGroup } from "../../../shared/sidebarIpc";
-import { buildProjectTree } from "../state/sidebarTree";
+import { buildProjectTree, pinnedFirst } from "../state/sidebarTree";
 import { projectName } from "../state/useSessions";
+import { loadUiState, patchUiState } from "../state/uiState";
 import { relativeTime } from "../lib/time";
 import { Popover } from "./ui/Popover";
 import { FileExplorer } from "./FileExplorer";
@@ -48,6 +49,9 @@ interface Props {
   /** 流式中的会话 id 集合（运行态图标）。 */
   runningIds?: ReadonlySet<string>;
   archived: Readonly<Record<string, boolean>>;
+  /** 置顶标记（缺省空表；置顶会话行首 Pin 图标 + 各容器内排前）。 */
+  pinned?: Readonly<Record<string, boolean>>;
+  unread?: Readonly<Record<string, boolean>>;
   /** 分组视图的持久分组（sidebar 状态；缺省为空列表）。 */
   groups?: readonly SidebarGroup[];
   onSelect: (id: string) => void;
@@ -90,6 +94,8 @@ export function Sidebar({
   activeId,
   runningIds,
   archived,
+  pinned = {},
+  unread = {},
   groups = [],
   onSelect,
   onNew,
@@ -106,10 +112,19 @@ export function Sidebar({
   onRevealProject,
   groupActions,
 }: Props): React.JSX.Element {
-  const [view, setView] = useState<SidebarView>("projects");
-  const [layout, setLayout] = useState<SidebarLayout>("tree");
-  const [sort, setSort] = useState<SidebarSort>("updated");
-  const [archivedOpen, setArchivedOpen] = useState(false);
+  // 视图/布局/排序/归档开关随 uiState 持久化——重启后保持上次关闭时的选择。
+  const [view, setView] = useState<SidebarView>(() => loadUiState().sidebarView);
+  const [layout, setLayout] = useState<SidebarLayout>(() => loadUiState().sidebarLayout);
+  const [sort, setSort] = useState<SidebarSort>(() => loadUiState().sidebarSort);
+  const [archivedOpen, setArchivedOpen] = useState(() => loadUiState().sidebarArchivedOpen);
+  useEffect(() => {
+    patchUiState({
+      sidebarView: view,
+      sidebarLayout: layout,
+      sidebarSort: sort,
+      sidebarArchivedOpen: archivedOpen,
+    });
+  }, [view, layout, sort, archivedOpen]);
   const sorted = useMemo(
     () =>
       [...sessions].sort((a, b) =>
@@ -117,9 +132,11 @@ export function Sidebar({
       ),
     [sessions, sort],
   );
+  // 置顶会话稳定排前（扁平列表与未分组区共用该顺序；项目树内逐节点排前）。
+  const ordered = useMemo(() => pinnedFirst(sorted, pinned), [sorted, pinned]);
   const tree = useMemo(
-    () => buildProjectTree(sorted, archived, t("sidebar.noProject")),
-    [sorted, archived, t],
+    () => buildProjectTree(sorted, archived, t("sidebar.noProject"), pinned),
+    [sorted, archived, t, pinned],
   );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** 文件树模式：项目根（非 null 时内容区整切为 FileExplorer）。 */
@@ -310,8 +327,10 @@ export function Sidebar({
           <GroupsView
             t={t}
             groups={groups}
-            sessions={sorted}
+            sessions={ordered}
             archived={archived}
+            pinned={pinned}
+            unread={unread}
             activeId={activeId}
             runningIds={runningIds}
             collapsed={collapsed}
@@ -323,18 +342,20 @@ export function Sidebar({
         )}
         {view === "projects" && layout === "timeline" && (
           <ul className="space-y-px">
-            {sorted.filter((session) => archived[session.id] !== true).map((session) => (
+            {ordered.filter((session) => archived[session.id] !== true).map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 active={session.id === activeId}
                 running={runningIds?.has(session.id) === true}
+                pinned={pinned[session.id] === true}
+                unread={unread[session.id] === true}
                 onSelect={onSelect}
                 onArchive={onArchive}
                 archiveLabel={t("sidebar.archive")}
               />
             ))}
-            {sorted.every((session) => archived[session.id] === true) && (
+            {ordered.every((session) => archived[session.id] === true) && (
               <li className="px-2 py-3 text-center text-(--color-muted)">{t("sidebar.empty")}</li>
             )}
           </ul>
@@ -348,6 +369,8 @@ export function Sidebar({
             tree={tree}
             activeId={activeId}
             runningIds={runningIds}
+            pinned={pinned}
+            unread={unread}
             collapsed={collapsed}
             onToggleCollapsed={toggleCollapsed}
             onSelect={onSelect}

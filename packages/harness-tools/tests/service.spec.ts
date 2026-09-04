@@ -22,13 +22,12 @@ function completeTool(name: string): Tool {
     readOnly: true,
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "test", scope: name }),
-    persistArgs: () => ({}),
     execute: async () => ({ content: "ok" }),
   };
 }
 
-describe("tool persistence policy (fail-closed SPI gate)", () => {
-  it("accepts tools that implement permissionResource and persistArgs", async () => {
+describe("tool permission resource policy (fail-closed SPI gate)", () => {
+  it("accepts tools that implement permissionResource", async () => {
     const ctx = await withTools();
     ctx.tools.register(completeTool("Good"));
     expect(ctx.tools.get("Good")?.name).toBe("Good");
@@ -48,22 +47,6 @@ describe("tool persistence policy (fail-closed SPI gate)", () => {
     expect(caught?.message).toContain("NoResource");
     expect(caught?.message).toContain("permissionResource");
     expect(ctx.tools.get("NoResource")).toBeUndefined();
-  });
-
-  it("rejects tools without persistArgs with tool-persistence-policy-required", async () => {
-    const ctx = await withTools();
-    const broken = completeTool("NoPersist") as unknown as Record<string, unknown>;
-    delete broken.persistArgs;
-    let caught: { code?: string; message?: string } | undefined;
-    try {
-      ctx.tools.register(broken as unknown as Tool);
-    } catch (err) {
-      caught = err as { code?: string; message?: string };
-    }
-    expect(caught?.code).toBe("tool-persistence-policy-required");
-    expect(caught?.message).toContain("NoPersist");
-    expect(caught?.message).toContain("persistArgs");
-    expect(ctx.tools.get("NoPersist")).toBeUndefined();
   });
 
   it("rejects duplicate tool names", async () => {

@@ -24,12 +24,6 @@ interface Pending {
 const REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 
-/** Server-provided error text is untrusted; strip control chars and truncate. */
-function sanitizeServerMessage(raw: string | undefined): string {
-  const text = (raw ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  return text.length === 0 ? "MCP 错误" : text.length <= 500 ? text : `${text.slice(0, 500)}…[已截断]`;
-}
-
 function requestAbortedError(method: string): Error {
   const err = new Error(`MCP 请求已中止：${method}`);
   err.name = "AbortError";
@@ -81,10 +75,10 @@ export class WsJsonRpcClient {
       socket.on("error", onError);
     });
     socket.on("message", (data: unknown) => this.onMessage(data));
-    socket.on("error", () => this.failAll(new Error("MCP 服务器连接错误")));
-    socket.on("close", () => {
+    socket.on("error", (error: Error) => this.failAll(error));
+    socket.on("close", (code: number, reason: Buffer) => {
       this.exited = true;
-      this.failAll(new Error("MCP 服务器连接已关闭"));
+      this.failAll(new Error(`MCP 服务器连接已关闭（code=${code}, reason=${reason.toString("utf8")}）`));
       this.onExit?.();
     });
   }
@@ -182,7 +176,7 @@ export class WsJsonRpcClient {
   private onMessage(data: unknown): void {
     if (Array.isArray(data)) return; // binary frames carry no JSON-RPC traffic
     const text = typeof data === "string" ? data : Buffer.from(data as ArrayBuffer).toString("utf8");
-    let msg: { id?: number; result?: unknown; error?: { message?: string } };
+    let msg: { id?: number; result?: unknown; error?: Record<string, unknown> };
     try {
       msg = JSON.parse(text);
     } catch {
@@ -194,7 +188,7 @@ export class WsJsonRpcClient {
     this.pending.delete(msg.id);
     pending.detach();
     clearTimeout(pending.timer);
-    if (msg.error) pending.reject(new Error(sanitizeServerMessage(msg.error.message)));
+    if (msg.error) pending.reject(jsonRpcError(msg.error));
     else pending.resolve(msg.result);
   }
 
@@ -206,4 +200,10 @@ export class WsJsonRpcClient {
     }
     this.pending.clear();
   }
+}
+
+function jsonRpcError(error: Record<string, unknown>): Error {
+  const message = typeof error.message === "string" ? error.message : "MCP 错误";
+  const detail = JSON.stringify(error);
+  return new Error(detail && detail !== "{}" ? `${message}\n${detail}` : message);
 }

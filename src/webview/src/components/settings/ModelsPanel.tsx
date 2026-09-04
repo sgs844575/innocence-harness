@@ -19,7 +19,7 @@ interface Props {
   t: (key: string) => string;
   settings: HarnessSettings;
   onPatchSettings: (patch: HarnessSettingsPatch) => void;
-  /** API 密钥落安全存储（宿主 setProviderApiKey）；缺省 = 不支持。 */
+  /** 保存供应商 API 密钥；缺省 = 不支持。 */
   onSetApiKey?: (profileId: string, apiKey: string) => void;
   /** 从供应商拉取模型清单（宿主 listProviderModels + enrichModels）。 */
   onFetchModels?: (profile: ProviderProfile) => Promise<ModelInfo[]>;
@@ -32,7 +32,7 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
   const [addingProvider, setAddingProvider] = useState(false);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState<string | null>(null);
-  const [keyDraft, setKeyDraft] = useState("");
+  const [keyDraft, setKeyDraft] = useState<string | null>(null);
   const [addingModel, setAddingModel] = useState(false);
   const [fetching, setFetching] = useState(false);
   /** 拉取到的待导入候选（打开勾选弹窗）；null = 关闭。 */
@@ -69,7 +69,7 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
     setAddingProvider(false);
     setNameDraft(null);
     setUrlDraft(null);
-    setKeyDraft("");
+    setKeyDraft(null);
   };
 
   const deleteProvider = (id: string): void => {
@@ -126,7 +126,7 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
                 setSelectedId(profile.id);
                 setNameDraft(null);
                 setUrlDraft(null);
-                setKeyDraft("");
+                setKeyDraft(null);
               }}
               aria-pressed={selected?.id === profile.id}
               title={profile.name || profile.kind}
@@ -234,20 +234,20 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
               <span className={rowLabel}>{t("settings.models.apiKey")}</span>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <input
-                  type="password"
-                  value={keyDraft}
+                  value={keyDraft ?? selected.apiKey}
                   onChange={(event) => setKeyDraft(event.target.value)}
-                  placeholder={selected.apiKeyConfigured ? t("settings.models.apiKey.configured") : t("settings.models.apiKey.notConfigured")}
+                  placeholder={t("settings.models.apiKey.notConfigured")}
                   aria-label={t("settings.models.apiKey")}
                   disabled={!onSetApiKey}
                   className={`${input} font-mono`}
                 />
                 <button
                   type="button"
-                  disabled={!onSetApiKey || keyDraft.trim() === ""}
+                  disabled={!onSetApiKey}
                   onClick={() => {
-                    onSetApiKey?.(selected.id, keyDraft.trim());
-                    setKeyDraft("");
+                    const apiKey = keyDraft ?? selected.apiKey;
+                    onSetApiKey?.(selected.id, apiKey);
+                    setKeyDraft(apiKey);
                   }}
                   className="h-8 shrink-0 rounded-md bg-(--color-brand) px-3 text-(--color-inverse) transition-opacity hover:opacity-80 disabled:opacity-30"
                 >

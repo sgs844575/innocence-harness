@@ -11,10 +11,10 @@ import {
   type GitRunner,
 } from "../src";
 
-const invocation = (toolName: string, persistedArgs: Record<string, unknown>) => ({
+const invocation = (toolName: string, args: Record<string, unknown>) => ({
   invocationId: "inv-1",
   toolName,
-  persistedArgs,
+  args,
   signal: new AbortController().signal,
   scope: { invocationId: "inv-1", toolName, sessionId: "s1" },
 });
@@ -106,9 +106,8 @@ describe("EnterWorktree tool", () => {
     expect(r.content).toContain("就地继续");
   });
 
-  it("persistence face: no args, constant namespace resource", () => {
+  it("uses a constant namespace resource", () => {
     const tool = createEnterWorktreeTool({ runGit: async () => "", mintName: () => "w" });
-    expect(tool.persistArgs({})).toEqual({});
     expect(tool.permissionResource({}, ctx as never)).toEqual({
       action: "write",
       kind: "path",

@@ -2,7 +2,8 @@
 // HarnessRuntime hook bundle that mirrors agent events into the session
 // store and the renderer (deltas, structured tool parts, thinking,
 // completion, errors) plus the permission-ask bridge that surfaces an ask as
-// a renderer dialog with a deny-on-timeout guarantee.
+// a renderer dialog (questionAutoContinue 开启时带 5 分钟自动拒绝兜底，
+// 关闭时一直等待用户回答).
 import type { BrowserWindow } from "electron";
 import type { RuntimeHooks } from "@innocenceharness/harness-electron";
 import {
@@ -17,9 +18,17 @@ import * as sessions from "./sessions";
 import { appendObservedReplyDelta, markObservedReplyError } from "./automationReplyObserver";
 import { getMainWindow } from "./appWindow";
 import { logger } from "./logger";
+import type { DesktopNotifyKind } from "./desktopNotify";
 
-/** Unanswered asks default to deny after this long — never block the loop. */
-const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000;
+/** 回合事件桌面通知口（harnessGlue 注入；完成/失败/权限请求三类）。 */
+export type TurnEventNotify = (
+  kind: DesktopNotifyKind,
+  sessionId: string,
+  options?: { aborted?: boolean },
+) => void;
+
+/** questionAutoContinue 开启时：提问 5 分钟未答自动按拒绝落定（自动继续）。 */
+export const QUESTION_AUTO_CONTINUE_TIMEOUT_MS = 5 * 60 * 1000;
 
 function send(channel: string, payload: unknown): void {
   const win: BrowserWindow | undefined = getMainWindow() ?? undefined;
@@ -42,9 +51,14 @@ export function cancelPendingAsks(pendingAsks: PendingPermissionRegistry, sessio
 /**
  * Builds the runtime hook bundle. `pendingAsks` is the shared ask registry
  * the host's respondPermission port resolves through (see harnessGlue).
+ * `notifyTurnEvent`（可选）是桌面通知口：回合完成/失败与权限请求在同一事
+ * 件流上顺带触发，不另起监听。`questionAutoContinue`（可选）现读设置快照：
+ * 返回 true 时提问挂 5 分钟自动拒绝定时器，否则提问无超时（一直等待）。
  */
 export function createRuntimeHooks(
   pendingAsks: PendingPermissionRegistry,
+  notifyTurnEvent?: TurnEventNotify,
+  questionAutoContinue?: () => boolean,
 ): RuntimeHooks {
   return {
     onDelta: (sessionId, messageId, delta) => {
@@ -99,16 +113,18 @@ export function createRuntimeHooks(
         m.completion = mirrored;
       });
       send(IPC.chatDone, { sessionId, messageId, completion: mirrored });
+      notifyTurnEvent?.("completed", sessionId, { aborted: mirrored.aborted });
     },
     onError: (sessionId, messageId, error) => {
       // Automation-injected loop turns record the error so an errored turn is
       // judged unproductive even when the runtime mirrored warning text into
       // the collected reply; every other message id is a no-op there.
-      markObservedReplyError(messageId);
+      markObservedReplyError(messageId, error);
       sessions.updateMessage(sessionId, messageId, (m) => {
         m.streaming = false;
       });
       send(IPC.chatError, { sessionId, messageId, error });
+      notifyTurnEvent?.("failed", sessionId);
       logger.warn("harness error", { sessionId, messageId, error });
     },
     askPermission: async (sessionId, messageId, ask) => {
@@ -118,8 +134,7 @@ export function createRuntimeHooks(
         requestId: ask.requestId,
         toolName: ask.call.toolName,
         args: ask.call.args,
-        // 持久化资源摘要（kind/action/scope）——与 persistArgs 同粒度的
-        // 持久化形状，这里只透传镜像。
+        // 资源与完整调用参数都直接透传到询问界面。
         resource: {
           kind: ask.call.resource.kind,
           action: ask.call.resource.action,
@@ -132,13 +147,18 @@ export function createRuntimeHooks(
           if (settled) return;
           settled = true;
           pendingAsks.delete(ask.requestId);
-          clearTimeout(timer);
+          if (timer !== undefined) clearTimeout(timer);
           resolve(choice);
         };
-        // Unanswered asks default to deny — never block the loop forever.
-        const timer = setTimeout(() => finish("deny"), PERMISSION_TIMEOUT_MS);
+        // questionAutoContinue 开启：5 分钟未答自动按拒绝落定——循环带着
+        // 拒绝结果继续前进（"deny" 失败关闭）。关闭：不设任何定时器，
+        // 提问一直等待用户回答。取值以提问发起时的设置快照为准。
+        const timer = questionAutoContinue?.() === true
+          ? setTimeout(() => finish("deny"), QUESTION_AUTO_CONTINUE_TIMEOUT_MS)
+          : undefined;
         pendingAsks.set(ask.requestId, { sessionId, finish });
         send(IPC.chatPermission, event);
+        notifyTurnEvent?.("permission", sessionId);
       });
     },
     log: (level, msg, data) => {

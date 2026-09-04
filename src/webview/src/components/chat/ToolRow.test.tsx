@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolRow } from "./ToolRow";
 import type { ToolRowModel } from "./toolRows";
@@ -59,6 +59,14 @@ describe("ToolRow", () => {
     expect(status.className).toContain("decoration-dotted");
   });
 
+  it("失败的编辑行展开后在 diff 之上显示具体错误信息", () => {
+    render(<ToolRow t={t} row={{ ...editRow, isError: true, resultText: "old_string 在文件中不存在" }} />);
+    fireEvent.click(screen.getByTitle("tool.preview"));
+    // 错误块与 diff 同时渲染（diff 分支不再吞掉错误文本）。
+    expect(screen.getByText("old_string 在文件中不存在")).toBeTruthy();
+    expect(screen.getByText("old line")).toBeTruthy();
+  });
+
   it("Read 行同样可展开查看结果", () => {
     const { container } = render(
       <ToolRow t={t} row={{ ...editRow, verbKey: "tool.verb.read", diff: undefined, resultText: "file body" }} />,
@@ -67,6 +75,30 @@ describe("ToolRow", () => {
     expect(container.querySelector(".acc-panel")?.getAttribute("data-open")).toBe("true");
     expect(screen.getByText("file body")).toBeTruthy();
   });
+
+  it("Read 文件预览使用设置中的代码主题和行号偏移", async () => {
+    const { container } = render(
+      <ToolRow
+        t={t}
+        row={{
+          ...editRow,
+          title: "package.json",
+          filePath: "package.json",
+          verbKey: "tool.verb.read",
+          diff: undefined,
+          resultText: '49\t{"enabled": true,\n50\t  "count": 2\n51\t}',
+        }}
+        code={{ light: "one-light", dark: "dracula", lineNumbers: true }}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("tool.preview"));
+    await waitFor(() => {
+      expect(container.querySelector('[data-streamdown="code-block"]')?.getAttribute("data-language")).toBe("json");
+      expect(container.querySelector("code")?.style.counterReset).toBe("line 48");
+      expect(container.querySelector("pre span span")?.getAttribute("style")).toContain("--shiki-dark");
+    }, { timeout: 30_000 });
+    expect(container.textContent).not.toContain("49\t");
+  }, 60_000);
 
   it("终端行展开为命令 + 输出卡", () => {
     render(

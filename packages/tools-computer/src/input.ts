@@ -102,11 +102,6 @@ function parseScrollArgs(args: Record<string, unknown>): ScrollArgs {
   return { direction, amount };
 }
 
-/** 只保留显式提供的键，避免 undefined 值进入历史/审计。 */
-function pickDefined(values: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined));
-}
-
 /** 点击：移动光标到绝对坐标后按下并抬起（可选双击）。 */
 export function createClickTool(deps: ComputerToolDeps): Tool {
   return {
@@ -133,10 +128,6 @@ export function createClickTool(deps: ComputerToolDeps): Tool {
       parseClickArgs(args);
     },
     permissionResource: () => ({ action: "execute", kind: "computer", scope: "input" }),
-    persistArgs(args) {
-      // 原样保留调用参数（不带解析默认值），供规则匹配与回看。
-      return pickDefined({ x: args.x, y: args.y, button: args.button, double: args.double });
-    },
     async execute(args, ctx) {
       assertWindowsHost(deps);
       const { x, y, button, double } = parseClickArgs(args);
@@ -169,9 +160,6 @@ export function createTypeTool(deps: ComputerToolDeps): Tool {
       requireText(args);
     },
     permissionResource: () => ({ action: "execute", kind: "computer", scope: "input" }),
-    persistArgs(args) {
-      return { text: args.text };
-    },
     async execute(args, ctx) {
       assertWindowsHost(deps);
       const text = requireText(args);
@@ -208,9 +196,6 @@ export function createKeyTool(deps: ComputerToolDeps): Tool {
       requireKeySequence(args);
     },
     permissionResource: () => ({ action: "execute", kind: "computer", scope: "input" }),
-    persistArgs(args) {
-      return { key: args.key };
-    },
     async execute(args, ctx) {
       assertWindowsHost(deps);
       const sequence = requireKeySequence(args);
@@ -242,10 +227,6 @@ export function createScrollTool(deps: ComputerToolDeps): Tool {
       parseScrollArgs(args);
     },
     permissionResource: () => ({ action: "execute", kind: "computer", scope: "input" }),
-    persistArgs(args) {
-      // 原样保留调用参数（不带解析默认值），供规则匹配与回看。
-      return pickDefined({ direction: args.direction, amount: args.amount });
-    },
     async execute(args, ctx) {
       assertWindowsHost(deps);
       const { direction, amount } = parseScrollArgs(args);

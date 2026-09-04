@@ -49,10 +49,6 @@ export function createReadTool(registry: ReadFileRegistry): Tool {
         scope: workspaceScope(ctx.workspaceRoot, requireString(args, "path")),
       };
     },
-    // 读取参数不含机密值；路径/分页（含 PDF 页码）原样持久化以供规则匹配与后续对话理解。
-    persistArgs(args) {
-      return { path: args.path, offset: args.offset, limit: args.limit, page: args.page };
-    },
     async execute(args, ctx: ToolContext) {
       const target = resolveWithin(ctx.workspaceRoot, requireString(args, "path"));
       const stat = await fs.stat(target);

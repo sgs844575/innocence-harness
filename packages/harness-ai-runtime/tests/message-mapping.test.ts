@@ -36,7 +36,10 @@ describe("toSdkMessages", () => {
             type: "tool-result",
             toolCallId: "call-1",
             toolName: "shell",
-            output: { type: "text", value: "/workspace" },
+            output: {
+              type: "text",
+              value: "Tool call status: succeeded\nTool output:\n/workspace",
+            },
           },
         ],
       },
@@ -116,7 +119,10 @@ describe("toSdkMessages", () => {
         },
       ]);
       const toolContent = mapped[1].content as Array<Record<string, unknown>>;
-      expect(toolContent[0].output).toEqual({ type: "error-text", value: "partial failure" });
+      expect(toolContent[0].output).toEqual({
+        type: "error-text",
+        value: "Tool call status: failed\nFailure reason:\npartial failure",
+      });
       expect(mapped[2].role).toBe("user");
     });
   });

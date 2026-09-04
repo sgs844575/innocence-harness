@@ -3,6 +3,7 @@ import path from "node:path";
 import type { PermissionDecider } from "@innocenceharness/harness-permissions";
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createExecutionScope } from "@innocenceharness/harness-tools";
+import type { PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 import { AgentSession } from "./session";
 import { decodeTranscript } from "./transcript";
 import { routeTranscriptFile } from "./turn-persistence";
@@ -29,6 +30,13 @@ export interface RuntimeSessionBuildHost {
   readonly buildContexts: Map<string, RouteBuildContext>;
   readonly nextId: (prefix: string) => string;
   settleDispose(key: string, session: AgentSession): Promise<void>;
+  /**
+   * The route key's steer mailbox (interactionMode "steer"): owned by the
+   * runtime, shared by every session build of the key so a settings rebuild
+   * keeps the same drain target. Absent = sessions are built without a
+   * mailbox and steer sends degrade to queue sends.
+   */
+  pendingInputsFor?(key: string): PendingInputMailbox;
 }
 
 /** Builds one route session, preserving the runtime cache and teardown rules. */
@@ -125,6 +133,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         lifecycle: host.options.hooks.onSubagentLifecycle
           ? { emit: host.options.hooks.onSubagentLifecycle }
           : undefined,
+        ...(host.pendingInputsFor ? { pendingInputs: host.pendingInputsFor(key) } : {}),
       });
     };
     const session = await (host.options.agentFactory?.(factoryContext, create) ?? create());

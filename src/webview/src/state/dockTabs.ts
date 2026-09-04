@@ -10,6 +10,8 @@ export interface DockFilePayload {
   path: string;
   diff?: { removed: string; added: string };
   originalText?: string;
+  /** True when originalText came from the file-read tool's numbered output. */
+  numbered?: boolean;
 }
 
 /** 一个打开的 dock 标签；aux 标签绑定一个 aux 会话，file 标签携带文件载荷，
@@ -29,8 +31,8 @@ export interface DockTabInstance {
 }
 
 export const DEFAULT_DOCK_WIDTH = 340;
-export const DOCK_MIN_WIDTH = 300;
-export const DOCK_MAX_WIDTH = 640;
+export const DOCK_MIN_WIDTH = 280;
+export const DOCK_MAX_WIDTH = 920;
 export const clampDockWidth = (width: number): number =>
   Math.min(DOCK_MAX_WIDTH, Math.max(DOCK_MIN_WIDTH, Math.round(width)));
 

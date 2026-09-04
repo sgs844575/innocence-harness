@@ -208,9 +208,6 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
         return { action: "read", kind: "web", scope: "" };
       }
     },
-    persistArgs(args) {
-      return { url: normalizeUrl(args) };
-    },
     async execute(args, ctx) {
       let start: URL;
       try {
@@ -218,7 +215,7 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
         // Layer 2 gate: literal screening passed, now hold every address the
         // name resolves to against the same intranet/loopback predicates
         // (fail closed) before any transport call.
-        await screenResolvedHost(start.hostname, dnsLookup, dnsTimeoutMs);
+        await screenResolvedHost(start, dnsLookup, dnsTimeoutMs);
       } catch (err) {
         return { content: (err as Error).message, isError: true };
       }
@@ -231,8 +228,8 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
       const onOuterAbort = () => controller.abort();
       if (ctx.signal.aborted) controller.abort();
       else ctx.signal.addEventListener("abort", onOuterAbort);
+      let current = start;
       try {
-        let current = start;
         const entryHost = stripTrailingDots(start.hostname); // "a.example." == "a.example"
         let hops = 0;
         let response = await fetchImpl(current.toString(), { redirect: "manual", signal: controller.signal });
@@ -249,11 +246,11 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
             const hop = parseWebTarget(next.toString());
             // Per-hop layer 2 re-screen: the same name can be re-resolved
             // between hops (rebinding) — hold the new addresses too.
-            await screenResolvedHost(hop.url.hostname, dnsLookup, dnsTimeoutMs);
+            await screenResolvedHost(hop.url, dnsLookup, dnsTimeoutMs);
           } catch (err) {
             const message =
               err instanceof TypeError
-                ? `目标地址不允许：重定向目标不合法（来自 ${current.hostname}）`
+                ? `目标地址不允许：重定向目标 ${location} 不合法（来自 ${current.toString()}）`
                 : (err as Error).message;
             return { content: message, isError: true };
           }
@@ -280,7 +277,7 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
         if (!mediaType.startsWith("text/") && mediaType !== "application/json") {
           discardBody(response);
           return {
-            content: `目标返回非文本响应（${mediaType || "无 Content-Type"}）：web_fetch 仅接受 text/* 与 application/json 正文`,
+            content: `目标 ${current.toString()} 返回非文本响应（${mediaType || "无 Content-Type"}）：web_fetch 仅接受 text/* 与 application/json 正文`,
             isError: true,
           };
         }
@@ -295,12 +292,12 @@ export function createWebFetchTool(deps: WebFetchToolDependencies = {}): Tool {
       } catch (err) {
         if (timedOut) {
           return {
-            content: `抓取超时（>${Math.round(timeoutMs / 1000)}s）：目标未在时限内完成响应`,
+            content: `抓取超时（>${Math.round(timeoutMs / 1000)}s）：${current.toString()} 未在时限内完成响应`,
             isError: true,
           };
         }
-        if (ctx.signal.aborted) return { content: "抓取已被中止", isError: true };
-        return { content: `抓取失败：${(err as Error).message}`, isError: true };
+        if (ctx.signal.aborted) return { content: `抓取已被中止：${current.toString()}`, isError: true };
+        return { content: `抓取 ${current.toString()} 失败：${String(err)}`, isError: true };
       } finally {
         clearTimeout(timer);
         ctx.signal.removeEventListener("abort", onOuterAbort);

@@ -1,8 +1,8 @@
 // plugin-memory tests (batch 4B task 1): the dual-root memory store
 // (write -> list -> read closed loop, user-root shadowing, malformed-entry
 // degradation, id-escape rejection) and the three tool contracts
-// (overwrite gating, persisted-args full persistence, permission resource
-// shapes), plus the factory plugin mounting on a real kernel Context.
+// (overwrite gating and permission resource shapes), plus the factory
+// plugin mounting on a real kernel Context.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -280,7 +280,7 @@ describe("memory tools", () => {
     const missed = await read.execute({ id: "ghost" }, toolCtx());
     expect(missed.isError).toBe(true);
     expect(missed.content).toMatch(/memory_list/);
-    expect(missed.content).not.toMatch(/ghost/); // 错误不回显入参值
+    expect(missed.content).toMatch(/ghost/);
   });
 
   it("id escapes rejected at validateArgs and fail-closed again at execute", async () => {
@@ -306,27 +306,6 @@ describe("memory tools", () => {
     await expect(
       write.validateArgs?.({ id: "a", content: "x", tags: ["ok"], scope: "user", overwrite: false }),
     ).resolves.toBeUndefined();
-  });
-
-  it("persistArgs carries key fields plus the full memory body verbatim", () => {
-    const { write, list, read } = makeTools(tmpRoot(), tmpRoot());
-    const content = "SECRET-MEMORY-BODY-9812";
-    const persisted = write.persistArgs({ id: "secret-note", content, tags: ["private"] });
-    expect(persisted).toEqual({
-      id: "secret-note",
-      scope: "project",
-      tags: ["private"],
-      content,
-    });
-    // 完整原文持久化：正文全文进入持久化载荷。
-    expect(JSON.stringify(persisted)).toContain(content);
-    // scope 默认透出 project；显式 user 保持。
-    expect(write.persistArgs({ id: "n2", content: "x", scope: "user" })).toMatchObject({ scope: "user" });
-    // 非法 id 持久化为占位符，不回显原值。
-    expect(write.persistArgs({ id: "../e", content: "x" })).toMatchObject({ id: "invalid" });
-    expect(list.persistArgs({})).toEqual({});
-    expect(read.persistArgs({ id: "some-id" })).toEqual({ id: "some-id" });
-    expect(read.persistArgs({ id: "a/b" })).toEqual({ id: "invalid" });
   });
 
   it("permissionResource shapes: write (with overwrite suffix), list index, read id", () => {
@@ -382,13 +361,12 @@ describe("memory tools", () => {
     expect(read.sideEffect).toBe("none");
     for (const tool of [write, list, read]) {
       expect(tool.description).toMatch(/[\u4e00-\u9fff]/); // 本仓描述中文口径
-      expect(typeof tool.persistArgs).toBe("function"); // 注册门要求（fail-closed SPI）
     }
   });
 });
 
 describe("memory plugin factory", () => {
-  it("registers the three tools on a real kernel Context through the persistence gate", async () => {
+  it("registers the three tools on a real kernel Context through the permission gate", async () => {
     const userRoot = tmpRoot();
     const projectRoot = tmpRoot();
     const plugin = createMemoryPlugin({

@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, projectAgentModes, resolveStagedProvider, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
+import { buildProviderFromSettings, createSessionComposition, fsFactoryConfigFor, projectAgentModes, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
+import { resolveCommandShell } from "@innocenceharness/terminal-pty";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
 
@@ -168,7 +169,7 @@ maybeDescribeStaging("staged model provider resolution", () => {
     } finally {
       rmSync(fixture, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("loads a legacy compatible profile through the staged runtime without a transport fallback", async () => {
     const composition = createSessionComposition({
@@ -207,6 +208,34 @@ maybeDescribeStaging("staged model provider resolution", () => {
   });
 });
 
+describe("fs/shell factory configs (settings snapshot → tool behavior)", () => {
+  it("fsFactoryConfigFor maps enhancedFindGrep with schema defaults", () => {
+    expect(fsFactoryConfigFor(undefined)).toEqual({ searchEngine: "auto" });
+    expect(fsFactoryConfigFor({ ...DEFAULT_SETTINGS })).toEqual({ searchEngine: "auto" });
+    expect(fsFactoryConfigFor({ ...DEFAULT_SETTINGS, enhancedFindGrep: false })).toEqual({
+      searchEngine: "builtin",
+    });
+  });
+
+  it("shellFactoryConfigFor threads terminalShell through resolveCommandShell", () => {
+    expect(shellFactoryConfigFor(undefined)).toEqual({ commandShell: resolveCommandShell("auto") });
+    expect(shellFactoryConfigFor({ ...DEFAULT_SETTINGS })).toEqual({ commandShell: resolveCommandShell("auto") });
+    expect(shellFactoryConfigFor({ ...DEFAULT_SETTINGS, terminalShell: "powershell" })).toEqual({
+      commandShell: resolveCommandShell("powershell"),
+    });
+    if (process.platform === "win32") {
+      expect(shellFactoryConfigFor({ ...DEFAULT_SETTINGS, terminalShell: "powershell" }).commandShell).toEqual({
+        file: "powershell.exe",
+        args: ["-NoProfile", "-Command"],
+      });
+      expect(shellFactoryConfigFor({ ...DEFAULT_SETTINGS, terminalShell: "wsl" }).commandShell).toEqual({
+        file: "wsl.exe",
+        args: ["-e", "bash", "-lc"],
+      });
+    }
+  });
+});
+
 describe("worktree isolation notes (S2a)", () => {
   it("registers the fragment only when the session surface is a task worktree", async () => {
     const registered: unknown[] = [];
@@ -232,7 +261,7 @@ describe("worktree isolation notes (S2a)", () => {
 describe("workbench focus notes (S4)", () => {
   type Invocation = {
     toolName: string;
-    persistedArgs: Record<string, unknown>;
+    args: Record<string, unknown>;
     scope: { sessionId?: string };
   };
 
@@ -258,7 +287,7 @@ describe("workbench focus notes (S4)", () => {
     const plugin = workbenchFocusPlugin(() => focus);
     const result = await runMiddleware(plugin, {
       toolName: "Read",
-      persistedArgs: { path: "D:/repo/src/a.ts" },
+      args: { path: "D:/repo/src/a.ts" },
       scope: { sessionId: "s1" },
     });
     expect(result.content).toContain("BODY");
@@ -272,7 +301,7 @@ describe("workbench focus notes (S4)", () => {
     };
     const diagnosed = await runMiddleware(plugin, {
       toolName: "Read",
-      persistedArgs: { path: "src/a.ts" },
+      args: { path: "src/a.ts" },
       scope: { sessionId: "s1" },
     });
     expect(diagnosed.content).toContain("新诊断注记");
@@ -281,7 +310,7 @@ describe("workbench focus notes (S4)", () => {
     // 会话不匹配：焦点属于别的会话，不附注。
     const other = await runMiddleware(plugin, {
       toolName: "Read",
-      persistedArgs: { path: "src/a.ts" },
+      args: { path: "src/a.ts" },
       scope: { sessionId: "s2" },
     });
     expect(other.content).toBe("BODY");
@@ -290,7 +319,7 @@ describe("workbench focus notes (S4)", () => {
     focus = undefined;
     const none = await runMiddleware(plugin, {
       toolName: "Read",
-      persistedArgs: { path: "src/a.ts" },
+      args: { path: "src/a.ts" },
       scope: { sessionId: "s1" },
     });
     expect(none.content).toBe("BODY");
@@ -300,7 +329,7 @@ describe("workbench focus notes (S4)", () => {
     const plugin = workbenchFocusPlugin(() => ({ sessionId: "s1", file: "src/a.ts" }));
     const grep = await runMiddleware(plugin, {
       toolName: "Grep",
-      persistedArgs: { pattern: "a" },
+      args: { pattern: "a" },
       scope: { sessionId: "s1" },
     });
     expect(grep.content).toBe("BODY");

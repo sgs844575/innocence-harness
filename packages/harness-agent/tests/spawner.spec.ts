@@ -46,7 +46,6 @@ function fakeTool(name: string, readOnly = false): Tool {
       kind: "test",
       scope: name,
     }),
-    persistArgs: (args) => ({ ...args }),
     async execute() {
       return { content: `${name}-done` };
     },

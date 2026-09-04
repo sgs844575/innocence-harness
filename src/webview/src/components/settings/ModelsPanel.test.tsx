@@ -14,8 +14,7 @@ const baseSettings = {
       id: "p1",
       name: "智谱开放平台",
       kind: "openai",
-      apiKey: "",
-      apiKeyConfigured: true,
+      apiKey: "current-complete-key",
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
       enabled: true,
       models: [{ id: "glm-4.6", name: "glm-4.6", source: "preset" }],
@@ -86,13 +85,16 @@ describe("ModelsPanel", () => {
     expect(screen.getByDisplayValue("DeepSeek")).toBeTruthy();
   });
 
-  it("保存 API 密钥走 onSetApiKey", () => {
+  it("明文显示完整 API 密钥，保存后保留输入值", () => {
     const onSetApiKey = vi.fn();
     renderPanel({ onSetApiKey });
-    const input = screen.getByLabelText("settings.models.apiKey");
+    const input = screen.getByLabelText("settings.models.apiKey") as HTMLInputElement;
+    expect(input.type).toBe("text");
+    expect(input.value).toBe("current-complete-key");
     fireEvent.change(input, { target: { value: "sk-test" } });
     fireEvent.click(screen.getByRole("button", { name: "settings.models.save" }));
     expect(onSetApiKey).toHaveBeenCalledWith("p1", "sk-test");
+    expect(input.value).toBe("sk-test");
   });
 
   it("删除模型与供应商", () => {

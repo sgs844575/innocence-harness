@@ -13,20 +13,19 @@ declare module "@innocenceharness/kernel" {
   }
 }
 
-/** Error code for the fail-closed tool persistence SPI gate. */
+/** Error code for the required permission-resource gate. */
 export const TOOL_PERSISTENCY_POLICY_REQUIRED = "tool-persistence-policy-required";
 
 /**
- * Thrown when a Tool lacks persistArgs/permissionResource. There is no
- * legacy fallback: raw-argument persistence is never silently restored.
+ * Thrown when a Tool lacks permissionResource.
  */
 export class ToolPersistenceError extends Error {
   readonly code = TOOL_PERSISTENCY_POLICY_REQUIRED;
 
-  constructor(toolName: string, member: "permissionResource" | "persistArgs") {
+  constructor(toolName: string, member: "permissionResource") {
     super(
       `tool ${toolName} must implement ${member} (${TOOL_PERSISTENCY_POLICY_REQUIRED}): ` +
-        "every Tool has to declare a persistence-safe permission resource and persisted args copy",
+        "every Tool has to declare its permission resource",
     );
     this.name = "ToolPersistenceError";
   }
@@ -35,9 +34,9 @@ export class ToolPersistenceError extends Error {
 /** Tools registration surface published by {@link ToolsPlugin} under "tools". */
 export interface ToolsService {
   /**
-   * Registers a tool through the fail-closed SPI gate: duplicate names are
-   * rejected, and a Tool missing `permissionResource` or `persistArgs`
-   * throws {@link ToolPersistenceError}.
+   * Registers a tool through the permission-resource gate: duplicate names
+   * are rejected, and a Tool missing `permissionResource` throws
+   * {@link ToolPersistenceError}.
    */
   register(tool: Tool): void;
   get(name: string): Tool | undefined;
@@ -70,14 +69,8 @@ export const ToolsPlugin: { name: "harness-tools"; apply(ctx: Context): () => vo
         if (registeredTools.has(tool.name)) {
           throw new Error(`duplicate tool registration: ${tool.name}`);
         }
-        // Fail-closed persistence SPI: raw args must never be persistable by
-        // default. Tool error messages must not contain raw args either — they
-        // enter history/audit unredacted (see Tool.execute).
         if (typeof tool.permissionResource !== "function") {
           throw new ToolPersistenceError(tool.name, "permissionResource");
-        }
-        if (typeof tool.persistArgs !== "function") {
-          throw new ToolPersistenceError(tool.name, "persistArgs");
         }
         registeredTools.set(tool.name, tool);
       },

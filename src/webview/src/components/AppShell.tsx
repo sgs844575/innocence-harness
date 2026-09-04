@@ -1,6 +1,8 @@
 // 应用外壳：顶栏 + 侧栏列（265px，可折叠消失）+ 主区（chat/settings/automation）。
 // 视图切换与 Ctrl+K / Ctrl+N / Ctrl+O 快捷键归这里；内容节点由 App 注入。
+// 侧栏开合随 uiState 持久化——重启后保持上次关闭时的折叠状态。
 import { useCallback, useEffect, useState } from "react";
+import { loadUiState, patchUiState } from "../state/uiState";
 
 export type ShellView = "chat" | "settings" | "automation";
 
@@ -50,7 +52,10 @@ export function AppShell({ titleBar, sidebar, main, onNewSession, onOpenSearch, 
     },
     [controlledView, onViewChange],
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => loadUiState().sidebarOpen);
+  useEffect(() => {
+    patchUiState({ sidebarOpen });
+  }, [sidebarOpen]);
 
   const backToChat = useCallback(() => changeView("chat"), [changeView]);
   const openSettings = useCallback(() => changeView("settings"), [changeView]);

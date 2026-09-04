@@ -47,7 +47,6 @@ describe("executor scope lifecycle", () => {
       sideEffect: "none",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "test", scope: "echo" }),
-      persistArgs: (args) => ({ ...args }),
       async execute(_args, ctx) {
         seen.push(ctx.scope);
         return { content: "ok" };

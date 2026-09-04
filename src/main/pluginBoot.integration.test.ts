@@ -75,10 +75,25 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     await scope.dispose();
   });
 
-  it("mounts fs and shell at the boot root through loader.create", async () => {
+  it("fs/shell are factory builtins over the disk chain (configured per session, never bare-mounted)", async () => {
     const b = await ensureBoot();
+    // The staged default export is the factory (kernel-loader unwrapExports
+    // convention — same family as skills/mcp). A bare mountAtRoot mounts the
+    // function itself and registers nothing (the documented contract on
+    // compose.ts mountAtRoot); hosts configure the factory per session
+    // (composePlugins carries the settings-snapshot config).
     await b.mountAtRoot("fs");
     await b.mountAtRoot("shell");
+    expect(b.root.tools.specs()).toEqual([]);
+
+    const createFs = (await b.importPlugin("fs")) as (config?: Record<string, unknown>) => SessionPlugin;
+    const createShell = (await b.importPlugin("shell")) as (config?: Record<string, unknown>) => SessionPlugin;
+    const fsPlugin = createFs();
+    const shellPlugin = createShell();
+    expect(fsPlugin.name).toBe("fs");
+    expect(shellPlugin.name).toBe("shell");
+    await b.root.plugin(fsPlugin as never);
+    await b.root.plugin(shellPlugin as never);
     const names = b.root.tools.specs().map((spec) => spec.name).sort();
     // The root spine backed the disk-loaded plugins: their tools registered.
     expect(names).toContain("Bash");
@@ -199,8 +214,13 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
 
   it("boots a full session inside a route scope with disk-loaded fs/shell", async () => {
     const b = await ensureBoot();
-    const fsPlugin = (await b.importPlugin("fs")) as SessionPlugin;
-    const shellPlugin = (await b.importPlugin("shell")) as SessionPlugin;
+    // Factory builtins: importPlugin resolves the staged factory (the default
+    // export); the host configures it — zero-config here (defaults match the
+    // settings defaults).
+    const createFs = (await b.importPlugin("fs")) as (config?: Record<string, unknown>) => SessionPlugin;
+    const createShell = (await b.importPlugin("shell")) as (config?: Record<string, unknown>) => SessionPlugin;
+    const fsPlugin = createFs();
+    const shellPlugin = createShell();
     expect(fsPlugin.name).toBe("fs");
     expect(shellPlugin.name).toBe("shell");
 
@@ -262,8 +282,9 @@ maybeDescribe("pluginBoot over the real staging tree", () => {
     expect(failures).not.toContain("todo");
     // entries() face: disabled rows are visible in the loader tree.
     expect(b.loaderEntryIds()).toContain("boot-todo");
-    // fs mounted through the full disk chain (its tools registered).
-    expect(b.root.tools.specs().map((s) => s.name)).toContain("Read");
+    // reference（非工厂内件）经完整磁盘链挂载并注册工具。fs/shell 是工厂
+    // 内件：裸条目挂载只落工厂函数、不注册工具（工厂内件约定见上文用例）。
+    expect(b.root.tools.specs().map((s) => s.name)).toContain("read_reference");
   });
 
   it("user-level cordis.yml disables mcp across the whole chain (session has no mcp plugin)", async () => {

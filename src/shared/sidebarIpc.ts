@@ -2,6 +2,8 @@ export const SidebarIpcChannels = {
   sidebarGet: "sidebar:get",
   sidebarChanged: "sidebar:changed",
   sidebarArchive: "sidebar:archive",
+  sidebarPin: "sidebar:pin",
+  sidebarUnread: "sidebar:unread",
   sidebarReorder: "sidebar:reorder",
   sidebarMove: "sidebar:move",
   sidebarContainersReorder: "sidebar:containers-reorder",
@@ -35,6 +37,10 @@ export interface SidebarState {
   version: 1;
   order: string[];
   archived: Record<string, boolean>;
+  /** 置顶标记（会话 id → 是否置顶；置顶会话在各容器内排前、行首显示 Pin 图标）。 */
+  pinned: Record<string, boolean>;
+  /** 未读标记；用户打开任务时清除，菜单可显式重新标记。 */
+  unread: Record<string, boolean>;
   groups: SidebarGroup[];
   ungrouped: string[];
   projectOrder: string[];
@@ -55,6 +61,8 @@ export type SidebarGroupInput = {
 export interface SidebarApi {
   getSidebarState(): Promise<SidebarState>;
   archiveSession(id: string, archived: boolean): Promise<void>;
+  pinSession(id: string, pinned: boolean): Promise<void>;
+  markSessionUnread(id: string, unread: boolean): Promise<void>;
   reorderSessions(container: SidebarContainer, orderedIds: string[]): Promise<void>;
   moveSession(id: string, target: SidebarContainer, beforeId?: string): Promise<void>;
   reorderContainers(kind: "projects" | "groups", orderedIds: string[]): Promise<void>;

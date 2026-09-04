@@ -72,10 +72,6 @@ export function createScreenshotTool(deps: ComputerToolDeps): Tool {
     sideEffect: "none",
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "computer", scope: "screen" }),
-    persistArgs() {
-      // 无参数工具：持久化面为空对象。
-      return {};
-    },
     async execute(_args, ctx: ToolContext) {
       assertWindowsHost(deps);
       const result = await runPowerShellScript(deps.runner, screenshotScript(), ctx.signal);

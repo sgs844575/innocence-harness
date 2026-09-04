@@ -68,7 +68,6 @@ function probeTool(spy: { calls: number } = { calls: 0 }): Tool {
     sideEffect: "none",
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "test", scope: "probe" }),
-    persistArgs: (args) => ({ ...args }),
     async execute() {
       spy.calls += 1;
       return { content: "probe-done" };
@@ -825,7 +824,6 @@ describe("AgentSession injected scope", () => {
       sideEffect: "none",
       parameters: { type: "object", properties: {} },
       permissionResource: () => ({ action: "read", kind: "paths", scope: "x" }),
-      persistArgs: () => ({}),
       execute: async () => ({ content: "ok" }),
     };
     const session = await createTestSession({

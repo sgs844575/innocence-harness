@@ -18,7 +18,7 @@ import {
 function fakeInvocation(overrides: Partial<ToolInvocation> = {}): ToolInvocation {
   return {
     toolName: "Fake",
-    persistedArgs: { safe: "value" },
+    args: { safe: "value" },
     ctx: {
       workspaceRoot: "/tmp/ws",
       signal: new AbortController().signal,
@@ -86,7 +86,7 @@ describe("executeToolInvocation", () => {
   });
 
   it("shows middleware the persisted args, invocation id and derived signal", async () => {
-    const invocation = fakeInvocation({ persistedArgs: { command: "npm test" } });
+    const invocation = fakeInvocation({ args: { command: "npm test" } });
     const seen: ToolExecutionInvocation[] = [];
     let bodySignal: AbortSignal | undefined;
     let bodyCtx: ToolContext | undefined;
@@ -110,7 +110,7 @@ describe("executeToolInvocation", () => {
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.toolName).toBe("Fake");
-    expect(seen[0]!.persistedArgs).toEqual({ command: "npm test" });
+    expect(seen[0]!.args).toEqual({ command: "npm test" });
     expect(seen[0]!.invocationId).toBe(invocation.ctx.scope.invocationId);
     expect(seen[0]!.signal.aborted).toBe(false);
     // The body gets the same derived signal plus the scoped context.

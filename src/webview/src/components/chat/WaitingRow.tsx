@@ -6,7 +6,14 @@ import { LoaderCircle } from "lucide-react";
 const HINT_COUNT = 4;
 const ROTATE_MS = 3200;
 
-export function WaitingRow({ t }: { t: (key: string) => string }): React.JSX.Element {
+export function WaitingRow({
+  t,
+  spinner = true,
+}: {
+  t: (key: string) => string;
+  /** 是否带转圈加载图标；子代理运行会话只留轮换文案（spinner=false）。 */
+  spinner?: boolean;
+}): React.JSX.Element {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -16,7 +23,7 @@ export function WaitingRow({ t }: { t: (key: string) => string }): React.JSX.Ele
 
   return (
     <div data-testid="chat-waiting" className="flex items-center gap-2 text-(--color-muted)">
-      <LoaderCircle size={14} className="shrink-0 animate-spin text-(--color-faint)" aria-hidden />
+      {spinner && <LoaderCircle size={14} className="shrink-0 animate-spin text-(--color-faint)" aria-hidden />}
       <span key={index} className="text-swap">
         {t(`chat.waiting.${index}`)}
       </span>

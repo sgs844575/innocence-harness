@@ -25,7 +25,7 @@ interface DeliveredTurn {
  */
 function fakeRuntime(script: {
   reply?: string;
-  error?: boolean;
+  error?: string;
   busyRoutes?: Set<string>;
   reject?: Error;
 }): { runtime: TeammateRuntimePort; delivered: DeliveredTurn[] } {
@@ -34,7 +34,7 @@ function fakeRuntime(script: {
     async send(input) {
       delivered.push({ ...input });
       if (script.reject) throw script.reject;
-      if (script.error) markObservedReplyError(input.messageId);
+      if (script.error) markObservedReplyError(input.messageId, script.error);
       else if (script.reply !== undefined) {
         for (const chunk of script.reply.split("|")) {
           appendObservedReplyDelta(input.messageId, chunk);
@@ -123,13 +123,13 @@ describe("teammate port: fail-fast refusals", () => {
     expect(delivered).toHaveLength(0);
   });
 
-  it("unknown teammate: error lists the available teammates without the raw message", async () => {
+  it("unknown teammate: error lists the available teammates and complete raw message", async () => {
     const { port, delivered } = makePort(["main", "worker-1"], { reply: "x" }, { taskId: "task-9" });
     const result = await port("ghost", "secret payload");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toContain("worker-1");
-      expect(result.error).not.toContain("secret payload");
+      expect(result.error).toContain("secret payload");
     }
     expect(delivered).toHaveLength(0);
   });
@@ -162,10 +162,11 @@ describe("teammate port: fail-fast refusals", () => {
   });
 
   it("errored teammate turn: reported as a failed delivery", async () => {
-    const { port } = makePort(["main", "worker-1"], { reply: "partial", error: true }, { taskId: "task-9" });
+    const diagnostic = "provider failed with secret payload";
+    const { port } = makePort(["main", "worker-1"], { reply: "partial", error: diagnostic }, { taskId: "task-9" });
     const result = await port("worker-1", "hi");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/failed/i);
+    if (!result.ok) expect(result.error).toBe(diagnostic);
   });
 
   it("runtime.send rejection: surfaced as a delivery failure, observer entry released", async () => {

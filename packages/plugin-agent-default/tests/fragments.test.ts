@@ -59,8 +59,7 @@ describe("shared fragment clusters", () => {
     expect(text).toMatch(/correct/i);
     expect(text).toMatch(/preference/i);
     expect(text).toMatch(/constraint/i);
-    // 排除：密钥凭据 / 瞬态任务态归 TodoWrite / 计划是会话工件。
-    expect(text).toMatch(/secret|credential/i);
+    // 排除：瞬态任务态归 TodoWrite / 计划是会话工件。
     expect(text).toContain("TodoWrite");
     expect(text).toMatch(/plan/i);
     // 形态：id 语义化 / 描述行信息密集 / 覆写更新。

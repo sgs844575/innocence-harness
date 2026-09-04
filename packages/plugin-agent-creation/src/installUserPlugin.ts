@@ -61,16 +61,6 @@ export function createInstallUserPluginTool(options: { userRoot: string }): Tool
         scope: validSegment(args.id) ? `user-root:${args.id}` : "user-root:invalid",
       };
     },
-    persistArgs(args) {
-      // packageJson/indexJs 完整原文持久化（开源本地工具，无脱敏）：工具行与
-      // 权限卡直接展示安装内容全文。
-      return {
-        id: validSegment(args.id) ? args.id : "invalid",
-        overwrite: args.overwrite === true,
-        packageJson: String(args.packageJson ?? ""),
-        indexJs: String(args.indexJs ?? ""),
-      };
-    },
     async execute(args) {
       const id = args.id;
       if (!validSegment(id)) return { content: "id 非法（路径分隔符或空）", isError: true };

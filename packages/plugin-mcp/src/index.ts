@@ -105,16 +105,14 @@ interface ServerConnection {
   ): Promise<ToolResult>;
 }
 
-/** One failed server from activation: name plus a bounded reason excerpt. */
+/** One failed server from activation with its complete reason. */
 interface ConnectionFailure {
   server: string;
   reason: string;
 }
 
-/** Caps a failure reason excerpt so hostile server text stays bounded. */
 function reasonOf(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  return raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -248,13 +246,6 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
                 action: "call",
                 kind: "mcp",
                 scope: `${serverName}/${def.name}`,
-              }),
-              // 完整参数原文持久化（开源本地工具，无脱敏）：server/tool 名
-              // 与调用参数全文一并留档，供聊天工具行与历史回看展示。
-              persistArgs: (args) => ({
-                server: serverName,
-                tool: def.name,
-                args: { ...args },
               }),
               execute: async (args, ctx) => {
                 if (connected.connection.exited()) {

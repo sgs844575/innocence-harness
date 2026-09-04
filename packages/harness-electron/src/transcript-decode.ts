@@ -13,7 +13,7 @@ import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnRecordV2
  */
 export interface DecodedMessage extends Message {
   readonly preservedParts?: readonly Record<string, unknown>[];
-  /** Sanitized completion attached to the final assistant block of its turn. */
+  /** Validated completion attached to the final assistant block of its turn. */
   readonly completion?: TurnCompletion;
 }
 
@@ -22,7 +22,7 @@ const FINISH_REASONS = new Set(["stop", "length", "content-filter", "tool-calls"
 const USAGE_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "reasoningTokens", "cachedInputTokens"] as const;
 
 /** Reads only the neutral completion DTO; raw provider data is never hydrated. */
-function sanitizeCompletion(raw: unknown): TurnCompletion | undefined {
+function decodeCompletion(raw: unknown): TurnCompletion | undefined {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
   const value = raw as Record<string, unknown>;
   if (typeof value.finishReason !== "string" || !FINISH_REASONS.has(value.finishReason) || typeof value.aborted !== "boolean") {
@@ -45,7 +45,7 @@ function sanitizeCompletion(raw: unknown): TurnCompletion | undefined {
   };
 }
 
-/** Associates a turn's safe completion with the last assistant block only. */
+/** Associates a turn's completion with the last assistant block only. */
 function attachCompletion(messages: DecodedMessage[], completion: TurnCompletion | undefined): DecodedMessage[] {
   if (!completion) return messages;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -320,7 +320,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       if (!Array.isArray(record.messages)) continue;
       validRecords += 1;
       const key = turnSlotKey(MAIN_ROUTE, record.turnId);
-      const canonical = attachCompletion(canonicalizeHistory(record.messages), sanitizeCompletion(record.completion));
+      const canonical = attachCompletion(canonicalizeHistory(record.messages), decodeCompletion(record.completion));
       const existing = slots.get(key);
       if (existing) {
         existing.messages = canonical;
@@ -337,7 +337,7 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       const v3Record = parsed as TurnRecordV3;
       validRecords += 1;
       const key = turnSlotKey(v3Record.routeId, v3Record.turnId);
-      const canonical = attachCompletion(canonicalizeHistory(v3Record.messages), sanitizeCompletion(v3Record.completion));
+      const canonical = attachCompletion(canonicalizeHistory(v3Record.messages), decodeCompletion(v3Record.completion));
       const existing = slots.get(key);
       if (existing) {
         existing.messages = canonical;

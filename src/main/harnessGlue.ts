@@ -739,7 +739,7 @@ export async function listProviderModels(
   return listModels(profile);
 }
 
-/** Fetches a configured profile's models without exposing its credential over IPC. */
+/** Fetches a configured profile's models by id. */
 export async function listProviderModelsById(profileId: string): Promise<string[]> {
   await settingsMutationGate.waitForPending();
   const profile = settings.profiles.find((candidate) => candidate.id === profileId);

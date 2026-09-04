@@ -40,7 +40,7 @@ describe("ComputerPlugin", () => {
     }
   });
 
-  it("passes the persistence SPI gate with the default assembly on Windows hosts", async () => {
+  it("passes the permission resource gate with the default assembly on Windows hosts", async () => {
     if (process.platform !== "win32") return;
     const kernel = await kernelWithTools();
     await ComputerPlugin.apply(kernel);
@@ -48,7 +48,6 @@ describe("ComputerPlugin", () => {
     for (const name of TOOL_NAMES) {
       const tool = kernel.tools.get(name);
       expect(typeof tool?.permissionResource, `${name} permissionResource`).toBe("function");
-      expect(typeof tool?.persistArgs, `${name} persistArgs`).toBe("function");
     }
   });
 });

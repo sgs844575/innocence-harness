@@ -64,7 +64,6 @@ describe("Task tool via session spawner", () => {
       sideEffect: "none",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "test", scope: "peek" }),
-      persistArgs: (args) => ({ ...args }),
       execute: async () => {
         childPeeked += 1;
         return { content: "peek-result" };
@@ -288,7 +287,6 @@ describe("Task tool via session spawner", () => {
       sideEffect: "none",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "test", scope: "peek" }),
-      persistArgs: (args) => ({ ...args }),
       execute: async () => {
         childPeeked += 1;
         return { content: "peek-result" };
@@ -481,8 +479,7 @@ describe("Task tool via session spawner", () => {
         .flatMap((m) => m.parts)
         .find((p) => p.type === "toolResult");
       expect(taskResult).toMatchObject({ isError: true });
-      expect(JSON.stringify(taskResult)).toContain("工具执行出错");
-      expect(JSON.stringify(taskResult)).not.toContain("poison input rejected");
+      expect(JSON.stringify(taskResult)).toContain("poison input rejected");
       expect(disposeSpy).toHaveBeenCalledTimes(1); // disposed on the failure path
     } finally {
       disposeSpy.mockRestore();
@@ -490,28 +487,8 @@ describe("Task tool via session spawner", () => {
   });
 });
 
-describe("taskTool persistence policy", () => {
+describe("taskTool argument and permission policy", () => {
   const SECRET = "TASK-PLUGIN-SECRET-3f9c";
-
-  it("persists the agent type and the full prompt/description originals", () => {
-    const persisted = taskTool.persistArgs({
-      agentType: "general",
-      description: `任务：处理 ${SECRET}`,
-      prompt: `use ${SECRET}`,
-    });
-    expect(persisted).toEqual({
-      agentType: "general",
-      prompt: `use ${SECRET}`,
-      description: `任务：处理 ${SECRET}`,
-    });
-  });
-
-  it("persists resume verbatim (agentType is a spawn-time choice, not a resume field)", () => {
-    expect(taskTool.persistArgs({ resume: `run-${SECRET}`, prompt: "继续" })).toEqual({
-      resume: `run-${SECRET}`,
-      prompt: "继续",
-    });
-  });
 
   it("validateArgs requires a non-empty prompt", async () => {
     await expect(taskTool.validateArgs?.({ agentType: "explore", prompt: " " })).rejects.toThrow(
@@ -618,17 +595,6 @@ describe("context inheritance (S2b)", () => {
       fakeCtx(withoutFlag) as never,
     );
     expect(withoutFlag.mock.calls[0]?.[0]).not.toHaveProperty("inheritContext");
-  });
-
-  it("persists the inheritContext boolean alongside the prompt original", () => {
-    expect(taskTool.persistArgs({ agentType: "explore", prompt: "x", inheritContext: true })).toEqual({
-      agentType: "explore",
-      prompt: "x",
-      inheritContext: true,
-    });
-    expect(
-      taskTool.persistArgs({ agentType: "explore", prompt: "x", inheritContext: "junk" }),
-    ).not.toHaveProperty("inheritContext");
   });
 
   it("end to end: the child session's first request carries seeded history and the briefing", async () => {

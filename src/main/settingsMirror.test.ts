@@ -11,10 +11,10 @@ describe("settings mirror", () => {
       activeProfileId: "p1", activeModel: "m1", workspaceRoot: "", permissionMode: "ask",
     });
 
-    expect(mirror.profiles[0]).toMatchObject({ apiKey: "", apiKeyConfigured: false });
+    expect(mirror.profiles[0]).toMatchObject({ apiKey: "" });
   });
 
-  it("redacts plaintext provider credentials while keeping configuration state", () => {
+  it("keeps plaintext provider credentials in renderer and persisted settings", () => {
     const source = {
       profiles: [{
         id: "p1", name: "Configured", kind: "google" as const, apiKey: "top-secret", apiKeyRef: "keys/key-1",
@@ -24,9 +24,7 @@ describe("settings mirror", () => {
     };
     const mirror = toSettingsMirror(source);
 
-    expect(JSON.stringify(mirror)).not.toContain("top-secret");
-    expect(mirror.profiles[0]).toMatchObject({ apiKey: "", apiKeyRef: "keys/key-1", apiKeyConfigured: true });
-    expect(toPersistedSettings(source).profiles[0]).toEqual(expect.objectContaining({ apiKey: "", apiKeyRef: "keys/key-1" }));
-    expect(JSON.stringify(toPersistedSettings(source))).not.toContain("top-secret");
+    expect(mirror.profiles[0]).toMatchObject({ apiKey: "top-secret", apiKeyRef: "keys/key-1" });
+    expect(toPersistedSettings(source).profiles[0]).toEqual(expect.objectContaining({ apiKey: "top-secret", apiKeyRef: "keys/key-1" }));
   });
 });

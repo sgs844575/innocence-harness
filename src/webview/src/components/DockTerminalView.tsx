@@ -17,6 +17,8 @@ interface Props {
   visible: boolean;
   /** 代码字号（外观设置）。 */
   fontSize?: number;
+  /** 生效终端字体（useTerminalFont 现算）；null/空串 = 沿用 --font-mono token。 */
+  fontFamily?: string | null;
 }
 
 /** 从 CSS token 读取终端主题（调用时机：挂载 + 明暗切换）。 */
@@ -32,7 +34,7 @@ function readTerminalTheme(): Record<string, string | undefined> {
   };
 }
 
-export function DockTerminalView({ t, terminalId, workspaceRoot, visible, fontSize }: Props): React.JSX.Element {
+export function DockTerminalView({ t, terminalId, workspaceRoot, visible, fontSize, fontFamily }: Props): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -44,7 +46,8 @@ export function DockTerminalView({ t, terminalId, workspaceRoot, visible, fontSi
     const host = hostRef.current;
     if (!hasTerminalBridge() || !host) return;
     const term = new Terminal({
-      fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || undefined,
+      // 显式覆盖/继承字体优先；缺省（null/空串）回落 --font-mono token（现状）。
+      fontFamily: fontFamily || getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || undefined,
       fontSize: fontSize ?? 14,
       cursorBlink: true,
       theme: readTerminalTheme(),
@@ -97,7 +100,8 @@ export function DockTerminalView({ t, terminalId, workspaceRoot, visible, fontSi
       void terminalApi.dockDispose({ terminalId, ...(ptyId ? { ptyId } : {}) }).catch(() => undefined);
       term.dispose();
     };
-  }, [terminalId, workspaceRoot, fontSize, t]);
+  // fontSize/fontFamily 变更走重建（与既有 fontSize 同路径：释放旧 PTY 重开）。
+  }, [terminalId, workspaceRoot, fontSize, fontFamily, t]);
 
   // 重新可见 / 尺寸变化（dock 拖宽）：重新 fit 并把网格尺寸同步给 PTY。
   useEffect(() => {

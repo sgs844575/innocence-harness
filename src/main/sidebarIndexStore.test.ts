@@ -9,6 +9,7 @@ import {
   persistSidebarIndex,
   sidebarIndexFile,
   sidebarProjectId,
+  SidebarValidationError,
   type SidebarIndexDocument,
 } from "./sidebarIndexStore";
 
@@ -52,6 +53,32 @@ describe("sidebar index migration", () => {
     const restarted = createSidebarIndexStore(dir, sessions);
     expect(restarted.getSidebarState().archived["s-beta"]).toBe(true);
     expect(restarted.getSidebarState().archived["s-alpha"]).toBe(false);
+  });
+
+  it("defaults pin state to false and persists pin changes across restart", () => {
+    const store = createSidebarIndexStore(dir, sessions);
+    expect(store.getSidebarState().pinned).toEqual({ "s-alpha": false, "s-none": false, "s-beta": false });
+    store.pinSession("s-alpha", true);
+
+    const restarted = createSidebarIndexStore(dir, sessions);
+    expect(restarted.getSidebarState().pinned["s-alpha"]).toBe(true);
+    expect(restarted.getSidebarState().pinned["s-beta"]).toBe(false);
+  });
+
+  it("persists unread state and clears it independently from pin/archive state", () => {
+    const store = createSidebarIndexStore(dir, sessions);
+    store.markSessionUnread("s-alpha", true);
+    const restarted = createSidebarIndexStore(dir, sessions);
+    expect(restarted.getSidebarState().unread["s-alpha"]).toBe(true);
+    restarted.markSessionUnread("s-alpha", false);
+    expect(restarted.getSidebarState().unread["s-alpha"]).toBe(false);
+  });
+
+  it("rejects pinning an unknown session without touching the persisted file", () => {
+    const store = createSidebarIndexStore(dir, sessions);
+    const before = store.getSidebarState();
+    expect(() => store.pinSession("s-missing", true)).toThrow(SidebarValidationError);
+    expect(store.getSidebarState()).toEqual(before);
   });
 
   it("uses the requested custom-group order rather than the global session order", () => {
@@ -108,6 +135,8 @@ describe("sidebar index migration", () => {
       version: 1,
       order: ["old"],
       archived: { old: false },
+      pinned: { old: false },
+      unread: { old: false },
       groups: [],
       ungrouped: ["old"],
       projectOrder: [],

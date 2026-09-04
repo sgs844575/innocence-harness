@@ -136,19 +136,6 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
             scope: pickAgentType(args.agentType),
           };
     },
-    persistArgs(args) {
-      // 持久化完整原文供展示/留档：预设类型（续跑时不指定）、prompt 原文、
-      // description/resume 原文（如有），inheritContext 为布尔开关，原样持久化。
-      const resume = typeof args.resume === "string" && args.resume ? args.resume : undefined;
-      return {
-        ...(resume ? { resume } : { agentType: pickAgentType(args.agentType) }),
-        prompt: typeof args.prompt === "string" ? args.prompt : "",
-        ...(typeof args.description === "string" && args.description
-          ? { description: args.description }
-          : {}),
-        ...(args.inheritContext === true ? { inheritContext: true } : {}),
-      };
-    },
     async execute(args, ctx: ToolContext) {
       const prompt = args.prompt;
       const description = args.description;

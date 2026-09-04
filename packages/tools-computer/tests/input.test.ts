@@ -30,13 +30,6 @@ describe("computer_click", () => {
       kind: "computer",
       scope: "input",
     });
-    expect(tool.persistArgs({ x: 3, y: 4 })).toEqual({ x: 3, y: 4 });
-    expect(tool.persistArgs({ x: 3, y: 4, button: "right", double: true })).toEqual({
-      x: 3,
-      y: 4,
-      button: "right",
-      double: true,
-    });
   });
 
   it("emits the documented mouse_event flags", async () => {
@@ -74,10 +67,8 @@ describe("computer_type", () => {
     expect(() => tool.validateArgs!({ text: "x".repeat(2000) })).not.toThrow();
   });
 
-  it("persists the full text and embeds it as base64 that decodes back", async () => {
+  it("embeds the full text as base64 that decodes back", async () => {
     const text = "你好 world\nsecond line";
-    const tool = createTypeTool({ runner: fakeRunner().runner });
-    expect(tool.persistArgs({ text })).toEqual({ text });
     const { runner, calls } = fakeRunner();
     const result = await createTypeTool({ runner }).execute({ text }, ctx);    expect(result.content).toContain("Typed 20 characters");
     const script = calls[0].script;
@@ -118,11 +109,7 @@ describe("computer_scroll", () => {
     expect(() => tool.validateArgs!({ direction: "up" })).not.toThrow();
   });
 
-  it("persists the full args and emits wheel deltas", async () => {
-    const tool = createScrollTool({ runner: fakeRunner().runner });
-    expect(tool.persistArgs({ direction: "down" })).toEqual({ direction: "down" });
-    expect(tool.persistArgs({ direction: "up", amount: 5 })).toEqual({ direction: "up", amount: 5 });
-
+  it("emits wheel deltas", async () => {
     const { runner, calls } = fakeRunner();
     const executing = createScrollTool({ runner });
     await executing.execute({ direction: "up" }, ctx);

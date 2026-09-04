@@ -25,6 +25,9 @@ export interface SidebarIndexDocument {
   /** Authoritative session-store order; defaults follow this order. */
   order: string[];
   archived: Record<string, boolean>;
+  /** 置顶标记；缺省 false（旧文档无此键）。 */
+  pinned: Record<string, boolean>;
+  unread: Record<string, boolean>;
   groups: SidebarIndexGroup[];
   ungrouped: string[];
   projectOrder: string[];
@@ -139,6 +142,8 @@ function cloneDocument(document: SidebarIndexDocument): SidebarIndexDocument {
     version: 1,
     order: [...document.order],
     archived: { ...document.archived },
+    pinned: { ...document.pinned },
+    unread: { ...document.unread },
     groups: document.groups.map((group) => ({ ...group, sessionIds: [...group.sessionIds] })),
     ungrouped: [...document.ungrouped],
     projectOrder: [...document.projectOrder],
@@ -161,6 +166,8 @@ function normalizeDocument(value: unknown, sessions: readonly SessionProjection[
   const validIds = new Set(sessions.map(({ id }) => id));
   const order = mergeKnownOrder(normalizeSessionIds(input.order, validIds), sessions.map(({ id }) => id));
   const archived = Object.fromEntries(order.map((id) => [id, input.archived?.[id] === true]));
+  const pinned = Object.fromEntries(order.map((id) => [id, input.pinned?.[id] === true]));
+  const unread = Object.fromEntries(order.map((id) => [id, input.unread?.[id] === true]));
   const grouped = new Set<string>();
   const groups: SidebarIndexGroup[] = [];
   for (const group of Array.isArray(input.groups) ? input.groups : []) {
@@ -189,6 +196,8 @@ function normalizeDocument(value: unknown, sessions: readonly SessionProjection[
     version: 1,
     order,
     archived,
+    pinned,
+    unread,
     groups,
     ungrouped: ungroupedSeed,
     projectOrder: Array.isArray(input.projectOrder) ? input.projectOrder.filter((id): id is string => typeof id === "string") : [],
@@ -206,6 +215,8 @@ export function migrateLegacySessions(sessions: readonly SessionProjection[]): S
     version: 1,
     order,
     archived: Object.fromEntries(order.map((id) => [id, false])),
+    pinned: Object.fromEntries(order.map((id) => [id, false])),
+    unread: Object.fromEntries(order.map((id) => [id, false])),
     groups: [],
     ungrouped: [...order],
     projectOrder: [],
@@ -247,6 +258,8 @@ export interface SidebarIndexStore {
   getSidebarState(): SidebarState;
   replaceSessions(sessions: readonly SessionProjection[]): void;
   archiveSession(id: string, archived: boolean): void;
+  pinSession(id: string, pinned: boolean): void;
+  markSessionUnread(id: string, unread: boolean): void;
   reorderSessions(container: SidebarContainer, orderedIds: readonly string[]): void;
   moveSession(id: string, target: SidebarContainer, beforeId?: string): void;
   reorderContainers(kind: "projects" | "groups", orderedIds: readonly string[]): void;
@@ -294,6 +307,8 @@ export function createSidebarIndexStore(
           const authoritative = nextList.map(({ id }) => id);
           staged.order = authoritative;
           staged.archived = Object.fromEntries(authoritative.map((id) => [id, staged.archived[id] === true]));
+          staged.pinned = Object.fromEntries(authoritative.map((id) => [id, staged.pinned[id] === true]));
+          staged.unread = Object.fromEntries(authoritative.map((id) => [id, staged.unread[id] === true]));
           staged.groups = staged.groups.map((group) => ({ ...group, sessionIds: group.sessionIds.filter((id) => valid.has(id)) }));
           const grouped = new Set(staged.groups.flatMap((group) => group.sessionIds));
           const ungroupedBaseline = authoritative.filter((id) => !grouped.has(id));
@@ -312,6 +327,14 @@ export function createSidebarIndexStore(
     archiveSession: (id, archived) => commit((staged) => {
       if (!validIds().has(id)) throw new SidebarValidationError("unknown session");
       staged.archived[id] = archived;
+    }),
+    pinSession: (id, pinned) => commit((staged) => {
+      if (!validIds().has(id)) throw new SidebarValidationError("unknown session");
+      staged.pinned[id] = pinned;
+    }),
+    markSessionUnread: (id, unread) => commit((staged) => {
+      if (!validIds().has(id)) throw new SidebarValidationError("unknown session");
+      staged.unread[id] = unread;
     }),
     reorderSessions: (container, orderedIds) => commit((staged) => {
       const projects = effectiveProjects(staged, sessionList);

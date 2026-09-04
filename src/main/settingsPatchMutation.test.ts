@@ -39,6 +39,43 @@ describe("settings patch mutation", () => {
     expect(rebased.profiles.map((profile) => profile.id)).toEqual(["p2", "p1", "p3"]);
   });
 
+  it("includes provider credentials in regular diffs and applies their complete values", () => {
+    const current = settings();
+    const next = {
+      ...current,
+      profiles: current.profiles.map((profile) => profile.id === "p1"
+        ? { ...profile, apiKey: "replacement-key" }
+        : profile),
+    };
+
+    const patch = diffSettingsSnapshot(current, next);
+    expect(patch.providerProfiles?.updates).toEqual([{
+      id: "p1",
+      changes: { apiKey: "replacement-key" },
+    }]);
+    expect(applySettingsPatch(current, patch).profiles.find((profile) => profile.id === "p1")?.apiKey)
+      .toBe("replacement-key");
+  });
+
+  it("keeps a credential supplied when creating a profile", () => {
+    const created = applySettingsPatch(settings(), {
+      providerProfiles: { updates: [{
+        id: "p3",
+        create: {
+          id: "p3",
+          name: "Three",
+          kind: "google",
+          apiKey: "created-key",
+          baseURL: "",
+          enabled: true,
+          models: [],
+        },
+      }] },
+    });
+
+    expect(created.profiles.find((profile) => profile.id === "p3")?.apiKey).toBe("created-key");
+  });
+
   it("preserves independent plugin toggles from the same stale renderer snapshot", async () => {
     const current: HarnessSettings = { ...settings(), pluginToggles: { first: true, second: true } };
     const firstSnapshot: HarnessSettings = { ...current, pluginToggles: { first: false, second: true } };

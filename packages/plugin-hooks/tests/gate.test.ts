@@ -178,7 +178,7 @@ describe("hook permission gate", () => {
       {
         invocationId: "inv-1",
         toolName: "Write",
-        persistedArgs: {},
+        args: {},
         signal: new AbortController().signal,
         scope: { invocationId: "inv-1", toolName: "Write" },
       },

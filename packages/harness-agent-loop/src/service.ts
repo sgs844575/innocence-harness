@@ -10,6 +10,7 @@ import type {
 import type { ExecutionScopeIdentity, ToolsService } from "@innocenceharness/harness-tools";
 import type { Context } from "@innocenceharness/kernel";
 import { runLoop, type LoopResult } from "./loop";
+import type { PendingInputMailbox } from "./pending-inputs";
 
 // Services are typed on `Context` through declaration merging by their
 // publisher (kernel ServiceTable contract). The member is live only while the
@@ -45,6 +46,8 @@ export interface LoopDeps {
   abortGraceMs?: number;
   /** Optional allow-listed observability port injected by the host. */
   telemetry?: TraceAdapter;
+  /** Steer mailbox shared by every run of this session (see LoopOptions). */
+  pendingInputs?: PendingInputMailbox;
 }
 
 /** Per-run options; each member overrides the {@link LoopDeps} default. */
@@ -88,6 +91,7 @@ export function createRunLoop(deps: LoopDeps): RunLoopFunction {
       spawner: deps.spawner,
       telemetry: deps.telemetry,
       scope: opts.scope,
+      pendingInputs: deps.pendingInputs,
     });
 }
 

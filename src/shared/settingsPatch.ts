@@ -24,7 +24,7 @@ export type HarnessSettingsPatch = Partial<Omit<HarnessSettings, "profiles" | "p
 function profileChanges(previous: ProviderProfile, next: ProviderProfile): Partial<ProviderProfile> | undefined {
   const changes: Partial<ProviderProfile> = {};
   for (const key of Object.keys(next) as (keyof ProviderProfile)[]) {
-    if (key === "apiKey" || key === "apiKeyConfigured" || Object.is(previous[key], next[key])) continue;
+    if (Object.is(previous[key], next[key])) continue;
     changes[key] = next[key] as never;
   }
   return Object.keys(changes).length > 0 ? changes : undefined;

@@ -48,7 +48,7 @@ export function worktreeFenceMiddleware(): ToolExecutionMiddleware {
     name: "worktree-fence",
     async execute(invocation, next) {
       if (FENCED_WRITE_TOOLS.has(invocation.toolName)) {
-        const target = String(invocation.persistedArgs.path ?? "");
+        const target = String(invocation.args.path ?? "");
         if (!isInsideWorktreeNamespace(target)) {
           return { content: FENCE_REJECTION, isError: true };
         }
@@ -78,9 +78,6 @@ export function createEnterWorktreeTool(deps: EnterWorktreeDeps = {}): Tool {
     async validateArgs() {},
     permissionResource() {
       return { action: "write", kind: "path", scope: WORKTREE_DIR };
-    },
-    persistArgs() {
-      return {};
     },
     async execute(_args, ctx: ToolContext) {
       const relative = `${WORKTREE_DIR}/${mintName()}`;

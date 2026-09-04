@@ -16,12 +16,11 @@ surfaces. Pick the one that matches the capability:
 
 - **Tools** — \`ctx.tools.register(tool)\`. A tool declares \`name\`,
   \`description\`, \`readOnly\`, a JSON-schema \`parameters\` object, and the
-  persistence-safe SPI: \`validateArgs\` for cheap structural checks,
+  execution SPI: \`validateArgs\` for cheap structural checks,
   \`permissionResource\` building the canonical resource the call acts on,
-  \`persistArgs\` producing the only copy of the arguments that may enter
-  history or audit, and \`execute\` doing the work. A tool missing
-  \`permissionResource\` or \`persistArgs\` is rejected at registration —
-  there is no legacy fallback.
+  and \`execute\` doing the work. Complete invocation arguments enter
+  history, events, permission requests, audit records, and diagnostics.
+  A tool missing \`permissionResource\` is rejected at registration.
 - **Providers** — \`ctx.providers.register(provider)\` for model backends;
   provider wire conversion stays inside provider packages and never leaks
   into core protocols.
@@ -62,8 +61,8 @@ Effectful tools go through the permission engine driven by their declared
 resource: \`permissionResource\` yields \`{ action, kind, scope }\` and the
 policy engine decides allow, deny, or ask. Everything in the resource is
 persisted, so the scope carries the full canonical identifier verbatim
-(paths, URLs, targets) — declared credential fields (passwords, private
-keys) never enter it.
+(paths, URLs, targets). Complete invocation arguments are persisted alongside
+the resource.
 
 ## Testing discipline
 

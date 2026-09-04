@@ -4,6 +4,11 @@
 
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
 import type { PluginToggleSource } from "../../../src/shared/ipc";
+import {
+  DEFAULT_CODE_THEME_DARK,
+  DEFAULT_CODE_THEME_LIGHT,
+  normalizeCodeThemeId,
+} from "../../../src/shared/codeThemes";
 
 export type { ModelInfo } from "./modelPresets";
 
@@ -59,9 +64,9 @@ export interface HarnessSettings {
   uiFontSize?: number;
   /** 代码字号（px，12..18；缺失/非法回落 14）。代码块/终端/审查 diff 内容用。 */
   codeFontSize?: number;
-  /** 浅色界面代码高亮主题（shiki bundled 名，默认 github-light）。 */
+  /** 浅色界面代码高亮主题（shiki bundled 名）。 */
   codeThemeLight?: string;
-  /** 深色界面代码高亮主题（默认 github-dark）。 */
+  /** 深色界面代码高亮主题。 */
   codeThemeDark?: string;
   /** 代码块行号；缺失默认开。 */
   codeLineNumbers?: boolean;
@@ -84,7 +89,67 @@ export interface HarnessSettings {
   /** 外部编辑器启动命令（Task 11 工作台入口）；"" = 未配置（入口禁用）。
    *  首个 token 可加引号（含空格的路径）；多余 token 作为前置参数透传。 */
   externalEditorCommand?: string;
+  /** 继承系统终端 Profile：启动内置终端时继承登录环境与系统终端字体；默认开。 */
+  terminalInheritProfile?: boolean;
+  /** 终端字体覆盖（CSS font-family 串）；"" = 自动（继承系统终端或等宽默认）。 */
+  terminalFontFamily?: string;
+  /** 集成终端 shell（Windows 下 Bash 工具同用）；默认 "auto"（优先 Git Bash，回退 cmd）。 */
+  terminalShell?: TerminalShell;
+  /** 增强 Find/Grep 工具开关（优先 ripgrep 系外部引擎，关闭 = 内置扫描）；
+   *  仅新会话生效，默认开。 */
+  enhancedFindGrep?: boolean;
+  /** 出口流量 HTTP 代理 URL；"" = 直连（渲染层跟随系统代理）。重启生效。 */
+  httpProxy?: string;
+  /** 代理绕过主机列表（英文逗号分隔）；重启生效。 */
+  proxyBypass?: string;
+  /** 自定义 PEM 根证书路径（NODE_EXTRA_CA_CERTS 注入 + 渲染层校验）；重启生效。 */
+  customCaCert?: string;
+  /** Chromium 硬件加速；默认开，关闭需重启生效。 */
+  hardwareAcceleration?: boolean;
+  /** 接受预览版更新通道；默认关。（更新器落地前仅持久化偏好。） */
+  previewUpdates?: boolean;
+  /** 检测到更新后自动下载；默认开。（更新器落地前仅持久化偏好。） */
+  autoDownloadUpdates?: boolean;
+  /** 任务完成/失败/待确认时发送桌面通知；默认开。 */
+  taskNotifications?: boolean;
+  /** 任务通知提示音；默认开（关闭 = 静默通知）。 */
+  notificationSound?: boolean;
+  /** 关闭窗口时隐藏到托盘（仅 Windows）；默认关。 */
+  closeToTray?: boolean;
+  /** 阻止系统空闲休眠（powerSaveBlocker）；默认关。 */
+  keepAwake?: boolean;
+  /** 运行中发送后续消息的行为："queue" 排队（默认）|"steer" 引导至下一轮工具调用后运行。 */
+  interactionMode?: InteractionMode;
+  /** Agent 提问 5 分钟未回答自动继续；默认关（一直等待）。 */
+  questionAutoContinue?: boolean;
+  /** 消息流展示完整思考内容；默认开（关闭时每轮仍展示第一次思考）。 */
+  showThinking?: boolean;
+  /** 消息流展示 Todo 工具卡片；默认开。 */
+  showTodos?: boolean;
+  /** 连续读取/搜索工具聚合为 Explore 分组；默认开。 */
+  groupExploreTools?: boolean;
+  /** 连续非只读 Shell 命令聚合为 Terminal 分组；默认开。 */
+  groupTerminalCommands?: boolean;
+  /** 连续 Write/Edit/ApplyPatch 聚合为 Changes 分组；默认关。 */
+  groupFileChanges?: boolean;
+  /** 定时自动归档已完成、无未读、未置顶且超过保留期的任务；默认关。 */
+  autoArchiveTasks?: boolean;
+  /** 自动归档保留时长（天；1/3/7/14/30，默认 7）。 */
+  archiveRetentionDays?: number;
+  /** 首次引导完成标记。出厂默认 false（新装弹引导）；旧设置文件缺失该键
+   *  归一化为 true（老用户不打扰）。 */
+  onboarded?: boolean;
+  /** 体验优化计划（对话内容回传授权）；默认关。 */
+  telemetryOptIn?: boolean;
 }
+
+/** 集成终端 shell 候选；"auto" = Windows 优先 Git Bash 回退 cmd，POSIX 用 $SHELL。 */
+export type TerminalShell = "auto" | "cmd" | "powershell" | "gitbash" | "wsl";
+export const TERMINAL_SHELLS: TerminalShell[] = ["auto", "cmd", "powershell", "gitbash", "wsl"];
+/** 运行中发送后续消息的交互行为。 */
+export type InteractionMode = "queue" | "steer";
+/** 自动归档保留时长候选（天）。 */
+export const ARCHIVE_RETENTION_DAYS: number[] = [1, 3, 7, 14, 30];
 
 function normalizeExternalSkillDiscovery(raw: unknown): boolean {
   return raw !== false;
@@ -106,6 +171,61 @@ function normalizeReasoningEffort(raw: unknown): ReasoningEffort {
 
 function normalizeActiveAgentMode(raw: unknown): string {
   return typeof raw === "string" && raw.length > 0 ? raw : "default";
+}
+
+/** 布尔归一化：缺失/非法回落给定默认（常规页功能项的默认有开有关）。 */
+function boolOr(raw: unknown, fallback: boolean): boolean {
+  return typeof raw === "boolean" ? raw : fallback;
+}
+
+/** 字符串归一化：非字符串回落 ""。 */
+function stringOrEmpty(raw: unknown): string {
+  return typeof raw === "string" ? raw : "";
+}
+
+function normalizeTerminalShell(raw: unknown): TerminalShell {
+  return TERMINAL_SHELLS.includes(raw as TerminalShell) ? (raw as TerminalShell) : "auto";
+}
+
+function normalizeInteractionMode(raw: unknown): InteractionMode {
+  return raw === "steer" ? "steer" : "queue";
+}
+
+function normalizeArchiveRetentionDays(raw: unknown): number {
+  return typeof raw === "number" && ARCHIVE_RETENTION_DAYS.includes(raw) ? raw : 7;
+}
+
+/** 常规设置页功能项的统一归一化（v1 迁移/无 profiles 缺省/v3 全量三个分支
+ *  共用）。onboarded 语义特殊：键缺失 = 老用户 = true；出厂 false 只来自
+ *  DEFAULT_SETTINGS（无设置文件的新装）。 */
+function mergeGeneralFeatures(src: Partial<HarnessSettings>): Partial<HarnessSettings> {
+  return {
+    terminalInheritProfile: boolOr(src.terminalInheritProfile, true),
+    terminalFontFamily: stringOrEmpty(src.terminalFontFamily),
+    terminalShell: normalizeTerminalShell(src.terminalShell),
+    enhancedFindGrep: boolOr(src.enhancedFindGrep, true),
+    httpProxy: stringOrEmpty(src.httpProxy),
+    proxyBypass: stringOrEmpty(src.proxyBypass),
+    customCaCert: stringOrEmpty(src.customCaCert),
+    hardwareAcceleration: boolOr(src.hardwareAcceleration, true),
+    previewUpdates: boolOr(src.previewUpdates, false),
+    autoDownloadUpdates: boolOr(src.autoDownloadUpdates, true),
+    taskNotifications: boolOr(src.taskNotifications, true),
+    notificationSound: boolOr(src.notificationSound, true),
+    closeToTray: boolOr(src.closeToTray, false),
+    keepAwake: boolOr(src.keepAwake, false),
+    interactionMode: normalizeInteractionMode(src.interactionMode),
+    questionAutoContinue: boolOr(src.questionAutoContinue, false),
+    showThinking: boolOr(src.showThinking, true),
+    showTodos: boolOr(src.showTodos, true),
+    groupExploreTools: boolOr(src.groupExploreTools, true),
+    groupTerminalCommands: boolOr(src.groupTerminalCommands, true),
+    groupFileChanges: boolOr(src.groupFileChanges, false),
+    autoArchiveTasks: boolOr(src.autoArchiveTasks, false),
+    archiveRetentionDays: normalizeArchiveRetentionDays(src.archiveRetentionDays),
+    onboarded: src.onboarded !== false,
+    telemetryOptIn: boolOr(src.telemetryOptIn, false),
+  };
 }
 
 /** 界面/代码字号收窄区间（px）与默认值；normalizeFontSize 共用。 */
@@ -153,6 +273,36 @@ function presetProfile(preset: ProviderPreset): ProviderProfile {
   };
 }
 
+/** 常规设置页功能项的出厂默认（新装 = 未引导 onboarded:false；
+ *  旧文件缺失键的归一化语义见 mergeSettings 各 normalize 调用）。 */
+export const GENERAL_FEATURE_DEFAULTS = {
+  terminalInheritProfile: true,
+  terminalFontFamily: "",
+  terminalShell: "auto",
+  enhancedFindGrep: true,
+  httpProxy: "",
+  proxyBypass: "",
+  customCaCert: "",
+  hardwareAcceleration: true,
+  previewUpdates: false,
+  autoDownloadUpdates: true,
+  taskNotifications: true,
+  notificationSound: true,
+  closeToTray: false,
+  keepAwake: false,
+  interactionMode: "queue",
+  questionAutoContinue: false,
+  showThinking: true,
+  showTodos: true,
+  groupExploreTools: true,
+  groupTerminalCommands: true,
+  groupFileChanges: false,
+  autoArchiveTasks: false,
+  archiveRetentionDays: 7,
+  onboarded: false,
+  telemetryOptIn: false,
+} as const satisfies Partial<HarnessSettings>;
+
 export const DEFAULT_SETTINGS: HarnessSettings = {
   profiles: PROVIDER_PRESETS.map(presetProfile),
   activeProfileId: MOCK_PROFILE_ID,
@@ -163,8 +313,8 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   locale: "",
   uiFontSize: FONT_SIZE_DEFAULT,
   codeFontSize: FONT_SIZE_DEFAULT,
-  codeThemeLight: "github-light",
-  codeThemeDark: "github-dark",
+  codeThemeLight: DEFAULT_CODE_THEME_LIGHT,
+  codeThemeDark: DEFAULT_CODE_THEME_DARK,
   codeLineNumbers: true,
   codeWordWrap: false,
   reasoningEffort: "",
@@ -172,6 +322,7 @@ export const DEFAULT_SETTINGS: HarnessSettings = {
   externalSkillDiscovery: true,
   permissionClassifier: false,
   externalEditorCommand: "",
+  ...GENERAL_FEATURE_DEFAULTS,
 };
 
 let customSeq = 0;
@@ -260,11 +411,6 @@ function normalizeFontSize(raw: unknown): number {
     : FONT_SIZE_DEFAULT;
 }
 
-/** 代码高亮主题归一化：非空字符串透传，否则回落给定默认。 */
-function normalizeCodeTheme(raw: unknown, fallback: string): string {
-  return typeof raw === "string" && raw.trim() !== "" ? raw : fallback;
-}
-
 /** 布尔值键保留、非布尔剔除；无有效键回落 undefined（undefined = 默认全开，
  *  与 resolvePluginSet 的两级覆盖语义一致）。键空间开放（清单派生）：任意
  *  插件 id 键均透传——写路径不再静默剔除清单内插件（如 example）的开关，
@@ -351,10 +497,11 @@ function migrateFromV1(v1: SettingsV1): HarnessSettings {
     activeAgentMode: normalizeActiveAgentMode((v1 as { activeAgentMode?: unknown }).activeAgentMode),
     externalSkillDiscovery: normalizeExternalSkillDiscovery((v1 as { externalSkillDiscovery?: unknown }).externalSkillDiscovery),
     // pluginToggles：v1 不可能含该键，有意不透传（缺省 = 默认全开）。
-    codeThemeLight: "github-light",
-    codeThemeDark: "github-dark",
+    codeThemeLight: DEFAULT_CODE_THEME_LIGHT,
+    codeThemeDark: DEFAULT_CODE_THEME_DARK,
     codeLineNumbers: true,
     codeWordWrap: false,
+    ...mergeGeneralFeatures(v1 as Partial<HarnessSettings>),
   };
 }
 
@@ -372,8 +519,8 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       permissionMode: normalizePermissionMode(src.permissionMode),
       themeMode: normalizeThemeMode(src.themeMode), locale: normalizeLocale(src.locale),
       uiFontSize: normalizeFontSize(src.uiFontSize), codeFontSize: normalizeFontSize(src.codeFontSize),
-      codeThemeLight: normalizeCodeTheme(src.codeThemeLight, "github-light"),
-      codeThemeDark: normalizeCodeTheme(src.codeThemeDark, "github-dark"),
+      codeThemeLight: normalizeCodeThemeId(src.codeThemeLight, DEFAULT_CODE_THEME_LIGHT),
+      codeThemeDark: normalizeCodeThemeId(src.codeThemeDark, DEFAULT_CODE_THEME_DARK),
       codeLineNumbers: src.codeLineNumbers !== false,
       codeWordWrap: src.codeWordWrap === true,
       reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
@@ -381,7 +528,8 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       externalSkillDiscovery: normalizeExternalSkillDiscovery(src.externalSkillDiscovery),
       permissionClassifier: src.permissionClassifier === true,
       pluginToggles: normalizePluginToggles(src.pluginToggles),
-      externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand) };
+      externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
+      ...mergeGeneralFeatures(src) };
   }
 
   const profiles = src.profiles
@@ -401,8 +549,8 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     locale: normalizeLocale(src.locale),
     uiFontSize: normalizeFontSize(src.uiFontSize),
     codeFontSize: normalizeFontSize(src.codeFontSize),
-    codeThemeLight: normalizeCodeTheme(src.codeThemeLight, "github-light"),
-    codeThemeDark: normalizeCodeTheme(src.codeThemeDark, "github-dark"),
+    codeThemeLight: normalizeCodeThemeId(src.codeThemeLight, DEFAULT_CODE_THEME_LIGHT),
+    codeThemeDark: normalizeCodeThemeId(src.codeThemeDark, DEFAULT_CODE_THEME_DARK),
     codeLineNumbers: src.codeLineNumbers !== false,
     codeWordWrap: src.codeWordWrap === true,
     reasoningEffort: normalizeReasoningEffort(src.reasoningEffort),
@@ -411,6 +559,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     permissionClassifier: src.permissionClassifier === true,
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
+    ...mergeGeneralFeatures(src),
   };
 }
 

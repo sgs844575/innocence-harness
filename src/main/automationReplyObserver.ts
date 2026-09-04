@@ -9,6 +9,7 @@
 export interface ObservedReply {
   text: string;
   errored: boolean;
+  error?: string;
 }
 
 const observedReplies = new Map<string, ObservedReply>();
@@ -26,10 +27,11 @@ export function appendObservedReplyDelta(messageId: string, delta: string): void
 }
 
 /** Flags the turn as errored; a no-op for ids that were never begun (or already ended). */
-export function markObservedReplyError(messageId: string): void {
+export function markObservedReplyError(messageId: string, error: string): void {
   const reply = observedReplies.get(messageId);
   if (!reply) return;
   reply.errored = true;
+  reply.error = error;
 }
 
 /** Ends collection and returns the reply with its error flag (empty/never-errored for unknown ids). */

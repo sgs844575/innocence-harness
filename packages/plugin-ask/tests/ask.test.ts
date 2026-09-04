@@ -203,7 +203,7 @@ describe("answer formatting", () => {
 });
 
 describe("ask plugin factory", () => {
-  it("registers ask_user on a real kernel Context through the persistence gate", async () => {
+  it("registers ask_user on a real kernel Context through the permission gate", async () => {
     const port = fakePort(async () => ({ status: "skipped" }));
     const plugin = createAskPlugin({ askUser: port });
     expect(plugin.name).toBe("ask");

@@ -216,7 +216,7 @@ export function workbenchFocusPlugin(
           const focus = getFocus();
           if (!focus || invocation.scope.sessionId !== focus.sessionId) return result;
           const readPath = normalizeForFocusMatch(
-            String(invocation.persistedArgs.path ?? ""),
+            String(invocation.args.path ?? ""),
           );
           const focusFile = normalizeForFocusMatch(focus.file);
           if (!readPath || !focusFile) return result;

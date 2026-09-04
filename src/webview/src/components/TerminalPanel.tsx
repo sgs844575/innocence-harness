@@ -13,6 +13,8 @@ interface Props {
   /** 新终端的工作目录（当前项目根；空串由主进程回退用户主目录）。 */
   workspaceRoot: string;
   fontSize?: number;
+  /** 生效终端字体（useTerminalFont 现算）；null/空串 = 沿用 --font-mono token。 */
+  fontFamily?: string | null;
   onClose: () => void;
   /** 存活终端数变化上报（活动胶囊「终端」段的数据源）。 */
   onTerminalsChange?: (count: number) => void;
@@ -29,7 +31,7 @@ let terminalSeq = 0;
 /** 面板高度（内容定高，外层只裁剪——与 dock 宽度动画同模式）。 */
 const PANEL_HEIGHT = 260;
 
-export function TerminalPanel({ t, open, workspaceRoot, fontSize, onClose, onTerminalsChange }: Props): React.JSX.Element {
+export function TerminalPanel({ t, open, workspaceRoot, fontSize, fontFamily, onClose, onTerminalsChange }: Props): React.JSX.Element {
   const [terminals, setTerminals] = useState<PanelTerminal[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -135,6 +137,7 @@ export function TerminalPanel({ t, open, workspaceRoot, fontSize, onClose, onTer
                 workspaceRoot={terminal.cwd}
                 visible={open && terminal.id === activeId}
                 fontSize={fontSize}
+                fontFamily={fontFamily}
               />
             </div>
           ))}

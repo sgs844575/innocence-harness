@@ -118,13 +118,6 @@ export function createSendMessageTool(options: SendMessageToolOptions): Tool {
         scope: requireTeammate(args.teammate) ?? "invalid",
       };
     },
-    persistArgs(args) {
-      // 持久化队友名与消息完整原文，供展示与留档。
-      return {
-        teammate: requireTeammate(args.teammate) ?? "invalid",
-        message: typeof args.message === "string" ? args.message : "",
-      };
-    },
     async execute(args) {
       // execute 必须自守：validateArgs 的收窄不跨签名边界。
       const teammate = requireTeammate(args.teammate);

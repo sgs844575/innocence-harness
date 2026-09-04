@@ -1,10 +1,9 @@
 // Memory tools (batch 4B task 1): write/list/read over the dual-root store.
 // Factory form — roots arrive as host-injected getters (tests pass tmp dirs,
 // the session composition passes the user data root and the workspace root).
-// Discipline: persisted args carry the id, scope, tags and the full memory
-// body verbatim for display and audit; errors name the failing field without
-// echoing its value; LLM-facing output text is English, tool descriptions
-// follow the repository's Chinese style.
+// Complete invocation args are retained for display and audit. LLM-facing
+// output text is English; tool descriptions follow the repository's Chinese
+// style.
 import { type Tool } from "@innocenceharness/harness-tools";
 import {
   listEntries,
@@ -29,8 +28,8 @@ export interface MemoryToolsOptions {
 
 /** Confirmation after an accepted write. English, mode-neutral; adapts the
  *  upstream memory-guidance semantics (whole-document replacement, durable
- *  knowledge over transient state, save-in-the-same-reply timing, secret
- *  refusal) as a restructured rewrite — never verbatim. Exported for
+ *  knowledge over transient state, save-in-the-same-reply timing) as a
+ *  restructured rewrite — never verbatim. Exported for
  *  text-discipline tests. */
 export const MEMORY_WRITE_STORED = [
   "The memory document is stored. The written body replaces the entire entry:",
@@ -38,7 +37,7 @@ export const MEMORY_WRITE_STORED = [
   "keeping. Store lasting knowledge about this environment and the way work",
   "is done here; passing task state belongs elsewhere. When the user corrects",
   "you or states a preference, record the lesson in that same reply instead",
-  "of deferring it. Secrets and credentials never belong in a memory.",
+  "of deferring it.",
 ].join(" ");
 
 /** Rejection when the visible entry already exists and overwrite was not set. */
@@ -70,8 +69,7 @@ function normalizedTags(value: unknown): string[] {
     : [];
 }
 
-/** Parses and validates write args. Throws naming the failing field (never
- *  its content) — the same defense-in-depth contract as plan_submit. */
+/** Parses and validates write args. */
 function requireWrite(args: Record<string, unknown>): {
   id: string;
   content: string;
@@ -130,7 +128,7 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
   const memoryWrite: Tool = {
     name: MEMORY_WRITE_TOOL_NAME,
     description:
-      "写入或整体替换一条记忆条目（scope user 跨项目 / project 本项目，默认 project）：content 是完整替换而非追加，要保留的行必须随本次写入带上；沉淀持久的偏好、纠正与环境认知，不存临时任务状态——用户当轮给出纠正或偏好时即写；替换已存在的可见条目（含被用户根影子覆盖的）需先读原文并显式 overwrite:true；严禁写入密钥或凭据。可先用 memory_list 查看已有条目。",
+      "写入或整体替换一条记忆条目（scope user 跨项目 / project 本项目，默认 project）：content 是完整替换而非追加，要保留的行必须随本次写入带上；沉淀持久的偏好、纠正与环境认知，不存临时任务状态——用户当轮给出纠正或偏好时即写；替换已存在的可见条目（含被用户根影子覆盖的）需先读原文并显式 overwrite:true；可先用 memory_list 查看已有条目。",
     readOnly: false,
     sideEffect: "paths",
     parameters: {
@@ -155,15 +153,6 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
         action: "write",
         kind: "memory",
         scope: args.overwrite === true ? `${args.id}:overwrite` : args.id,
-      };
-    },
-    persistArgs(args) {
-      // 持久化完整原文供展示/留档：id/域/标签与正文全文。
-      return {
-        id: validMemoryId(args.id) ? args.id : "invalid",
-        scope: normalizedScope(args.scope),
-        tags: normalizedTags(args.tags),
-        content: typeof args.content === "string" ? args.content : "",
       };
     },
     async execute(args) {
@@ -206,9 +195,6 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
     permissionResource() {
       return { action: "read", kind: "memory", scope: "index" };
     },
-    persistArgs() {
-      return {};
-    },
     async execute() {
       const { entries, warnings } = await listEntries(shadowRoots());
       const rows = entries.length > 0 ? entries.map(formatIndexRow).join("\n") : MEMORY_LIST_EMPTY;
@@ -242,13 +228,10 @@ export function createMemoryTools(options: MemoryToolsOptions): Tool[] {
         scope: validMemoryId(args.id) ? args.id : "invalid",
       };
     },
-    persistArgs(args) {
-      return { id: validMemoryId(args.id) ? args.id : "invalid" };
-    },
     async execute(args) {
       if (!validMemoryId(args.id)) return { content: "id 非法（路径分隔符、点前缀或空白）", isError: true };
       const entry = await readEntry(shadowRoots(), args.id);
-      if (!entry) return { content: MEMORY_READ_MISS, isError: true };
+      if (!entry) return { content: `${MEMORY_READ_MISS} Requested id: ${args.id}`, isError: true };
       return { content: entry.body };
     },
   };

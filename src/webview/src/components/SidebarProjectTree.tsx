@@ -27,6 +27,9 @@ interface Props {
   tree: readonly ProjectNode[];
   activeId: string | null;
   runningIds?: ReadonlySet<string>;
+  /** 置顶标记（行首 Pin 图标；顺序由 buildProjectTree 排定）。 */
+  pinned?: Readonly<Record<string, boolean>>;
+  unread?: Readonly<Record<string, boolean>>;
   collapsed: ReadonlySet<string>;
   onToggleCollapsed: (id: string) => void;
   onSelect: (id: string) => void;
@@ -48,6 +51,8 @@ export function SidebarProjectTree({
   tree,
   activeId,
   runningIds,
+  pinned = {},
+  unread = {},
   collapsed,
   onToggleCollapsed,
   onSelect,
@@ -98,23 +103,28 @@ export function SidebarProjectTree({
   const renderProjectSection = (node: ProjectNode) => {
     const isCollapsed = collapsed.has(node.id);
     return (
-      <section key={node.id} className="mb-1">
-        <div className="group flex items-center gap-1 rounded-md px-1.5 py-1">
+      <section key={node.id} className="mb-1.5 last:mb-0">
+        <div className="group flex h-7 min-w-0 items-center gap-1.5 rounded-[calc(var(--radius-pop)/2)] px-1.5 transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:bg-(--color-hover) motion-reduce:transition-none">
           <button
             type="button"
             onClick={() => onToggleCollapsed(node.id)}
             aria-expanded={!isCollapsed}
             aria-label={`${isCollapsed ? t("sidebar.expand") : t("sidebar.collapse")} ${node.name}`}
             title={`${isCollapsed ? t("sidebar.expand") : t("sidebar.collapse")} ${node.name}`}
-            className="text-(--color-muted)"
+            className="grid size-5 shrink-0 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-faint) hover:text-(--color-foreground)"
           >
-            <ChevronRight size={13} className={isCollapsed ? "" : "rotate-90"} />
+            <ChevronRight
+              size={13}
+              className={`transition-transform duration-(--duration-quick) ease-(--ease-smooth-out) motion-reduce:transition-none ${
+                isCollapsed ? "" : "rotate-90"
+              }`}
+            />
           </button>
-          <Folder size={13} className="shrink-0 text-(--color-faint)" aria-hidden />
-          <span className="truncate font-medium text-(--color-foreground)">{node.name}</span>
+          <Folder size={14} className="shrink-0 text-(--color-muted)" aria-hidden />
+          <span className="min-w-0 truncate text-[13px] font-medium text-(--color-foreground-strong)">{node.name}</span>
           {/* 项目行悬停动作：… 菜单 / 文件树 / 新建任务。 */}
           {(onRevealProject || onOpenProjectFiles || onNewTaskInProject) && (
-            <span className="ml-auto flex items-center opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">
+            <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-(--duration-quick) group-hover:opacity-100 motion-reduce:transition-none">
               {onRevealProject && (
                 <DropdownMenu
                   align="end"
@@ -124,7 +134,7 @@ export function SidebarProjectTree({
                       type="button"
                       aria-label={t("sidebar.project.menu")}
                       title={t("sidebar.project.menu")}
-                      className="rounded p-0.5 text-(--color-muted) hover:text-(--color-foreground)"
+                      className="grid size-5 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-muted) hover:bg-(--color-selected) hover:text-(--color-foreground)"
                     >
                       <MoreHorizontal size={13} />
                     </button>
@@ -146,7 +156,7 @@ export function SidebarProjectTree({
                   aria-label={t("sidebar.project.files")}
                   title={t("sidebar.project.files")}
                   onClick={() => onOpenProjectFiles(node.id)}
-                  className="rounded p-0.5 text-(--color-muted) hover:text-(--color-foreground)"
+                  className="grid size-5 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-muted) hover:bg-(--color-selected) hover:text-(--color-foreground)"
                 >
                   <FolderTree size={13} />
                 </button>
@@ -157,7 +167,7 @@ export function SidebarProjectTree({
                   aria-label={t("sidebar.project.newTask")}
                   title={t("sidebar.project.newTask")}
                   onClick={() => onNewTaskInProject(node.id)}
-                  className="rounded p-0.5 text-(--color-muted) hover:text-(--color-foreground)"
+                  className="grid size-5 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-muted) hover:bg-(--color-selected) hover:text-(--color-foreground)"
                 >
                   <Plus size={13} />
                 </button>
@@ -166,13 +176,15 @@ export function SidebarProjectTree({
           )}
         </div>
         {!isCollapsed && (
-          <ul className="ml-3 space-y-px border-l border-(--color-border) pl-2">
+          <ul className="ml-3.5 mt-0.5 space-y-0.5 border-l border-(--color-hairline) pl-2">
             {node.sessions.map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 active={session.id === activeId}
                 running={runningIds?.has(session.id) === true}
+                pinned={pinned[session.id] === true}
+                unread={unread[session.id] === true}
                 onSelect={onSelect}
                 onArchive={onArchive}
                 archiveLabel={t("sidebar.archive")}
@@ -192,10 +204,10 @@ export function SidebarProjectTree({
         return (
           <section
             key={group.id === settled?.id ? `${group.id}#${settled.n}` : group.id}
-            className={`mb-1 ${group.id === settled?.id ? "drop-settle" : ""}`}
+            className={`mb-2 last:mb-0 ${group.id === settled?.id ? "drop-settle" : ""}`}
           >
             <div
-              className={`group relative flex items-center gap-1 rounded-md px-1.5 py-1 ${
+              className={`group relative flex h-8 min-w-0 items-center gap-1.5 rounded-[calc(var(--radius-pop)/2)] px-1.5 transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:bg-(--color-hover) motion-reduce:transition-none ${
                 dragging === group.id ? "opacity-40" : ""
               }`}
               onDragOver={(event) => {
@@ -228,14 +240,21 @@ export function SidebarProjectTree({
                 aria-expanded={!isCollapsed}
                 aria-label={`${isCollapsed ? t("sidebar.expand") : t("sidebar.collapse")} ${group.name}`}
                 title={`${isCollapsed ? t("sidebar.expand") : t("sidebar.collapse")} ${group.name}`}
-                className="text-(--color-muted)"
+                className="grid size-5 shrink-0 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-faint) hover:text-(--color-foreground)"
               >
-                <ChevronRight size={13} className={isCollapsed ? "" : "rotate-90"} />
+                <ChevronRight
+                  size={13}
+                  className={`transition-transform duration-(--duration-quick) ease-(--ease-smooth-out) motion-reduce:transition-none ${
+                    isCollapsed ? "" : "rotate-90"
+                  }`}
+                />
               </button>
-              <GroupIcon size={13} className="shrink-0 text-(--color-faint)" aria-hidden />
-              <span className="truncate font-medium text-(--color-foreground)">{group.name}</span>
+              <GroupIcon size={14} className="shrink-0 text-(--color-muted)" aria-hidden />
+              <span className="min-w-0 truncate text-[12px] font-semibold tracking-wide text-(--color-muted)">
+                {group.name}
+              </span>
               {/* 分组悬停动作：拖拽手柄（上下调序）+ 新建（项目/会话）。 */}
-              <span className="ml-auto flex items-center opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">
+              <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-(--duration-quick) group-hover:opacity-100 motion-reduce:transition-none">
                 <button
                   type="button"
                   draggable
@@ -247,7 +266,7 @@ export function SidebarProjectTree({
                     if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
                   }}
                   onDragEnd={endDrag}
-                  className="cursor-grab rounded p-0.5 text-(--color-muted) hover:text-(--color-foreground) active:cursor-grabbing"
+                  className="grid size-5 cursor-grab place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-muted) hover:bg-(--color-selected) hover:text-(--color-foreground) active:cursor-grabbing"
                 >
                   <GripVertical size={13} />
                 </button>
@@ -257,7 +276,7 @@ export function SidebarProjectTree({
                     aria-label={group.id === GROUP_ID_PROJECTS ? t("sidebar.group.newProject") : t("sidebar.group.newSession")}
                     title={group.id === GROUP_ID_PROJECTS ? t("sidebar.group.newProject") : t("sidebar.group.newSession")}
                     onClick={() => (group.id === GROUP_ID_PROJECTS ? onNewProject?.() : onNewSession())}
-                    className="rounded p-0.5 text-(--color-muted) hover:text-(--color-foreground)"
+                    className="grid size-5 place-items-center rounded-[calc(var(--radius-pop)/2)] text-(--color-muted) hover:bg-(--color-selected) hover:text-(--color-foreground)"
                   >
                     <Plus size={13} />
                   </button>
@@ -266,17 +285,19 @@ export function SidebarProjectTree({
             </div>
             {!isCollapsed &&
               (group.id === GROUP_ID_PROJECTS ? (
-                <div className="ml-3 border-l border-(--color-border) pl-2">
+                <div className="ml-2 space-y-1 pt-0.5">
                   {projectNodes.map(renderProjectSection)}
                 </div>
               ) : (
-                <ul className="ml-3 space-y-px border-l border-(--color-border) pl-2">
+                <ul className="ml-3.5 mt-0.5 space-y-0.5 border-l border-(--color-hairline) pl-2">
                   {taskNode?.sessions.map((session) => (
                     <SessionRow
                       key={session.id}
                       session={session}
                       active={session.id === activeId}
                       running={runningIds?.has(session.id) === true}
+                      pinned={pinned[session.id] === true}
+                      unread={unread[session.id] === true}
                       onSelect={onSelect}
                       onArchive={onArchive}
                       archiveLabel={t("sidebar.archive")}

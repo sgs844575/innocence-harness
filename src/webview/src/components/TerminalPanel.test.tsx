@@ -5,8 +5,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./DockTerminalView", () => ({
-  DockTerminalView: (props: { terminalId: string; visible: boolean }) => (
-    <div data-testid="dtv" data-terminal={props.terminalId} data-visible={String(props.visible)} />
+  DockTerminalView: (props: { terminalId: string; visible: boolean; fontFamily?: string | null }) => (
+    <div
+      data-testid="dtv"
+      data-terminal={props.terminalId}
+      data-visible={String(props.visible)}
+      data-font-family={props.fontFamily ?? ""}
+    />
   ),
 }));
 
@@ -61,5 +66,14 @@ describe("TerminalPanel", () => {
     renderPanel(true);
     fireEvent.click(screen.getByLabelText("dock.closeTab"));
     expect(screen.getByText("terminal.empty")).toBeTruthy();
+  });
+
+  it("fontFamily 透传给每个终端视图；缺省为空（沿用 token 默认）", () => {
+    const { rerender } = render(
+      <TerminalPanel t={t} open workspaceRoot="D:/AiProjects/InnocenceCode" fontFamily="Panel Mono" onClose={() => {}} />,
+    );
+    expect(screen.getByTestId("dtv").getAttribute("data-font-family")).toBe("Panel Mono");
+    rerender(<TerminalPanel t={t} open workspaceRoot="D:/AiProjects/InnocenceCode" onClose={() => {}} />);
+    expect(screen.getByTestId("dtv").getAttribute("data-font-family")).toBe("");
   });
 });

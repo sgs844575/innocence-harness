@@ -1,11 +1,7 @@
-// Persistence-SPI end-to-end safety net (moved here with the loop when the
-// retired core package was deleted; imports re-pointed to the owning spine
-// packages). Proves raw tool args reach execute, that persisted surfaces
-// (history/events/requests/audit/transcript) carry the persistArgs shape with
-// full original values (no redaction — owner decision for this open-source
-// local app), that persistArgs runs exactly once per invocation, and that
-// preparation failures surface the tool-authored diagnostic while the call
-// record keeps empty args and never executes.
+// End-to-end argument fidelity checks for the agent loop. Complete tool
+// arguments must remain available to execution, history, events, permission
+// requests, audit entries and transcripts. Preparation and execution failures
+// must likewise retain their original diagnostics.
 import { describe, expect, it } from "vitest";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { Context } from "@innocenceharness/kernel";
@@ -76,12 +72,7 @@ function sdkProviderForCalls(calls: Array<{ toolName: string; args: Record<strin
   };
 }
 
-/**
- * One unique secret per tool family. Each fake tool receives its secret in
- * raw execution args; the assertions below prove the secret reaches execute
- * and reaches NOTHING else (history, events, permission requests, audit,
- * transcript, resources).
- */
+/** Distinct markers make accidental field omission easy to detect. */
 const SECRETS = {
   write: "WRITE-SECRET-9f1ac3",
   edit: "EDIT-SECRET-7c2bd1",
@@ -93,7 +84,7 @@ const SECRETS = {
 
 const ALL_SECRETS = Object.values(SECRETS);
 
-/** Write-style: path + full content. Persisted: path, bounded body, length and summary. */
+/** Write-style: path + full content. */
 function writeStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   const raw: Array<Record<string, unknown>> = [];
   return {
@@ -112,12 +103,6 @@ function writeStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       kind: "path",
       scope: String(args.path),
     }),
-    persistArgs: (args) => ({
-      path: String(args.path),
-      content: String(args.content),
-      contentLength: String(args.content).length,
-      summary: String(args.content),
-    }),
     raw,
     async execute(args) {
       raw.push(args);
@@ -126,7 +111,7 @@ function writeStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   };
 }
 
-/** Edit-style: old/new strings are persisted for chat diff display. */
+/** Edit-style: old/new strings remain available for chat diff display. */
 function editStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   const raw: Array<Record<string, unknown>> = [];
   return {
@@ -140,13 +125,6 @@ function editStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       kind: "path",
       scope: String(args.path),
     }),
-    persistArgs: (args) => ({
-      path: String(args.path),
-      old_string: String(args.old_string),
-      new_string: String(args.new_string),
-      contentLength: String(args.new_string).length,
-      summary: String(args.new_string),
-    }),
     raw,
     async execute(args) {
       raw.push(args);
@@ -155,7 +133,7 @@ function editStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   };
 }
 
-/** Bash-style: the full command persists verbatim. */
+/** Command-style: the full command remains verbatim. */
 function bashStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   const raw: Array<Record<string, unknown>> = [];
   return {
@@ -169,7 +147,6 @@ function bashStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       kind: "command",
       scope: String(args.command),
     }),
-    persistArgs: (args) => ({ command: String(args.command) }),
     raw,
     async execute(args) {
       raw.push(args);
@@ -178,7 +155,7 @@ function bashStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   };
 }
 
-/** MCP-style: server/tool plus the full argument copy. */
+/** Remote-tool style: the full argument object remains available. */
 function mcpStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   const raw: Array<Record<string, unknown>> = [];
   return {
@@ -191,11 +168,6 @@ function mcpStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       action: "call",
       kind: "mcp",
       scope: "ci/deploy",
-    }),
-    persistArgs: (args) => ({
-      server: "ci",
-      tool: "deploy",
-      args: { ...args },
     }),
     raw,
     async execute(args) {
@@ -219,10 +191,6 @@ function taskStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       kind: "agent",
       scope: String(args.agentType ?? "explore"),
     }),
-    persistArgs: (args) => ({
-      agentType: String(args.agentType ?? "explore"),
-      prompt: String(args.prompt ?? ""),
-    }),
     raw,
     async execute(args) {
       raw.push(args);
@@ -231,7 +199,7 @@ function taskStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   };
 }
 
-/** Browser-style: the full URL persists verbatim. */
+/** Navigation-style: the full URL remains verbatim. */
 function browserStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
   const raw: Array<Record<string, unknown>> = [];
   return {
@@ -245,9 +213,6 @@ function browserStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
       kind: "url",
       scope: String(args.url),
     }),
-    persistArgs: (args) => ({
-      url: String(args.url),
-    }),
     raw,
     async execute(args) {
       raw.push(args);
@@ -257,12 +222,12 @@ function browserStyleTool(): Tool & { raw: Array<Record<string, unknown>> } {
 }
 
 interface RunCapture {
+  calls: Array<{ toolName: string; args: Record<string, unknown> }>;
   history: Message[];
   events: HarnessEvent[];
   audit: PermissionAuditEntry[];
   requests: PermissionRequest[];
   raws: Record<string, Array<Record<string, unknown>>>;
-  persistCalls: Record<string, number>;
 }
 
 /** Runs one scripted turn that invokes every fake tool once. */
@@ -275,15 +240,6 @@ async function runWithAllTools(providerOverride?: Provider): Promise<RunCapture>
     Task: taskStyleTool(),
     BrowserNavigate: browserStyleTool(),
   };
-  const persistCalls: Record<string, number> = {};
-  for (const tool of Object.values(tools)) {
-    const inner = tool.persistArgs.bind(tool);
-    tool.persistArgs = (args) => {
-      persistCalls[tool.name] = (persistCalls[tool.name] ?? 0) + 1;
-      return inner(args);
-    };
-  }
-
   const calls: Array<{ toolName: string; args: Record<string, unknown> }> = [
     { toolName: "Write", args: { path: "notes.txt", content: `token=${SECRETS.write}` } },
     {
@@ -317,7 +273,7 @@ async function runWithAllTools(providerOverride?: Provider): Promise<RunCapture>
   const kernel = new Context();
   await kernel.plugin(ToolsPlugin);
   for (const tool of Object.values(tools)) {
-    // Route through the tools service so the SPI gate is exercised too.
+    // Route through the tools service so registration is exercised too.
     kernel.tools.register(tool);
   }
 
@@ -344,6 +300,7 @@ async function runWithAllTools(providerOverride?: Provider): Promise<RunCapture>
   });
 
   return {
+    calls,
     history,
     events,
     audit,
@@ -351,12 +308,38 @@ async function runWithAllTools(providerOverride?: Provider): Promise<RunCapture>
     raws: Object.fromEntries(
       Object.entries(tools).map(([name, t]) => [name, (t as { raw: Array<Record<string, unknown>> }).raw]),
     ),
-    persistCalls,
   };
 }
 
-describe("tool persisted args carry full originals (no redaction)", () => {
-  it("execute receives raw SDK args; every persisted surface carries the full values", async () => {
+function expectStructuredSurfacesToMatchCalls(run: RunCapture): void {
+  const expected = run.calls;
+  const historyCalls = run.history.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      part.type === "toolCall" ? [{ toolName: part.toolName, args: part.args }] : [],
+    ),
+  );
+  const eventCalls = run.events.flatMap((event) =>
+    event.type === "toolCall"
+      ? [{ toolName: event.call.toolName, args: event.call.args }]
+      : [],
+  );
+  const permissionCalls = run.requests.map((request) => ({
+    toolName: request.toolName,
+    args: request.args,
+  }));
+  const auditCalls = run.audit.map(({ request }) => ({
+    toolName: request.toolName,
+    args: request.args,
+  }));
+
+  expect(historyCalls).toEqual(expected);
+  expect(eventCalls).toEqual(expected);
+  expect(permissionCalls).toEqual(expected);
+  expect(auditCalls).toEqual(expected);
+}
+
+describe("tool arguments retain their complete values", () => {
+  it("execute receives SDK args and every recorded surface carries the complete values", async () => {
     const calls: Array<{ toolName: string; args: Record<string, unknown> }> = [
       { toolName: "Write", args: { path: "notes.txt", content: `token=${SECRETS.write}` } },
       {
@@ -373,6 +356,7 @@ describe("tool persisted args carry full originals (no redaction)", () => {
     ];
     const run = await runWithAllTools(sdkProviderForCalls(calls));
 
+    expectStructuredSurfacesToMatchCalls(run);
     expect(run.raws.Write[0].content).toBe(`token=${SECRETS.write}`);
     expect(run.raws.Edit[0].new_string).toBe(`new ${SECRETS.edit}`);
     expect(run.raws.Bash[0].command).toBe(`deploy --token=${SECRETS.bash}`);
@@ -394,10 +378,11 @@ describe("tool persisted args carry full originals (no redaction)", () => {
     }
   });
 
-  it("execute receives raw args; persisted shapes carry the full originals", async () => {
+  it("execute and recorded surfaces receive unchanged legacy-provider args", async () => {
     const run = await runWithAllTools();
 
-    // Every tool executed exactly once, with the RAW values.
+    expectStructuredSurfacesToMatchCalls(run);
+    // Every tool executed exactly once, with the complete values.
     expect(run.raws.Write[0].content).toBe(`token=${SECRETS.write}`);
     expect(run.raws.Edit[0].new_string).toBe(`new ${SECRETS.edit}`);
     expect(run.raws.Bash[0].command).toBe(`deploy --token=${SECRETS.bash}`);
@@ -419,48 +404,41 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       }
     }
 
-    // The persisted filesystem shapes carry text bodies for chat diff display.
+    // History carries exactly the provider-supplied objects, without a
+    // secondary projection step.
     const writeCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "Write");
-    expect(writeCall && writeCall.type === "toolCall" && writeCall.args).toMatchObject({
+    expect(writeCall && writeCall.type === "toolCall" && writeCall.args).toEqual({
       path: "notes.txt",
       content: `token=${SECRETS.write}`,
-      contentLength: `token=${SECRETS.write}`.length,
-      summary: `token=${SECRETS.write}`,
     });
 
     const editCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "Edit");
-    expect(editCall && editCall.type === "toolCall" && editCall.args).toMatchObject({
+    expect(editCall && editCall.type === "toolCall" && editCall.args).toEqual({
       path: "notes.txt",
       old_string: `old ${SECRETS.edit}`,
       new_string: `new ${SECRETS.edit}`,
-      contentLength: `new ${SECRETS.edit}`.length,
-      summary: `new ${SECRETS.edit}`,
     });
 
     const bashCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "Bash");
-    expect(bashCall && bashCall.type === "toolCall" && bashCall.args).toMatchObject({
+    expect(bashCall && bashCall.type === "toolCall" && bashCall.args).toEqual({
       command: `deploy --token=${SECRETS.bash}`,
     });
 
     const mcpCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "mcp__ci__deploy");
-    expect(mcpCall && mcpCall.type === "toolCall" && mcpCall.args).toMatchObject({
-      server: "ci",
-      tool: "deploy",
-      args: { apiKey: SECRETS.mcp },
-    });
+    expect(mcpCall && mcpCall.type === "toolCall" && mcpCall.args).toEqual({ apiKey: SECRETS.mcp });
 
     const taskCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "Task");
-    expect(taskCall && taskCall.type === "toolCall" && taskCall.args).toMatchObject({
+    expect(taskCall && taskCall.type === "toolCall" && taskCall.args).toEqual({
       agentType: "general",
       prompt: `use ${SECRETS.task}`,
     });
@@ -468,12 +446,12 @@ describe("tool persisted args carry full originals (no redaction)", () => {
     const browserCall = run.history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall" && p.toolName === "BrowserNavigate");
-    expect(browserCall && browserCall.type === "toolCall" && browserCall.args).toMatchObject({
+    expect(browserCall && browserCall.type === "toolCall" && browserCall.args).toEqual({
       url: `https://user:${SECRETS.browser}@example.com/path?q=1#frag`,
     });
   });
 
-  it("permission requests and audit carry the full persisted resources and args", async () => {
+  it("permission requests and audit carry complete resources and args", async () => {
     const run = await runWithAllTools();
 
     expect(run.requests.map((r) => `${r.toolName}:${r.resource.action}:${r.resource.kind}:${r.resource.scope}`))
@@ -486,21 +464,7 @@ describe("tool persisted args carry full originals (no redaction)", () => {
         `BrowserNavigate:navigate:url:https://user:${SECRETS.browser}@example.com/path?q=1#frag`,
       ]);
     expect(run.audit).toHaveLength(6);
-    for (const entry of run.audit) {
-      expect(entry.request.args).toBeDefined();
-    }
-  });
-
-  it("persistArgs runs exactly once per invocation despite history/event/request/audit reuse", async () => {
-    const run = await runWithAllTools();
-    expect(run.persistCalls).toEqual({
-      Write: 1,
-      Edit: 1,
-      Bash: 1,
-      "mcp__ci__deploy": 1,
-      Task: 1,
-      BrowserNavigate: 1,
-    });
+    expect(run.audit.map((entry) => entry.request.args)).toEqual(run.calls.map((call) => call.args));
   });
 
   it("a validateArgs failure becomes an error result; the tool never executes", async () => {
@@ -511,10 +475,9 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       readOnly: false,
       parameters: { type: "object" },
       async validateArgs(args) {
-        if (typeof args.path !== "string") throw new Error("Strict 需要 path");
+        if (typeof args.path !== "string") throw new Error(`Strict rejected path=${String(args.path)}`);
       },
       permissionResource: () => ({ action: "read", kind: "path", scope: "x" }),
-      persistArgs: () => ({}),
       async execute(args) {
         executed.push(args);
         return { content: "never" };
@@ -552,9 +515,14 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       .find((p) => p.type === "toolResult") as { isError?: boolean; content: string };
     expect(result.isError).toBe(true);
     expect(result.content).toContain("工具调用准备失败");
+    expect(result.content).toContain("Strict rejected path=42");
+    const call = history
+      .flatMap((message) => message.parts)
+      .find((part) => part.type === "toolCall");
+    expect(call && call.type === "toolCall" && call.args).toEqual({ path: 42 });
   });
 
-  it("raw args are not leaked when controlled execution throws", async () => {
+  it("retains complete args and the original diagnostic when execution throws", async () => {
     const secret = "EXEC-SECRET-7c20d8";
     const tool: Tool = {
       name: "Failing",
@@ -562,7 +530,6 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       readOnly: false,
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "failing" }),
-      persistArgs: () => ({}),
       async execute(args) {
         throw new Error(`remote rejected ${String(args.password)}`);
       },
@@ -593,14 +560,23 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       onEvent: (event) => events.push(event),
     });
 
-    expect(JSON.stringify([history, events])).not.toContain(secret);
+    expect(JSON.stringify([history, events])).toContain(secret);
     const result = history
       .flatMap((message) => message.parts)
       .find((part) => part.type === "toolResult") as { isError?: boolean; content: string };
-    expect(result).toMatchObject({ isError: true, content: "工具执行出错" });
+    expect(result).toEqual(expect.objectContaining({
+      isError: true,
+      content: `remote rejected ${secret}`,
+    }));
+    const resultEvent = events.find((event) => event.type === "toolResult");
+    expect(resultEvent).toEqual(expect.objectContaining({
+      type: "toolResult",
+      isError: true,
+      content: `remote rejected ${secret}`,
+    }));
   });
 
-  it("a preparation failure surfaces the tool diagnostic; raw args stay wiped and the tool never runs", async () => {
+  it("a preparation failure keeps the diagnostic and complete args while the tool never runs", async () => {
     const executed: Array<Record<string, unknown>> = [];
     const tool: Tool = {
       name: "Broken",
@@ -609,11 +585,8 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       parameters: { type: "object" },
       permissionResource: (args) => {
         if (typeof args.password !== "string") throw new Error("Broken 需要 password");
-        // The tool contract: diagnostics name the failing argument, never
-        // echo its content.
-        throw new Error("resource check failed for password");
+        throw new Error(`resource check failed for ${args.password}`);
       },
-      persistArgs: () => ({}),
       async execute(args) {
         executed.push(args);
         return { content: "never" };
@@ -651,14 +624,12 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       .find((p) => p.type === "toolResult") as { isError?: boolean; content: string };
     expect(result.isError).toBe(true);
     expect(result.content).toContain("工具调用准备失败");
-    expect(result.content).toContain("resource check failed for password");
-    // The call record keeps empty persisted args: the raw shape never enters
-    // history even when the diagnostic does.
+    expect(result.content).toContain("resource check failed for PREP-SECRET-11");
+    // The call record keeps the original invocation for diagnosis.
     const call = history
       .flatMap((m) => m.parts)
       .find((p) => p.type === "toolCall") as { args: Record<string, unknown> };
-    expect(call.args).toEqual({});
-    expect(JSON.stringify(history)).not.toContain("PREP-SECRET-11");
+    expect(call.args).toEqual({ password: "PREP-SECRET-11" });
   });
 
   it("tool-returned images enter history and the model prompt; events stay lean", async () => {
@@ -713,7 +684,6 @@ describe("tool persisted args carry full originals (no redaction)", () => {
       readOnly: true,
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "computer", scope: "screen" }),
-      persistArgs: () => ({}),
       async execute() {
         return { content: "Screenshot saved (1280x720).", images };
       },

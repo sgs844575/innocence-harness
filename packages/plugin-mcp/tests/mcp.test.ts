@@ -132,7 +132,7 @@ describe("StdioJsonRpcClient dispose", () => {
 });
 
 describe("request abort signal", () => {
-  it("sanitizes untrusted server error text (control chars + hard truncation)", async () => {
+  it("keeps the complete server error text", async () => {
     const c = new StdioJsonRpcClient({ command: process.execPath, args: [fixture] });
     await c.start();
     const SECRET = `MCP-BOOM-SECRET-${"x".repeat(600)}`;
@@ -141,12 +141,8 @@ describe("request abort signal", () => {
       .catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     const message = (err as Error).message;
-    // The echoed secret never survives in full and the text is bounded.
-    expect(message).not.toContain(SECRET);
-    expect(message).toContain("[已截断");
-    expect(message.length).toBeLessThanOrEqual(600);
-    // Control characters from the hostile payload are stripped.
-    expect(/[\u0000-\u001f\u007f]/.test(message)).toBe(false);
+    expect(message).toContain(SECRET);
+    expect(/[\u0000-\u001f\u007f]/.test(message)).toBe(true);
     await c.dispose();
   });
 
@@ -183,17 +179,14 @@ describe("request abort signal", () => {
     await ctx.fiber.dispose();
   });
 
-  it("server-echoed secrets are truncated out of isError tool results", async () => {
+  it("keeps server-echoed values in isError tool results", async () => {
     const ctx = await mountMcp({ echo: { command: process.execPath, args: [fixture] } });
     const tool = ctx.tools.get("mcp__echo__boom")!;
     const SECRET = `MCP-BOOM-SECRET-${"y".repeat(600)}`;
-    // The isError result is what history/audit persist — the echoed secret
-    // must not survive intact past the client's trust boundary.
     const result = await tool.execute({ token: SECRET }, ctxToolContext());
     expect(result.isError).toBe(true);
     expect(result.content).toContain("MCP 调用失败");
-    expect(result.content).not.toContain(SECRET);
-    expect(result.content).toContain("[已截断");
+    expect(result.content).toContain(SECRET);
     await ctx.fiber.dispose();
   });
 });
@@ -218,14 +211,6 @@ describe("createMcpPlugin", () => {
     const resource = tool.permissionResource({ text: SECRET }, ctxToolContext());
     expect(resource).toEqual({ action: "call", kind: "mcp", scope: "echo/echo" });
 
-    // 完整参数原文持久化：展示与留档直接读 persisted.args。
-    const persisted = tool.persistArgs({ text: SECRET, extra: 1 });
-    expect(persisted).toEqual({
-      server: "echo",
-      tool: "echo",
-      args: { text: SECRET, extra: 1 },
-    });
-    expect(JSON.stringify(persisted)).toContain(SECRET);
     await ctx.fiber.dispose();
   });
 

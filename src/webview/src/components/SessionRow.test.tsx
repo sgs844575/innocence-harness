@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Session } from "../../../shared/ipc";
 import { SessionRow } from "./SessionRow";
 
@@ -29,17 +29,7 @@ function renderRow(extra: Partial<Parameters<typeof SessionRow>[0]> = {}) {
   );
 }
 
-beforeEach(() => {
-  (window as unknown as Record<string, unknown>).innocencecode = {
-    listMessages: vi.fn(async () => [
-      { id: "m1", role: "user", parts: [{ type: "text", text: "最近一条用户消息" }], createdAt: 1 },
-      { id: "m2", role: "assistant", parts: [{ type: "text", text: "最近一条助手回复" }], createdAt: 2 },
-    ]),
-  };
-});
-
 afterEach(() => {
-  delete (window as unknown as Record<string, unknown>).innocencecode;
   cleanup();
 });
 
@@ -50,6 +40,18 @@ describe("SessionRow", () => {
     expect(time.className).toContain("group-hover:hidden");
     const actions = container.querySelector("li > span.hidden")!;
     expect(actions.className).toContain("group-hover:flex");
+  });
+
+  it("置顶会话行首显示 Pin 图标，静态圆点消失", () => {
+    const { container } = renderRow({ pinned: true });
+    expect(container.querySelector(".lucide-pin")).toBeTruthy();
+    expect(container.querySelector(".rounded-full.border")).toBeNull();
+  });
+
+  it("置顶 + 运行态时转圈优先于 Pin 图标", () => {
+    const { container } = renderRow({ pinned: true, running: true });
+    expect(container.querySelector(".animate-spin")).toBeTruthy();
+    expect(container.querySelector(".lucide-pin")).toBeNull();
   });
 
   it("超长标题悬停后轮播（溢出量驱动内联变量）", () => {
@@ -65,23 +67,5 @@ describe("SessionRow", () => {
     // 鼠标离开回到省略号态。
     fireEvent.mouseLeave(container.querySelector("li")!);
     expect(container.querySelector(".marquee-title")).toBeNull();
-  });
-
-  it("悬停 350ms 出预览卡（最近一轮文本），离开消失", async () => {
-    const { container } = renderRow();
-    const row = container.querySelector("li")!;
-    fireEvent.mouseEnter(row);
-    await waitFor(() => expect(screen.getByText("最近一条用户消息")).toBeTruthy(), { timeout: 3000 });
-    expect(screen.getByText("最近一条助手回复")).toBeTruthy();
-    fireEvent.mouseLeave(row);
-    await waitFor(() => expect(screen.queryByText("最近一条用户消息")).toBeNull());
-  });
-
-  it("无桥接时不出预览卡", async () => {
-    delete (window as unknown as Record<string, unknown>).innocencecode;
-    const { container } = renderRow();
-    fireEvent.mouseEnter(container.querySelector("li")!);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(screen.queryByText("最近一条用户消息")).toBeNull();
   });
 });

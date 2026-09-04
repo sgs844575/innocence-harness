@@ -9,11 +9,9 @@ export type SubagentStatus = "started" | "running" | "completed" | "failed" | "c
 
 /**
  * One tool activity inside a child run. The call phase carries a one-line
- * human summary of the arguments (`title`, derived by tool-summary) plus a
- * bounded args projection (`args`, clipped by tool-summary's clipToolArgs)
- * so hosts can replay the main timeline's tool-row format; the result phase
- * carries a bounded excerpt of the tool output (`result`). Raw args leave
- * the child session only through these bounded projections.
+ * human summary of the arguments (`title`, derived by tool-summary) plus the
+ * complete args (`args`) so hosts can replay the main timeline's tool-row
+ * format; the result phase carries the complete tool output (`result`).
  */
 export interface SubagentToolActivity {
   name: string;
@@ -21,9 +19,9 @@ export interface SubagentToolActivity {
   isError?: boolean;
   /** Call-phase argument summary (file name / pattern / command head). */
   title?: string;
-  /** Call-phase bounded args projection (per-value cap: TOOL_ARG_VALUE_LIMIT). */
+  /** Complete call-phase arguments. */
   args?: Record<string, unknown>;
-  /** Result-phase output excerpt, bounded by {@link TOOL_RESULT_EXCERPT_LIMIT}. */
+  /** Complete result-phase output. */
   result?: string;
 }
 

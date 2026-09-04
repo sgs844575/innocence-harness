@@ -28,7 +28,9 @@ import {
 import { isRunning, SubagentsList } from "./dock/SubagentsView";
 import { RunConversation } from "./dock/RunConversation";
 import { DiffBlock } from "./chat/ToolRow";
+import { FileCodeView } from "./chat/FileCodeView";
 import type { CodeAppearance } from "./chat/MarkdownView";
+import type { ToolGroupingOptions } from "./chat/toolGrouping";
 import type { ToolRowModel } from "./chat/toolRows";
 
 // 类型经本文件再导出（type-only，不影响 Fast Refresh）；运行时工具函数见
@@ -62,6 +64,8 @@ interface Props {
   renderBrowserTab: (tab: DockTabInstance) => React.ReactNode;
   /** 代码外观（外观设置）：子代理运行的正文高亮主题对 + 行号开关。 */
   code?: CodeAppearance;
+  /** 工具分组开关（消息流设置）：子代理运行会话与主时间线同一 ToolTimeline 管线。 */
+  grouping?: ToolGroupingOptions;
   /** 左缘拖拽把手 pointerdown（宽度调整由 App 实现）。 */
   onResizeStart?: (event: React.PointerEvent) => void;
 }
@@ -326,7 +330,7 @@ function TabStrip({
 }
 
 /** 「文件」标签：完整路径头 + 修改内容（红绿行块，编辑/写入行）或原文（读取行结果）。 */
-function DockFileView({ t, tab }: { t: (key: string) => string; tab: DockTabInstance }): React.JSX.Element {
+function DockFileView({ t, tab, code }: { t: (key: string) => string; tab: DockTabInstance; code?: CodeAppearance }): React.JSX.Element {
   const file = tab.file;
   return (
     <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
@@ -339,9 +343,7 @@ function DockFileView({ t, tab }: { t: (key: string) => string; tab: DockTabInst
         {file?.diff ? (
           <DiffBlock removed={file.diff.removed} added={file.diff.added} />
         ) : file?.originalText ? (
-          <pre className="scrollbar-thin w-full min-w-0 overflow-auto rounded-xl bg-(--color-background) p-2.5 font-mono code-text whitespace-pre text-(--color-foreground)">
-            {file.originalText}
-          </pre>
+          <FileCodeView source={file.originalText} filePath={file.path} code={code} numbered={file.numbered === true} />
         ) : (
           <div className="text-(--color-faint)">{t("tool.status.empty")}</div>
         )}
@@ -369,6 +371,7 @@ export function RightDock({
   renderBrowserTab,
   onResizeStart,
   code,
+  grouping,
 }: Props): React.JSX.Element {
   const activeCount = runs.filter(isRunning).length;
   const selected = runs.find((run) => run.childId === selectedChildId) ?? null;
@@ -403,10 +406,10 @@ export function RightDock({
       )}
       {activeTab === null && <DockHome t={t} onNewTab={onNewTab} />}
       {activeTab?.kind === "review" && renderReviewTab()}
-      {activeTab?.kind === "file" && <DockFileView t={t} tab={activeTab} />}
+      {activeTab?.kind === "file" && <DockFileView t={t} tab={activeTab} code={code} />}
       {activeTab?.kind === "subagents" &&
         (selected ? (
-          <RunConversation t={t} run={selected} onBack={() => onSelect?.(null)} code={code} onOpenFile={onOpenFile} />
+          <RunConversation t={t} run={selected} onBack={() => onSelect?.(null)} code={code} onOpenFile={onOpenFile} grouping={grouping} />
         ) : (
           <SubagentsList
             t={t}

@@ -84,9 +84,24 @@ function toolResults(parts: readonly MessagePart[], toolNames: ReadonlyMap<strin
         toolCallId: part.toolCallId,
         toolName,
         output: part.isError
-          ? ({ type: "error-text" as const, value: part.content })
-          : ({ type: "text" as const, value: part.content }),
+          ? ({ type: "error-text" as const, value: modelVisibleFailure(part.content) })
+          : ({ type: "text" as const, value: modelVisibleSuccess(part.content) }),
       },
     ];
   });
+}
+
+/**
+ * Some model protocols carry a native error bit for tool results while others
+ * flatten every result to plain text. Keep the native `error-text` distinction
+ * above, and also put a compact status envelope in the model-visible value so
+ * every provider gives the agent the same success/failure signal. On failures,
+ * the tool result content is explicitly identified as the failure reason.
+ */
+function modelVisibleSuccess(content: string): string {
+  return `Tool call status: succeeded\nTool output:\n${content}`;
+}
+
+function modelVisibleFailure(reason: string): string {
+  return `Tool call status: failed\nFailure reason:\n${reason}`;
 }

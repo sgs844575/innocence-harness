@@ -20,7 +20,7 @@ describe("settings credential coordination", () => {
     expect(result.settings.profiles[0]).toMatchObject({ apiKey: "old-key", apiKeyRef: "keys/p1.key" });
   });
 
-  it("keeps settings and reports a safe migration error when secure storage migration fails", async () => {
+  it("keeps settings and reports the complete migration error when secure storage migration fails", async () => {
     const store: CredentialStorePort = {
       read: vi.fn(),
       write: vi.fn().mockRejectedValue(new Error("storage failed")),
@@ -38,7 +38,7 @@ describe("settings credential coordination", () => {
     expect(result.settings.workspaceRoot).toBe("D:/keep");
     expect(result.settings.themeMode).toBe("dark");
     expect(result.migrated).toBe(false);
-    expect(result.errors).toEqual(["credential migration failed"]);
+    expect(result.errors).toEqual(["credential migration failed: Error: storage failed"]);
   });
 
 
@@ -71,15 +71,17 @@ describe("settings credential coordination", () => {
     expect(store.write).toHaveBeenCalledWith("p1", "legacy-key");
     expect(result.settings.profiles[0]).toMatchObject({ apiKey: "legacy-key", apiKeyRef: "keys/p2.key" });
     expect(result.migrated).toBe(true);
+    expect(result.errors).toEqual(["credential read failed: Error: missing"]);
   });
 
-  it("keeps an existing credential when a redacted settings update has no key", async () => {
+  it("honors an empty credential in a complete settings update", async () => {
     const store: CredentialStorePort = { read: vi.fn(), write: vi.fn(), delete: vi.fn() };
     const previous = base({ apiKey: "stored-key", apiKeyRef: "keys/p1.key" });
     const result = await secureSettingsUpdate(previous, base(), store);
 
-    expect(result.profiles[0]).toMatchObject({ apiKey: "stored-key", apiKeyRef: "keys/p1.key" });
+    expect(result.profiles[0]).toMatchObject({ apiKey: "", apiKeyRef: undefined });
     expect(store.write).not.toHaveBeenCalled();
+    expect(store.delete).toHaveBeenCalledWith("keys/p1.key");
   });
 
   it("stores a replacement credential then deletes the previous reference", async () => {
@@ -138,6 +140,7 @@ describe("settings credential coordination", () => {
 
     expect(result.settings.profiles[0]).toMatchObject({ apiKey: "", apiKeyRef: undefined });
     expect(result.migrated).toBe(true);
+    expect(result.errors).toEqual(["credential read failed: Error: missing"]);
   });
 
 
@@ -158,7 +161,7 @@ describe("settings credential coordination", () => {
     expect(events).toEqual(["commit", "delete:keys/p1.key"]);
   });
 
-  it("updates and clears a single profile credential without returning its value", async () => {
+  it("updates and clears a single profile credential while returning its complete value", async () => {
     const store: CredentialStorePort = { read: vi.fn(), write: vi.fn().mockResolvedValue("keys/p2.key"), delete: vi.fn() };
     const updated = await setProfileCredential(base({ apiKey: "old-key", apiKeyRef: "keys/p1.key" }), "p1", "new-key", store);
     expect(updated.profiles[0]).toMatchObject({ apiKey: "new-key", apiKeyRef: "keys/p2.key" });

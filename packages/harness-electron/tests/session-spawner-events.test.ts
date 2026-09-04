@@ -37,7 +37,6 @@ function probeTool(): Tool {
     sideEffect: "none",
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "test", scope: "probe" }),
-    persistArgs: (args) => ({ ...args }),
     async execute() {
       return { content: "probe-done" };
     },

@@ -6,7 +6,7 @@
 // 键优先，无键旧记录按标题唯一匹配，无法唯一确定时落子代理归档列表）；其余
 // 行整行点击展开。
 // 展开区：diff 红绿行块（max-h-60 限高自滚动，防长写入撑爆时间线）/ 终端卡 /
-// todo 清单 / 结果块；运行中无内容时给脉冲占位，完成但无输出时给「无输出」。
+// todo 清单 / 结果块；失败行在 diff 之上先出具体错误块；运行中无内容时给脉冲占位，完成但无输出时给「无输出」。
 import { useState } from "react";
 import {
   Bot,
@@ -22,6 +22,10 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import type { TaskRowClue } from "../../state/subagentRuns";
+import { FileCodeView } from "./FileCodeView";
+import type { CodeAppearance } from "./MarkdownView";
+import { ToolGroupRow } from "./ToolGroupRow";
+import { groupToolRows, type ToolGroupingOptions } from "./toolGrouping";
 import type { ToolRowModel } from "./toolRows";
 
 /** Task 行的面板定位载荷：关联键（新记录）+ 标题/结果文本（旧记录回退匹配）。 */
@@ -138,11 +142,14 @@ function TodoList({ todos }: { todos: NonNullable<ToolRowModel["todos"]> }): Rea
 export function ToolRow({
   t,
   row,
+  code,
   onOpenSubagent,
   onOpenFile,
 }: {
   t: (key: string) => string;
   row: ToolRowModel;
+  /** Code theme and line-number preference shared with assistant code blocks. */
+  code?: CodeAppearance;
   /** 子代理行：整行点击在右侧 dock 打开该次运行的会话；载荷携带关联键 +
    *  行标题/结果文本，供无键旧记录在面板侧按标题唯一匹配（见 runForTaskRow）。 */
   onOpenSubagent?: (clue: TaskRowClue) => void;
@@ -255,10 +262,19 @@ export function ToolRow({
         <div className="acc-panel" data-open={open}>
           <div className="acc-panel-inner">
             <div className="space-y-2 pt-2">
+              {/* 失败行在 diff 之上先出具体错误信息（编辑/写入行始终有 diff 投影，错误文本会被 diff 分支吞掉）。 */}
+              {row.isError && row.resultText && row.diff !== undefined && (
+                <pre className="scrollbar-thin max-h-60 overflow-auto rounded-md bg-(--color-tool-err)/10 p-2 font-mono code-text whitespace-pre text-(--color-tool-err)">
+                  {row.resultText.length > 4000 ? `${row.resultText.slice(0, 4000)}…` : row.resultText}
+                </pre>
+              )}
               {row.diff && <DiffBlock removed={row.diff.removed} added={row.diff.added} className="max-h-60" />}
               {!row.diff && row.command !== undefined && <CommandBlock command={row.command} output={row.resultText} />}
               {!row.diff && row.command === undefined && row.todos && <TodoList todos={row.todos} />}
-              {!row.diff && row.command === undefined && !row.todos && row.resultText && (
+              {!row.diff && row.command === undefined && !row.todos && row.resultText && row.verbKey === "tool.verb.read" && !row.isError && (
+                <FileCodeView source={row.resultText} filePath={row.filePath ?? row.title} code={code} numbered bounded />
+              )}
+              {!row.diff && row.command === undefined && !row.todos && row.resultText && (row.verbKey !== "tool.verb.read" || row.isError) && (
                 <pre
                   className={`scrollbar-thin max-h-60 overflow-auto rounded-md p-2 font-mono code-text whitespace-pre ${
                     row.isError ? "bg-(--color-tool-err)/10 text-(--color-tool-err)" : "bg-(--color-surface) text-(--color-foreground)"
@@ -281,23 +297,48 @@ export function ToolRow({
   );
 }
 
-/** 一段连续工具调用的时间线列（行距 16px）。 */
+/** 一段连续工具调用的时间线列（行距 16px）。传入 grouping 时按类别聚合
+ *  连续同类行（explore/terminal/changes，见 toolGrouping）；组内行仍用
+ *  同一 ToolRow 渲染器，运行中扫光与行交互原样保留。 */
 export function ToolTimeline({
   t,
   rows,
+  code,
   onOpenSubagent,
   onOpenFile,
+  grouping,
 }: {
   t: (key: string) => string;
   rows: ToolRowModel[];
+  code?: CodeAppearance;
   onOpenSubagent?: (clue: TaskRowClue) => void;
   onOpenFile?: (row: ToolRowModel) => void;
+  /** 工具分组开关（设置解析结果）；缺省 = 平铺旧行为。 */
+  grouping?: ToolGroupingOptions;
 }): React.JSX.Element {
+  const items = grouping
+    ? groupToolRows(rows, grouping)
+    : rows.map((row) => ({ kind: "row" as const, row }));
+  const renderRow = (row: ToolRowModel): React.JSX.Element => (
+    <ToolRow key={row.id} t={t} row={row} code={code} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} />
+  );
   return (
     <div className="flex flex-col gap-4">
-      {rows.map((row) => (
-        <ToolRow key={row.id} t={t} row={row} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} />
-      ))}
+      {items.map((item) =>
+        item.kind === "row" ? (
+          renderRow(item.row)
+        ) : (
+          <ToolGroupRow
+            key={item.id}
+            t={t}
+            category={item.category}
+            count={item.rows.length}
+            running={item.rows.some((row) => row.running)}
+          >
+            {item.rows.map(renderRow)}
+          </ToolGroupRow>
+        ),
+      )}
     </div>
   );
 }

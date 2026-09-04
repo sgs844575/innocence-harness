@@ -32,7 +32,6 @@ describe("computer_screenshot", () => {
       kind: "computer",
       scope: "screen",
     });
-    expect(tool.persistArgs({ any: "thing" })).toEqual({});
   });
 
   it("rejects non-Windows hosts", async () => {

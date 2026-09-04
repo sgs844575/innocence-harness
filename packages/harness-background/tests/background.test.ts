@@ -44,6 +44,10 @@ describe("status-line extraction (S1)", () => {
 
   it("error flag dominates; no marker degrades to done with the first non-empty line", () => {
     expect(backgroundOutcomeOf("result: 完成", true)).toMatchObject({ status: "failed" });
+    expect(backgroundOutcomeOf("partial", true, "complete provider diagnostic")).toEqual({
+      status: "failed",
+      headline: "complete provider diagnostic",
+    });
     expect(backgroundOutcomeOf("三处修复已完成\n测试全绿", false)).toEqual({
       status: "done",
       headline: "三处修复已完成",

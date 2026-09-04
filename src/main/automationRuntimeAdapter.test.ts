@@ -212,7 +212,7 @@ describe("automation loop dispatch adapter", () => {
       send: vi.fn<(input: SendInput) => Promise<void>>(async (input) => {
         appendObservedReplyDelta(input.messageId, "\n\n> ⚠️ provider stream failed\n");
         appendObservedReplyDelta(input.messageId, "[loop-complete]");
-        markObservedReplyError(input.messageId);
+        markObservedReplyError(input.messageId, "provider stream failed");
       }),
       stop: vi.fn(),
     };
@@ -337,11 +337,15 @@ describe("automation reply observer", () => {
     expect(endObservedReply("never-begun")).toEqual({ text: "", errored: false });
   });
 
-  it("keeps the error flag of a begun id and ignores errors of unknown ids", () => {
-    markObservedReplyError("unmarked-message");
+  it("keeps the complete error of a begun id and ignores errors of unknown ids", () => {
+    markObservedReplyError("unmarked-message", "ignored error");
     beginObservedReply("marked-message");
     appendObservedReplyDelta("marked-message", "partial text");
-    markObservedReplyError("marked-message");
-    expect(endObservedReply("marked-message")).toEqual({ text: "partial text", errored: true });
+    markObservedReplyError("marked-message", "complete provider diagnostic");
+    expect(endObservedReply("marked-message")).toEqual({
+      text: "partial text",
+      errored: true,
+      error: "complete provider diagnostic",
+    });
   });
 });

@@ -763,16 +763,52 @@
   color: var(--sdm-c, inherit);
 }
 
-/* Mermaid 图块：token 化容器（圆角/边/底色），与代码块同语义。mermaid
-   自渲染 SVG，自带背景与字体色；只在容器层加底/边/留白，让 SVG 居中且
-   暗色下不会与背景撞色。 */
-.msg-body [data-streamdown="mermaid"] {
-  margin: 12px 0;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-raised);
-  padding: 16px;
+/* 图表块沿用代码块的单层卡片结构。上游已提供外层容器和画布层；视觉样式
+   只挂在这两层，避免内层渲染节点的留白形成上下两条错位色带。 */
+.msg-body [data-streamdown="mermaid-block"] {
+  position: relative;
+  gap: 0;
   overflow: hidden;
+  border-color: var(--color-border);
+  border-radius: var(--radius-pop);
+  background: var(--color-markdown-code-header);
+  padding: 0;
+}
+.msg-body [data-streamdown="mermaid-block"] > :first-child {
+  height: 34px;
+  border-bottom: 1px solid var(--color-hairline);
+  padding: 0 12px;
+  color: var(--color-muted);
+}
+.msg-body [data-streamdown="mermaid-block"] > :first-child > span {
+  margin-left: 0;
+}
+.msg-body [data-streamdown="mermaid-block"] > div:has(> [data-streamdown="mermaid-block-actions"]) {
+  position: absolute;
+  top: 1px;
+  right: 8px;
+  z-index: 1;
+  height: 32px;
+  margin-top: 0;
+}
+.msg-body [data-streamdown="mermaid-block-actions"] {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+.msg-body [data-streamdown="mermaid-block"] > :last-child {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-markdown-code);
+}
+.msg-body [data-streamdown="mermaid"] {
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
   color: var(--color-foreground);
 }
 .msg-body [data-streamdown="mermaid"] svg {

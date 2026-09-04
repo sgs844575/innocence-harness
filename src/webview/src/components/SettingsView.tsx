@@ -1,34 +1,31 @@
 // 设置页内容区（导航在左侧设置侧栏 SettingsSidebar）：卡片行样式（标题 +
-// 描述 + 右侧控件）。常规（界面语言/默认权限）、外观（界面主题）、
+// 描述 + 右侧控件，行原语在 settings/rows）。常规（GeneralPanel）、外观（界面主题）、
 // 模型服务（ModelsPanel 供应商管理）、关于（版本/平台）。主体宽度随窗口变化。
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
-import type { AppInfo, HarnessSettings, ModelInfo, PermissionMode, ProviderProfile, ThemeMode } from "../../../shared/ipc";
+import type { AppInfo, HarnessSettings, ModelInfo, ProviderProfile, ThemeMode } from "../../../shared/ipc";
 import logoUrl from "../../../../logo.svg";
+import { GeneralPanel } from "./settings/GeneralPanel";
 import { ModelsPanel } from "./settings/ModelsPanel";
+import { SettingsRow } from "./settings/rows";
 import { Select } from "./ui/Select";
 import { Switch } from "./ui/Switch";
 import { MarkdownView } from "./chat/MarkdownView";
 import type { HarnessSettingsPatch } from "../../../shared/settingsPatch";
+import {
+  DARK_CODE_THEMES,
+  DEFAULT_CODE_THEME_DARK,
+  DEFAULT_CODE_THEME_LIGHT,
+  LIGHT_CODE_THEMES,
+} from "../../../shared/codeThemes";
 
 export type SettingsSection = "general" | "appearance" | "models" | "about";
 
-const PERMISSION_MODES: PermissionMode[] = ["ask", "auto", "plan", "full"];
 const THEME_MODES: { id: ThemeMode; label: string }[] = [
   { id: "system", label: "跟随系统" },
   { id: "dark", label: "深色" },
   { id: "light", label: "浅色" },
 ];
-const LOCALES = [
-  { id: "", label: "跟随系统" },
-  { id: "zh-CN", label: "简体中文" },
-  { id: "en-US", label: "English" },
-] as const;
-
-/** 代码高亮主题候选（shiki bundled 名直接作标签）。 */
-const LIGHT_CODE_THEMES = ["github-light", "one-light", "min-light", "solarized-light"] as const;
-const DARK_CODE_THEMES = ["github-dark", "one-dark-pro", "dracula", "nord", "tokyo-night", "min-dark"] as const;
 
 /** 分区大标题（参考：设置名在主体区放大）。 */
 const pageTitle = "mb-5 text-[22px] font-bold text-(--color-foreground-strong)";
@@ -50,21 +47,14 @@ interface Props {
   onFetchModels?: (profile: ProviderProfile) => Promise<ModelInfo[]>;
   /** 关于页「反馈问题」入口（缺省隐藏该行）。 */
   onFeedback?: () => void;
+  /** 常规页「数据存储路径」当前值；空值 = 隐藏该卡片。 */
+  dataRoot?: string | null;
+  /** 常规页「选择文件夹」回调（宿主目录选择 + 数据迁移）。 */
+  onChangeDataRoot?: () => void;
+  /** 常规页「打开引导」回调；缺省 = 隐藏引导卡片。 */
+  onOpenOnboarding?: () => void;
   /** 当前生效的界面主题（代码预览「当前生效」徽章用）。 */
   resolvedTheme?: "dark" | "light";
-}
-
-/** 卡片行：标题 + 描述（左）与控件（右），行间发丝分隔。 */
-function SettingsRow({ title, desc, children }: { title: string; desc?: string; children: ReactNode }): React.JSX.Element {
-  return (
-    <div className="flex items-center gap-4 px-4 py-3.5">
-      <div className="min-w-0 flex-1">
-        <div className="text-(--color-foreground-strong)">{title}</div>
-        {desc && <div className="mt-0.5 text-(--color-muted)">{desc}</div>}
-      </div>
-      {children}
-    </div>
-  );
 }
 
 /** 字号步进框（12..18 px，失焦/回车提交并收窄）。 */
@@ -144,31 +134,19 @@ function CodePreviewCard({
   );
 }
 
-export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onSetTheme, onSetApiKey, onFetchModels, onFeedback, resolvedTheme }: Props): React.JSX.Element {
+export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto p-6">
       {section === "general" && settings && (
-        <div className="mx-auto w-full max-w-[720px] space-y-6">
-          <h1 className={pageTitle}>{t("settings.section.general")}</h1>
-          <div className="divide-y divide-(--color-hairline) rounded-(--radius-pop) border border-(--color-border) bg-(--color-raised)">
-            <SettingsRow title={t("settings.general.language")} desc={t("settings.general.language.desc")}>
-              <Select
-                value={settings.locale ?? ""}
-                onChange={(value) => onPatchSettings({ locale: value as HarnessSettings["locale"] })}
-                ariaLabel={t("settings.general.language")}
-                options={LOCALES.map((locale) => ({ value: locale.id, label: locale.label }))}
-              />
-            </SettingsRow>
-            <SettingsRow title={t("settings.general.permission")} desc={t("settings.general.permission.desc")}>
-              <Select
-                value={settings.permissionMode}
-                onChange={(value) => onPatchSettings({ permissionMode: value as PermissionMode })}
-                ariaLabel={t("settings.general.permission")}
-                options={PERMISSION_MODES.map((mode) => ({ value: mode, label: t(`permission.mode.${mode}`) }))}
-              />
-            </SettingsRow>
-          </div>
-        </div>
+        <GeneralPanel
+          t={t}
+          settings={settings}
+          appInfo={appInfo}
+          onPatchSettings={onPatchSettings}
+          dataRoot={dataRoot}
+          onChangeDataRoot={onChangeDataRoot}
+          onOpenOnboarding={onOpenOnboarding}
+        />
       )}
       {section === "appearance" && settings && (
         <div className="mx-auto w-full max-w-[720px] space-y-7">
@@ -204,7 +182,7 @@ export function SettingsView({ t, settings, appInfo, section, onPatchSettings, o
             <div className="divide-y divide-(--color-hairline) rounded-(--radius-pop) border border-(--color-border) bg-(--color-raised)">
               <SettingsRow title={t("settings.appearance.codeThemeLight")} desc={t("settings.appearance.codeThemeLight.desc")}>
                 <Select
-                  value={settings.codeThemeLight ?? "github-light"}
+                  value={settings.codeThemeLight ?? DEFAULT_CODE_THEME_LIGHT}
                   onChange={(value) => onPatchSettings({ codeThemeLight: value })}
                   ariaLabel={t("settings.appearance.codeThemeLight")}
                   options={LIGHT_CODE_THEMES.map((id) => ({ value: id, label: id }))}
@@ -212,7 +190,7 @@ export function SettingsView({ t, settings, appInfo, section, onPatchSettings, o
               </SettingsRow>
               <SettingsRow title={t("settings.appearance.codeThemeDark")} desc={t("settings.appearance.codeThemeDark.desc")}>
                 <Select
-                  value={settings.codeThemeDark ?? "github-dark"}
+                  value={settings.codeThemeDark ?? DEFAULT_CODE_THEME_DARK}
                   onChange={(value) => onPatchSettings({ codeThemeDark: value })}
                   ariaLabel={t("settings.appearance.codeThemeDark")}
                   options={DARK_CODE_THEMES.map((id) => ({ value: id, label: id }))}
@@ -250,7 +228,7 @@ export function SettingsView({ t, settings, appInfo, section, onPatchSettings, o
               <CodePreviewCard
                 t={t}
                 title={t("settings.appearance.preview.light")}
-                themeId={settings.codeThemeLight ?? "github-light"}
+                themeId={settings.codeThemeLight ?? DEFAULT_CODE_THEME_LIGHT}
                 active={resolvedTheme === "light"}
                 dark={false}
                 lineNumbers={settings.codeLineNumbers !== false}
@@ -258,7 +236,7 @@ export function SettingsView({ t, settings, appInfo, section, onPatchSettings, o
               <CodePreviewCard
                 t={t}
                 title={t("settings.appearance.preview.dark")}
-                themeId={settings.codeThemeDark ?? "github-dark"}
+                themeId={settings.codeThemeDark ?? DEFAULT_CODE_THEME_DARK}
                 active={resolvedTheme !== "light"}
                 dark
                 lineNumbers={settings.codeLineNumbers !== false}

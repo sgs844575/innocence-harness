@@ -846,7 +846,6 @@ export function App(): React.JSX.Element {
               onSetApiKey={
                 hasBridge()
                   ? (profileId, apiKey) => {
-                      // 密钥落安全存储后重拉投影（apiKeyConfigured 标志刷新）。
                       void api
                         .setProviderApiKey(profileId, apiKey)
                         .then(() => patch({}))

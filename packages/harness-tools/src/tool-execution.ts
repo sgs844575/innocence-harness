@@ -27,15 +27,14 @@ export class ToolExecutionError extends Error {
 export const DEFAULT_ABORT_GRACE_MS = 5_000;
 
 /**
- * Persistence-safe view of the invocation that middleware layers receive.
- * `persistedArgs` is the tool's redacted copy — raw invocation args never
- * reach middleware. `scope` is the frozen per-invocation scope (own
+ * Complete persisted view of the invocation that middleware layers receive.
+ * `scope` is the frozen per-invocation scope (own
  * invocationId plus the run identity inherited from the session).
  */
 export interface ToolExecutionInvocation {
   readonly invocationId: string;
   readonly toolName: string;
-  readonly persistedArgs: Record<string, unknown>;
+  readonly args: Record<string, unknown>;
   /** Derived signal: trips on parent abort OR on the timeout. */
   readonly signal: AbortSignal;
   readonly scope: ExecutionScope;
@@ -72,8 +71,8 @@ export interface ToolExecutionOptions {
  */
 export interface ToolInvocation {
   readonly toolName: string;
-  /** Persisted (redacted) args — the only shape middleware ever sees. */
-  readonly persistedArgs: Record<string, unknown>;
+  /** Complete persisted args — the only shape middleware ever sees. */
+  readonly args: Record<string, unknown>;
   readonly ctx: ToolContext;
   /** Session/run signal; aborting it aborts this invocation with its reason. */
   readonly parentSignal?: AbortSignal;
@@ -150,7 +149,7 @@ export function executeToolInvocation(
   const view: ToolExecutionInvocation = {
     invocationId: invocation.ctx.scope.invocationId,
     toolName: invocation.toolName,
-    persistedArgs: invocation.persistedArgs,
+    args: invocation.args,
     signal: controller.signal,
     scope: invocation.ctx.scope,
   };

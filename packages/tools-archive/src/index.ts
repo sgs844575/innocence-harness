@@ -3,11 +3,7 @@ import path from "node:path";
 import type { Context } from "@innocenceharness/kernel";
 import { type Tool, type ToolContext } from "@innocenceharness/harness-tools";
 import { resolveWithin } from "@innocenceharness/tools-fs";
-import {
-  createZipArchive,
-  encryptArchive,
-  type ArchiveEntry,
-} from "./archive";
+import { createZipArchive, type ArchiveEntry } from "./archive";
 
 const MAX_ENTRIES = 500;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
@@ -20,11 +16,11 @@ function requireStringArray(args: Record<string, unknown>, key: string): string[
   return value as string[];
 }
 
-/** Archive tool: bundles workspace files into a (optionally encrypted) zip. */
+/** Archive tool: bundles workspace files into a zip. */
 export const archiveTool: Tool = {
   name: "make_archive",
   description:
-    "把工作区内的一组文件打包成 zip 归档（可选口令加密），用于交付日志、产物或快照。" +
+    "把工作区内的一组文件打包成 zip 归档，用于交付日志、产物或快照。" +
     "路径必须位于工作区内；条目数量与总体积有上限。",
   readOnly: false,
   sideEffect: "paths",
@@ -33,7 +29,6 @@ export const archiveTool: Tool = {
     properties: {
       paths: { type: "array", items: { type: "string" }, description: "工作区内相对路径列表" },
       output: { type: "string", description: "归档输出路径（工作区内相对路径，建议 .zip 结尾）" },
-      passphrase: { type: "string", description: "加密口令（可选；提供则输出加密归档）" },
     },
     required: ["paths", "output"],
   },
@@ -42,24 +37,12 @@ export const archiveTool: Tool = {
     if (typeof args.output !== "string" || args.output.trim().length === 0) {
       throw new Error("缺少必填参数 output（字符串）");
     }
-    if (args.passphrase !== undefined && (typeof args.passphrase !== "string" || args.passphrase.length === 0)) {
-      throw new Error("passphrase 必须是非空字符串");
-    }
   },
   permissionResource(args) {
     return {
       action: "write",
       kind: "fs",
       scope: String(args.output ?? ""),
-    };
-  },
-  persistArgs(args) {
-    const paths = Array.isArray(args.paths) ? args.paths.map((p) => String(p)) : [];
-    // 持久化完整原文供展示与留档；口令属声明式凭据字段，仅以 encrypted 布尔留痕、不落盘。
-    return {
-      output: String(args.output ?? ""),
-      paths,
-      encrypted: args.passphrase !== undefined,
     };
   },
   async execute(args, ctx: ToolContext) {
@@ -80,17 +63,12 @@ export const archiveTool: Tool = {
       entries.push({ name: rel.split(path.sep).join("/"), data });
     }
 
-    let archive = await createZipArchive(entries);
-    const passphrase = typeof args.passphrase === "string" ? args.passphrase : undefined;
-    if (passphrase !== undefined) {
-      archive = encryptArchive(archive, passphrase);
-    }
-
+    const archive = await createZipArchive(entries);
     const outputAbs = resolveWithin(root, outputRel);
     await fs.mkdir(path.dirname(outputAbs), { recursive: true });
     await fs.writeFile(outputAbs, archive);
     return {
-      content: `已写入 ${outputRel}：${entries.length} 个条目，${archive.length} 字节${passphrase !== undefined ? "（已加密）" : ""}`,
+      content: `已写入 ${outputRel}：${entries.length} 个条目，${archive.length} 字节`,
       isError: false,
     };
   },

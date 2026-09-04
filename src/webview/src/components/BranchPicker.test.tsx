@@ -82,4 +82,24 @@ describe("BranchPicker", () => {
     fireEvent.click(screen.getByText("dev"));
     await waitFor(() => expect(onError).toHaveBeenCalledWith("branch.switchFailed：conflict"));
   });
+
+  it("「Git 图谱」入口：提供 onOpenGraph 时点击触发并关闭面板", async () => {
+    mockBridge();
+    const onOpenGraph = vi.fn();
+    renderPicker({ onOpenGraph });
+    fireEvent.click(screen.getByRole("button", { name: /main/ }));
+    await waitFor(() => screen.getByText("dev"));
+    fireEvent.click(screen.getByRole("button", { name: /branch.graph/ }));
+    expect(onOpenGraph).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText("dev")).toBeNull());
+  });
+
+  it("未提供 onOpenGraph 时「Git 图谱」保持禁用占位", async () => {
+    mockBridge();
+    renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: /main/ }));
+    await waitFor(() => screen.getByText("dev"));
+    const entry = screen.getByRole("button", { name: /branch.graph/ });
+    expect(entry).toHaveProperty("disabled", true);
+  });
 });

@@ -16,11 +16,6 @@ export interface HydratedCredentials {
 
 export type DurableSettingsCommit = (settings: HarnessSettings) => Promise<void>;
 
-function withoutRendererOnlyFields(profile: ProviderProfile): ProviderProfile {
-  const { apiKeyConfigured: _apiKeyConfigured, ...settingsProfile } = profile as ProviderProfile & { apiKeyConfigured?: boolean };
-  return settingsProfile;
-}
-
 /** Resolves secured credentials only in the main-process settings view. */
 export async function hydrateCredentials(
   settings: HarnessSettings,
@@ -30,14 +25,14 @@ export async function hydrateCredentials(
   const errors: string[] = [];
   const createdRefs: string[] = [];
   const obsoleteRefs: string[] = [];
-  const profiles = await Promise.all(settings.profiles.map(async (rawProfile) => {
-    const profile = withoutRendererOnlyFields(rawProfile);
+  const profiles = await Promise.all(settings.profiles.map(async (profile) => {
     if (profile.apiKeyRef) {
       try {
         const apiKey = await store.read(profile.apiKeyRef);
         if (profile.apiKey) migrated = true;
         return { ...profile, apiKey };
-      } catch {
+      } catch (readError) {
+        errors.push(`credential read failed: ${String(readError)}`);
         // A legacy plaintext fallback remains usable, but the stale reference
         // must not survive in the active projection or mirror.
         if (profile.apiKey) {
@@ -47,8 +42,8 @@ export async function hydrateCredentials(
             obsoleteRefs.push(profile.apiKeyRef);
             migrated = true;
             return { ...profile, apiKeyRef };
-          } catch {
-            errors.push("credential migration failed");
+          } catch (writeError) {
+            errors.push(`credential migration failed: ${String(writeError)}`);
             return { ...profile, apiKeyRef: undefined };
           }
         }
@@ -63,8 +58,8 @@ export async function hydrateCredentials(
       createdRefs.push(apiKeyRef);
       migrated = true;
       return { ...profile, apiKeyRef };
-    } catch {
-      errors.push("credential migration failed");
+    } catch (error) {
+      errors.push(`credential migration failed: ${String(error)}`);
       return profile;
     }
   }));
@@ -77,7 +72,7 @@ export async function hydrateCredentials(
   };
 }
 
-/** Preserves host-held credentials across redacted renderer settings updates. */
+/** Preserves host-held credentials across renderer settings updates. */
 export async function secureSettingsUpdate(
   previous: HarnessSettings,
   next: HarnessSettings,
@@ -88,14 +83,11 @@ export async function secureSettingsUpdate(
   const createdRefs: string[] = [];
   const profiles: ProviderProfile[] = [];
   try {
-    for (const rawProfile of next.profiles) {
-      const profile = withoutRendererOnlyFields(rawProfile);
+    for (const profile of next.profiles) {
       const prior = priorById.get(profile.id);
-      const incomingKey = (profile.apiKey ?? "").trim();
+      const incomingKey = profile.apiKey ?? "";
       if (!incomingKey) {
-        profiles.push(prior
-          ? { ...profile, apiKey: prior.apiKey, apiKeyRef: prior.apiKeyRef }
-          : { ...profile, apiKeyRef: undefined });
+        profiles.push({ ...profile, apiKey: "", apiKeyRef: undefined });
         continue;
       }
       if (prior?.apiKey === incomingKey && prior.apiKeyRef) {
@@ -138,7 +130,7 @@ export async function setProfileCredential(
 ): Promise<HarnessSettings> {
   const profile = settings.profiles.find((candidate) => candidate.id === profileId);
   if (!profile) throw new Error("profile not found");
-  const apiKey = value.trim();
+  const apiKey = value;
   let apiKeyRef: string | undefined;
   let createdRef: string | undefined;
   try {

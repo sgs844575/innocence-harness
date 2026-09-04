@@ -31,6 +31,7 @@ export {
   type PluginFactoryContext,
   type RuntimeHooks,
   type RuntimeOptions,
+  type RuntimeSendDisposition,
   type RuntimeSendRequest,
   type SessionToolIndex,
 } from "./runtime";

@@ -272,7 +272,7 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
         (hook) => hook.event === "postToolCall" && matchesTool(hook),
       );
       if (preHooks.length === 0 && postHooks.length === 0) return next();
-      const inputPreview = safePreview(invocation.persistedArgs);
+      const inputPreview = safePreview(invocation.args);
       const cwd = options.getWorkspaceRoot();
 
       // Pre gate, serial: the first hook with an explicit non-zero exit

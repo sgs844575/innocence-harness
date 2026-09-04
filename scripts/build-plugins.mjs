@@ -166,7 +166,7 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "@ai-sdk/anthropic",
   "@ai-sdk/google",
   // 插件 dist 的运行时裸导入：plugin-skills→yaml、harness-ai-runtime→undici、
-  // tools-ssh→ssh2、plugin-mcp→ws、tools-archive→yazl+node-forge、
+  // tools-ssh→ssh2、plugin-mcp→ws、tools-archive→yazl、
   // tools-fs(read-pdf)→pdfjs-dist（legacy 构建动态导入），与根 package.json
   // 声明保持一致；@ai-sdk/openai-compatible 由 harness-ai-runtime 的
   // model-factory 直引（兼容端点通道）。
@@ -175,7 +175,6 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "ssh2",
   "ws",
   "yazl",
-  "node-forge",
   "pdfjs-dist",
 ];
 // 缓存文件位于 resources/ 之外：extraResource 与 packager ignore 都不会带走它。

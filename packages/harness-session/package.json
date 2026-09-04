@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@innocenceharness/harness-context-meter": "^0.1.0",
     "@innocenceharness/harness-permissions": "^0.1.0",
     "@innocenceharness/harness-providers": "^0.1.0",
     "@innocenceharness/harness-tools": "^0.1.0",

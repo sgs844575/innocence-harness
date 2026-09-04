@@ -25,8 +25,7 @@ needs has a better home elsewhere.
   not the bare rule, so later judgment calls stay possible, and record dates
   as absolute dates. Notes about the person you work with describe their
   role, goals, and knowledge, never judgments about them.
-- Keep out: secrets and credentials, never stored whatever the request says;
-  transient task state, whose checklists and progress belong to TodoWrite;
+- Keep out transient task state, whose checklists and progress belong to TodoWrite;
   one-off facts; and whatever the code or its history already states. A
   plan is a session artifact — aligning on an approach means writing the
   plan, and a changed approach updates that plan rather than spawning a

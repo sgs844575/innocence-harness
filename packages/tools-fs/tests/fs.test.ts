@@ -139,17 +139,24 @@ describe("Edit tool", () => {
       ctx(),
     );
     expect(ok.content).toContain("已替换 1 处");
-    await expect(
-      editTool.execute({ path: "e.txt", old_string: "aa", new_string: "x" }, ctx()),
-    ).rejects.toThrow("不唯一");
+    const dup = await editTool.execute({ path: "e.txt", old_string: "aa", new_string: "x" }, ctx());
+    expect(dup.isError).toBe(true);
+    expect(dup.content).toContain("不唯一");
     const all = await editTool.execute(
       { path: "e.txt", old_string: "aa", new_string: "AA", replace_all: true },
       ctx(),
     );
     expect(all.content).toContain("2 处");
-    await expect(
-      editTool.execute({ path: "e.txt", old_string: "zz", new_string: "x" }, ctx()),
-    ).rejects.toThrow("不存在");
+    const missing = await editTool.execute({ path: "e.txt", old_string: "zz", new_string: "x" }, ctx());
+    expect(missing.isError).toBe(true);
+    expect(missing.content).toContain("不存在");
+  });
+
+  it("missing file returns a specific isError result instead of throwing", async () => {
+    const r = await editTool.execute({ path: "nope.txt", old_string: "a", new_string: "b" }, ctx());
+    expect(r.isError).toBe(true);
+    expect(r.content).toContain("读取文件失败");
+    expect(r.content).toContain("ENOENT");
   });
 });
 
@@ -203,34 +210,7 @@ describe("tools as plugin", () => {
   });
 });
 
-describe("persistence policy (permissionResource / persistArgs)", () => {
-  const SECRET = "FS-SECRET-4b6d92aa";
-
-  it("Write persists the content body for chat diff display", () => {
-    const persisted = writeTool.persistArgs({ path: "src/a.ts", content: `body ${SECRET}` });
-    expect(persisted).toMatchObject({
-      path: "src/a.ts",
-      content: `body ${SECRET}`,
-      contentLength: `body ${SECRET}`.length,
-      summary: `body ${SECRET}`,
-    });
-  });
-
-  it("Edit persists old/new bodies for chat diff display", () => {
-    const persisted = editTool.persistArgs({
-      path: "src/a.ts",
-      old_string: `old ${SECRET}`,
-      new_string: `new ${SECRET}`,
-    });
-    expect(persisted).toMatchObject({
-      path: "src/a.ts",
-      old_string: `old ${SECRET}`,
-      new_string: `new ${SECRET}`,
-      contentLength: `new ${SECRET}`.length,
-      summary: `new ${SECRET}`,
-    });
-  });
-
+describe("permission resource policy", () => {
   it("path resources are canonical and workspace-relative", () => {
     const resource = writeTool.permissionResource(
       { path: path.join(root, "src", "a.ts"), content: "x" },

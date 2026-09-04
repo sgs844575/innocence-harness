@@ -89,6 +89,7 @@ export class AgentSession {
       maxTurns: options.maxTurns ?? spine.loop.DEFAULT_MAX_TURNS,
       toolTimeoutMs: options.toolTimeoutMs ?? spine.loop.DEFAULT_TOOL_TIMEOUT_MS,
       telemetry: options.telemetry,
+      pendingInputs: options.pendingInputs,
     });
     // HarnessEvent traffic flows over the kernel bus: the session service
     // emits, this root-level subscription fans out to the on() listeners and

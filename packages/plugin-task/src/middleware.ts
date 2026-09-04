@@ -86,7 +86,7 @@ async function declaredWritePaths(
     log: options.log ?? (() => {}),
     scope: invocation.scope,
   };
-  const resource = await tool.permissionResource(invocation.persistedArgs, ctx);
+  const resource = await tool.permissionResource(invocation.args, ctx);
   return resource.kind === "path" && resource.action !== "read" ? [resource.scope] : [];
 }
 

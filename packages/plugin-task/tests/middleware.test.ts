@@ -154,7 +154,7 @@ describe("task change-capture middleware", () => {
     const invocation: ToolExecutionInvocation = {
       invocationId: scope.invocationId,
       toolName: "Write",
-      persistedArgs: { path: "src/b.ts" },
+      args: { path: "src/b.ts" },
       signal: new AbortController().signal,
       scope,
     };

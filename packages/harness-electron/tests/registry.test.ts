@@ -15,13 +15,12 @@ function completeTool(name: string): Tool {
     readOnly: true,
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "test", scope: name }),
-    persistArgs: () => ({}),
     execute: async () => ({ content: "ok" }),
   };
 }
 
-describe("tool persistence policy (fail-closed SPI gate)", () => {
-  it("accepts tools that implement permissionResource and persistArgs", () => {
+describe("tool permission resource policy (fail-closed SPI gate)", () => {
+  it("accepts tools that implement permissionResource", () => {
     const registry = new PluginRegistry();
     registry.createContext("p", () => {}).registerTool(completeTool("Good"));
     expect(registry.tools.has("Good")).toBe(true);
@@ -43,22 +42,6 @@ describe("tool persistence policy (fail-closed SPI gate)", () => {
     expect(registry.tools.has("NoResource")).toBe(false);
   });
 
-  it("rejects tools without persistArgs with tool-persistence-policy-required", () => {
-    const registry = new PluginRegistry();
-    const broken = completeTool("NoPersist") as unknown as Record<string, unknown>;
-    delete broken.persistArgs;
-    let caught: { code?: string; message?: string } | undefined;
-    try {
-      registry.createContext("p", () => {}).registerTool(broken as unknown as Tool);
-    } catch (err) {
-      caught = err as { code?: string; message?: string };
-    }
-    expect(caught?.code).toBe("tool-persistence-policy-required");
-    expect(caught?.message).toContain("NoPersist");
-    expect(caught?.message).toContain("persistArgs");
-    expect(registry.tools.has("NoPersist")).toBe(false);
-  });
-
   it("rolls back activated plugins when one registers a non-compliant tool", async () => {
     const calls: string[] = [];
     const plugins: HarnessPlugin[] = [
@@ -75,7 +58,7 @@ describe("tool persistence policy (fail-closed SPI gate)", () => {
         name: "b",
         activate(ctx) {
           const broken = completeTool("B") as unknown as Record<string, unknown>;
-          delete broken.persistArgs;
+          delete broken.permissionResource;
           ctx.registerTool(broken as unknown as Tool);
         },
       },

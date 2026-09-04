@@ -117,7 +117,6 @@ function fakeTool(
       kind: "test",
       scope: name,
     }),
-    persistArgs: (args: Record<string, unknown>) => ({ ...args }),
     async execute(args: Record<string, unknown>): Promise<ToolResult> {
       t.calls.push(args);
       return behavior(args);
@@ -178,7 +177,6 @@ function abortAwareTool(name: string): Tool & { calls: number } {
     parameters: { type: "object" },
     calls: 0,
     permissionResource: () => ({ action: "write", kind: "test", scope: name }),
-    persistArgs: (args: Record<string, unknown>) => ({ ...args }),
     execute(_args: Record<string, unknown>, ctx: { signal: AbortSignal }) {
       t.calls += 1;
       return new Promise<ToolResult>((_resolve, reject) => {
@@ -295,11 +293,6 @@ describe("runLoop", () => {
         expect(args).toEqual({ secret: "SDK-SECRET" });
         return { action: "write", kind: "test", scope: "controlled" };
       },
-      persistArgs(args) {
-        order.push("persistArgs");
-        expect(args).toEqual({ secret: "SDK-SECRET" });
-        return { secretPresent: typeof args.secret === "string" };
-      },
       async execute(args) {
         order.push("execute");
         harnessExecuteCount += 1;
@@ -321,7 +314,7 @@ describe("runLoop", () => {
       provider,
       permission,
       (event) => {
-        if (event.type === "assistantMessage") order.push("redactedAssistant");
+        if (event.type === "assistantMessage") order.push("assistantMessage");
         if (event.type === "toolCall") order.push("audit");
         if (event.type === "toolResult") order.push("toolResult");
       },
@@ -329,11 +322,10 @@ describe("runLoop", () => {
 
     const result = await run("run the controlled tool");
 
-    expect(order.slice(0, 8)).toEqual([
+    expect(order.slice(0, 7)).toEqual([
       "validateArgs",
       "permissionResource",
-      "persistArgs",
-      "redactedAssistant",
+      "assistantMessage",
       "audit",
       "permission",
       "execute",
@@ -353,7 +345,7 @@ describe("runLoop", () => {
       "assistantMessage",
       "done",
     ]);
-    expect(JSON.stringify([history, events])).not.toContain("SDK-SECRET");
+    expect(JSON.stringify([history, events])).toContain("SDK-SECRET");
     expect(JSON.stringify(result)).not.toContain("sdk-wire-finish-secret");
     expect(JSON.stringify(result)).not.toContain("rawFinishReason");
     expect(result).toMatchObject({
@@ -399,7 +391,7 @@ describe("runLoop", () => {
     expect(model.doStreamCalls).toHaveLength(2);
   });
 
-  it("normalizes SDK model errors before they reach Harness events", async () => {
+  it("keeps SDK model errors intact in Harness events", async () => {
     const sensitive = "credential=SDK-ERROR-SECRET prompt=private toolArgs=private";
     const { provider } = sdkProviderForTurns([[
       { type: "stream-start", warnings: [] },
@@ -413,14 +405,13 @@ describe("runLoop", () => {
         finishReason: { unified: "error", raw: "upstream-secret" },
       },
     ]]);
-    const { events, history, run } = await setup([], provider);
+    const { events, run } = await setup([], provider);
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       const result = await run("sensitive request");
 
-      expect(events).toContainEqual({ type: "error", message: "Model request failed", fatal: true });
-      expect(JSON.stringify([events, history])).not.toContain(sensitive);
+      expect(events).toContainEqual({ type: "error", message: sensitive, fatal: true });
       expect(result).toMatchObject({
         finalText: "",
         finishReason: "error",
@@ -431,8 +422,8 @@ describe("runLoop", () => {
     }
   });
 
-  it("classifies legacy provider failures into actionable messages (HTTP 403)", async () => {
-    const upstream = "无权访问 max 分组（服务商原始响应，绝不外泄）";
+  it("keeps legacy provider failure messages intact", async () => {
+    const upstream = "无权访问 max 分组（服务商原始响应）";
     const provider: Provider = {
       id: "legacy-fail",
       async *chat(): AsyncIterable<Delta> {
@@ -442,12 +433,10 @@ describe("runLoop", () => {
     const { events, run } = await setup([], provider);
     await run("x");
     const errorEvent = events.find((e) => e.type === "error");
-    expect(errorEvent && errorEvent.type === "error" && errorEvent.message).toContain("HTTP 403");
-    expect(errorEvent && errorEvent.type === "error" && errorEvent.message).toContain("拒绝访问");
-    expect(JSON.stringify(events)).not.toContain("max 分组");
+    expect(errorEvent && errorEvent.type === "error" && errorEvent.message).toBe(upstream);
   });
 
-  it("rejects denied SDK MCP calls without leaking raw arguments", async () => {
+  it("rejects denied SDK MCP calls while retaining their complete arguments", async () => {
     const secret = "SDK-MCP-SECRET";
     const { provider } = sdkProviderForTurns([
       [
@@ -465,7 +454,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "call", kind: "mcp", scope: "ci/deploy" }),
-      persistArgs: (args) => ({ params: Object.keys(args) }),
       async execute() {
         executions += 1;
         return { content: "unexpected" };
@@ -482,7 +470,7 @@ describe("runLoop", () => {
     expect(result.finalText).toBe("denied");
     expect(executions).toBe(0);
     expect(history[2]?.parts[0]).toMatchObject({ isError: true, content: expect.stringContaining("权限被拒绝") });
-    expect(JSON.stringify([history, events])).not.toContain(secret);
+    expect(JSON.stringify([history, events])).toContain(secret);
   });
 
   it("keeps SDK tool timeouts within the Harness executor", async () => {
@@ -551,7 +539,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "stop" }),
-      persistArgs: (args) => ({ ...args }),
       execute: (_args, ctx) =>
         new Promise<ToolResult>((_resolve, reject) => {
           ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
@@ -588,9 +575,9 @@ describe("runLoop", () => {
     expect(tr.content).toContain("未知工具");
   });
 
-  it("thrown tool errors feed back to the model as error results", async () => {
+  it("thrown tool errors feed their original message back to the model", async () => {
     const bomb = fakeTool("Bomb", async () => {
-      throw new Error("boom");
+      throw new Error("boom: original diagnostic 7c2d");
     });
     const provider = scriptedProvider([
       { toolCalls: [{ toolName: "Bomb" }] },
@@ -601,8 +588,32 @@ describe("runLoop", () => {
     expect(result.finalText).toBe("handled");
     const tr = history[2].parts[0] as { isError?: boolean; content: string };
     expect(tr.isError).toBe(true);
-    expect(tr.content).toContain("工具执行出错");
+    expect(tr.content).toBe("boom: original diagnostic 7c2d");
     expect(events.filter((e) => e.type === "error")).toHaveLength(0);
+  });
+
+  it("makes tool failure status and reason explicit in the next model step", async () => {
+    const probe = fakeTool("Probe", async () => ({
+      content: "The requested target does not exist",
+      isError: true,
+    }));
+    const { provider, model } = sdkProviderForTurns([
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("probe-call", "Probe", { target: "missing" }),
+        sdkFinish("tool-calls"),
+      ],
+      [...sdkText("I will use a different target."), sdkFinish()],
+    ]);
+    const { run } = await setup([probe], provider);
+
+    const result = await run("Inspect the target");
+
+    expect(result.finalText).toBe("I will use a different target.");
+    const nextPrompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+    expect(nextPrompt).toContain("Tool call status: failed");
+    expect(nextPrompt).toContain("Failure reason:");
+    expect(nextPrompt).toContain("The requested target does not exist");
   });
 
   it("permission deny turns into an error tool result", async () => {
@@ -717,8 +728,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "Echo" }),
-      // Persisted args differ from raw ones — middleware must only see these.
-      persistArgs: (args) => ({ msg: `persisted:${String(args.msg ?? "")}` }),
       execute: async (args) => ({ content: `echo:${String(args.msg ?? "")}` }),
     };
     const provider = scriptedProvider([
@@ -726,17 +735,17 @@ describe("runLoop", () => {
       { text: "done" },
     ]);
     const { toolsService, events, run } = await setup([echo], provider);
-    const seen: Array<{ toolName: string; persistedArgs: Record<string, unknown> }> = [];
+    const seen: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     toolsService.registerMiddleware({
       name: "spy",
       async execute(invocation, next) {
-        seen.push({ toolName: invocation.toolName, persistedArgs: invocation.persistedArgs });
+        seen.push({ toolName: invocation.toolName, args: invocation.args });
         return next();
       },
     });
 
     await run("x");
-    expect(seen).toEqual([{ toolName: "Echo", persistedArgs: { msg: "persisted:hi" } }]);
+    expect(seen).toEqual([{ toolName: "Echo", args: { msg: "hi" } }]);
 
     const callEvent = events.find((e) => e.type === "toolCall");
     if (!callEvent || callEvent.type !== "toolCall") throw new Error("missing toolCall event");
@@ -776,7 +785,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "Zombie" }),
-      persistArgs: (args) => ({ ...args }),
       // Ignores the abort signal entirely: never settles.
       execute: () => new Promise<ToolResult>(() => {}),
     };
@@ -804,7 +812,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "Stop" }),
-      persistArgs: (args) => ({ ...args }),
       execute: (_args, ctx) =>
         new Promise<ToolResult>((_resolve, reject) => {
           ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
@@ -821,7 +828,7 @@ describe("runLoop", () => {
     // Loop breaks on the next turn-top check; the aborted result is in history.
     const tr = history[2].parts[0] as { isError?: boolean; content: string };
     expect(tr.isError).toBe(true);
-    expect(tr.content).toContain("中止");
+    expect(tr.content).toBe("This operation was aborted");
     const resultEvent = events.find((e) => e.type === "toolResult");
     expect(resultEvent && resultEvent.type === "toolResult" && resultEvent.outcome).toBe("aborted");
     expect(result.finalText).toBe("");
@@ -838,7 +845,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "ZombieStop" }),
-      persistArgs: (args) => ({ ...args }),
       // Stops the run shortly after start, then ignores every abort forever.
       execute: () => {
         setTimeout(() => stop.abort(), 5);
@@ -871,7 +877,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "OddStop" }),
-      persistArgs: (args) => ({ ...args }),
       // Cancels with a PLAIN error when the run stops: the outcome must still
       // be "aborted" because the parent signal is what ended the invocation.
       execute: (_args, ctx) =>
@@ -893,44 +898,7 @@ describe("runLoop", () => {
     const resultEvent = events.find((e) => e.type === "toolResult");
     expect(resultEvent && resultEvent.type === "toolResult" && resultEvent.outcome).toBe("aborted");
     const tr = history[2].parts[0] as { isError?: boolean; content: string };
-    expect(tr.content).toContain("工具执行已中止");
-    expect(tr.content).not.toContain("worker cancelled");
-  });
-
-  it("recovers DSML-markup tool calls leaked into text and executes them", async () => {
-    const read = fakeTool("Read", async (args) => ({ content: `read:${String(args.path ?? "")}` }));
-    const glob = fakeTool("Glob", async () => ({ content: "files" }));
-    // 实机漏出形态：模型想并行调用工具，却把原生标记写进了正文文本通道。
-    const envelope = [
-      "<｜DSML｜｜tool_calls>",
-      '<｜DSML｜｜invoke name="Read">',
-      '<｜DSML｜｜parameter name="path" string="true">package.json</｜DSML｜｜parameter>',
-      '<｜DSML｜｜parameter name="offset" string="false">95</｜DSML｜｜parameter>',
-      '<｜DSML｜｜parameter name="limit" string="false">10</｜DSML｜｜parameter>',
-      "</｜DSML｜｜invoke>",
-      '<｜DSML｜｜invoke name="Glob">',
-      '<｜DSML｜｜parameter name="pattern" string="true">.*</｜DSML｜｜parameter>',
-      "</｜DSML｜｜invoke>",
-      "</｜DSML｜｜tool_calls>",
-    ].join(" ");
-    const provider = scriptedProvider([
-      { text: `请继续避免遗漏。\n${envelope}` },
-      { text: "done" },
-    ]);
-    const { events, history, run } = await setup([read, glob], provider);
-
-    const result = await run("继续");
-    // 漏出的两个调用照常执行（数值参数还原为数字）。
-    expect(read.calls).toHaveLength(1);
-    expect(read.calls[0]).toMatchObject({ path: "package.json", offset: 95, limit: 10 });
-    expect(glob.calls).toHaveLength(1);
-    // 历史与全部事件（含 token 流式展示——源头有标记过滤器）都不带残留；
-    // 助手轮携带结构化 toolCall，结果成对回填。
-    expect(JSON.stringify(history)).not.toContain("DSML");
-    expect(JSON.stringify(events)).not.toContain("DSML");
-    const assistant = history.find((message) => message.role === "assistant");
-    expect(assistant?.parts.some((part) => part.type === "toolCall" && part.toolName === "Read")).toBe(true);
-    expect(result.finalText).toBe("done");
+    expect(tr.content).toBe("worker cancelled");
   });
 
   it("fail-closes remaining calls after a stop instead of consulting the permission chain", async () => {
@@ -952,7 +920,6 @@ describe("runLoop", () => {
       sideEffect: "unknown",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "SlowStop" }),
-      persistArgs: (args) => ({ ...args }),
       execute: (_args, ctx) =>
         new Promise<ToolResult>((_resolve, reject) => {
           ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
@@ -999,7 +966,6 @@ describe("runLoop", () => {
       sideEffect: "delegated",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "spawn", kind: "agent", scope: name }),
-      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
       // Resolves only when the peer is ALSO in flight — a serial executor
       // deadlocks here and fails this test by timeout.
       async execute(): Promise<ToolResult> {
@@ -1029,7 +995,6 @@ describe("runLoop", () => {
       sideEffect: "none",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "test", scope: name }),
-      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
       async execute(): Promise<ToolResult> {
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
         return { content: name };
@@ -1041,7 +1006,7 @@ describe("runLoop", () => {
     ]);
     const { history, run } = await setup([shared("Slow", 25), shared("Fast", 0)], provider);
     await run("x");
-    // Fast settles first, but the persisted result order follows the call order.
+    // Fast settles first, but the recorded result order follows the call order.
     const results = history[2].parts as Array<{ content: string }>;
     expect(results.map((part) => part.content)).toEqual(["Slow", "Fast"]);
   });
@@ -1056,7 +1021,6 @@ describe("runLoop", () => {
       sideEffect: "none",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "read", kind: "test", scope: name }),
-      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
       async execute(): Promise<ToolResult> {
         started.push(name);
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -1072,7 +1036,6 @@ describe("runLoop", () => {
       sideEffect: "paths",
       parameters: { type: "object" },
       permissionResource: () => ({ action: "write", kind: "test", scope: "Mutate" }),
-      persistArgs: (args: Record<string, unknown>) => ({ ...args }),
       async execute(): Promise<ToolResult> {
         started.push("Mutate");
         writerSawReaderSettled = readerSettled;

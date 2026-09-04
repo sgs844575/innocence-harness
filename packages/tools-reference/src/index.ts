@@ -52,9 +52,6 @@ export const readReferenceTool: Tool = {
     // 固定目录枚举值：scope 是受控 id，持久化安全。
     return { action: "read", kind: "reference", scope: normalizeId(args) };
   },
-  persistArgs(args) {
-    return { id: normalizeId(args) };
-  },
   async execute(args) {
     const id = normalizeId(args);
     const entry = referenceCatalog.find((candidate) => candidate.id === id);

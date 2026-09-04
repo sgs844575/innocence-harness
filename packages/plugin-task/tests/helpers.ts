@@ -234,7 +234,6 @@ export function fakeShellTool(options: FakeToolOptions = {}): Tool {
       required: ["command"],
     },
     permissionResource: () => ({ action: "execute", kind: "command", scope: "sh" }),
-    persistArgs: (args) => ({ command: String(args.command ?? "") }),
     async execute() {
       options.onExecute?.();
       if (options.failWith) throw options.failWith;
@@ -256,7 +255,6 @@ export function fakeWriteTool(runtime: FakeTaskRuntime, options: FakeToolOptions
       required: ["path", "content"],
     },
     permissionResource: (args) => ({ action: "write", kind: "path", scope: String(args.path ?? "") }),
-    persistArgs: (args) => ({ path: String(args.path ?? "") }),
     async execute(args) {
       options.onExecute?.();
       if (options.failWith) throw options.failWith;
@@ -275,7 +273,6 @@ export function fakeReadTool(options: FakeToolOptions = {}): Tool {
     sideEffect: "none",
     parameters: { type: "object" },
     permissionResource: () => ({ action: "read", kind: "path", scope: "." }),
-    persistArgs: (args) => ({ ...args }),
     async execute() {
       options.onExecute?.();
       return { content: "read ok" };
@@ -351,7 +348,6 @@ export async function runParentTaskWithChild(options: {
       required: ["prompt"],
     },
     permissionResource: () => ({ action: "spawn", kind: "agent", scope: "child" }),
-    persistArgs: (args) => ({ promptLength: String(args.prompt ?? "").length }),
     async execute(_args, ctx) {
       if (!ctx.subagent) {
         return { content: "no subagent spawner available", isError: true };

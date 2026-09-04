@@ -1,8 +1,8 @@
 // 「导入模型」弹窗：拉取结果不直接写入，用户勾选要导入的模型，并统一下发
 // 上下文窗口（默认 1000000）/ 最大输出（默认 128000）/ 输入类型（文本锁定，
 // 图片、视频可勾选）/ 输出类型（文本锁定）。Esc/遮罩关闭。
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckSquare, Search, Square, X } from "lucide-react";
 import type { ModelInfo } from "../../../../shared/ipc";
 
 interface Props {
@@ -23,6 +23,7 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
   const [maxOutput, setMaxOutput] = useState("128000");
   const [vision, setVision] = useState(false);
   const [video, setVideo] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -32,6 +33,17 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filtered = useMemo(() => {
+    if (!normalizedQuery) return models;
+    return models.filter((model) => {
+      const name = (model.name ?? model.id).toLowerCase();
+      const id = model.id.toLowerCase();
+      return name.includes(normalizedQuery) || id.includes(normalizedQuery);
+    });
+  }, [models, normalizedQuery]);
+
   const toggle = (id: string): void =>
     setSelected((current) => {
       const next = new Set(current);
@@ -39,6 +51,11 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
       else next.add(id);
       return next;
     });
+
+  const allSelected = filtered.length > 0 && filtered.every((model) => selected.has(model.id));
+
+  const toggleAll = (): void =>
+    setSelected(allSelected ? new Set() : new Set(models.map((model) => model.id)));
 
   const importSelected = (): void => {
     const context = Number(contextWindow);
@@ -74,8 +91,34 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
           </button>
         </div>
 
+        <label className="mb-2 flex items-center gap-2 rounded-md border border-(--color-hairline) bg-(--color-surface) px-2.5 py-1.5 text-(--color-muted) focus-within:border-(--color-accent)">
+          <Search size={14} />
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("settings.models.import.searchPlaceholder")}
+            className="w-full bg-transparent text-(--color-foreground) placeholder:text-(--color-faint) outline-none"
+          />
+        </label>
+
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-xs text-(--color-muted)">
+            {t("settings.models.import.selected").replace("{count}", String(selected.size))}
+          </span>
+          <button
+            type="button"
+            onClick={toggleAll}
+            aria-label={allSelected ? t("settings.models.import.deselectAll") : t("settings.models.import.selectAll")}
+            title={allSelected ? t("settings.models.import.deselectAll") : t("settings.models.import.selectAll")}
+            className="grid size-7 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-foreground)"
+          >
+            {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+          </button>
+        </div>
+
         <div className="scrollbar-thin max-h-48 space-y-1 overflow-y-auto rounded-md border border-(--color-hairline) bg-(--color-surface) p-1.5">
-          {models.map((model) => (
+          {filtered.map((model) => (
             <label
               key={model.id}
               className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-(--color-foreground) hover:bg-(--color-hover)"
@@ -89,6 +132,9 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
               <span className="min-w-0 flex-1 truncate font-mono">{model.name ?? model.id}</span>
             </label>
           ))}
+          {filtered.length === 0 && (
+            <div className="px-2 py-6 text-center text-xs text-(--color-faint)">{t("settings.models.import.empty")}</div>
+          )}
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">

@@ -81,7 +81,4 @@ describe("Read PDF face (S4)", () => {
     expect(r.content).not.toContain("PDF");
   });
 
-  it("persistArgs carries the page parameter", () => {
-    expect(readTool.persistArgs({ path: "doc.pdf", page: 2 })).toMatchObject({ page: 2 });
-  });
 });

@@ -14,6 +14,7 @@ import {
   listSessions,
   listSubagentHistory,
   runtimeTranscriptFileFor,
+  renameSession,
   sessionSubagentHistoryFile,
 } from "./sessions";
 import { appendSubagentHistoryEvent, subagentHistoryFile } from "./subagentHistoryStore";
@@ -168,6 +169,14 @@ describe("session store persistence", () => {
     appendMessage(s.id, { id: "m3", role: "user", parts: [{ type: "text", text: "第二条" }], createdAt: 3 });
     expect(listSessions()[0].title).toBe("第一条");
     expect(listSessions()[0].messageCount).toBe(3);
+  });
+
+  it("renames a session explicitly and persists the title in its self-describing transcript", () => {
+    const session = createSession();
+    expect(renameSession(session.id, "  New   title  ").title).toBe("New title");
+    initSessionStore(dir);
+    expect(listSessions().find((item) => item.id === session.id)?.title).toBe("New title");
+    expect(readSessionMetaPrefix(treeFile(session))?.title).toBe("New title");
   });
 
   it("hydrates messages from the JSONL transcript, keeping tool parts", () => {

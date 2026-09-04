@@ -18,7 +18,7 @@ import type {
   SubagentRunInfo,
 } from "./subagent";
 import { INHERITED_CONTEXT_BRIEFING, sanitizeInheritedHistory } from "./subagent";
-import { clipToolArgs, clipToolResult, summarizeToolTitle } from "./tool-summary";
+import { summarizeToolTitle } from "./tool-summary";
 import { createRunRegistry, type SubagentRunRecord } from "./run-registry";
 
 // Services are typed on `Context` through declaration merging by their
@@ -430,16 +430,20 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
             name: event.name,
             phase: "call",
             ...(title ? { title } : {}),
-            ...(event.args ? { args: clipToolArgs(event.args) } : {}),
+            ...(event.args ? { args: { ...event.args } } : {}),
           },
         });
       }
       if (event.type === "toolResult") {
         closePendingSegments();
-        const result = clipToolResult(event.result);
         emit({
           status: "running",
-          tool: { name: event.name, phase: "result", isError: event.isError, ...(result ? { result } : {}) },
+          tool: {
+            name: event.name,
+            phase: "result",
+            isError: event.isError,
+            ...(event.result ? { result: event.result } : {}),
+          },
         });
       }
       if (event.type === "error") {
@@ -456,7 +460,12 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
         emit({ status: "cancelled" });
       } else if (childFailed || result.completion?.finishReason === "error") {
         closePendingSegments();
-        emit({ status: "failed", ...(result.completion?.finishReason === "error" ? { error: "子代理运行失败" } : {}) });
+        emit({
+          status: "failed",
+          ...(result.completion?.finishReason === "error" && result.finalText
+            ? { error: result.finalText }
+            : {}),
+        });
       } else {
         closePendingSegments();
         emit({ status: "completed", final: result.finalText });

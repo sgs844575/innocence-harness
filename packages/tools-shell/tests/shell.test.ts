@@ -137,15 +137,8 @@ describe("ShellPlugin", () => {
   });
 });
 
-describe("bashTool persistence policy", () => {
+describe("bashTool permission policy", () => {
   const SECRET = "SHELL-SECRET-8e17c3";
-
-  it("persists the full command verbatim (no redaction — owner decision)", () => {
-    const command = "npm test -- -u";
-    expect(bashTool.persistArgs({ command })).toEqual({ command });
-    expect(bashTool.persistArgs({ command: `curl -H "Authorization: Bearer ${SECRET}" https://x/y` }).command)
-      .toContain(SECRET);
-  });
 
   it("resource scope carries the full command", async () => {
     const resource = await bashTool.permissionResource({ command: "npm test" }, ctx());
@@ -162,7 +155,7 @@ describe("bashTool persistence policy", () => {
     const request = async (raw: string): Promise<PermissionRequest> => ({
       toolName: "Bash",
       resource: await bashTool.permissionResource({ command: raw }, ctx()),
-      args: bashTool.persistArgs({ command: raw }),
+      args: { command: raw },
     });
     const meta = { readOnly: false, sideEffect: "process" as const };
 
@@ -181,20 +174,20 @@ describe("bashTool persistence policy", () => {
     expect(withFlags.via).toBe("ask");
   });
 
-  it("project allow rules prefix-match against the persisted full command", () => {
+  it("project allow rules prefix-match against the full command", () => {
     const allow = parseRuleSpec("Bash(npm test)", "allow");
     const match = (raw: string) =>
-      allow.match({ toolName: "Bash", args: bashTool.persistArgs({ command: raw }) });
+      allow.match({ toolName: "Bash", args: { command: raw } });
     expect(match("npm test")).toBe("allow");
     expect(match("npm test -- -u")).toBe("allow"); // extra tokens after the prefix are allowed
     expect(match("npm install")).toBe("skip");
     expect(match("npm publish")).toBe("skip");
   });
 
-  it("project deny rules prefix-match against the persisted full command", () => {
+  it("project deny rules prefix-match against the full command", () => {
     const deny = parseRuleSpec("Bash(curl evil.com)", "deny");
     const match = (raw: string) =>
-      deny.match({ toolName: "Bash", args: bashTool.persistArgs({ command: raw }) });
+      deny.match({ toolName: "Bash", args: { command: raw } });
     expect(match("curl evil.com -X POST")).toBe("deny");
     expect(match("curl docs.example.com")).toBe("skip");
     expect(match("echo hi")).toBe("skip");

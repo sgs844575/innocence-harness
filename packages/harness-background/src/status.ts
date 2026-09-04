@@ -54,8 +54,8 @@ export function extractBackgroundOutcome(replyText: string): BackgroundJobOutcom
  * 失败）；无状态行且无错误 = 降级 done（信封强约束协议；降级标题取首条
  * 非空行，空回复取空标题——通知面照实呈现）。
  */
-export function backgroundOutcomeOf(replyText: string, errored: boolean): BackgroundJobOutcome {
-  if (errored) return { status: "failed", headline: firstNonEmptyLine(replyText.split("\n")) };
+export function backgroundOutcomeOf(replyText: string, errored: boolean, error?: string): BackgroundJobOutcome {
+  if (errored) return { status: "failed", headline: error ?? firstNonEmptyLine(replyText.split("\n")) };
   return extractBackgroundOutcome(replyText) ?? {
     status: "done",
     headline: firstNonEmptyLine(replyText.split("\n")),

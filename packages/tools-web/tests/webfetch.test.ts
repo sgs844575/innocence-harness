@@ -129,15 +129,15 @@ describe("web_fetch tool", () => {
     for (const args of badArgs) expect(() => t.validateArgs!(args)).toThrow();
   });
 
-  it("validation errors echo protocol and host only, never the path", () => {
+  it("validation errors include the complete original URL", () => {
     const t = createWebFetchTool();
+    const url = "http://127.0.0.1:8080/secret/path?token=1";
     try {
-      t.validateArgs!({ url: "http://127.0.0.1:8080/secret/path?token=1" });
+      t.validateArgs!({ url });
       expect.unreachable("intranet literal must be rejected");
     } catch (err) {
       const message = String(err);
-      expect(message).toContain("127.0.0.1");
-      expect(message).not.toContain("secret");
+      expect(message).toContain(url);
     }
   });
 
@@ -407,12 +407,6 @@ describe("web_fetch tool", () => {
       kind: "web",
       scope: "example.com",
     });
-  });
-
-  it("persists the url verbatim", () => {
-    const t = createWebFetchTool();
-    expect(t.persistArgs({ url: "https://example.com/a?b=1" })).toEqual({ url: "https://example.com/a?b=1" });
-    expect(t.persistArgs({})).toEqual({ url: "" });
   });
 
   it("description carries the guard baseline and reading discipline", () => {

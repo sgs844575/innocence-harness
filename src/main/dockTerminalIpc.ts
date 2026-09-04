@@ -4,7 +4,7 @@
 // 模块本体保持 Node 可加载以跑 vitest）。
 import fs from "node:fs";
 import os from "node:os";
-import { createPtyManager, type PtyEvent, type PtyManager } from "@innocenceharness/terminal-pty";
+import { createPtyManager, LivePtySession, type PtyEvent, type PtyManager, type ShellLaunch } from "@innocenceharness/terminal-pty";
 import {
   TerminalIpcChannels,
   type DockTerminalCreateRequest,
@@ -61,6 +61,12 @@ export interface DockTerminalIpcService {
 export interface DockTerminalIpcDeps {
   /** Renderer push port (webContents.send wrapper for the main window). */
   send(channel: string, payload: unknown): void;
+  /**
+   * 集成终端 shell 启动命令解析口（常规设置 terminalShell；宿主按当前设置
+   * 惰性解析）。仅新建终端生效——存活会话不受影响（「仅新会话生效」）。
+   * 缺省 = 平台默认 shell。
+   */
+  getShellLaunch?: () => ShellLaunch | undefined;
   /** Manager factory override (tests); defaults to the real node-pty manager. */
   createManager?: (onEvent: (event: PtyEvent) => void) => PtyManager;
 }
@@ -82,7 +88,14 @@ export function createDockTerminalIpcService(deps: DockTerminalIpcDeps): DockTer
     }
   };
 
-  const manager: PtyManager = deps.createManager?.(forward) ?? createPtyManager({ onEvent: forward });
+  const manager: PtyManager =
+    deps.createManager?.(forward) ??
+    createPtyManager({
+      onEvent: forward,
+      // 把设置解析的 shell 注入每个新会话（undefined = 平台默认，同 LivePtySession 回落）。
+      createSession: (init, options) =>
+        new LivePtySession({ ...init, shell: deps.getShellLaunch?.() }, options),
+    });
 
   /** Resolves the live session; write/resize 必须有匹配 ptyId（陈旧渲染端不许动新终端）。 */
   function liveSession(terminalId: string, ptyId: unknown) {

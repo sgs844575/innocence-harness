@@ -76,7 +76,7 @@ function invocation(
   return {
     invocationId: "inv-1",
     toolName,
-    persistedArgs: args,
+    args: args,
     signal: new AbortController().signal,
     scope: { invocationId: "inv-1", toolName },
   };

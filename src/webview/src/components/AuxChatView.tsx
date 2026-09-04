@@ -6,6 +6,8 @@ import { useChatStream } from "../state/useChatStream";
 import { MessageItem } from "./MessageItem";
 import { PermissionCard } from "./PermissionCard";
 import { Composer } from "./Composer";
+import { streamDisplayFromSettings } from "./chat/toolGrouping";
+import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../../shared/codeThemes";
 
 interface Props {
   t: (key: string) => string;
@@ -36,16 +38,18 @@ export function AuxChatView({ t, sessionId, settings, onPatchSettings, onManageM
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   };
   const code = {
-    light: settings?.codeThemeLight ?? "github-light",
-    dark: settings?.codeThemeDark ?? "github-dark",
+    light: settings?.codeThemeLight ?? DEFAULT_CODE_THEME_LIGHT,
+    dark: settings?.codeThemeDark ?? DEFAULT_CODE_THEME_DARK,
     lineNumbers: settings?.codeLineNumbers !== false,
   };
+  // 消息流显示开关（思考/todo/工具分组），与主时间线同律。
+  const streamDisplay = streamDisplayFromSettings(settings);
   return (
     <div data-testid="aux-chat" className="flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-5 px-3 py-4">
           {chat.messages.map((message) => (
-            <MessageItem key={message.id} t={t} message={message} code={code} />
+            <MessageItem key={message.id} t={t} message={message} code={code} stream={streamDisplay} />
           ))}
         </div>
       </div>

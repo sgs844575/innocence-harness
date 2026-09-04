@@ -6,10 +6,12 @@
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ExecutionScopeIdentity } from "@innocenceharness/harness-tools";
 import type { Route } from "@innocenceharness/task-core";
+import type { Message } from "@innocenceharness/harness-session";
+import { createPendingInputMailbox, type PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 import { AgentSession } from "./session";
 import { persistTurn, persistTurnSnapshot } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";
-import { RouteSessionCache, routeCacheKey } from "./route-cache";
+import { RouteSessionCache, routeCacheKey, routeKeyPrefix, sessionDisposedError } from "./route-cache";
 import { buildSession, type RouteBuildContext } from "./runtime-session";
 import {
   DEFAULT_ROUTE_ID,
@@ -28,6 +30,16 @@ let seq = 0;
 const nextId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(seq++).toString(36)}`;
 
 /**
+ * A send parked behind a busy route (queue FIFO entry / steer mailbox data):
+ * settle() resolves the parked send() promise exactly once — when the
+ * request's own turn settles, or immediately when dispose drops it.
+ */
+interface ParkedSend {
+  request: RuntimeSendRequest;
+  settle(): void;
+}
+
+/**
  * Owns one AgentSession per chat-session route, rebuilt when settings
  * change, and translates harness events into the host's streaming UI hooks.
  */
@@ -35,6 +47,13 @@ export class HarnessRuntime {
   private readonly options: RuntimeOptions;
   private readonly cache: RouteSessionCache;
   private readonly buildContexts = new Map<string, RouteBuildContext>();
+  /** Per-route FIFO of sends parked while the route runs a turn (queue lane). */
+  private readonly queues = new Map<string, ParkedSend[]>();
+  /** Per-route steer mailboxes, shared by every session build of the key. */
+  private readonly pendingInputs = new Map<string, PendingInputMailbox>();
+  /** Steer sends parked during the currently active run of each route
+   *  (same ParkedSend objects the mailbox carries as data). */
+  private readonly steerParked = new Map<string, ParkedSend[]>();
 
   constructor(options: RuntimeOptions) {
     this.options = options;
@@ -45,6 +64,7 @@ export class HarnessRuntime {
         buildContexts: this.buildContexts,
         nextId,
         settleDispose: (disposeKey, session) => this.settleDispose(disposeKey, session),
+        pendingInputsFor: (pendingKey) => this.mailboxFor(pendingKey),
       }, key),
       settleDispose: (key, session) => this.settleDispose(key, session),
       log: (level, msg, data) => this.options.hooks.log(level, msg, data),
@@ -56,10 +76,34 @@ export class HarnessRuntime {
    * the host so the IPC handler can return it synchronously before the turn
    * completes. Task identity (non-empty taskId) is stamped on every tool
    * invocation scope of the run, so task middleware can attribute effects.
+   *
+   * A send targeting a BUSY route never starts a second concurrent run (a
+   * mid-run send once silently corrupted the shared history): queue mode
+   * parks the request in the route's FIFO and it auto-starts when the active
+   * run settles; steer mode parks it in the running loop's mailbox for
+   * mid-run injection, and whatever the run never drained becomes an ordinary
+   * queued follow-up at settle. The send() promise of a parked request keeps
+   * the standing contract — it resolves only when the request's own turn has
+   * settled (the injecting run for a drained steer, the follow-up run for a
+   * queued one, immediately with onError when dispose drops it).
    */
   async send(request: RuntimeSendRequest): Promise<void> {
     const routeId = request.routeId || DEFAULT_ROUTE_ID;
     const key = routeCacheKey(request.sessionId, routeId);
+    // A disposing route (tombstoned mid-build) must NOT queue: the running
+    // entry belongs to a doomed build that may never settle, so its queue
+    // would park forever — fall through and fail fast on the tombstone.
+    if (this.cache.isRunning(key) && !this.cache.isDisposing(key)) {
+      return new Promise<void>((resolve) => {
+        const parked: ParkedSend = { request, settle: resolve };
+        if ((request.interactionMode ?? "queue") === "steer") {
+          this.steerIntoRun(key, parked);
+        } else {
+          this.enqueue(key, parked);
+        }
+      });
+    }
+    request.onDisposition?.("started");
     const controller = new AbortController();
     let routeTrace: ReturnType<NonNullable<RuntimeOptions["telemetry"]>["startSessionRoute"]> | undefined;
     this.cache.startRun(key, controller);
@@ -77,6 +121,7 @@ export class HarnessRuntime {
         ...(request.taskId ? { taskId: request.taskId } : {}),
         routeId,
         messageId: request.messageId,
+        message: request.text,
       });
       let fatalError: string | undefined;
       let doneCompletion: TurnCompletion | undefined;
@@ -120,31 +165,48 @@ export class HarnessRuntime {
         summary = await agent.run(request.text, controller.signal, identity);
       } finally {
         unsubscribe();
-        this.cache.endRun(key);
       }
       const completionBase = doneCompletion ?? summary.completion;
       const completion = fatalError
         ? { ...completionBase, finishReason: "error" as const, aborted: false }
         : completionBase;
+      const turnMessages = agent.history.slice(historyStart);
       await persistTurn(persistence, {
         sessionId: request.sessionId,
         turnId: request.messageId,
         routeId,
-        messages: agent.history.slice(historyStart),
+        messages: turnMessages,
         completion,
       });
-      routeTrace?.complete(completion);
+      routeTrace?.complete({
+        ...completion,
+        response: turnMessages,
+        ...(fatalError ? { error: fatalError } : {}),
+      });
       this.options.hooks.onCompleted(request.sessionId, request.messageId, completion);
       if (fatalError) {
         this.options.hooks.onError(request.sessionId, request.messageId, fatalError);
       }
     } catch (err) {
-      routeTrace?.complete({ finishReason: controller.signal.aborted ? "aborted" : "error", aborted: controller.signal.aborted });
+      const error = err instanceof Error ? err.message : String(err);
+      routeTrace?.complete({
+        finishReason: controller.signal.aborted ? "aborted" : "error",
+        aborted: controller.signal.aborted,
+        error,
+      });
       this.options.hooks.onError(
         request.sessionId,
         request.messageId,
-        err instanceof Error ? err.message : String(err),
+        error,
       );
+    } finally {
+      // endRun + the queue/steer continuation live in ONE outer finally:
+      // a build failure (agentFor throw) reaches here too, so the busy face
+      // never pins a dead route, and advanceRoute's startRun lands in the
+      // same synchronous stretch (isRouteRunning has no idle gap while
+      // parked work remains).
+      this.cache.endRun(key);
+      this.advanceRoute(key);
     }
   }
 
@@ -222,14 +284,26 @@ export class HarnessRuntime {
    * Deleting a cache entry alone is not resource cleanup. Never rejects —
    * disposal failures are reported through the log hook. See
    * RouteSessionCache.dispose for the in-flight build/tombstone semantics.
+   *
+   * Queued sends and parked steer inputs of the disposed route(s) are DROPPED
+   * first — explicit user intent outlives a stop but not the session itself;
+   * each dropped send settles through onError (the same fail-fast error a
+   * send on a disposed route gets) so its host-side placeholder never hangs.
    */
   async dispose(sessionId: string, routeId?: string): Promise<void> {
-    if (routeId === undefined) await this.cache.disposeSession(sessionId);
-    else await this.cache.dispose(routeCacheKey(sessionId, routeId || DEFAULT_ROUTE_ID));
+    if (routeId === undefined) {
+      this.dropRouteIntents(routeKeyPrefix(sessionId));
+      await this.cache.disposeSession(sessionId);
+    } else {
+      const key = routeCacheKey(sessionId, routeId || DEFAULT_ROUTE_ID);
+      this.dropRouteIntents(key, true);
+      await this.cache.dispose(key);
+    }
   }
 
   /** Releases every cached agent session and every in-flight build (e.g. app shutdown). */
   async disposeAll(): Promise<void> {
+    this.dropRouteIntents("");
     await this.cache.disposeAll();
   }
 
@@ -262,6 +336,114 @@ export class HarnessRuntime {
       if (this.buildContexts.get(key) === context) this.buildContexts.delete(key);
       throw err;
     }
+  }
+
+  /** The route key's steer mailbox, created on first session build. */
+  private mailboxFor(key: string): PendingInputMailbox {
+    let mailbox = this.pendingInputs.get(key);
+    if (!mailbox) {
+      mailbox = createPendingInputMailbox();
+      this.pendingInputs.set(key, mailbox);
+    }
+    return mailbox;
+  }
+
+  /** Queue lane: park the send in the route's FIFO (drained at run settle). */
+  private enqueue(key: string, parked: ParkedSend): void {
+    const queue = this.queues.get(key) ?? [];
+    queue.push(parked);
+    this.queues.set(key, queue);
+    parked.request.onDisposition?.("queued");
+  }
+
+  /**
+   * Steer lane: park the message in the running loop's mailbox. Only the
+   * session built for THIS route key drains that mailbox, so injection
+   * always lands in a run of the same route session. The mailbox is created
+   * eagerly here: a steer can arrive while the route's session build is
+   * still in flight (the build binds the same mailbox when it lands). A
+   * session that never drains (a replaced agentFactory build) simply leaves
+   * the input for the settle upgrade — it becomes a queued follow-up.
+   */
+  private steerIntoRun(key: string, parked: ParkedSend): void {
+    const request = parked.request;
+    const message: Message = typeof request.text === "string"
+      ? { role: "user", parts: [{ type: "text", text: request.text }] }
+      : { role: request.text.role, parts: [...request.text.parts] };
+    this.mailboxFor(key).push(message, parked);
+    const list = this.steerParked.get(key) ?? [];
+    list.push(parked);
+    this.steerParked.set(key, list);
+    request.onDisposition?.("steered");
+  }
+
+  /**
+   * Run-settle continuation of one route, called synchronously with endRun so
+   * isRouteRunning never shows an idle gap while parked work remains: steers
+   * the run DRAINED mid-run settle their parked send() promises (their
+   * messages rode the just-settled turn); steers it never drained become
+   * ordinary queued follow-ups (user intent outlives the run — including an
+   * aborted one: stop() halts the current turn only, the queue still runs);
+   * then the FIFO head starts and its own send() settles the parked promise.
+   */
+  private advanceRoute(key: string): void {
+    const remainder = this.pendingInputs.get(key)?.drain() ?? [];
+    const remainderSet = new Set(remainder.map((input) => input.data));
+    const parkedSteers = this.steerParked.get(key) ?? [];
+    this.steerParked.delete(key);
+    for (const parked of parkedSteers) {
+      if (!remainderSet.has(parked)) parked.settle();
+    }
+    for (const input of remainder) {
+      const parked = input.data as ParkedSend | undefined;
+      if (parked) this.enqueue(key, parked);
+    }
+    const queue = this.queues.get(key);
+    const next = queue?.shift();
+    if (queue && queue.length === 0) this.queues.delete(key);
+    if (next) void this.send(next.request).then(next.settle, next.settle);
+  }
+
+  /**
+   * Drops parked sends/steer inputs of the matched routes (dispose paths).
+   * `exact` matches one route key; otherwise `match` is a key prefix (""
+   * sweeps all). Dropped requests settle through onError (so host-side
+   * assistant placeholders never hang) and their parked send() promises
+   * resolve; steers already injected into a live turn settle silently — the
+   * aborted turn's own completion covers them.
+   */
+  private dropRouteIntents(match: string, exact = false): void {
+    const matches = (key: string) => (exact ? key === match : key.startsWith(match));
+    const dropped: ParkedSend[] = [];
+    const silent: ParkedSend[] = [];
+    for (const [key, queue] of this.queues) {
+      if (matches(key)) {
+        dropped.push(...queue);
+        this.queues.delete(key);
+      }
+    }
+    for (const [key, mailbox] of this.pendingInputs) {
+      if (!matches(key)) continue;
+      const remainderSet = new Set<unknown>();
+      for (const input of mailbox.drain()) {
+        if (input.data) {
+          remainderSet.add(input.data);
+          dropped.push(input.data as ParkedSend);
+        }
+      }
+      for (const parked of this.steerParked.get(key) ?? []) {
+        if (!remainderSet.has(parked)) silent.push(parked);
+      }
+      this.steerParked.delete(key);
+      this.pendingInputs.delete(key);
+    }
+    for (const parked of dropped) {
+      const { request } = parked;
+      const key = routeCacheKey(request.sessionId, request.routeId || DEFAULT_ROUTE_ID);
+      this.options.hooks.onError(request.sessionId, request.messageId, sessionDisposedError(key).message);
+      parked.settle();
+    }
+    for (const parked of silent) parked.settle();
   }
 
 }

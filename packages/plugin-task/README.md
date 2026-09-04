@@ -8,7 +8,7 @@ before/after 快照，把工作区变更归属到任务（attribution 状态机�
 
 - **捕获中间件**：权限已通过 → 取任务/工作区锁（固定锁序）→ 读版本（CAS）→ 归属闸门 →
   `captureBefore`（仅声明写路径）→ 执行工具 → finally `captureAfter`（watcher + 扫描）→ 追加事件/暂停归属 → 释放锁。
-- **声明路径快照**：声明写路径由 `tool.permissionResource(persistedArgs)` 推导（`kind === "path"` 且非 read），
+- **声明路径快照**：声明写路径由 `tool.permissionResource(args)` 推导（`kind === "path"` 且非 read），
   只使用持久化参数——与权限链看到的一致，原始参数不进本层。
 - **归属状态机**（纯函数）：`candidate → attribution-pending →（task-owned → pending-review / external → excluded）`；
   候选与声明写重叠 → `conflict`；外部归属路径受保护哈希约束，恢复/应用永不触碰。

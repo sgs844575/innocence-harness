@@ -72,7 +72,7 @@ describe("validateArgs rejects malformed todos", () => {
   });
 });
 
-describe("persistence policy (permissionResource / persistArgs)", () => {
+describe("permission resource policy", () => {
   it("resource is a constant session-scoped todo write", () => {
     const resource = todoWriteTool.permissionResource(
       { todos: [item("secret-ish content")] },
@@ -83,27 +83,6 @@ describe("persistence policy (permissionResource / persistArgs)", () => {
     expect(todoWriteTool.permissionResource({ todos: [] }, ctx())).toEqual(resource);
   });
 
-  it("persistArgs keeps model-authored text but clones and strips via the validated path", () => {
-    const todos = [item("任务甲", "in_progress", "high"), item("任务乙")];
-    const persisted = todoWriteTool.persistArgs({ todos });
-    expect(persisted).toEqual({ todos });
-    expect((persisted as { todos: unknown[] }).todos[0]).toMatchObject({
-      content: "任务甲",
-      status: "in_progress",
-      priority: "high",
-    });
-  });
-
-  it("persistArgs shares no nested references with raw args and drops extra fields", () => {
-    const raw = [
-      { content: "任务", status: "pending", priority: "low", extra: "junk", nested: { deep: true } },
-    ];
-    const persisted = todoWriteTool.persistArgs({ todos: raw }) as { todos: unknown[] };
-    expect(persisted.todos).not.toBe(raw);
-    expect(persisted.todos[0]).not.toBe(raw[0]);
-    expect(persisted.todos[0]).toEqual({ content: "任务", status: "pending", priority: "low" });
-    expect(JSON.stringify(persisted)).not.toContain("junk");
-  });
 });
 
 describe("execute semantics", () => {
@@ -169,7 +148,7 @@ describe("plan-mode compatibility (final review I1)", () => {
   const request = async (): Promise<PermissionRequest> => ({
     toolName: "TodoWrite",
     resource: await todoWriteTool.permissionResource(args, ctx()),
-    args: todoWriteTool.persistArgs(args),
+    args,
   });
 
   it("plan mode resolves TodoWrite to allow — no planMode hard deny", async () => {

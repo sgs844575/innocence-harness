@@ -1,7 +1,7 @@
 // plugin-team tests (batch 4E task 1): the send_message tool contract
 // (shape trio, field-name-only validation errors, permission resource,
-// full-text persisted args, port fake three states + reply cap + empty
-// reply), the peer-authority envelope anchors and turn composition, and
+// port fake three states + reply cap + empty reply), the peer-authority
+// envelope anchors and turn composition, and
 // the factory plugin mounting on a real kernel Context (the distribution
 // default export is the factory itself).
 import { describe, expect, it } from "vitest";
@@ -79,18 +79,8 @@ describe("send_message tool shape", () => {
     });
   });
 
-  it("persistArgs carries the teammate and the full message body verbatim", () => {
-    const persisted = tool.persistArgs({ teammate: "worker-1", message: "secret body text" });
-    expect(persisted).toEqual({
-      teammate: "worker-1",
-      message: "secret body text",
-    });
-    expect(JSON.stringify(persisted)).toContain("secret body text");
-  });
-
   it("registration gate: all fail-closed SPI members exist", () => {
     expect(typeof tool.permissionResource).toBe("function");
-    expect(typeof tool.persistArgs).toBe("function");
     expect(typeof tool.validateArgs).toBe("function");
     expect(typeof tool.execute).toBe("function");
   });
@@ -179,7 +169,7 @@ describe("peer-authority envelope", () => {
 });
 
 describe("team plugin factory", () => {
-  it("registers send_message on a real kernel Context through the persistence gate", async () => {
+  it("registers send_message on a real kernel Context through the permission gate", async () => {
     const port = fakePort(async () => ({ ok: true, reply: "pong" }));
     const plugin = createTeamPlugin({ sendToTeammate: port });
     expect(plugin.name).toBe("team");

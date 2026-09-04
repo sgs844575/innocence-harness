@@ -167,6 +167,15 @@ export function migrateLegacyTranscripts(
 ): TranscriptMigrationOutcome {
   const outcome: TranscriptMigrationOutcome = { moved: [], skipped: [], failed: [] };
   const root = sessionsRoot(storeDir);
+  // 目标已存在的 id 整组跳过（新布局优先，不覆盖）：以树内主文件 id 集合
+  // 为准，而非 mtime 推导的具体桶——历史迁移过的 id 可能落在与本次推导
+  // 不同的日期桶，按桶判定会 fork 出第二个主文件。迁移成功后同样入集，
+  // 防止多源根携带同一 id 时重复落位。
+  const treeMainIds = new Set(
+    collectJsonlFiles(root)
+      .map((file) => mainCandidateName(path.basename(file)))
+      .filter((name): name is string => name !== null),
+  );
   const sources = sourceRoots
     .map((source) => (path.basename(source) === "transcripts" ? source : path.join(source, "transcripts")))
     .filter((source, index, all) => source !== root && all.indexOf(source) === index);
@@ -195,7 +204,7 @@ export function migrateLegacyTranscripts(
       try {
         const createdAt = fs.statSync(file).mtimeMs;
         const target = sessionFileInTree(root, name, createdAt);
-        if (fs.existsSync(target)) {
+        if (treeMainIds.has(name)) {
           outcome.skipped.push(name);
           continue;
         }
@@ -217,6 +226,7 @@ export function migrateLegacyTranscripts(
           }
         }
         outcome.moved.push(name);
+        treeMainIds.add(name);
       } catch (error) {
         outcome.failed.push(`${name}: ${String(error)}`);
       }

@@ -9,6 +9,7 @@ import type { SessionSpineSuite } from "./session-spine";
 
 import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
+import type { PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 
 export interface AgentSessionOptions {
   plugins: SessionPlugin[];
@@ -53,6 +54,14 @@ export interface AgentSessionOptions {
   lifecycle?: SubagentLifecyclePort;
   /** Optional allow-listed observability port forwarded to the agent loop. */
   telemetry?: TraceAdapter;
+  /**
+   * Steer mailbox bound into this session's loop (interactionMode "steer"):
+   * the runtime owns one mailbox per route key and pushes mid-run user
+   * messages into it; the loop drains them at turn tops. Spawner child
+   * sessions never inherit it (createSpawnerChildSession lists options
+   * explicitly).
+   */
+  pendingInputs?: PendingInputMailbox;
   logger?: Logger;
 }
 

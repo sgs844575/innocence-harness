@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RightDock } from "./RightDock";
 import {
@@ -317,6 +317,22 @@ describe("RightDock 子代理标签", () => {
     expect(screen.getByTestId("chat-waiting")).toBeTruthy();
   });
 
+  it("运行空档（末段非思考、无流式正文）也显示等待提示，且不带转圈加载", () => {
+    const toolTailRun: SubagentRun = {
+      ...runningRun,
+      text: "",
+      entries: [{ kind: "tool", tool: { name: "Read", phase: "call", at: 1100 } }],
+    };
+    const { container } = render(
+      <RightDock {...baseProps} t={t} tabs={[subagentsTab]} activeTabId="subagents" runs={[toolTailRun]} selectedChildId="c1" />,
+    );
+    const waiting = screen.getByTestId("chat-waiting");
+    expect(waiting.textContent).toBe("chat.waiting.0");
+    // 子代理会话的等待行只留轮换文案，无 animate-spin 转圈图标。
+    expect(waiting.querySelector(".animate-spin")).toBeNull();
+    expect(container.querySelector(".stream-caret")).toBeNull();
+  });
+
   it("思考分段：工具活动打断的思考各成幽灵行，与工具组按事件顺序穿插", () => {
     const run: SubagentRun = {
       ...doneRun,
@@ -520,6 +536,30 @@ describe("RightDock 文件标签", () => {
     );
     expect(screen.getByText("tool.status.empty")).toBeTruthy();
   });
+
+  it("读取结果文件标签复用代码主题，并服从关闭行号设置", async () => {
+    const textTab: DockTabInstance = {
+      id: "file:src/a.ts",
+      kind: "file",
+      file: { path: "src/a.ts", originalText: "8\tconst answer = 42;", numbered: true },
+      createdAt: 2,
+    };
+    const { container } = render(
+      <RightDock
+        {...baseProps}
+        t={t}
+        tabs={[textTab]}
+        activeTabId={textTab.id}
+        code={{ light: "one-light", dark: "dracula", lineNumbers: false }}
+      />,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('[data-streamdown="code-block"]')?.getAttribute("data-language")).toBe("typescript");
+      expect(container.querySelector("pre span span")?.getAttribute("style")).toContain("--shiki-dark");
+    }, { timeout: 30_000 });
+    expect(container.querySelector("code")?.className).not.toContain("counter-reset");
+    expect(container.textContent).not.toContain("8\t");
+  }, 60_000);
 });
 
 describe("RightDock 终端标签", () => {

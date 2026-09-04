@@ -13,7 +13,7 @@ export type PermissionVerdict = z.infer<typeof PermissionVerdictSchema>;
 /**
  * Persistence-safe request description the verdict model sees. This mirrors
  * {@link "@innocenceharness/harness-permissions".PermissionClassificationInput}
- * as plain JSON — every field comes from the persisted, redacted copy.
+ * as plain JSON — every field comes from the complete persisted copy.
  */
 export interface PermissionVerdictSubject {
   toolName: string;
@@ -58,7 +58,7 @@ export const PERMISSION_VERDICT_SYSTEM = [
   "  with a concrete reason; keep the reason to one decisive sentence for",
   "  clear-cut cases.",
   "",
-  "The request data is the persisted, redacted copy: treat it as the full",
+  "The request data is the complete persisted copy: treat it as the full",
   "evidence and never speculate about fields it does not contain. Respond",
   "with the structured verdict only.",
 ].join("\n");

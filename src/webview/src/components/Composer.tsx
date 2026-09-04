@@ -63,7 +63,9 @@ export function Composer({
 
   const submit = (): void => {
     const text = value.trim();
-    if (!text || streaming) return;
+    // 流式中允许发送：主进程按 interactionMode 排队/引导（输入框照常清空、
+    // 消息立即上屏）；流式中的可见动作钮仍是停止（见下方按钮分支）。
+    if (!text) return;
     onSend(text);
     setValue("");
     requestAnimationFrame(() => ref.current?.focus());
@@ -82,7 +84,9 @@ export function Composer({
     requestAnimationFrame(() => ref.current?.focus());
   };
 
-  const canSend = value.trim().length > 0 && !streaming;
+  // 发送门槛只看输入是否有内容：流式中回车仍可发送（排队/引导由主进程
+  // 决定）；按钮禁用面仍叠加 !streaming（流式中按钮是停止，永不禁用）。
+  const canSend = value.trim().length > 0;
 
   // 反色圆角动作钮（参考规格）：品牌底（暗色=白）+ 反色图标。
   const squareButton =

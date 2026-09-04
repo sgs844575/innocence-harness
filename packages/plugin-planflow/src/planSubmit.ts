@@ -3,23 +3,19 @@
 // straight to the user ask — submitting the plan IS the approval prompt —
 // and the planflow listener turns that verdict into the engine's plan
 // approval plus the unlock/reject reminders.
-import { sha256Hex, type Tool } from "@innocenceharness/harness-tools";
+import { type Tool } from "@innocenceharness/harness-tools";
 
 export const PLAN_SUBMIT_TOOL_NAME = "plan_submit";
 
-/**
- * Parses and validates the raw submission args. Throws naming the failing
- * field (never its content). Defense-in-depth only: the loop's preparation
- * phase replaces any thrown diagnostic with a neutral failure message
- * before anything is persisted, and execute-time re-validation keeps even
- * the unredacted execute error path content-free.
- */
+/** Parses and validates the raw submission args with the complete payload in
+ * diagnostics so validation failures remain directly reproducible. */
 function requirePlan(args: Record<string, unknown>): { plan: string; summary?: string } {
+  const received = JSON.stringify(args);
   if (typeof args.plan !== "string" || args.plan.trim().length === 0) {
-    throw new Error("缺少必填参数 plan（非空字符串）");
+    throw new Error(`缺少必填参数 plan（非空字符串）；收到 ${received}`);
   }
   if (args.summary !== undefined && typeof args.summary !== "string") {
-    throw new Error("可选参数 summary 必须是字符串");
+    throw new Error(`可选参数 summary 必须是字符串；收到 ${received}`);
   }
   return args.summary === undefined ? { plan: args.plan } : { plan: args.plan, summary: args.summary };
 }
@@ -40,7 +36,7 @@ export const SUBMIT_CONFIRMATION = [
 
 /**
  * Session-scoped plan submission tool. The full plan text lives only in the
- * transcript through persisted tool-call args ({summary?, plan, planSha256})
+ * transcript through the complete tool-call args
  * — nothing is ever written to the workspace.
  */
 export const planSubmitTool: Tool = {
@@ -67,14 +63,6 @@ export const planSubmitTool: Tool = {
   permissionResource() {
     // 会话级计划呈报：scope 恒为 session（不携带计划内容或路径等原始值）。
     return { action: "submit", kind: "plan", scope: "session" };
-  },
-  persistArgs(args) {
-    // 计划全文由模型撰写、面向 transcript 留档（后续引用而非重述的载体）；
-    // sha256Hex 供会话内的计划变更检测，summary 仅在提供时持久化。
-    const { plan, summary } = requirePlan(args);
-    const persisted: Record<string, unknown> = { plan, planSha256: sha256Hex(plan) };
-    if (summary !== undefined) persisted.summary = summary;
-    return persisted;
   },
   async execute(args) {
     requirePlan(args);

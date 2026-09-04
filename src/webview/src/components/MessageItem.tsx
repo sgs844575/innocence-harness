@@ -9,6 +9,7 @@ import { ThinkingRow } from "./chat/ThinkingRow";
 import { ToolTimeline } from "./chat/ToolRow";
 import { segmentParts } from "./chat/segmentParts";
 import { buildToolRows, type ToolRowModel } from "./chat/toolRows";
+import type { StreamDisplayOptions } from "./chat/toolGrouping";
 import type { TaskRowClue } from "../state/subagentRuns";
 
 interface Props {
@@ -22,6 +23,10 @@ interface Props {
   onContinue?: () => void;
   /** 代码外观（外观设置）：高亮主题对 + 行号开关。 */
   code?: CodeAppearance;
+  /** 消息流显示开关（设置解析结果）：思考关闭 = 每条助手消息只渲染首个
+   *  思考块；todo 关闭 = 时间线隐藏 todo 工具行；分组 = 连续同类工具行聚合。
+   *  缺省 = 旧行为（全显、不分组）。 */
+  stream?: StreamDisplayOptions;
   /** 子代理工具行：在右侧面板中查看该次运行（载荷含关联键/标题/结果文本，
    *  无法唯一确定时落归档列表）。 */
   onOpenSubagent?: (clue: TaskRowClue) => void;
@@ -29,18 +34,24 @@ interface Props {
   onOpenFile?: (row: ToolRowModel) => void;
 }
 
-export function MessageItem({ t, message, canEdit, onEditSend, continuable, onContinue, code, onOpenSubagent, onOpenFile }: Props): React.JSX.Element {
+export function MessageItem({ t, message, canEdit, onEditSend, continuable, onContinue, code, onOpenSubagent, onOpenFile, stream }: Props): React.JSX.Element {
   if (message.role === "user") {
     return <UserBubble t={t} message={message} canEdit={canEdit === true} onEditSend={onEditSend} />;
   }
 
   const streaming = message.streaming === true;
   const segments = segmentParts(message.parts);
+  // 思考显示关闭：每条助手消息只渲染首个思考块，后续思考段跳过。
+  let thinkingSeen = false;
   // 段间距 16px（参考行列表 gap-4）：思考行/工具时间线/正文段之间统一节奏。
   return (
     <div className="rise-in group/assistant-row flex flex-col gap-4">
       {segments.map((segment, index) => {
         if (segment.kind === "thinking") {
+          if (stream !== undefined && !stream.showThinking) {
+            if (thinkingSeen) return null;
+            thinkingSeen = true;
+          }
           return (
             <ThinkingRow
               key={index}
@@ -51,7 +62,13 @@ export function MessageItem({ t, message, canEdit, onEditSend, continuable, onCo
           );
         }
         if (segment.kind === "tools") {
-          return <ToolTimeline key={index} t={t} rows={buildToolRows(segment.parts)} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} />;
+          // todo 显示关闭：过滤 todo 工具行（胶囊清单数据源 latestTodos 不受影响）；
+          // 段内行被滤空时整段不渲染。
+          const rows = buildToolRows(segment.parts).filter(
+            (row) => stream === undefined || stream.showTodos || row.verbKey !== "tool.verb.todo",
+          );
+          if (rows.length === 0) return null;
+          return <ToolTimeline key={index} t={t} rows={rows} code={code} onOpenSubagent={onOpenSubagent} onOpenFile={onOpenFile} grouping={stream?.grouping} />;
         }
         return (
           <div key={index} className="min-h-6">

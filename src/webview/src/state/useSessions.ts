@@ -1,8 +1,10 @@
 // 会话列表控制器：列表/选择/新建/删除与落地态项目选择。
 // 新建 ≠ 创建——落地态只是回到无会话，首条消息发送时才 createSession。
+// 激活会话随 uiState 持久化——重启后恢复到上次关闭时打开的会话。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "../../../shared/ipc";
 import { api, hasBridge } from "../lib/ipc";
+import { loadUiState, patchUiState } from "./uiState";
 
 export interface RecentProject {
   path: string;
@@ -36,7 +38,7 @@ export function withoutAuxSessions(list: Session[]): Session[] {
 
 export function useSessions(): SessionsController {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => loadUiState().lastSessionId);
   const [pendingProject, setPendingProject] = useState("");
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
@@ -45,10 +47,25 @@ export function useSessions(): SessionsController {
 
   useEffect(() => {
     if (!hasBridge()) return;
-    void api.listSessions().then((list) => setSessions(withoutAuxSessions(list))).catch(() => undefined);
+    void api
+      .listSessions()
+      .then((list) => {
+        const visible = withoutAuxSessions(list);
+        setSessions(visible);
+        // 恢复的上次会话可能已被删除——悬空 id 落回落地态。
+        if (activeIdRef.current !== null && !visible.some((s) => s.id === activeIdRef.current)) {
+          setActiveId(null);
+        }
+      })
+      .catch(() => undefined);
     const off = api.onSessionsChanged((list) => setSessions(withoutAuxSessions(list)));
     return off;
   }, []);
+
+  // 激活会话变更即存档（null = 落地态），关闭后重启恢复。
+  useEffect(() => {
+    patchUiState({ lastSessionId: activeId });
+  }, [activeId]);
 
   const selectSession = useCallback((id: string) => setActiveId(id), []);
   const newSession = useCallback(() => setActiveId(null), []);

@@ -1,4 +1,4 @@
-// 侧栏持久状态：归档标记与分组（sidebar:* 通道）。分组突变（创建/移动/置顶）
+// 侧栏持久状态：归档/置顶标记与分组（sidebar:* 通道）。分组突变（创建/移动/置顶）
 // 写后主进程广播 sidebar:changed，本地状态经订阅刷新。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SidebarGroup, SidebarState } from "../../../shared/sidebarIpc";
@@ -6,9 +6,14 @@ import { api, hasBridge } from "../lib/ipc";
 
 export interface SidebarController {
   archived: Readonly<Record<string, boolean>>;
+  pinned: Readonly<Record<string, boolean>>;
+  unread: Readonly<Record<string, boolean>>;
   groups: readonly SidebarGroup[];
   archive: (id: string) => Promise<void>;
   restore: (id: string) => Promise<void>;
+  /** 置顶/取消置顶（侧栏行首 Pin 图标 + 各容器内排前）。 */
+  setPinned: (id: string, pinned: boolean) => Promise<void>;
+  markUnread: (id: string, unread: boolean) => Promise<void>;
   /** 新建分组（名称/颜色 id）。 */
   createGroup: (name: string, color: string) => Promise<void>;
   /** 移入分组；groupId = null 移出到未分组。 */
@@ -36,6 +41,14 @@ export function useSidebarState(): SidebarController {
 
   const restore = useCallback(async (id: string) => {
     await api.archiveSession(id, false).catch(() => undefined);
+  }, []);
+
+  const setPinned = useCallback(async (id: string, pinned: boolean) => {
+    await api.pinSession(id, pinned).catch(() => undefined);
+  }, []);
+
+  const markUnread = useCallback(async (id: string, unread: boolean) => {
+    await api.markSessionUnread(id, unread).catch(() => undefined);
   }, []);
 
   const createGroup = useCallback(async (name: string, color: string) => {
@@ -67,9 +80,13 @@ export function useSidebarState(): SidebarController {
 
   return {
     archived: state?.archived ?? {},
+    pinned: state?.pinned ?? {},
+    unread: state?.unread ?? {},
     groups: state?.groups ?? [],
     archive,
     restore,
+    setPinned,
+    markUnread,
     createGroup,
     moveSessionTo,
     moveGroupSessionToTop,
