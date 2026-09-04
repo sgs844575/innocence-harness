@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
-import { createRunLoop } from "../src";
+import { createRunLoop, runLoop } from "../src";
 import { PermissionEngine } from "@innocenceharness/harness-permissions";
 import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
@@ -52,12 +52,20 @@ function sdkText(text: string): MockStreamPart[] {
   ];
 }
 
-function sdkFinish(reason: "stop" | "tool-calls" = "stop"): MockStreamPart {
+function sdkFinish(
+  reason: "stop" | "tool-calls" = "stop",
+  inputTokens: { total: number; noCache: number; cacheRead: number } = {
+    total: 1,
+    noCache: 1,
+    cacheRead: 0,
+  },
+  outputTotal = 1,
+): MockStreamPart {
   return {
     type: "finish",
     usage: {
-      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-      outputTokens: { total: 1, text: 1, reasoning: 0 },
+      inputTokens: { ...inputTokens, cacheWrite: 0 },
+      outputTokens: { total: outputTotal, text: outputTotal, reasoning: 0 },
     },
     finishReason: { unified: reason, raw: reason },
   };
@@ -336,12 +344,15 @@ describe("runLoop", () => {
     expect(model.doStreamCalls).toHaveLength(2);
     expect(events.map((event) => event.type)).toEqual([
       "turnStart",
+      // 每个模型步返回后立即发一次计量事件（步级上下文快照）。
+      "contextUsage",
       "assistantMessage",
       "toolCall",
       "permission",
       "toolResult",
       "turnStart",
       "token",
+      "contextUsage",
       "assistantMessage",
       "done",
     ]);
@@ -1053,5 +1064,92 @@ describe("runLoop", () => {
     expect(started).toEqual(["Peek", "Mutate", "Peek2"]);
     const results = history[2].parts as Array<{ content: string }>;
     expect(results.map((part) => part.content)).toEqual(["Peek", "mutated", "Peek2"]);
+  });
+
+  it("模型步带 usage 时发 contextUsage 事件且六类之和恒等", async () => {
+    const { provider } = sdkProviderForTurns([
+      [...sdkText("done"), sdkFinish("stop", { total: 500, noCache: 250, cacheRead: 250 }, 10)],
+    ]);
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    const events: HarnessEvent[] = [];
+    await runLoop([], textMessage("user", "hi"), {
+      provider,
+      tools: kernel.tools,
+      permission: allowAll(),
+      systemPrompt: "test",
+      workspaceRoot: "/tmp/ws",
+      onEvent: (event) => events.push(event),
+      systemSegments: { skills: "abcd" },
+    });
+
+    const evt = events.find(
+      (event): event is Extract<HarnessEvent, { type: "contextUsage" }> =>
+        event.type === "contextUsage",
+    );
+    expect(evt).toBeDefined();
+    const snapshot = evt!.snapshot;
+    const sum = Object.values(snapshot.breakdown).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(500);
+    expect(snapshot.inputTokens).toBe(500);
+    expect(snapshot.cache).toEqual({ inputTokens: 500, cachedInputTokens: 250 });
+    // LoopOptions 的技能分段被单列成一类（缺省时并入系统提示词类）。
+    expect(snapshot.breakdown.skills).toBeGreaterThan(0);
+    expect(snapshot.modelId).toBe("sdk-model");
+  });
+
+  it("无 usage 的步不发 contextUsage", async () => {
+    const provider = scriptedProvider([{ text: "答案" }]);
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    const events: HarnessEvent[] = [];
+    await runLoop([], textMessage("user", "hi"), {
+      provider,
+      tools: kernel.tools,
+      permission: allowAll(),
+      systemPrompt: "test",
+      workspaceRoot: "/tmp/ws",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(events.some((event) => event.type === "contextUsage")).toBe(false);
+  });
+
+  it("收尾步同样发 contextUsage（每模型步一事件）", async () => {
+    const loopTool = fakeTool("Loop", async () => ({ content: "again" }));
+    const { provider } = sdkProviderForTurns([
+      [
+        { type: "stream-start", warnings: [] },
+        sdkToolCall("loop-1", "Loop", {}),
+        sdkFinish("tool-calls"),
+      ],
+      [...sdkText("wrap-up"), sdkFinish("stop", { total: 500, noCache: 250, cacheRead: 250 }, 10)],
+    ]);
+    const kernel = new Context();
+    await kernel.plugin(ToolsPlugin);
+    kernel.tools.register(loopTool);
+    const events: HarnessEvent[] = [];
+    const result = await runLoop([], textMessage("user", "go"), {
+      provider,
+      tools: kernel.tools,
+      permission: allowAll(),
+      systemPrompt: "test",
+      workspaceRoot: "/tmp/ws",
+      onEvent: (event) => events.push(event),
+      maxTurns: 1,
+    });
+
+    // 轮次封顶触发收尾步：主步 + 收尾步各发一次。
+    expect(result.finalText).toBe("wrap-up");
+    const usages = events.filter(
+      (event): event is Extract<HarnessEvent, { type: "contextUsage" }> =>
+        event.type === "contextUsage",
+    );
+    expect(usages).toHaveLength(2);
+    expect(usages[1]!.snapshot.inputTokens).toBe(500);
+    for (const usage of usages) {
+      const sum = Object.values(usage.snapshot.breakdown).reduce((a, b) => a + b, 0);
+      expect(sum).toBe(usage.snapshot.inputTokens);
+    }
   });
 });

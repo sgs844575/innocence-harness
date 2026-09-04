@@ -22,6 +22,7 @@ import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innoce
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
 import { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import { breakdownFromRequest, calibrate } from "@innocenceharness/harness-context-meter";
 import type { PendingInputMailbox } from "./pending-inputs";
 
 export interface LoopOptions {
@@ -54,6 +55,8 @@ export interface LoopOptions {
    * mailbox for the host (it becomes a queued follow-up run).
    */
   pendingInputs?: PendingInputMailbox;
+  /** 系统提示词分段（技能索引段原文，供计量把技能单列；缺省并入系统提示词）。 */
+  systemSegments?: { skills?: string };
 }
 
 export interface LoopResult {
@@ -222,6 +225,14 @@ function providerModel(provider: Provider): ProviderModel | undefined {
     : undefined;
 }
 
+/** Best-effort model id probe for meter metadata (absent on legacy providers). */
+function providerModelId(provider: Provider): string | undefined {
+  const model = (provider as Provider & { model?: unknown }).model as
+    | Partial<ProviderModel>
+    | undefined;
+  return typeof model?.modelId === "string" ? model.modelId : undefined;
+}
+
 /**
  * Context compaction still accepts the legacy provider contract. When a model
  * carrier is present, adapt one controlled model step to that contract rather
@@ -345,15 +356,36 @@ export async function runLoop(
         if (compacted) onEvent({ type: "compaction", removedMessages: history.length });
       }
 
+      const specs = tools.specs();
+      const rawBreakdown = breakdownFromRequest({
+        systemSegments: {
+          prompt: systemPrompt,
+          ...(opts.systemSegments?.skills ? { skills: opts.systemSegments.skills } : {}),
+        },
+        tools: specs.map((spec) => ({
+          name: spec.name,
+          schemaText: `${spec.description}\n${JSON.stringify(spec.parameters ?? {})}`,
+        })),
+        messages: history,
+      });
       const step = await runModelStep({
         provider,
         system: systemPrompt,
         messages: history,
-        tools: tools.specs(),
+        tools: specs,
         signal,
         onEvent,
         telemetry,
       });
+      if (step.metadata?.usage && step.metadata.usage.inputTokens !== undefined) {
+        onEvent({
+          type: "contextUsage",
+          snapshot: calibrate(rawBreakdown, step.metadata.usage.inputTokens, {
+            modelId: providerModelId(provider),
+            cachedInputTokens: step.metadata.usage.cachedInputTokens,
+          }),
+        });
+      }
       if (step.metadata) {
         stepMetadata.push(step.metadata);
         usage = addUsage(usage, step.metadata.usage);
@@ -624,6 +656,14 @@ export async function runLoop(
       tail?.role === "user" &&
       tail.parts.some((part) => part.type === "toolResult")
     ) {
+      const epilogueRawBreakdown = breakdownFromRequest({
+        systemSegments: {
+          prompt: systemPrompt,
+          ...(opts.systemSegments?.skills ? { skills: opts.systemSegments.skills } : {}),
+        },
+        tools: [],
+        messages: history,
+      });
       const epilogue = await runModelStep({
         provider,
         system: systemPrompt,
@@ -633,6 +673,15 @@ export async function runLoop(
         onEvent,
         telemetry,
       });
+      if (epilogue.metadata?.usage && epilogue.metadata.usage.inputTokens !== undefined) {
+        onEvent({
+          type: "contextUsage",
+          snapshot: calibrate(epilogueRawBreakdown, epilogue.metadata.usage.inputTokens, {
+            modelId: providerModelId(provider),
+            cachedInputTokens: epilogue.metadata.usage.cachedInputTokens,
+          }),
+        });
+      }
       if (epilogue.metadata) {
         stepMetadata.push(epilogue.metadata);
         usage = addUsage(usage, epilogue.metadata.usage);

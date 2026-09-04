@@ -1,4 +1,5 @@
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { MessagePart } from "./types";
 import type { PermissionResolution } from "@innocenceharness/harness-permissions";
 import type { PermissionResource, ToolCallInfo } from "@innocenceharness/harness-permissions";
@@ -37,6 +38,8 @@ export type HarnessEvent =
     }
   | { type: "compaction"; removedMessages: number }
   | { type: "error"; message: string; fatal: boolean }
-  | { type: "done"; turns: number; completion?: TurnCompletion };
+  | { type: "done"; turns: number; completion?: TurnCompletion }
+  /** 每个模型步（含收尾步）之后的上下文容量快照；无 usage 的步不发。 */
+  | { type: "contextUsage"; snapshot: ContextUsageSnapshot };
 
 export type HarnessEventListener = (event: HarnessEvent) => void;
