@@ -291,6 +291,8 @@ export function registerIpcHandlers(): void {
     broadcastSidebar();
   });
   ipcMain.handle(IPC.messagesList, (_e, sessionId: string) => sessions.listMessages(sessionId));
+  // 上下文容量指示器：按会话查当前计量快照（未水合先惰性水合；无 → null）。
+  ipcMain.handle(IPC.contextUsageQuery, (_e, sessionId: string) => sessions.getContextUsage(sessionId));
   ipcMain.handle(IPC.subagentHistory, (_e, sessionId: string) => sessions.listSubagentHistory(sessionId));
   ipcMain.handle(IPC.subagentCancel, (_e, sessionId: string, childId: string) =>
     cancelSubagentRun(sessionId, childId));

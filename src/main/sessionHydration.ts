@@ -8,7 +8,12 @@
 import fs from "node:fs";
 import { decodeTranscript } from "@innocenceharness/harness-electron";
 import type { SessionRecord } from "./sessionIndexStore";
-import { messageText, type ChatMessage, type MessagePart } from "../shared/ipc";
+import {
+  messageText,
+  type ChatContextUsageSnapshot,
+  type ChatMessage,
+  type MessagePart,
+} from "../shared/ipc";
 
 export interface HydrateOptions {
   /** Transcript path for this session; null = no persistence dir (empty store). */
@@ -78,6 +83,16 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
     return; // No transcript yet (created but never chatted in).
   }
   const decoded = decodeTranscript(raw);
+  // 计量快照与消息历史相互独立：转录里有 context-usage 行就回填（last-wins，
+  // 深拷贝切断与解码产物的别名），即使历史为空/中断也供查询面回放。
+  if (decoded.contextUsage) {
+    const usage: ChatContextUsageSnapshot = {
+      ...decoded.contextUsage,
+      breakdown: { ...decoded.contextUsage.breakdown },
+      cache: { ...decoded.contextUsage.cache },
+    };
+    record.contextUsage = usage;
+  }
   const history = decoded.history.length > 0 ? decoded.history : null;
   let at = record.createdAt;
   const parsedAt = Date.parse(decoded.lastAt ?? "");

@@ -489,6 +489,14 @@ const runtime = new HarnessRuntime({
   // 会话转写落盘端口：宿主持有 sessions/ 日期树布局（id → 文件映射由
   // 会话外观解析），主/路由文件、实时快照与终稿行都走同一解析。
   transcriptFileFor: sessions.runtimeTranscriptFileFor,
+  // 上下文计量的会话级 cache 基数（重启恢复）：纯读会话存储——转录的
+  // context-usage 行经 hydration 回填，读写同源；运行时每步富化前都会取。
+  contextUsageBaseFor: (sessionId) => {
+    const current = sessions.getContextUsage(sessionId);
+    return current
+      ? { inputTokens: current.cache.inputTokens, cachedInputTokens: current.cache.cachedInputTokens }
+      : undefined;
+  },
   telemetry,
   // Route scopes: every session build mounts into a fresh kernel scope below
   // the plugin-boot root (dynamic staging kernel) — session dispose unwinds

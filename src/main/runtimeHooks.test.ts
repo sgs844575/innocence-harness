@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import { IPC, type ChatCompletionMetadata, type ChatMessage } from "../shared/ipc";
 
 const state = vi.hoisted(() => {
@@ -11,10 +12,14 @@ const state = vi.hoisted(() => {
     updateMessage: vi.fn((_: string, messageId: string, patch: (message: ChatMessage) => void) => {
       patch(messages.get(messageId)!);
     }),
+    updateContextUsage: vi.fn(),
   };
 });
 
-vi.mock("./sessions", () => ({ updateMessage: state.updateMessage }));
+vi.mock("./sessions", () => ({
+  updateMessage: state.updateMessage,
+  updateContextUsage: state.updateContextUsage,
+}));
 vi.mock("./appWindow", () => ({
   getMainWindow: () => ({ isDestroyed: () => false, webContents: { send: state.send } }),
 }));
@@ -84,6 +89,26 @@ describe("runtime completion bridge", () => {
       sessionId: "session",
       messageId: "assistant",
       completion,
+    });
+  });
+
+  it("onContextUsage 更新 store 并广播 chat:context", () => {
+    // runtime 在钩子前已富化（会话级 cache 累计 + contextWindow）；变量先
+    // 落地以携带富化字段，避开字面量的多余属性检查。
+    const enriched: ContextUsageSnapshot & { contextWindow?: number } = {
+      inputTokens: 200,
+      breakdown: { systemPrompt: 60, skills: 10, systemTools: 20, mcpTools: 10, messages: 90, other: 10 },
+      cache: { inputTokens: 300, cachedInputTokens: 150 },
+      contextWindow: 1000,
+    };
+    const hooks = createRuntimeHooks(new Map());
+
+    hooks.onContextUsage!("session", enriched);
+
+    expect(state.updateContextUsage).toHaveBeenCalledWith("session", enriched);
+    expect(state.send).toHaveBeenCalledWith(IPC.chatContextUsage, {
+      sessionId: "session",
+      snapshot: expect.objectContaining({ inputTokens: 200, contextWindow: 1000 }),
     });
   });
 

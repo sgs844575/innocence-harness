@@ -5,11 +5,14 @@
 // a renderer dialog (questionAutoContinue 开启时带 5 分钟自动拒绝兜底，
 // 关闭时一直等待用户回答).
 import type { BrowserWindow } from "electron";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { RuntimeHooks } from "@innocenceharness/harness-electron";
 import {
   IPC,
   appendText,
   type ChatCompletionMetadata,
+  type ChatContextUsageEvent,
+  type ChatContextUsageSnapshot,
   type ChatPermissionEvent,
   type ChatToolEvent,
   type PermissionChoice,
@@ -114,6 +117,20 @@ export function createRuntimeHooks(
       });
       send(IPC.chatDone, { sessionId, messageId, completion: mirrored });
       notifyTurnEvent?.("completed", sessionId, { aborted: mirrored.aborted });
+    },
+    // 主路由上下文计量：镜像进会话存储（查询面回放）并广播渲染层。runtime
+    // 在钩子前已富化（会话级 cache 累计 + contextWindow）——contextWindow
+    // 是富化后的运行时属性（包类型面未声明），按富化形状收窄后展开。
+    onContextUsage: (sessionId, raw) => {
+      const snapshot = raw as ContextUsageSnapshot & { contextWindow?: number };
+      const metered: ChatContextUsageSnapshot = {
+        ...snapshot,
+        breakdown: { ...snapshot.breakdown },
+        cache: { ...snapshot.cache },
+        ...(snapshot.contextWindow !== undefined ? { contextWindow: snapshot.contextWindow } : {}),
+      };
+      sessions.updateContextUsage(sessionId, metered);
+      send(IPC.chatContextUsage, { sessionId, snapshot: metered } satisfies ChatContextUsageEvent);
     },
     onError: (sessionId, messageId, error) => {
       // Automation-injected loop turns record the error so an errored turn is

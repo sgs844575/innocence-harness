@@ -57,6 +57,10 @@ export const IPC = {
   chatPendingQuestions: "chat:pending-questions",
   chatTool: "chat:tool",
   chatThinking: "chat:thinking",
+  /** 上下文容量指示器：主路由计量快照推送（每步一条，富化后载荷）。 */
+  chatContextUsage: "chat:context",
+  /** 上下文容量指示器：按会话查询当前快照（重启回放/切会话补拉；无 → null）。 */
+  contextUsageQuery: "chat:context-usage-query",
   subagentLifecycle: "subagent:lifecycle",
   /** 子代理运行档案回放：按会话拉取落盘的 lifecycle 记录（重启后建档）。 */
   subagentHistory: "subagent:history",
@@ -320,6 +324,37 @@ export interface ChatThinkingEvent {
   sessionId: string;
   messageId: string;
   delta: string;
+}
+
+// 镜像契约：以下类型复制自 packages/harness-context-meter/src/types.ts
+// （shared 不 import 包），修改任何一侧时必须同步另一侧
+// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** 六类上下文构成（token 数；六类之和 = 该步真实输入）。 */
+export interface ChatContextBreakdown {
+  systemPrompt: number;
+  skills: number;
+  systemTools: number;
+  mcpTools: number;
+  messages: number;
+  other: number;
+}
+
+/** 主路由上下文计量快照（运行时富化后的会话级视图）。 */
+export interface ChatContextUsageSnapshot {
+  /** 最后一步真实输入 token（服务商 usage）。 */
+  inputTokens: number;
+  breakdown: ChatContextBreakdown;
+  /** cache 语义分层：钩子/持久化载荷内 = 会话级累计。 */
+  cache: { inputTokens: number; cachedInputTokens: number };
+  modelId?: string;
+  /** 宿主富化字段：该步模型的上下文窗口；未知省略。 */
+  contextWindow?: number;
+}
+
+/** chat:context 载荷：单会话的计量快照推送。 */
+export interface ChatContextUsageEvent {
+  sessionId: string;
+  snapshot: ChatContextUsageSnapshot;
 }
 
 export type SubagentStatus = "started" | "running" | "completed" | "failed" | "cancelled";
@@ -733,6 +768,10 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   stopMessage(sessionId: string, messageId: string): Promise<void>;
   onChatDelta(cb: (e: ChatDeltaEvent) => void): () => void;
   onChatDone(cb: (e: ChatDoneEvent) => void): () => void;
+  /** 上下文容量指示器：主路由计量快照推送（每步一条；切会话回放走查询）。 */
+  onChatContextUsage(cb: (e: ChatContextUsageEvent) => void): () => void;
+  /** 上下文容量指示器：查询会话当前快照（未水合先惰性水合；无 → null）。 */
+  queryContextUsage(sessionId: string): Promise<ChatContextUsageSnapshot | null>;
   onChatError(cb: (e: ChatErrorEvent) => void): () => void;
   onChatTool(cb: (e: ChatToolEvent) => void): () => void;
   onChatThinking(cb: (e: ChatThinkingEvent) => void): () => void;

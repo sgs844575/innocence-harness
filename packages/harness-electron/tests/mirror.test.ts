@@ -34,6 +34,8 @@ import type {
   SubagentLifecycleEvent as AgentSubagentLifecycleEvent,
   SubagentStatus as AgentSubagentStatus,
 } from "@innocenceharness/harness-agent";
+import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
+import type { ChatContextUsageSnapshot } from "../../../src/shared/ipc";
 import {
   DEFAULT_SETTINGS,
   MOCK_MODEL as PKG_MOCK_MODEL,
@@ -255,5 +257,22 @@ describe("shared SubagentLifecycleEvent 镜像对齐 harness-agent domain 事件
       const back: SharedSubagentStatus = domain;
       expect(back).toBe(status);
     }
+  });
+});
+
+describe("shared ChatContextUsageSnapshot 镜像对齐 harness-context-meter", () => {
+  // shared 不 import 包，计量快照手工镜像（contextWindow 为宿主富化扩展）：
+  // 任一侧增删字段或改可选性而忘了同步另一侧时，双向赋值会让 typecheck
+  // 失败（漂移不再静默）。
+  it("context meter 镜像双向可赋值（漂移守卫）", () => {
+    const sample: ContextUsageSnapshot = {
+      inputTokens: 1,
+      breakdown: { systemPrompt: 1, skills: 0, systemTools: 0, mcpTools: 0, messages: 0, other: 0 },
+      cache: { inputTokens: 1, cachedInputTokens: 0 },
+    };
+    const mirrored: ChatContextUsageSnapshot = sample; // 包 → 镜像
+    const back: ContextUsageSnapshot = mirrored; // 镜像 → 包
+    void back;
+    expect(mirrored.inputTokens).toBe(1);
   });
 });

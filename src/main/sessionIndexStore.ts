@@ -4,13 +4,15 @@
 // this module owns the persisted shape only, and stays electron-free.
 import fs from "node:fs";
 import path from "node:path";
-import type { ChatMessage, Session } from "../shared/ipc";
+import type { ChatContextUsageSnapshot, ChatMessage, Session } from "../shared/ipc";
 
 /** Full in-memory record: the public view plus lazily hydrated message bodies. */
 export interface SessionRecord extends Session {
   messages: ChatMessage[];
   /** False for index-restored sessions until their transcript has been read. */
   messagesLoaded: boolean;
+  /** 会话当前上下文计量快照（转录 context-usage 行水合 / 运行时钩子回写）。 */
+  contextUsage?: ChatContextUsageSnapshot;
   /**
    * 主转录文件相对 sessions 根的路径（YYYY/MM/DD/<id>.jsonl）。索引可由
    * sessions/ 树扫描重建 —— 本字段只是跨启动稳定提示，读取以扫描/映射为准。
@@ -42,7 +44,7 @@ export function sessionIndexFile(storeDir: string | null): string | null {
 
 /** Strips the lazy-loading internals off a record for public consumers. */
 export function publicSessionView(record: SessionRecord): Session {
-  const { messages: _messages, messagesLoaded: _loaded, ...rest } = record;
+  const { messages: _messages, messagesLoaded: _loaded, contextUsage: _usage, ...rest } = record;
   return { ...rest };
 }
 

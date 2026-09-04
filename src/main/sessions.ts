@@ -51,7 +51,7 @@ import {
   type SubagentHistoryEntry,
 } from "./subagentHistoryStore";
 import type { SidebarContainer } from "../shared/sidebarIpc";
-import type { ChatMessage, Session } from "../shared/ipc";
+import type { ChatContextUsageSnapshot, ChatMessage, Session } from "../shared/ipc";
 
 export type { SessionRecord } from "./sessionIndexStore";
 
@@ -335,6 +335,20 @@ export function listMessages(id: string): ChatMessage[] {
   if (!record) return [];
   if (!record.messagesLoaded) hydrate(record);
   return record.messages;
+}
+
+/** 会话当前上下文计量快照（未水合先惰性水合；无则 null）。 */
+export function getContextUsage(sessionId: string): ChatContextUsageSnapshot | null {
+  const record = sessions.get(sessionId);
+  if (!record) return null;
+  if (!record.messagesLoaded) hydrate(record);
+  return record.contextUsage ?? null;
+}
+
+/** 运行时钩子回写最新快照（转录行是持久真相；此处只更新内存面）。 */
+export function updateContextUsage(sessionId: string, snapshot: ChatContextUsageSnapshot): void {
+  const record = sessions.get(sessionId);
+  if (record) record.contextUsage = snapshot;
 }
 
 export function appendMessage(id: string, message: ChatMessage): void {
