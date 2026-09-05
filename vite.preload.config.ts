@@ -4,9 +4,9 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     lib: {
-      entry: "src/preload/index.ts",
+      entry: { preload: "src/preload/index.ts", computerActivityPreload: "src/preload/computerActivity.ts" },
       formats: ["cjs"],
-      fileName: () => "preload.js",
+      fileName: (_format, name) => `${name}.js`,
     },
     outDir: ".vite/build",
     rollupOptions: {

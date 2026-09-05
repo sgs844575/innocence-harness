@@ -52,6 +52,7 @@ import { ensureSessionScratchDir } from "./sessionScratch";
 import { appendSubagentHistoryEvent } from "./subagentHistoryStore";
 import { appDataRoot } from "./appDataRoot";
 import { getMainWindow } from "./appWindow";
+import { computerActivity } from "./computerActivity";
 import { broadcastTheme, setTheme } from "./theme";
 import { logger } from "./logger";
 import { hostShutdownGate } from "./shutdown";
@@ -60,6 +61,7 @@ import { createCredentialStore } from "./credentialStore";
 import { createDesktopNotifier } from "./desktopNotify";
 import { applyCloseToTray } from "./tray";
 import { applyKeepAwake } from "./powerBlocker";
+import { applyBrowserEnabled } from "./browserSession";
 import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
 import { getWorkbenchFocus, setWorkbenchFocus } from "./workbenchFocus";
 import { diagnoseFocusedFile, diagnosticFingerprint } from "@innocenceharness/harness-diagnostics";
@@ -358,6 +360,8 @@ export function bootPaths(): { kernelPath: string; builtinRoot: string } {
  *  closes over runtime/getTaskBridge() below — it only ever runs at session
  *  build time, long after both are initialized. */
 const sessionComposition = createSessionComposition({
+  computerActivity,
+  isComputerEnabled: () => settings.computerEnabled !== false && settings.pluginToggles?.computer !== false,
   resolvePaths: bootPaths,
   getWorkspaceRoot: () => settings.workspaceRoot || undefined,
   getUserPluginRoot: () => currentTestOverrides(app.isPackaged).userPluginRoot ?? undefined,
@@ -686,10 +690,13 @@ export function getCommittedHarnessSettings() {
  *  解析，设置写入后的重拉立即反映新状态。 */
 export async function getPluginInventory(): Promise<PluginInventory> {
   await settingsMutationGate.waitForPending();
-  return sessionComposition.pluginInventory({
+  const inventory = await sessionComposition.pluginInventory({
     workspaceRoot: settings.workspaceRoot || undefined,
     userToggles: settings.pluginToggles,
   });
+  return settings.computerEnabled === false
+    ? inventory.map((entry) => entry.id === "computer" ? { ...entry, state: "disabled-by-config" as const, via: "user" as const } : entry)
+    : inventory;
 }
 
 /** Agent 模式目录（IPC agents:modes）：staging manifest + 用户根扫描现算
@@ -701,8 +708,9 @@ export function getAgentModes(): Promise<AgentModeInfo[]> {
 
 /** 技能目录（IPC skills:list）：内置常驻 + 缺省双根磁盘扫描现算投影（磁盘
  *  同名遮蔽内置、按名排序）——同 getAgentModes 形态现算，不缓存、不滤开关。 */
-export function getSkillCatalog(root: string): Promise<SkillInfo[]> {
-  return sessionComposition.skillCatalog(root);
+export async function getSkillCatalog(root: string): Promise<SkillInfo[]> {
+  await settingsMutationGate.waitForPending();
+  return sessionComposition.skillCatalog(root, settings);
 }
 
 /** 活跃模型的视觉能力（true=显式标记支持；false/undefined=unknown/否）。
@@ -737,6 +745,7 @@ export function setHarnessSettings(next: HarnessSettingsPatch) {
 /** 常规设置的主进程副作用：关闭到托盘（仅 Windows 建托盘）与阻止系统休
  *  眠。幂等——启动后（initHarness 之后）与每次设置提交后各应用一次。 */
 export function applyHostSettingsSideEffects(): void {
+  applyBrowserEnabled(settings.browserEnabled !== false);
   applyCloseToTray(settings.closeToTray === true);
   applyKeepAwake(settings.keepAwake === true);
 }

@@ -15,6 +15,7 @@ import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { UsageMetadata } from "@innocenceharness/harness-providers";
 import { WORKTREE_ISOLATION_FRAGMENT } from "@innocenceharness/harness-electron";
+import type { ToolActivityObserver } from "@innocenceharness/harness-tools";
 import type { FsPluginConfig } from "@innocenceharness/tools-fs";
 import type { ShellPluginConfig } from "@innocenceharness/tools-shell";
 import { resolveCommandShell } from "@innocenceharness/terminal-pty";
@@ -24,6 +25,8 @@ import {
 } from "@innocenceharness/plugin-team";
 import { scanSkillCatalog, type SkillCatalogEntry } from "@innocenceharness/plugin-skills";
 import { builtinSkills } from "@innocenceharness/plugin-builtin-skills";
+import { computerControlSkill } from "@innocenceharness/tools-computer/skill";
+import { computerAccessFor, configureComputerEntry, configuredComputerPlugin } from "./computerControl";
 import {
   unavailableAskUserPort,
   type AskUserPort,
@@ -59,6 +62,9 @@ import type { AgentModeInfo, SkillInfo } from "../../shared/ipc";
 
 /** Inputs of {@link createSessionComposition}. */
 export interface SessionCompositionOptions {
+  computerActivity?: ToolActivityObserver;
+  /** Current master access, read by already mounted desktop tools. */
+  isComputerEnabled?: () => boolean;
   /** Dev/prod staging paths, resolved per boot attempt (Electron-side duty). */
   resolvePaths(): { kernelPath: string; builtinRoot: string };
   /** Default workspace root recorded on the boot root (diagnostics anchor). */
@@ -164,7 +170,7 @@ export interface SessionComposition {
    * 不缓存、不过滤 toggle（目录是可用性提示而非保证，与 agentModes 同
    * 一裁定）。空 workspaceRoot = 仅用户根。
    */
-  skillCatalog(workspaceRoot: string): Promise<SkillInfo[]>;
+  skillCatalog(workspaceRoot: string, settings?: HarnessSettings): Promise<SkillInfo[]>;
 }
 
 /** Project permission rules (.innocence/config.json) as a plugin, so the
@@ -348,7 +354,7 @@ function factoryPlugin(
   id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell",
   options: () =>
     | { dirs: string[] }
-    | { servers: Record<string, unknown> }
+    | { servers: Record<string, unknown>; isComputerEnabled?: () => boolean; computerActivity?: ToolActivityObserver }
     | { userRoot: string }
     | {
         getPermissionMode: () => string;
@@ -386,7 +392,9 @@ function factoryConfig(
   config: unknown,
   workspaceRoot: string,
   project: InnocenceConfig,
-): { dirs: string[] } | { servers: Record<string, unknown> } {
+  isComputerEnabled?: () => boolean,
+  computerActivity?: ToolActivityObserver,
+): { dirs: string[] } | { servers: Record<string, unknown>; isComputerEnabled?: () => boolean; computerActivity?: ToolActivityObserver } {
   if (id === "skills") {
     const configured = config as { dirs?: unknown } | undefined;
     if (config !== undefined && (!configured || !Array.isArray(configured.dirs) || !configured.dirs.every((v) => typeof v === "string"))) {
@@ -398,7 +406,7 @@ function factoryConfig(
   if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
     throw new Error("invalid mcp group config: servers must be an object");
   }
-  return { servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown> };
+  return { servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown>, ...(isComputerEnabled ? { isComputerEnabled } : {}), ...(computerActivity ? { computerActivity } : {}) };
 }
 
 function validGroupSegment(value: unknown): value is string {
@@ -483,6 +491,8 @@ async function resolveGroupEntries(
   config: InnocenceConfig,
   workspaceRoot: string,
   ownerId: string,
+  isComputerEnabled: () => boolean,
+  computerActivity?: ToolActivityObserver,
 ): Promise<ResolvedGroupChild[]> {
   const resolved: ResolvedGroupChild[] = [];
   for (const raw of entries) {
@@ -495,7 +505,7 @@ async function resolveGroupEntries(
       (child.disabled !== undefined && typeof child.disabled !== "boolean")) {
       throw new Error(`loader group entry "${ownerId}" has invalid child`);
     }
-    const options = groupChildOptions(child);
+    const options = configureComputerEntry(groupChildOptions(child), isComputerEnabled) as ResolvedGroupChild;
     if (options.disabled) {
       resolved.push(options);
       continue;
@@ -504,13 +514,15 @@ async function resolveGroupEntries(
     if (FACTORY_ONLY_BUILTINS.has(childName)) {
       throw new Error(`loader group entry "${ownerId}" declares factory-only builtin "${childName}"; declare it at top level instead`);
     }
-    if (options.name === "skills" || options.name === "kernel:skills") {
+    if (options.name === "computer" || options.name === "kernel:computer") {
+      options.plugin = configuredComputerPlugin(() => boot.importPlugin("computer"), isComputerEnabled, computerActivity);
+    } else if (options.name === "skills" || options.name === "kernel:skills") {
       options.plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", options.config, workspaceRoot, config));
     } else if (options.name === "mcp" || options.name === "kernel:mcp") {
-      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config));
+      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config, isComputerEnabled, computerActivity));
     } else if (options.name === "kernel:group") {
       const nested = groupConfigOf(options.id, options.config);
-      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id);
+      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id, isComputerEnabled, computerActivity);
       options.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
     }
     resolved.push(options);
@@ -536,6 +548,8 @@ async function builtinLoaderEntryFor(
     isContinuationSession?: () => boolean;
   },
   toolFactoryConfigs?: BuiltinToolFactoryConfigs,
+  isComputerEnabled: () => boolean = () => true,
+  computerActivity?: ToolActivityObserver,
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -545,6 +559,8 @@ async function builtinLoaderEntryFor(
     // resolver——该布局无 dist/index.js，直载必失败）。native 条目不传
     // 适配器，走既有 resolver 路径（零改动）。
     plugin = ecosystemPlugin;
+  } else if (!entry.disabled && id === "computer") {
+    plugin = configuredComputerPlugin(() => boot.importPlugin("computer"), isComputerEnabled, computerActivity);
   } else if (!entry.disabled && id === "fs") {
     // Factory builtin like skills/mcp: the staged default export is the fs
     // factory; the config comes from the settings snapshot composePlugins
@@ -559,7 +575,7 @@ async function builtinLoaderEntryFor(
   } else if (!entry.disabled && id === "skills") {
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
-    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config));
+    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config, isComputerEnabled, computerActivity));
   } else if (!entry.disabled && id === "creation") {
     // Factory builtin like skills/mcp: the staged default export is a factory
     // needing the host-resolved user plugin root (creation-mode directory
@@ -638,7 +654,7 @@ async function builtinLoaderEntryFor(
     }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
-    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id);
+    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id, isComputerEnabled, computerActivity);
     plugin = boot.spine.group.createGroupPlugin({ id: group.id, entries: children });
   }
   return {
@@ -869,7 +885,9 @@ export function createSessionComposition(
       );
 
       const plugins: SessionPlugin[] = [];
-      for (const entry of resolved.entries) {
+      const isComputerEnabled = computerAccessFor(settings, options.isComputerEnabled);
+      for (const resolvedEntry of resolved.entries) {
+        const entry = configureComputerEntry(resolvedEntry, isComputerEnabled);
         if (entry.id === "example" || entry.disabled) continue;
         const ecosystemDir = ecosystemDirs.get(entry.id);
         plugins.push(await builtinLoaderEntryFor(
@@ -896,6 +914,8 @@ export function createSessionComposition(
           options.createAskUserPort,
           reminderState,
           toolFactoryConfigs,
+          isComputerEnabled,
+          options.computerActivity,
         ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
@@ -927,7 +947,7 @@ export function createSessionComposition(
       ]);
       return projectAgentModes(manifest, scanned.descriptors);
     },
-    async skillCatalog(workspaceRoot: string): Promise<SkillInfo[]> {
+    async skillCatalog(workspaceRoot: string, settings?: HarnessSettings): Promise<SkillInfo[]> {
       // 现算：与 factoryConfig("skills") 的缺省双根一致（项目 .innocence/skills
       // 前根优先 + 用户 ~/.innocence/skills）；yml group config 自定义 dirs 的
       // 会话目录与实际可有出入——已接受（可用性提示，同 agentModes 边界）。
@@ -937,7 +957,13 @@ export function createSessionComposition(
         path.join(os.homedir(), ".innocence", "skills"),
       ];
       const disk = await scanSkillCatalog(dirs);
-      return projectSkillCatalog(builtinSkills, disk);
+      let computerAvailable = false;
+      if (settings && computerAccessFor(settings, options.isComputerEnabled)()) {
+        const inventory = await this.pluginInventory({ workspaceRoot: root || undefined, userToggles: settings.pluginToggles });
+        computerAvailable = inventory.some((entry) => entry.id === "computer" && entry.state === "active") && process.platform === "win32";
+      }
+      const catalog = projectSkillCatalog(computerAvailable ? [...builtinSkills, computerControlSkill] : builtinSkills, disk);
+      return settings && !computerAvailable ? catalog.filter((skill) => skill.name !== computerControlSkill.name) : catalog;
     },
   };
 }

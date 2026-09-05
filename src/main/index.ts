@@ -19,6 +19,7 @@ import {
   getTaskBridge,
   getTaskStorageDir,
   initHarness,
+  stopChatTurn,
   isSessionRunning,
   startAutomationLifecycle,
   disposeAllRuntime,
@@ -35,6 +36,7 @@ import { createMainWindow, getMainWindow } from "./appWindow";
 import { createMainAppLifecycle } from "./mainAppLifecycle";
 import { createOwnedShutdown } from "./ownedShutdown";
 import { registerIpcHandlers } from "./ipc";
+import { initComputerActivity, disposeComputerActivity } from "./computerActivity";
 import { initSessionStore, getSession, getSidebarState, archiveSession, listSessions } from "./sessions";
 import { legacyTranscriptsRoot, sessionsRoot } from "./sessionFiles";
 import { attachmentStore, sweepAttachments } from "./attachments";
@@ -51,6 +53,7 @@ import { cleanupElectronDebris, defaultDataRoot, migrateAppData, readDataRootPoi
 import { migrateLegacyTranscripts } from "./sessionFiles";
 import { applyEarlyBootSettings } from "./earlyBoot";
 import { installCustomCaVerify } from "./customCaVerify";
+import { configureBrowserSession } from "./browserSession";
 import { initTray, markTrayQuitting } from "./tray";
 import { disposeKeepAwake } from "./powerBlocker";
 import { startAutoArchive, type AutoArchiveService } from "./autoArchive";
@@ -163,6 +166,7 @@ if (!gotLock) {
       initSessionStore(appDataRoot());
       registerIpcHandlers();
       await initHarness();
+      initComputerActivity(() => getHarnessSettings().locale || app.getLocale(), stopChatTurn);
 
       // 附件 GC 巡检（转录可达集 + tombstone 到期物理删除）：启动即一轮，
       // best-effort 不阻塞也不抛错（sweepAttachments 内部兜底）。
@@ -174,6 +178,7 @@ if (!gotLock) {
       // 自定义 CA：渲染层证书的兜底校验链（Chromium 默认结果有效时不受影
       // 响）；PEM 不可读/无有效证书时保留默认校验。
       const customCa = getHarnessSettings().customCaCert ?? "";
+      configureBrowserSession(getHarnessSettings());
       if (customCa !== "" && !installCustomCaVerify(session.defaultSession, customCa)) {
         logger.warn("custom CA bundle unusable; default verify chain kept", { customCa });
       }
@@ -281,6 +286,7 @@ if (!gotLock) {
     markTrayQuitting();
     autoArchiveService?.stop();
     disposeKeepAwake();
+    disposeComputerActivity();
     const phase = shutdown.onBeforeQuit();
     if (phase === "release") return;
     e.preventDefault();
