@@ -334,4 +334,45 @@ describe("Composer 附件", () => {
     await waitFor(() => screen.getByText(/25 MiB/));
     expect(screen.queryByRole("button", { name: "composer.attach.remove" })).toBeNull();
   });
+
+  it("发送被拒（onSend 拒绝）：乐观清空后恢复文本与附件 chip（规格 §7）", async () => {
+    mockAttachBridge();
+    const onSend = vi.fn(async () => {
+      throw new Error("gate");
+    });
+    renderComposer({ onSend, workspaceRoot: "D:/repo", visionSupported: true });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("shot.png")] } });
+    await waitFor(() => screen.getByText("shot.png"));
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    typeInto(ta, "看图");
+    fireEvent.keyDown(ta, { key: "Enter" });
+    // 拒绝后：文本与 chip 恢复，等待用户处置。
+    await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("看图"));
+    expect(screen.getByText("shot.png")).toBeTruthy();
+  });
+
+  it("零表示 PDF（扫描件）预阻断：禁发并内联提示，移除后解除", async () => {
+    mockSuggestBridge({
+      importAttachmentBytes: vi.fn(async (name: string) => ({
+        part: {
+          type: "attachment" as const,
+          name,
+          source: { key: `sha256:${"6".repeat(64)}`, mediaType: "application/pdf", byteLength: 8 },
+          representations: [],
+        },
+        preview: { kind: "binary" as const },
+        warnings: ["扫描 PDF：无可抽取文本，未选择页面时无法提供内容"],
+      })),
+    });
+    renderComposer({ workspaceRoot: "D:/repo", visionSupported: true });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("scan.pdf", [0x25, 0x50, 0x44, 0x46])] } });
+    await waitFor(() => screen.getByText("composer.attach.scannedPdf"));
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    typeInto(ta, "读这个");
+    expect((screen.getByRole("button", { name: "chat.send" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "composer.attach.remove" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "chat.send" }) as HTMLButtonElement).disabled).toBe(false));
+  });
 });

@@ -29,7 +29,7 @@ interface Props {
   question: ChatQuestionEvent | null;
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string, attachments: AttachmentPart[]) => void;
+  onSend: (text: string, attachments: AttachmentPart[]) => void | Promise<void>;
   /** 会话项目根（输入卡 @ 文件补全数据源）。 */
   workspaceRoot?: string;
   /** 编辑重发（替换语义）：截断 messageId 起的消息并以新文本重开一轮。 */
@@ -175,11 +175,12 @@ export function ChatView({
     return null;
   }, [messages]);
 
-  // 发送（含「继续」）一律回到贴底跟随；编辑重发同样回贴底。
-  const handleSend = (text: string, attachments: AttachmentPart[] = []): void => {
+  // 发送（含「继续」）一律回到贴底跟随；编辑重发同样回贴底。返回发送结果
+  // （拒绝时输入卡据此恢复草稿）。
+  const handleSend = (text: string, attachments: AttachmentPart[] = []): void | Promise<void> => {
     setPinned(true);
     requestAnimationFrame(() => scrollToBottom("auto"));
-    onSend(text, attachments);
+    return onSend(text, attachments);
   };
 
   const handleEditResend = (messageId: string, text: string): void => {

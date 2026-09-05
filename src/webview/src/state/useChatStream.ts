@@ -27,7 +27,8 @@ export function useChatStream({
 }: {
   activeId: string | null;
   ensureSessionForSend: () => Promise<string>;
-  onError: (message: string) => void;
+  /** detail 非空时优先直显（主进程结构化拒绝文案），否则按 kind 取 i18n。 */
+  onError: (kind: string, detail?: string) => void;
 }): ChatStreamController {
   const [state, dispatch] = useReducer(reduceChatStream, initialChatStreamState);
   const activeIdRef = useRef(activeId);
@@ -133,9 +134,12 @@ export function useChatStream({
       });
       try {
         await api.sendMessage(sessionId, content, id, attachments.length > 0 ? attachments : undefined);
-      } catch {
-        onError("sendMessage");
-        dispatch({ type: "error", messageId: "", error: "send failed" });
+      } catch (error) {
+        // 拒绝（附件门控等）：撤回乐观气泡、透出主进程的可行动文案，并向
+        // 调用方重抛——输入卡据此恢复文本与附件草稿（规格 §7 不丢用户选择）。
+        dispatch({ type: "send-failed", messageId: id });
+        onError("sendMessage", error instanceof Error ? error.message : undefined);
+        throw error;
       }
     },
     [ensureSessionForSend, onError],

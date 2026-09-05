@@ -33,6 +33,8 @@ export type ChatStreamAction =
   | { type: "load"; messages: ChatMessage[] }
   | { type: "reset" }
   | { type: "send-local"; message: ChatMessage }
+  /** 发送被主进程拒绝（附件门控等）：撤回乐观用户气泡，输入卡恢复草稿。 */
+  | { type: "send-failed"; messageId: string }
   | { type: "resend-local"; messageId: string; message: ChatMessage }
   | { type: "delta"; messageId: string; delta: string; at: number }
   | { type: "thinking"; messageId: string; delta: string; at: number }
@@ -83,6 +85,14 @@ export function reduceChatStream(state: ChatStreamState, action: ChatStreamActio
       return initialChatStreamState;
     case "send-local":
       return { ...state, messages: [...state.messages, action.message], streaming: true };
+    case "send-failed":
+      return {
+        ...state,
+        streaming: false,
+        permission: null,
+        question: null,
+        messages: state.messages.filter((m) => m.id !== action.messageId),
+      };
     case "resend-local": {
       // 编辑重发的乐观截断：被编辑消息（含）之后的全部换成新用户消息；
       // 主进程失败时 useChatStream 会从存储重载恢复真态。

@@ -119,7 +119,7 @@ export class FsContentStore implements ContentStore {
   }
 
   private flushIndex(): Promise<void> {
-    this.indexWrite = this.indexWrite.then(async () => {
+    const run = this.indexWrite.then(async () => {
       if (!this.indexDirty || !this.index) return;
       const temp = `${this.indexFile}.tmp`;
       await fs.mkdir(path.dirname(this.indexFile), { recursive: true });
@@ -127,6 +127,10 @@ export class FsContentStore implements ContentStore {
       await fs.rename(temp, this.indexFile);
       this.indexDirty = false;
     });
-    return this.indexWrite;
+    // 链自愈：一次瞬时写失败（AV/索引器锁文件）只让本次调用方看到错误，
+    // 链本体吞掉 rejection 继续接后续写——否则一次 EBUSY 毒化整条链，
+    // 此后每次导入都失败直到重启。
+    this.indexWrite = run.catch(() => undefined);
+    return run;
   }
 }

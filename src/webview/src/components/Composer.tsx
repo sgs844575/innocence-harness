@@ -36,7 +36,8 @@ interface Props {
   streaming: boolean;
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string, attachments: AttachmentPart[]) => void;
+  /** 返回 Promise 时发送成功才清空草稿（拒绝则恢复文本与附件，规格 §7）。 */
+  onSend: (text: string, attachments: AttachmentPart[]) => void | Promise<void>;
   onStop: () => void;
   /** 会话/落地态的项目根（@ 文件补全数据源）；缺省 = 未绑定。 */
   workspaceRoot?: string;
@@ -77,6 +78,8 @@ export function Composer({
   const [attachments, setAttachments] = useState<AttachmentDraftDto[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // 进行中的导入数：>0 时发送等待（否则 Enter 早于导入完成会静默丢图）。
+  const [importing, setImporting] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const agentModes = useAgentModes();
@@ -158,25 +161,40 @@ export function Composer({
   const hasImageAttachment = attachments.some((draft) =>
     draft.part.representations.some((representation) => representation.kind === "image"),
   );
+  // 零表示的 PDF = 扫描件（页图发送暂不可用）：与主进程门控同口径预阻断。
+  const hasScannedPdf = attachments.some(
+    (draft) => draft.part.source.mediaType === "application/pdf" && draft.part.representations.length === 0,
+  );
   // 视觉门控（渲染层前置；主进程发送侧仍权威复验）：图片附件 + 非视觉模型
-  // → 禁发并内联提示，不丢附件（规格 §7）。
+  // → 禁发并内联提示，不丢附件（规格 §7）。导入进行中同样等待。
   const visionBlocked = hasImageAttachment && visionSupported !== true;
+  const sendBlocked = visionBlocked || hasScannedPdf || importing > 0;
 
   const importFiles = async (files: readonly File[]): Promise<void> => {
     if (files.length === 0) return;
     setAttachError(null);
-    for (const file of files) {
-      try {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const draft = await api.importAttachmentBytes(file.name || "attachment", bytes);
-        setAttachments((current) =>
-          current.length >= MAX_ATTACHMENTS_PER_MESSAGE ? current : [...current, draft],
-        );
-      } catch (error) {
-        setAttachError(error instanceof Error ? error.message : String(error));
+    setImporting((count) => count + files.length);
+    try {
+      for (const file of files) {
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const draft = await api.importAttachmentBytes(file.name || "attachment", bytes);
+          // 件数上限显式报错（规格 §3：永不静默截断）。
+          setAttachments((current) => {
+            if (current.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
+              setAttachError(t("composer.attach.tooMany"));
+              return current;
+            }
+            return [...current, draft];
+          });
+        } catch (error) {
+          setAttachError(error instanceof Error ? error.message : String(error));
+        }
       }
+    } finally {
+      setImporting((count) => Math.max(0, count - files.length));
+      requestAnimationFrame(() => ref.current?.focus());
     }
-    requestAnimationFrame(() => ref.current?.focus());
   };
 
   const submit = (): void => {
@@ -185,13 +203,24 @@ export function Composer({
     // 消息立即上屏）；流式中的可见动作钮仍是停止（见下方按钮分支）。
     // 附件-only 轮也是真实用户轮（文本可为空）。
     if (!text && attachments.length === 0) return;
-    if (visionBlocked) return;
-    onSend(text, attachments.map((draft) => draft.part));
+    if (sendBlocked) return;
+    const sending = { text, attachments };
+    const parts = attachments.map((draft) => draft.part);
     setValue("");
     setCaret(0);
     setAttachments([]);
     setAttachError(null);
-    requestAnimationFrame(() => ref.current?.focus());
+    // onSend 返回 Promise 时：拒绝（主进程门控等）恢复草稿——文本与附件
+    // 都不丢；错误文案由聊天错误面（toast）呈现。
+    void Promise.resolve(onSend(text, parts))
+      .then(() => {
+        requestAnimationFrame(() => ref.current?.focus());
+      })
+      .catch(() => {
+        setValue(sending.text);
+        setCaret(sending.text.length);
+        setAttachments(sending.attachments);
+      });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -302,14 +331,14 @@ export function Composer({
           aria-activedescendant={suggestOpen && rows.length > 0 ? `${listboxId}-opt-${active}` : undefined}
           className="scrollbar-thin max-h-40 min-h-10 w-full flex-1 resize-none bg-transparent px-1 pt-1 leading-relaxed outline-none placeholder:text-(--color-faint) disabled:opacity-50"
         />
-        {/* 附件草稿区（chip 行 + 导入错误/视觉门控提示行）。 */}
-        {(attachments.length > 0 || attachError !== null || visionBlocked) && (
+        {/* 附件草稿区（chip 行 + 导入错误/发送阻断提示行）。 */}
+        {(attachments.length > 0 || attachError !== null || sendBlocked) && (
           <div className="flex flex-col gap-1.5">
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {attachments.map((draft) => (
+                {attachments.map((draft, index) => (
                   <AttachmentChip
-                    key={draft.part.source.key}
+                    key={`${draft.part.source.key}#${index}`}
                     draft={draft}
                     removeLabel={t("composer.attach.remove")}
                     onRemove={() => setAttachments((current) => current.filter((item) => item !== draft))}
@@ -320,6 +349,12 @@ export function Composer({
             {attachError !== null && <div className="text-[12px] text-(--color-tool-err)">{attachError}</div>}
             {visionBlocked && (
               <div className="text-[12px] text-(--color-mode-accent)">{t("composer.attach.visionBlocked")}</div>
+            )}
+            {hasScannedPdf && !visionBlocked && (
+              <div className="text-[12px] text-(--color-mode-accent)">{t("composer.attach.scannedPdf")}</div>
+            )}
+            {importing > 0 && (
+              <div className="text-[12px] text-(--color-muted)">{t("composer.attach.importing")}</div>
             )}
           </div>
         )}
@@ -413,9 +448,21 @@ export function Composer({
           <button
             type="button"
             onClick={streaming ? onStop : submit}
-            disabled={!streaming && (!canSend || visionBlocked)}
+            disabled={!streaming && (!canSend || sendBlocked)}
             aria-label={streaming ? t("chat.stop") : t("chat.send")}
-            title={visionBlocked && !streaming ? t("composer.attach.visionBlocked") : streaming ? t("chat.stop") : t("chat.send")}
+            title={
+              !streaming && sendBlocked
+                ? t(
+                    visionBlocked
+                      ? "composer.attach.visionBlocked"
+                      : hasScannedPdf
+                        ? "composer.attach.scannedPdf"
+                        : "composer.attach.importing",
+                  )
+                : streaming
+                  ? t("chat.stop")
+                  : t("chat.send")
+            }
             className={squareButton}
           >
             {streaming ? (

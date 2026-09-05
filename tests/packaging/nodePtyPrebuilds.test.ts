@@ -92,7 +92,8 @@ describe("pruneNodePtyPrebuilds", () => {
       extraResource?: string[];
       afterCopy?: unknown[];
     };
-    expect(packagerConfig.asar?.unpack).toBe("**/node_modules/node-pty/**");
+    // asar 解包 glob：node-pty + 附件图像规范化的原生二进制（@napi-rs）。
+    expect(packagerConfig.asar?.unpack).toBe("**/node_modules/{node-pty,@napi-rs}/**");
     const squirrelMaker = config.makers?.[0] as { prepareConfig?: (arch: "x64") => Promise<void>; config?: { name?: string; setupExe?: string } };
     await squirrelMaker.prepareConfig?.("x64");
     expect(squirrelMaker.config).toMatchObject({

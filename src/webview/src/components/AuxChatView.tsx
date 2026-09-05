@@ -70,7 +70,7 @@ export function AuxChatView({ t, sessionId, settings, onPatchSettings, onManageM
           streaming={chat.streaming}
           settings={settings}
           onPatchSettings={onPatchSettings}
-          onSend={(text, attachments) => void chat.send(text, attachments)}
+          onSend={(text, attachments) => chat.send(text, attachments)}
           onStop={() => void chat.stop()}
           workspaceRoot={settings?.workspaceRoot ?? ""}
           onManageModels={onManageModels}

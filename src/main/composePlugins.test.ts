@@ -91,6 +91,7 @@ const MANIFEST_IDS = [
   "hooks",
   "team",
   "ask",
+  "attachments",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -147,6 +148,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       hooks: "hooks",
       team: "team",
       ask: "ask",
+      attachments: "attachments",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();

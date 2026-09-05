@@ -21,7 +21,7 @@ interface Props {
   settings: HarnessSettings | null;
   streaming: boolean;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string, attachments: AttachmentPart[]) => void;
+  onSend: (text: string, attachments: AttachmentPart[]) => void | Promise<void>;
   onStop: () => void;
   draft?: ComposerDraft;
   onQuickPick: (prompt: string) => void;

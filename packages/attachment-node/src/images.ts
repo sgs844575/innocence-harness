@@ -21,7 +21,7 @@ function scaleOf(width: number, height: number, maxEdge: number): number {
 function drawScaled(image: Image, width: number, height: number): Uint8Array {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
-  // 双线性采样：Skia drawImage 默认高质量插值。
+  // canvas 后端默认高质量插值（等效双线性采样）。
   ctx.drawImage(image, 0, 0, width, height);
   return new Uint8Array(canvas.toBuffer("image/png"));
 }
@@ -46,7 +46,7 @@ export async function normalizeImage(bytes: Uint8Array, opts: { animated: boolea
   return { bytes: bytesOut, width, height, thumbnail };
 }
 
-/** 图像 token 粗估（Anthropic 口径近似：像素数 / 750）。 */
+/** 图像 token 粗估（参考视觉模型通用口径近似：像素数 / 750）。 */
 export function estimateImageTokens(width: number, height: number): number {
   return Math.ceil((width * height) / 750);
 }
