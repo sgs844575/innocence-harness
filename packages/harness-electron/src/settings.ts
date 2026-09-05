@@ -136,6 +136,8 @@ export interface HarnessSettings extends BrowserSettings, ComputerSettings {
   groupTerminalCommands?: boolean;
   /** 连续 Write/Edit/ApplyPatch 聚合为 Changes 分组；默认关。 */
   groupFileChanges?: boolean;
+  /** Collapse completed responses into their conclusion and file changes. Default off. */
+  aggregateResponse?: boolean;
   /** 定时自动归档已完成、无未读、未置顶且超过保留期的任务；默认关。 */
   autoArchiveTasks?: boolean;
   /** 自动归档保留时长（天；1/3/7/14/30，默认 7）。 */
@@ -227,6 +229,7 @@ function mergeGeneralFeatures(src: Partial<HarnessSettings>): Partial<HarnessSet
     groupExploreTools: boolOr(src.groupExploreTools, true),
     groupTerminalCommands: boolOr(src.groupTerminalCommands, true),
     groupFileChanges: boolOr(src.groupFileChanges, false),
+    aggregateResponse: boolOr(src.aggregateResponse, false),
     autoArchiveTasks: boolOr(src.autoArchiveTasks, false),
     archiveRetentionDays: normalizeArchiveRetentionDays(src.archiveRetentionDays),
     onboarded: src.onboarded !== false,
@@ -304,6 +307,7 @@ export const GENERAL_FEATURE_DEFAULTS = {
   groupExploreTools: true,
   groupTerminalCommands: true,
   groupFileChanges: false,
+  aggregateResponse: false,
   autoArchiveTasks: false,
   archiveRetentionDays: 7,
   onboarded: false,

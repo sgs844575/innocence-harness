@@ -16,6 +16,7 @@ export interface ToolGroupingOptions {
 
 /** 消息流显示开关（设置解析结果）：思考过滤 / todo 过滤 / 工具分组。 */
 export interface StreamDisplayOptions {
+  aggregateResponse?: boolean;
   showThinking: boolean;
   showTodos: boolean;
   grouping: ToolGroupingOptions;
@@ -24,6 +25,7 @@ export interface StreamDisplayOptions {
 /** 设置 → 消息流显示开关。默认：思考/todo 开；explore/terminal 分组开、changes 分组关。 */
 export function streamDisplayFromSettings(settings: HarnessSettings | null | undefined): StreamDisplayOptions {
   return {
+    aggregateResponse: settings?.aggregateResponse === true,
     showThinking: settings?.showThinking !== false,
     showTodos: settings?.showTodos !== false,
     grouping: {

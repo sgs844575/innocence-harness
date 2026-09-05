@@ -5,6 +5,7 @@ import { ArrowUp, Check, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import type { ChatMessage } from "../../../shared/ipc";
 import { messageText } from "../../../shared/ipc";
 import { MarkdownView, type CodeAppearance } from "./chat/MarkdownView";
+import { TurnSummary } from "./chat/TurnSummary";
 import { ThinkingRow } from "./chat/ThinkingRow";
 import { ToolTimeline } from "./chat/ToolRow";
 import { segmentParts } from "./chat/segmentParts";
@@ -47,6 +48,7 @@ export function MessageItem({ t, message, canEdit, onEditSend, continuable, onCo
   // 段间距 16px（参考行列表 gap-4）：思考行/工具时间线/正文段之间统一节奏。
   return (
     <div className="rise-in group/assistant-row flex flex-col gap-4">
+      <TurnSummary message={message} enabled={stream?.aggregateResponse && !continuable} t={t} code={code} onOpenFile={onOpenFile}>
       {segments.map((segment, index) => {
         if (segment.kind === "thinking") {
           if (stream !== undefined && !stream.showThinking) {
@@ -77,6 +79,7 @@ export function MessageItem({ t, message, canEdit, onEditSend, continuable, onCo
           </div>
         );
       })}
+      </TurnSummary>
       {streaming && message.parts.length === 0 && (
         <div className="flex items-center gap-1.5 text-(--color-faint)">
           <LoaderCircleInline />

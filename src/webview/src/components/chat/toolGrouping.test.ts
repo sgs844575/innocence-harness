@@ -158,11 +158,13 @@ describe("groupToolRows", () => {
 describe("streamDisplayFromSettings", () => {
   it("缺省设置 → 产品默认：思考/todo 开，explore/terminal 分组开，changes 分组关", () => {
     expect(streamDisplayFromSettings(null)).toEqual({
+      aggregateResponse: false,
       showThinking: true,
       showTodos: true,
       grouping: { explore: true, terminal: true, changes: false },
     });
     expect(streamDisplayFromSettings(undefined)).toEqual({
+      aggregateResponse: false,
       showThinking: true,
       showTodos: true,
       grouping: { explore: true, terminal: true, changes: false },
@@ -178,6 +180,7 @@ describe("streamDisplayFromSettings", () => {
       groupFileChanges: true,
     } as HarnessSettings;
     expect(streamDisplayFromSettings(settings)).toEqual({
+      aggregateResponse: false,
       showThinking: false,
       showTodos: false,
       grouping: { explore: false, terminal: false, changes: true },
