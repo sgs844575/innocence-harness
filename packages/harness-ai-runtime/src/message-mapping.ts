@@ -5,11 +5,31 @@ import type { ModelMessage } from "ai";
 export function toSdkMessages(messages: readonly Message[]): ModelMessage[] {
   const toolNames = new Map<string, string>();
   const mapped: ModelMessage[] = [];
+  const recordedResults = new Set(messages.flatMap((message) =>
+    message.role === "assistant" ? [] : message.parts.flatMap((part) =>
+      part.type === "toolResult" ? [part.toolCallId] : [],
+    ),
+  ));
 
   for (const message of messages) {
     if (message.role === "assistant") {
       const content = assistantContent(message.parts, toolNames);
       if (content.length > 0) mapped.push({ role: "assistant", content });
+      // Interrupted or partially persisted histories can end after a call.
+      // Repair only the outbound copy; never invent a successful execution.
+      const missing = message.parts.flatMap((part) =>
+        part.type === "toolCall" && !recordedResults.has(part.id)
+          ? [{
+              type: "toolResult" as const,
+              toolCallId: part.id,
+              isError: true,
+              content: "No tool result was recorded. Execution status is unknown. Verify the current state before retrying any action with side effects.",
+            }]
+          : [],
+      );
+      if (missing.length > 0) {
+        mapped.push({ role: "tool", content: toolResults(missing, toolNames) });
+      }
       continue;
     }
 
