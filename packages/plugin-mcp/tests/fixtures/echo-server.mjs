@@ -98,12 +98,22 @@ rl.on("line", (line) => {
                 properties: { size: { type: "number" }, emoji: { type: "number" } },
               },
             },
+            { name: "computer_screenshot", description: "Return a sample screen image", inputSchema: { type: "object" } },
           ],
         },
       });
       break;
     case "tools/call": {
       const name = msg.params?.name;
+      if (name === "computer_screenshot") {
+        send({ jsonrpc: "2.0", id: msg.id, result: {
+          content: [
+            ...(msg.params?.arguments?.imageOnly ? [] : [{ type: "text", text: "Captured screen" }]),
+            { type: "image", mimeType: "image/png", data: "aW1hZ2U=" },
+          ],
+        } });
+        break;
+      }
       if (name === "crash") {
         process.exit(1);
       }

@@ -1,6 +1,8 @@
 import type { Context } from "@innocenceharness/kernel";
 import {
   isAbortError,
+  observeToolActivity,
+  type ToolActivityObserver,
   type JsonSchema,
   type ToolResult,
 } from "@innocenceharness/harness-tools";
@@ -10,6 +12,8 @@ import {
 import type { Message, MessageProcessorContext } from "@innocenceharness/harness-session";
 import { StdioJsonRpcClient, type StdioServerOptions } from "./jsonrpc";
 import { WsJsonRpcClient, type WsServerOptions } from "./jsonrpc-ws";
+import { COMPUTER_DISABLED, isComputerCapability, type ComputerCapability } from "./computerAccess";
+import { mapMcpResult, type McpCallResult } from "./result";
 
 // ctx.logger 的类型可见性：kernel-logger 不自带 Context 增强，这里按
 // session 组合侧（harness-electron/session-kernel）的同一声明就地合并（成员
@@ -22,60 +26,20 @@ declare module "@innocenceharness/kernel" {
 
 const PROTOCOL_VERSION = "2024-11-05";
 
-/**
- * Character cap for one tool call's text output (source adaptation:
- * system-reminder-mcp-output-truncation-warning.md). Bounds the context cost
- * of a single oversized server response; the cut point is marked so the model
- * knows the tail is missing instead of silently trusting a partial result.
- */
-const MAX_TOOL_OUTPUT_CHARS = 16_000;
-
-/** Note substituted when a successful call yields no text at all (source
- *  adaptation: system-reminder-mcp-resource-no-content.md — the empty-read
- *  outcome is stated plainly instead of returning an empty string). */
-const NO_CONTENT_NOTE = "[The server returned no content for this call]";
-
-function truncationNote(cap: number): string {
-  return (
-    `\n\n[Tool output was cut at ${cap} characters; the tail is not shown. Narrow the ` +
-    "request, or use pagination or filtering when this server provides it, and tell the " +
-    "user when a conclusion rests on the partial text.]"
-  );
-}
-
-/** Slices without splitting a surrogate pair at the cut position. */
-function safeSlice(text: string, max: number): string {
-  if (text.length <= max) return text;
-  let end = max;
-  const before = text.charCodeAt(end - 1);
-  const at = text.charCodeAt(end);
-  if (before >= 0xd800 && before <= 0xdbff && at >= 0xdc00 && at <= 0xdfff) end -= 1;
-  return text.slice(0, end);
-}
-
-/** Clamps one tool call's joined text to the output budget with notes. */
-function clampToolOutput(text: string): string {
-  if (text === "") return NO_CONTENT_NOTE;
-  if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text;
-  return safeSlice(text, MAX_TOOL_OUTPUT_CHARS) + truncationNote(MAX_TOOL_OUTPUT_CHARS);
-}
-
 interface McpToolDef {
   name: string;
   description?: string;
   inputSchema?: JsonSchema;
 }
 
-interface McpCallResult {
-  content?: Array<{ type?: string; text?: string }>;
-  isError?: boolean;
-}
-
 export interface McpPluginOptions {
   /** server name -> launch config; each server's tools become mcp__name__tool.
    *  Transport is chosen per server: `command` spawns a stdio server, `url`
    *  connects to a WebSocket endpoint. */
-  servers: Record<string, StdioServerOptions | WsServerOptions>;
+  servers: Record<string, (StdioServerOptions | WsServerOptions) & ComputerCapability>;
+  /** Host-owned access getter; checked at activation and again before each desktop call. */
+  isComputerEnabled?: () => boolean;
+  computerActivity?: ToolActivityObserver;
 }
 
 /** The shared client face both transports expose to the connection glue. */
@@ -174,14 +138,7 @@ async function connect(
             { name: toolName, arguments: args },
             { signal },
           );
-          const text = (result.content ?? [])
-            .map((c) => c.text ?? "")
-            .filter(Boolean)
-            .join("\n");
-          return {
-            content: clampToolOutput(text),
-            isError: result.isError === true,
-          };
+          return mapMcpResult(result);
         },
       },
     };
@@ -218,6 +175,8 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
     name: "mcp",
     async apply(ctx) {
       for (const [serverName, serverOptions] of Object.entries(options.servers)) {
+        const computerServer = isComputerCapability(serverName, serverOptions);
+        if (computerServer && options.isComputerEnabled?.() === false) continue;
         let connected: Awaited<ReturnType<typeof connect>>;
         try {
           connected = await connect(serverName, serverOptions, (level, msg) =>
@@ -233,11 +192,13 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
         }
         clients.push(connected.client);
         for (const def of connected.tools) {
+          const computerTool = computerServer || isComputerCapability(def.name);
+          if (computerTool && options.isComputerEnabled?.() === false) continue;
           const toolName = `mcp__${serverName}__${def.name}`;
           try {
             ctx.tools.register({
               name: toolName,
-              description: def.description ?? `MCP 工具 ${serverName}/${def.name}`,
+              description: def.description ?? `MCP tool ${serverName}/${def.name}`,
               readOnly: false,
               sideEffect: "unknown", // 外部服务器能力未知，按最保守处理
               parameters: def.inputSchema ?? { type: "object" },
@@ -248,6 +209,9 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
                 scope: `${serverName}/${def.name}`,
               }),
               execute: async (args, ctx) => {
+                if (computerTool && options.isComputerEnabled?.() === false) {
+                  return { content: COMPUTER_DISABLED, isError: true };
+                }
                 if (connected.connection.exited()) {
                   return {
                     content: `MCP 服务器 ${serverName} 已退出，工具 ${def.name} 不可用`,
@@ -257,7 +221,8 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
                 try {
                   // The executor's derived signal (timeout / user stop) rides
                   // into tools/call and cancels the server-side work.
-                  return await connected.connection.call(def.name, args, ctx.signal);
+                  return await observeToolActivity(computerTool ? options.computerActivity : undefined,
+                    toolName, ctx, () => connected.connection.call(def.name, args, ctx.signal));
                 } catch (err) {
                   if (isAbortError(err)) throw err; // let the executor stamp "aborted"
                   return {
