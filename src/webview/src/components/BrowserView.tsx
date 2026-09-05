@@ -20,6 +20,7 @@ import {
 import { api, hasBridge } from "../lib/ipc";
 import { normalizeUrl } from "./browserUrl";
 import { INSPECT_OVERLAY_SCRIPT } from "./browserInspect";
+import { BROWSER_PARTITION } from "../../../shared/browserIpc";
 
 /** <webview> 元素（Electron 专有，JSX 无内建类型）：窄接口 + 运行时才存在的方法。 */
 interface WebviewElement extends HTMLElement {
@@ -286,7 +287,7 @@ export function BrowserView({ t, onTitleChange }: Props): React.JSX.Element {
             <WebviewTag
               ref={viewRef}
               src={mountedUrl}
-              partition="persist:browser"
+              partition={BROWSER_PARTITION}
               webpreferences="contextIsolation=yes, sandbox=yes, nodeIntegration=no"
               allowpopups="false"
               className={`min-h-0 w-full flex-1${loadError !== null ? " hidden" : ""}`}

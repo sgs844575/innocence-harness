@@ -30,6 +30,7 @@ import { ReviewView } from "./components/ReviewView";
 import { DockTerminalView } from "./components/DockTerminalView";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { BrowserView } from "./components/BrowserView";
+import { BrowserAccess } from "./components/settings/BrowserAccess";
 import { latestTodos, type ToolRowModel } from "./components/chat/toolRows";
 import { streamDisplayFromSettings } from "./components/chat/toolGrouping";
 import type { ComposerDraft } from "./components/Composer";
@@ -721,16 +722,26 @@ export function App(): React.JSX.Element {
               fontSize={settings?.codeFontSize}
               fontFamily={terminalFont}
             />
-          )}          renderBrowserTab={(tab) => (
-            <BrowserView
+          )}
+          renderBrowserTab={(tab) => (
+            <BrowserAccess
+              enabled={settings?.browserEnabled !== false}
               t={t}
-              onTitleChange={(title, favicon) =>
-                updateDockTab(tab.id, {
-                  ...(title ? { title } : {}),
-                  ...(favicon ? { favicon } : {}),
-                })
-              }
-            />
+              onOpenSettings={() => {
+                setSettingsSection("browser");
+                setView("settings");
+              }}
+            >
+              <BrowserView
+                t={t}
+                onTitleChange={(title, favicon) =>
+                  updateDockTab(tab.id, {
+                    ...(title ? { title } : {}),
+                    ...(favicon ? { favicon } : {}),
+                  })
+                }
+              />
+            </BrowserAccess>
           )}
           onResizeStart={handleDockResizeStart}
         />
@@ -843,6 +854,9 @@ export function App(): React.JSX.Element {
               appInfo={appInfo}
               section={settingsSection}
               onPatchSettings={patchSettings}
+              onPatchBrowserSettings={patch}
+              onPatchComputerSettings={patch}
+              onClearBrowserData={hasBridge() ? api.browserClearData : undefined}
               onSetTheme={setThemeMode}
               onSetApiKey={
                 hasBridge()

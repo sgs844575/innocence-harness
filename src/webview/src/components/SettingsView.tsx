@@ -7,6 +7,9 @@ import type { AppInfo, HarnessSettings, ModelInfo, ProviderProfile, ThemeMode } 
 import logoUrl from "../../../../logo.svg";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { ModelsPanel } from "./settings/ModelsPanel";
+import { BrowserPanel } from "./settings/BrowserPanel";
+import { ComputerPanel } from "./settings/ComputerPanel";
+import type { BrowserDataKind, BrowserDataResult } from "../../../shared/browserIpc";
 import { SettingsRow } from "./settings/rows";
 import { Select } from "./ui/Select";
 import { Switch } from "./ui/Switch";
@@ -19,7 +22,7 @@ import {
   LIGHT_CODE_THEMES,
 } from "../../../shared/codeThemes";
 
-export type SettingsSection = "general" | "appearance" | "models" | "about";
+export type SettingsSection = "general" | "appearance" | "models" | "browser" | "computer" | "about";
 
 const THEME_MODES: { id: ThemeMode; label: string }[] = [
   { id: "system", label: "跟随系统" },
@@ -40,6 +43,9 @@ interface Props {
   /** 当前分区（由设置侧栏驱动）。 */
   section: SettingsSection;
   onPatchSettings: (patch: HarnessSettingsPatch) => void;
+  onPatchBrowserSettings?: (patch: HarnessSettingsPatch) => Promise<void>;
+  onPatchComputerSettings?: (patch: HarnessSettingsPatch) => Promise<void>;
+  onClearBrowserData?: (kind: BrowserDataKind) => Promise<BrowserDataResult>;
   onSetTheme: (mode: ThemeMode) => void;
   /** API 密钥写入宿主安全存储；缺省 = 面板隐藏密钥保存。 */
   onSetApiKey?: (profileId: string, apiKey: string) => void;
@@ -134,9 +140,11 @@ function CodePreviewCard({
   );
 }
 
-export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
+export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto p-6">
+      {section === "browser" && <BrowserPanel t={t} settings={settings} onPatchSettings={onPatchBrowserSettings ?? onPatchSettings} onClearData={onClearBrowserData} />}
+      {section === "computer" && <ComputerPanel t={t} settings={settings} onPatchSettings={onPatchComputerSettings ?? onPatchSettings} />}
       {section === "general" && settings && (
         <GeneralPanel
           t={t}
