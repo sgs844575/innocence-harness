@@ -4,6 +4,8 @@
 
 import { apiFormatKind, normalizeApiFormat } from "@innocenceharness/harness-providers";
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
+import { BROWSER_SETTINGS_DEFAULTS, normalizeBrowserSettings, type BrowserSettings } from "./browserSettings";
+import { COMPUTER_SETTINGS_DEFAULTS, normalizeComputerSettings, type ComputerSettings } from "./computerSettings";
 import type { PluginToggleSource } from "../../../src/shared/ipc";
 import {
   DEFAULT_CODE_THEME_DARK,
@@ -54,7 +56,7 @@ export interface ProviderProfile {
   preset?: boolean;
 }
 
-export interface HarnessSettings {
+export interface HarnessSettings extends BrowserSettings, ComputerSettings {
   profiles: ProviderProfile[];
   activeProfileId: string; // MOCK_PROFILE_ID or a profile id
   activeModel: string;
@@ -202,6 +204,8 @@ function normalizeArchiveRetentionDays(raw: unknown): number {
  *  DEFAULT_SETTINGS（无设置文件的新装）。 */
 function mergeGeneralFeatures(src: Partial<HarnessSettings>): Partial<HarnessSettings> {
   return {
+    ...normalizeBrowserSettings(src),
+    ...normalizeComputerSettings(src),
     terminalInheritProfile: boolOr(src.terminalInheritProfile, true),
     terminalFontFamily: stringOrEmpty(src.terminalFontFamily),
     terminalShell: normalizeTerminalShell(src.terminalShell),
@@ -278,6 +282,7 @@ function presetProfile(preset: ProviderPreset): ProviderProfile {
 /** 常规设置页功能项的出厂默认（新装 = 未引导 onboarded:false；
  *  旧文件缺失键的归一化语义见 mergeSettings 各 normalize 调用）。 */
 export const GENERAL_FEATURE_DEFAULTS = {
+  ...BROWSER_SETTINGS_DEFAULTS,
   terminalInheritProfile: true,
   terminalFontFamily: "",
   terminalShell: "auto",
@@ -306,6 +311,7 @@ export const GENERAL_FEATURE_DEFAULTS = {
 } as const satisfies Partial<HarnessSettings>;
 
 export const DEFAULT_SETTINGS: HarnessSettings = {
+  ...COMPUTER_SETTINGS_DEFAULTS,
   profiles: PROVIDER_PRESETS.map(presetProfile),
   activeProfileId: MOCK_PROFILE_ID,
   activeModel: MOCK_MODEL,
