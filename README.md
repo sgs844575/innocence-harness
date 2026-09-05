@@ -196,9 +196,6 @@ innocence-code/
 
 ## 开发指南
 
-- **界面开发先析后建**：所有后续界面开发，必须先分析现存界面的明暗双主题风格——语义色彩 token、
-  表面层级、圆角、阴影、动效节奏等（以 `src/webview/src/styles/app.css` 的 `@theme` 语义 token 为唯一来源），
-  在原有设计语言的基础上保持 UI 风格一致后再开发；禁止硬编码色值或引入脱离现有设计体系的新样式。
 - **新增能力优先做成插件**：新的 Provider / 工具 / 技能 / 策略 / 消息处理器应落在可独立测试的
   `packages/*` 模块，经内核 / 脊柱扩展点注册（能力插件随 staging 磁盘分发装载，样例见
   `packages/plugin-example`）；领域包保持宿主无关（不 import Electron / React / DOM）。
