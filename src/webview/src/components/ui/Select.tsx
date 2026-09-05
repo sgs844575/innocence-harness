@@ -36,7 +36,7 @@ export function Select({
           type="button"
           aria-label={ariaLabel}
           title={ariaLabel}
-          className={`flex h-8 min-w-36 items-center justify-between gap-2 rounded-md border border-(--color-border) bg-(--color-raised) px-2.5 text-(--color-foreground) outline-none focus-visible:border-(--color-accent) ${fullWidth ? "w-full" : ""}`}
+          className={`flex h-8 min-w-36 items-center justify-between gap-2 rounded-md border border-(--color-border) bg-(--color-surface) px-2.5 text-(--color-foreground) outline-none focus-visible:border-(--color-accent) ${fullWidth ? "w-full" : ""}`}
         >
           <span className="truncate">{current?.label ?? value}</span>
           <ChevronDown size={12} className="shrink-0 text-(--color-faint)" aria-hidden />
