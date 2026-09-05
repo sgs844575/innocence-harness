@@ -1,0 +1,25 @@
+{
+  "name": "@innocenceharness/attachment-node",
+  "version": "0.1.0",
+  "description": "InnocenceHarness attachment Node adapter: CAS storage, MIME sniffing, text/image/PDF parsing",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@innocenceharness/attachment-runtime": "^0.1.0",
+    "@innocenceharness/harness-session": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/attachment-node"
+  }
+}

@@ -12,7 +12,8 @@ export interface StoredObject {
 
 /** 内容存储端口：原子写入 + 按键读取（字节与元信息）。 */
 export interface ContentStore {
-  put(bytes: Uint8Array): Promise<StoredObject>;
+  /** mediaType 随对象入索引（同内容去重时首个写入者的类型保留）。 */
+  put(bytes: Uint8Array, mediaType?: string): Promise<StoredObject>;
   has(key: string): Promise<boolean>;
   /** 读取对象字节；缺失抛错（调用方转结构化错误，永不静默）。 */
   get(key: string): Promise<Uint8Array>;
