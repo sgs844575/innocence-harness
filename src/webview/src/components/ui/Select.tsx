@@ -52,7 +52,7 @@ export function Select({
             onChange(option.value);
             setOpen(false);
           }}
-          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-(--color-hover) focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--color-border) ${option.value === value ? "text-(--color-foreground)" : "text-(--color-muted)"}`}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--color-foreground) outline-none hover:bg-(--color-hover) focus-visible:bg-(--color-hover)"
         >
           <span className="min-w-0 flex-1 truncate">{option.label}</span>
           {option.value === value && <Check size={13} className="shrink-0 text-(--color-accent)" />}
