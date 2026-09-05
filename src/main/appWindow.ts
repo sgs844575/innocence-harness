@@ -12,6 +12,8 @@ import { appDataRootOrNull } from "./appDataRoot";
 import { getTheme } from "./theme";
 import { handleMainWindowClose } from "./tray";
 import { IPC } from "../shared/ipc";
+import { BROWSER_PARTITION } from "../shared/browserIpc";
+import { isBrowserEnabled } from "./browserSession";
 import {
   fitWindowStateToDisplays,
   loadWindowState,
@@ -105,6 +107,17 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
   win.once("ready-to-show", () => {
     win.show();
     if (restored.maximized) win.maximize();
+  });
+
+  win.webContents.on("will-attach-webview", (event, preferences, params) => {
+    if (!isBrowserEnabled() || params.partition !== BROWSER_PARTITION) {
+      event.preventDefault();
+      return;
+    }
+    delete preferences.preload;
+    preferences.nodeIntegration = false;
+    preferences.contextIsolation = true;
+    preferences.sandbox = true;
   });
 
   // 窗口几何持久化：普通态尺寸/位置在拖动调整时去抖存档，最大化标志即时

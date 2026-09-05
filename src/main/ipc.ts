@@ -1,8 +1,9 @@
 // IPC surface — one handler per channel defined in src/shared/ipc.ts.
-import { app, dialog, ipcMain, shell, webContents } from "electron";
+import { app, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IPC, isChatQuestionResponse, isPermissionChoice, type AttachmentPart, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
+import { IPC, isChatQuestionResponse, isPermissionChoice, type AttachmentPart, type MenuId } from "../shared/ipc";
+import { registerBrowserIpc } from "./browserIpc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { importAttachmentFromBytes, importAttachmentFromPath, validateAttachmentsForSend } from "./attachments";
@@ -457,40 +458,7 @@ export function registerIpcHandlers(): void {
       : null,
   );
 
-  // dock 浏览器：设备度量仿真（CDP Emulation）；只接受挂在主窗口上的 webview
-  // 访客（hostWebContents 非空），拒绝主窗口自身或来历不明的 webContents。
-  ipcMain.handle(IPC.browserEmulate, async (_e, req: BrowserEmulateRequest) => {
-    const guestId = Number(req?.guestId);
-    if (!Number.isInteger(guestId) || guestId <= 0) return { ok: false, error: "invalid guestId" };
-    const guest = webContents.fromId(guestId);
-    if (!guest || guest.isDestroyed()) return { ok: false, error: "guest gone" };
-    if (!guest.hostWebContents) return { ok: false, error: "not a webview guest" };
-    const width = req.width === null ? null : Number(req.width);
-    const height = req.height === null ? null : Number(req.height);
-    try {
-      try {
-        guest.debugger.attach("1.3");
-      } catch {
-        // 已附着（重复仿真）——直接发命令。
-      }
-      if (width === null || height === null) {
-        await guest.debugger.sendCommand("Emulation.clearDeviceMetricsOverride");
-      } else {
-        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 50 || height < 50 || width > 4000 || height > 4000) {
-          return { ok: false, error: "invalid size" };
-        }
-        await guest.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
-          width,
-          height,
-          deviceScaleFactor: 0,
-          mobile: req.mobile === true,
-        });
-      }
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: String(error) };
-    }
-  });
+  registerBrowserIpc(() => getMainWindow()?.webContents);
 
   // 会话「…」菜单宿主动作：文件管理器打开目录 / 外部链接（仅 http(s)）。
   ipcMain.handle(IPC.hostRevealPath, async (_e, target: string) => {
