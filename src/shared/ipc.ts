@@ -582,6 +582,7 @@ export function isChatQuestionResponse(value: unknown): value is ChatQuestionRes
 
 /** One configured platform (preset or custom). */
 export interface ProviderProfile {
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   id: string;
   name: string;
   kind: ProviderKind;

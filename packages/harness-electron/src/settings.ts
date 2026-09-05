@@ -2,6 +2,7 @@
 // style) with per-model metadata (ModelInfo), persisted by the host. Kept
 // free of Electron imports so the runtime stays unit-testable.
 
+import { apiFormatKind, normalizeApiFormat } from "@innocenceharness/harness-providers";
 import { modelFromPreset, resolvePresetMeta, type ModelInfo } from "./modelPresets";
 import type { PluginToggleSource } from "../../../src/shared/ipc";
 import {
@@ -36,6 +37,7 @@ export type ThemeMode = "system" | "dark" | "light";
 export type UiLocale = "zh-CN" | "en-US" | "";
 
 export interface ProviderProfile {
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   id: string;
   name: string;
   kind: ProviderKind;
@@ -377,6 +379,7 @@ function normalizeProfile(raw: unknown): ProviderProfile | null {
   if (typeof src.id !== "string" || !src.id) return null;
   return {
     id: src.id,
+    ...(normalizeApiFormat(src.apiFormat) ? { apiFormat: normalizeApiFormat(src.apiFormat) } : {}),
     name: typeof src.name === "string" && src.name ? src.name : src.id,
     kind: src.kind === "anthropic" || src.kind === "google" ? src.kind : "openai",
     apiKey: typeof src.apiKey === "string" ? src.apiKey : "",
@@ -576,7 +579,7 @@ export function resolveActive(settings: HarnessSettings): ActiveResolution {
     return { kind: "mock" };
   }
   return {
-    kind: profile.kind,
+    kind: apiFormatKind(profile),
     apiKey: profile.apiKey,
     baseURL: profile.baseURL,
     model: settings.activeModel,
@@ -585,10 +588,11 @@ export function resolveActive(settings: HarnessSettings): ActiveResolution {
 
 /** Fetches a platform's model id list from its protocol-specific endpoint. */
 export async function listModels(
-  profile: Pick<ProviderProfile, "kind" | "apiKey" | "baseURL">,
+  profile: Pick<ProviderProfile, "kind" | "apiKey" | "baseURL" | "apiFormat">,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string[]> {
-  const { kind, apiKey, baseURL } = profile;
+  const { apiKey, baseURL } = profile;
+  const kind = apiFormatKind(profile);
   if (kind !== "openai" && kind !== "anthropic" && kind !== "google") {
     throw new Error("unsupported provider kind");
   }
@@ -598,7 +602,7 @@ export async function listModels(
     google: "https://generativelanguage.googleapis.com/v1beta",
   };
   const base = (baseURL || defaults[kind]).replace(/\/+$/, "");
-  const url = kind === "anthropic" ? `${base}/v1/models` : `${base}/models`;
+  const url = kind === "anthropic" ? `${base.replace(/\/v1$/, "")}/v1/models` : `${base}/models`;
   const headers: Record<string, string> =
     kind === "anthropic"
       ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }

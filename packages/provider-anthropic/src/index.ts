@@ -3,6 +3,7 @@ import { createModelFactory, type ModelFactory } from "@innocenceharness/harness
 
 export interface AnthropicProviderConfig {
   apiKey?: string;
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   baseURL?: string;
   model: string;
   maxTokens?: number;
@@ -34,7 +35,7 @@ export function createAnthropicProvider(
     protocol: "anthropic",
     modelId: config.model,
     credential: apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...(config.baseURL ? { baseURL: config.apiFormat === "messages" ? `${config.baseURL.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1` : config.baseURL } : {}),
     ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
     ...(hasRequestOptions(config) ? {
       requestOptions: {

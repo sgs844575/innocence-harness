@@ -3,6 +3,7 @@ import { createModelFactory, type ModelFactory } from "@innocenceharness/harness
 
 export interface OpenAIProviderConfig {
   apiKey?: string;
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   /** Override for OpenAI-compatible endpoints (Ollama, vLLM, gateways...). */
   baseURL?: string;
   model: string;
@@ -35,7 +36,7 @@ export function createOpenAIProvider(
 
   return factory.create({
     providerId: config.id ?? "openai",
-    protocol: config.baseURL ? "openai-compatible" : "openai",
+    protocol: config.apiFormat === "responses" ? "responses" : config.baseURL ? "openai-compatible" : "openai",
     modelId: config.model,
     credential: apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),

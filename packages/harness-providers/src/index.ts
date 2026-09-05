@@ -21,3 +21,5 @@ export {
   type ProviderPlugin,
   type ProvidersService,
 } from "./service";
+
+export { apiFormatKind, normalizeApiFormat, type ApiFormat } from "./apiFormat";

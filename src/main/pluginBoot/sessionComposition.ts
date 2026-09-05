@@ -245,6 +245,7 @@ export function workbenchFocusPlugin(
 type ModelBackedProvider = Provider & { readonly model: import("@innocenceharness/harness-providers").ProviderModel };
 
 type ModelFactoryConfig = {
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   id?: string;
   apiKey?: string;
   baseURL?: string;
@@ -255,6 +256,7 @@ type ModelFactoryConfig = {
 type StagedModelFactory = (config: ModelFactoryConfig) => import("@innocenceharness/harness-providers").ProviderModel;
 
 export type NativeProviderProfile = {
+  apiFormat?: import("@innocenceharness/harness-providers").ApiFormat;
   id: string;
   kind: "openai" | "anthropic" | "google";
   apiKey: string;
@@ -298,6 +300,7 @@ export async function resolveStagedProvider(
     apiKey: profile.apiKey || undefined,
     baseURL: profile.baseURL || undefined,
     model: profile.model,
+    ...(profile.apiFormat ? { apiFormat: profile.apiFormat } : {}),
     reasoningEffort,
   }));
 }
@@ -323,6 +326,7 @@ export async function buildProviderFromSettings(
   return resolveStagedProvider(boot, {
     id: profile.id,
     kind: active.kind,
+    ...(profile.apiFormat ? { apiFormat: profile.apiFormat } : {}),
     apiKey: active.apiKey,
     baseURL: active.baseURL,
     model: active.model,

@@ -335,3 +335,18 @@ describe("workbench focus notes (S4)", () => {
     expect(grep.content).toBe("BODY");
   });
 });
+
+it.each([
+  ["responses", "provider-openai"],
+  ["messages", "provider-anthropic"],
+  ["chat-completions", "provider-openai"],
+])("routes a saved %s format through the staged factory", async (apiFormat, expectedPlugin) => {
+  const create = vi.fn(() => model("gateway", "model"));
+  const importPlugin = vi.fn(async () => create);
+  await buildProviderFromSettings({ importPlugin } as never, {
+    profiles: [{ id: "gateway", kind: "openai", apiFormat, name: "Gateway", enabled: true, apiKey: "secret", baseURL: "https://example.invalid/v1", models: [{ id: "model" }] }],
+    activeProfileId: "gateway", activeModel: "model",
+  } as never);
+  expect(importPlugin).toHaveBeenCalledWith(expectedPlugin);
+  expect(create.mock.calls[0]).toEqual([expect.objectContaining({ apiFormat })]);
+});

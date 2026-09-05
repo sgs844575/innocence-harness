@@ -54,6 +54,8 @@ function toProviderOptions(
   providerId: string,
 ): SharedV3ProviderOptions | undefined {
   switch (protocol) {
+    case "responses":
+      return optionsForCompatibleProtocol(options, "openai");
     case "openai":
     case "openai-compatible":
       return optionsForCompatibleProtocol(options, providerId);

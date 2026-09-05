@@ -12,6 +12,7 @@ import {
 import { diffSettingsSnapshot } from "../../../../shared/settingsPatch";
 import type { HarnessSettingsPatch } from "../../../../shared/settingsPatch";
 import { Switch } from "../ui/Switch";
+import { ApiFormatPicker } from "./ApiFormatPicker";
 import { AddModelDialog } from "./AddModelDialog";
 import { ImportModelsDialog } from "./ImportModelsDialog";
 
@@ -230,6 +231,7 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
                 className={`${input} font-mono`}
               />
             </div>
+            <ApiFormatPicker profile={selected} label={t("settings.models.apiFormat")} onChange={(apiFormat) => mutateProfile(selected.id, { apiFormat })} />
             <div className="flex items-start gap-3">
               <span className={rowLabel}>{t("settings.models.apiKey")}</span>
               <div className="flex min-w-0 flex-1 items-center gap-2">

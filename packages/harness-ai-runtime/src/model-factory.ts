@@ -6,7 +6,7 @@ import type { ModelRequestOptions, ProviderModel } from "@innocenceharness/harne
 import { registerModelProtocol } from "./request-options";
 import { resolveModelFetch } from "./proxy-fetch";
 
-export type ProviderProtocol = "openai" | "openai-compatible" | "anthropic" | "google";
+export type ProviderProtocol = "responses" | "openai" | "openai-compatible" | "anthropic" | "google";
 
 export interface ProviderProfile {
   providerId: string;
@@ -26,7 +26,7 @@ export interface ModelFactoryDependencies {
     baseURL?: string;
     name?: string;
     fetch?: typeof fetch;
-  }) => { chat(modelId: string): unknown };
+  }) => { chat(modelId: string): unknown; responses?(modelId: string): unknown };
   createOpenAICompatible?: (settings: {
     apiKey: string;
     baseURL?: string;
@@ -53,6 +53,7 @@ export interface ModelFactory {
 
 function toSupportedProtocol(protocol: ProviderProfile["protocol"]): ProviderProtocol {
   switch (protocol) {
+    case "responses": return "responses";
     case "openai":
       return "openai";
     case "openai-compatible":
@@ -98,6 +99,12 @@ export function createModelFactory(dependencies: ModelFactoryDependencies = {}):
       const protocol = toSupportedProtocol(profile.protocol);
       let value: unknown;
       switch (protocol) {
+        case "responses": {
+          const client = openAI(options);
+          if (!client.responses) throw new Error("Responses API is unavailable");
+          value = client.responses(profile.modelId);
+          break;
+        }
         case "openai":
           value = openAI(options).chat(profile.modelId);
           break;

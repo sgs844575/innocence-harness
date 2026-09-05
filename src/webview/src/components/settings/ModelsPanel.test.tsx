@@ -126,3 +126,17 @@ describe("ModelsPanel", () => {
     expect(text).toContain('"maxOutput":128000');
   });
 });
+
+ it("saves the selected API format as a profile mutation", () => {
+   const onPatchSettings = vi.fn();
+   renderPanel({ onPatchSettings });
+   const picker = screen.getByRole("button", { name: "settings.models.apiFormat" });
+   expect(picker.textContent).toContain("Chat Completions");
+   fireEvent.click(picker);
+   expect(screen.getByRole("button", { name: "Chat Completions (/chat/completions)", pressed: true })).toBeTruthy();
+   fireEvent.click(screen.getByRole("button", { name: "Responses (/responses)" }));
+   expect(screen.queryByRole("dialog")).toBeNull();
+   expect(onPatchSettings.mock.calls[0][0].providerProfiles.updates).toEqual([
+     { id: "p1", changes: { apiFormat: "responses" } },
+   ]);
+ });
