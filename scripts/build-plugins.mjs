@@ -47,6 +47,11 @@ const LIBS = [
   // 该包同时是 plugins/fs 插件，这里补一份 staging node_modules 解析位，
   // 否则打包应用内裸说明符只在开发态经仓库根 node_modules 偶然可达。
   "packages/tools-fs",
+  // 附件编排双包（attachment-runtime 契约 + attachment-node 实现）：
+  // plugins/attachments 与宿主主进程共享同一套类型与 CAS 实现；staged
+  // node_modules 解析位让插件 dist 的裸导入在打包应用内可达。
+  "packages/attachment-runtime",
+  "packages/attachment-node",
 ];
 // 内置清单（boot 侧 toggle 解析的描述符来源）：id + core 标记 + 依赖关系，
 // 随 staging 产出 manifest.json；可开关标记（toggleable）由 core 派生
@@ -126,6 +131,10 @@ const BUILTIN_DESCRIPTORS = [
   { id: "hooks", dependencies: [] },
   { id: "team", dependencies: [] },
   { id: "ask", dependencies: [] },
+  // attachments 为附件摄入校验插件（附件与多模态批次）：直装载默认导出，
+  // 向会话注册消息处理器（-500）——单消息件数上限与引用/表示形状校验，
+  // 无 IO 无配置；CAS 存在性与模型能力门控由宿主主进程权威负责。
+  { id: "attachments", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -161,6 +170,7 @@ const PLUGINS = [
   { dir: "packages/plugin-hooks", id: "hooks" },
   { dir: "packages/plugin-team", id: "team" },
   { dir: "packages/plugin-ask", id: "ask" },
+  { dir: "packages/plugin-attachments", id: "attachments" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";
@@ -173,8 +183,10 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "@ai-sdk/google",
   // 插件 dist 的运行时裸导入：plugin-skills→yaml、harness-ai-runtime→undici、
   // tools-ssh→ssh2、plugin-mcp→ws、tools-archive→yazl、
-  // tools-fs(read-pdf)→pdfjs-dist（legacy 构建动态导入），与根 package.json
-  // 声明保持一致；@ai-sdk/openai-compatible 由 harness-ai-runtime 的
+  // tools-fs(read-pdf)→pdfjs-dist（legacy 构建动态导入）、
+  // attachment-node→@napi-rs/canvas（预编译 N-API 图像解码，平台二进制经
+  // optionalDependencies 闭包一并入 staging），与根 package.json 声明保持
+  // 一致；@ai-sdk/openai-compatible 由 harness-ai-runtime 的
   // model-factory 直引（兼容端点通道）。
   "yaml",
   "undici",
@@ -182,6 +194,7 @@ const EXTERNAL_RUNTIME_PACKAGES = [
   "ws",
   "yazl",
   "pdfjs-dist",
+  "@napi-rs/canvas",
 ];
 // 缓存文件位于 resources/ 之外：extraResource 与 packager ignore 都不会带走它。
 const CACHE_FILE = "build/dist/.plugins-cache.json";

@@ -2,7 +2,7 @@
 // types and encoders). Split by responsibility: this module canonicalizes
 // message/part shapes and folds JSONL rows into history + the route map.
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
-import type { Message, MessagePart, ToolResultPart } from "@innocenceharness/harness-session";
+import { isContentRef, type Message, type MessagePart, type ToolResultPart } from "@innocenceharness/harness-session";
 import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
 
@@ -65,6 +65,30 @@ function isKnownPart(raw: unknown): raw is MessagePart {
   return typeof p.type === "string" && KNOWN_PART_TYPES.has(p.type);
 }
 
+/** 附件 part 深校验（type 不进 KNOWN 集合，走本分支）：合法附件进 canonical
+ *  parts；畸形附件落 preserved（原样保留、可再编码存活，永不冒充合法附件
+ *  被消费——转录侧伪造的引用在源头拒收）。 */
+function isAttachmentPart(raw: unknown): raw is import("@innocenceharness/harness-session").AttachmentPart {
+  if (typeof raw !== "object" || raw === null) return false;
+  const part = raw as {
+    type?: unknown;
+    name?: unknown;
+    source?: unknown;
+    representations?: unknown;
+  };
+  if (part.type !== "attachment") return false;
+  if (typeof part.name !== "string" || part.name.length === 0) return false;
+  if (!isContentRef(part.source)) return false;
+  if (!Array.isArray(part.representations)) return false;
+  return part.representations.every((rep) => {
+    if (typeof rep !== "object" || rep === null) return false;
+    const representation = rep as { kind?: unknown; content?: unknown; page?: unknown };
+    if (representation.kind !== "text" && representation.kind !== "image") return false;
+    if (!isContentRef(representation.content)) return false;
+    return representation.page === undefined || typeof representation.page === "number";
+  });
+}
+
 /** Unknown-but-legal part: an object with a non-empty string `type` we do not know. */
 function isUnknownLegalPart(raw: unknown): raw is Record<string, unknown> {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return false;
@@ -87,8 +111,11 @@ function classifyParts(message: { parts: readonly unknown[]; preservedParts?: un
   const parts: MessagePart[] = [];
   const preserved: Record<string, unknown>[] = [];
   for (const raw of message.parts) {
-    if (isKnownPart(raw)) parts.push(raw);
-    else if (isUnknownLegalPart(raw)) preserved.push(raw);
+    if (isAttachmentPart(raw) || isKnownPart(raw)) {
+      parts.push(raw);
+    } else if (isUnknownLegalPart(raw)) {
+      preserved.push(raw);
+    }
   }
   if (Array.isArray(message.preservedParts)) {
     for (const raw of message.preservedParts) {
@@ -158,9 +185,10 @@ function logicalTurns(messages: Message[]): Message[][] {
   const turns: Message[][] = [];
   let current: Message[] = [];
   for (const message of messages) {
+    // 附件-only 用户轮也是真实轮次（规格 §11）：文本或附件 part 均可开轮。
     const startsTurn =
       message.role === "user" &&
-      message.parts.some((p) => p.type === "text" && p.text.length > 0);
+      message.parts.some((p) => (p.type === "text" && p.text.length > 0) || p.type === "attachment");
     if (startsTurn && current.length > 0) {
       turns.push(current);
       current = [];

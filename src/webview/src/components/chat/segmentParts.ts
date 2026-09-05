@@ -17,6 +17,9 @@ export function segmentParts(parts: readonly MessagePart[]): Segment[] {
     } else if (part.type === "text") {
       if (last?.kind === "text") last.text += part.text;
       else segments.push({ kind: "text", text: part.text });
+    } else if (part.type === "attachment") {
+      // 附件 part 属于用户消息（气泡侧渲染）；助手分段防御性跳过。
+      continue;
     } else {
       if (last?.kind === "tools") last.parts.push(part);
       else segments.push({ kind: "tools", parts: [part] });

@@ -300,3 +300,74 @@ describe("unknown part preservation", () => {
     expect(decodedAgain.history[0]?.preservedParts).toEqual([{ type: "attachment", ref: "file://c.png" }]);
   });
 });
+
+describe("attachment parts (content-ref form)", () => {
+  const validAttachment = {
+    type: "attachment" as const,
+    name: "shot.png",
+    source: { key: `sha256:${"1".repeat(64)}`, mediaType: "image/png", byteLength: 10, estimatedTokens: 4 },
+    representations: [
+      { kind: "image", content: { key: `sha256:${"2".repeat(64)}`, mediaType: "image/png", byteLength: 10 } },
+    ],
+  };
+
+  it("valid attachment parts decode into canonical parts and round-trip", () => {
+    const raw =
+      JSON.stringify({
+        at: "t1",
+        type: "turn-v3",
+        eventId: "e1",
+        turnId: "turn-a",
+        routeId: "main",
+        parentTurnId: null,
+        checkpointId: "cp-1",
+        messages: [{ role: "user", parts: [{ type: "text", text: "看图" }, validAttachment] }],
+      }) + "\n";
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history[0]?.parts.map((part) => part.type)).toEqual(["text", "attachment"]);
+    const encoded = v3({ turnId: "turn-a", routeId: "main", messages: decoded.history });
+    const again = decodeTranscript(encoded);
+    expect(again.history[0]?.parts[1]).toEqual(validAttachment);
+  });
+
+  it("malformed attachment parts fall back to preserved, never pose as legal", () => {
+    const forged = { type: "attachment", name: "x", source: { key: "md5:zz", mediaType: "x", byteLength: 1 }, representations: [] };
+    const raw =
+      JSON.stringify({
+        at: "t1",
+        type: "turn-v3",
+        eventId: "e1",
+        turnId: "turn-b",
+        routeId: "main",
+        parentTurnId: null,
+        checkpointId: "cp-1",
+        messages: [{ role: "user", parts: [forged] }],
+      }) + "\n";
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history[0]?.parts).toEqual([]);
+    expect(decoded.history[0]?.preservedParts).toEqual([forged]);
+  });
+
+  it("attachment-only user turn starts a logical turn (spec §11)", () => {
+    const raw =
+      JSON.stringify({
+        at: "t1",
+        type: "turn-v3",
+        eventId: "e1",
+        turnId: "turn-c",
+        routeId: "main",
+        parentTurnId: null,
+        checkpointId: "cp-1",
+        messages: [
+          { role: "user", parts: [{ type: "text", text: "第一轮" }] },
+          { role: "assistant", parts: [{ type: "text", text: "答" }] },
+          { role: "user", parts: [validAttachment] },
+        ],
+      }) + "\n";
+    const decoded = decodeTranscript(raw);
+    // 附件-only 用户消息独立成轮（logicalTurns 仅用于 legacy 记录；此处验证
+    // canonical parts 保留附件）。
+    expect(decoded.history).toHaveLength(3);
+    expect(decoded.history[2]?.parts[0]?.type).toBe("attachment");
+  });
+});

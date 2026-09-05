@@ -35,7 +35,11 @@ import type {
   SubagentStatus as AgentSubagentStatus,
 } from "@innocenceharness/harness-agent";
 import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
-import type { ChatContextUsageSnapshot } from "../../../src/shared/ipc";
+import { isContentRef, type AttachmentPart as SessionAttachmentPart } from "@innocenceharness/harness-session";
+import type {
+  AttachmentPart as SharedAttachmentPart,
+  ChatContextUsageSnapshot,
+} from "../../../src/shared/ipc";
 import {
   DEFAULT_SETTINGS,
   MOCK_MODEL as PKG_MOCK_MODEL,
@@ -257,6 +261,32 @@ describe("shared SubagentLifecycleEvent 镜像对齐 harness-agent domain 事件
       const back: SharedSubagentStatus = domain;
       expect(back).toBe(status);
     }
+  });
+});
+
+describe("shared 附件 part 镜像对齐 harness-session", () => {
+  // shared 不 import 包，ContentRef/AttachmentRepresentation/AttachmentPart
+  // 手工镜像：任一侧增删字段或改可选性而忘了同步另一侧时，双向赋值会让
+  // typecheck 失败（漂移不再静默）。
+  it("attachment part 镜像双向可赋值（漂移守卫）", () => {
+    const sample = {
+      type: "attachment" as const,
+      name: "shot.png",
+      source: { key: `sha256:${"a".repeat(64)}`, mediaType: "image/png", byteLength: 10, estimatedTokens: 4 },
+      representations: [
+        { kind: "image" as const, content: { key: `sha256:${"b".repeat(64)}`, mediaType: "image/png", byteLength: 10 } },
+        { kind: "text" as const, content: { key: `sha256:${"c".repeat(64)}`, mediaType: "text/plain", byteLength: 3 }, page: 2 },
+      ],
+    };
+    const domain: SessionAttachmentPart = sample; // 镜像 → 包
+    const back: SharedAttachmentPart = domain; // 包 → 镜像
+    expect(back.representations).toHaveLength(2);
+  });
+
+  it("isContentRef 拒绝畸形键（转录/IPC 侧伪造在源头拒收）", () => {
+    expect(isContentRef({ key: "md5:abc", mediaType: "text/plain", byteLength: 1 })).toBe(false);
+    expect(isContentRef({ key: `sha256:${"g".repeat(64)}`, mediaType: "text/plain", byteLength: 1 })).toBe(false);
+    expect(isContentRef({ key: `sha256:${"0".repeat(64)}`, mediaType: "text/plain", byteLength: 0 })).toBe(true);
   });
 });
 

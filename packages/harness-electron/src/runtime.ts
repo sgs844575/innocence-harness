@@ -286,9 +286,10 @@ export class HarnessRuntime {
     let cut = history.length;
     for (let index = 0; index < history.length; index += 1) {
       const message = history[index]!;
+      // 附件-only 用户轮也是真实轮次（规格 §11）：与转录 logicalTurns 同谓词。
       const startsTurn =
         message.role === "user" &&
-        message.parts.some((part) => part.type === "text" && part.text.length > 0);
+        message.parts.some((part) => (part.type === "text" && part.text.length > 0) || part.type === "attachment");
       if (!startsTurn) continue;
       if (turns >= keptUserTurns) {
         cut = index;

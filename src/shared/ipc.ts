@@ -162,7 +162,35 @@ export interface ToolResultPart {
   /** Matches the toolCall part of the same invocation, when known. */
   invocationId?: string;
 }
-export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
+
+// 镜像契约：以下三个附件类型复制自 packages/harness-session/src/types.ts
+// （shared 不 import 包），修改任何一侧时必须同步另一侧
+// （packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
+/** 内容寻址引用：消息只带 sha256 键/媒体类型/字节长度，字节在主进程 CAS。 */
+export interface ContentRef {
+  /** CAS 键，固定形态 `sha256:<64 hex>`。 */
+  key: string;
+  mediaType: string;
+  byteLength: number;
+  estimatedTokens?: number;
+}
+
+/** 附件的一条模型可见表示（文本抽取或规范化图像；PDF 表示带页码）。 */
+export interface AttachmentRepresentation {
+  kind: "text" | "image";
+  content: ContentRef;
+  page?: number;
+}
+
+/** 用户附件 part：source 为原始导入对象，representations 为按模型能力选送的表示。 */
+export interface AttachmentPart {
+  type: "attachment";
+  name: string;
+  source: ContentRef;
+  representations: AttachmentRepresentation[];
+}
+
+export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart | AttachmentPart;
 
 export interface ChatCompletionMetadata {
   providerId?: string;

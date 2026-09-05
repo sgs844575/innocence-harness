@@ -86,6 +86,9 @@ function toCanonicalPart(part: MessagePart): CanonicalPart {
   if (part.type === "toolCall") {
     return { type: "toolCall", id: part.id, toolName: part.toolName, args: part.args };
   }
+  if (part.type === "attachment") {
+    return { type: "attachment", name: part.name, source: part.source, representations: part.representations };
+  }
   return {
     type: "toolResult",
     toolCallId: part.toolCallId,
