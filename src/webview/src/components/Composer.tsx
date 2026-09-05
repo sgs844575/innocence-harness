@@ -11,6 +11,7 @@ import { PermissionModePicker } from "./composer/PermissionModePicker";
 import { AgentModePicker } from "./composer/AgentModePicker";
 import { ThinkingEffortPicker, type EffortValue } from "./composer/ThinkingEffortPicker";
 import { ContextMeter } from "./composer/ContextMeter";
+import { ComputerButton } from "./composer/ComputerButton";
 import { AttachmentChip } from "./composer/AttachmentChips";
 import { ComposerSuggest, type SuggestRow } from "./composer/ComposerSuggest";
 import {
@@ -392,6 +393,16 @@ export function Composer({
               </span>
             </DropdownMenuItem>
           </DropdownMenu>
+          <ComputerButton t={t} settings={settings} onSelect={() => {
+            const next = value.startsWith("/computer-control ") ? value : `/computer-control ${value}`;
+            setValue(next);
+            setCaret(next.length);
+            setDismissed(true);
+            requestAnimationFrame(() => {
+              ref.current?.focus();
+              ref.current?.setSelectionRange(next.length, next.length);
+            });
+          }} />
           {/* 隐藏文件选择器（多选；字节经 IPC 进主进程 CAS）。 */}
           <input
             ref={fileInputRef}

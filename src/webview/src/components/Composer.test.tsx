@@ -33,6 +33,25 @@ function renderComposer(extra: Partial<Parameters<typeof Composer>[0]> = {}) {
 }
 
 describe("Composer", () => {
+  it("adds the computer skill to the existing draft without sending or duplicating it", () => {
+    const onSend = vi.fn();
+    renderComposer({ settings: { ...settings, computerEnabled: true, showComputerButton: true }, onSend });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Check this window" } });
+    const button = screen.getByRole("button", { name: "composer.computer" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(screen.getByRole("textbox")).toHaveValue("/computer-control Check this window");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {}, { showComputerButton: false }, { computerEnabled: false, showComputerButton: true },
+    { showComputerButton: true, pluginToggles: { computer: false } },
+  ])("hides the computer button when unavailable: %j", (choices) => {
+    renderComposer({ settings: { ...settings, ...choices } });
+    expect(screen.queryByRole("button", { name: "composer.computer" })).toBeNull();
+  });
+
   it("回车发送并清空", () => {
     const onSend = vi.fn();
     renderComposer({ onSend });

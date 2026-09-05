@@ -78,6 +78,7 @@
 
   --radius-card: 16px; /* 输入卡 */
   --radius-pop: 12px; /* 弹层 */
+  --radius-pill: 999px;
   --shadow-pop: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.18);
 
