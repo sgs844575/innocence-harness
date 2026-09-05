@@ -15,7 +15,7 @@ describe("incomplete tool history replay", () => {
     ] }];
     if (continueTurn) history.push({ role: "user", parts: [{ type: "text", text: "Continue." }] });
     const snapshot = structuredClone(history);
-    const mapped = toSdkMessages(history);
+    const mapped = await toSdkMessages(history);
     expect(mapped[1]).toMatchObject({ role: "tool", content: [{
       toolCallId: "missing", toolName: "inspect",
       output: { type: "error-text", value: expect.stringContaining("Execution status is unknown") },
@@ -35,11 +35,11 @@ describe("incomplete tool history replay", () => {
     await generateText({ model, messages: mapped });
     expect(model.doGenerateCalls).toHaveLength(1);
     expect(history).toEqual(snapshot);
-    expect(toSdkMessages(history)).toEqual(mapped);
+    expect(await toSdkMessages(history)).toEqual(mapped);
   });
 
-  it("preserves results recorded in separate messages without adding placeholders", () => {
-    const mapped = toSdkMessages([
+  it("preserves results recorded in separate messages without adding placeholders", async () => {
+    const mapped = await toSdkMessages([
       { role: "assistant", parts: [
         { type: "toolCall", id: "a", toolName: "inspect", args: {} },
         { type: "toolCall", id: "b", toolName: "inspect", args: {} },

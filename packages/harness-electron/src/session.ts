@@ -98,6 +98,7 @@ export class AgentSession {
       toolTimeoutMs: options.toolTimeoutMs ?? spine.loop.DEFAULT_TOOL_TIMEOUT_MS,
       telemetry: options.telemetry,
       pendingInputs: options.pendingInputs,
+      resolveAttachment: options.resolveAttachment,
     });
     // HarnessEvent traffic flows over the kernel bus: the session service
     // emits, this root-level subscription fans out to the on() listeners and

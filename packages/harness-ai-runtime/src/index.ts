@@ -5,7 +5,7 @@ export {
   type ProviderProfile,
   type ProviderProtocol,
 } from "./model-factory";
-export { toSdkMessages } from "./message-mapping";
+export { toSdkMessages, type AttachmentResolver, type ResolvedAttachmentPiece } from "./message-mapping";
 export {
   resolveModelFetch,
   resetModelProxyDispatcher,

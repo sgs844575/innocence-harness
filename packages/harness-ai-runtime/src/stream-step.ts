@@ -18,7 +18,7 @@ import {
   type UserContent,
 } from "ai";
 import { hasUsage, toUsageMetadata } from "./metadata";
-import { toSdkMessages } from "./message-mapping";
+import { toSdkMessages, type AttachmentResolver } from "./message-mapping";
 import { modelProtocolOf, toSdkRequestOptions } from "./request-options";
 import { toSdkTools, type SchemaOnlyTools } from "./tool-mapping";
 
@@ -28,6 +28,8 @@ export interface StreamOneHarnessStepRequest {
   messages: readonly Message[];
   tools: readonly ToolSpec[];
   signal?: AbortSignal;
+  /** 附件解析器（宿主注入：CAS 读取 + 视觉能力门控）；缺省时附件以省略注记送达。 */
+  resolveAttachment?: AttachmentResolver;
 }
 
 export type HarnessStepEvent =
@@ -63,7 +65,7 @@ export async function* streamOneHarnessStep(
       anthropic: { cacheControl: { type: "ephemeral" } },
     };
     const isAnthropic = modelProtocolOf(request.model.value) === "anthropic";
-    const messages = toSdkMessages(request.messages);
+    const messages = await toSdkMessages(request.messages, request.resolveAttachment);
 
     const result = streamText({
       model: request.model.value as LanguageModel,

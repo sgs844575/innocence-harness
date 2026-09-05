@@ -135,7 +135,7 @@ export function createStructuredOutputPort(): StructuredOutputPort {
         const result = await generateObject({
           model: input.model.value as LanguageModel,
           ...(system !== undefined ? { system } : {}),
-          messages: toSdkMessages(messagesWithInstruction(input.messages, instruction)),
+          messages: await toSdkMessages(messagesWithInstruction(input.messages, instruction)),
           abortSignal: input.signal,
           schema: input.schema,
           experimental_repairText: repairJsonText,

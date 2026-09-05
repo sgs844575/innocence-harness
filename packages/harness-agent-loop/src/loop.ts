@@ -21,7 +21,7 @@ import {
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
 import type { Tool, ToolContext, ToolImage, ToolsService } from "@innocenceharness/harness-tools";
 import { bindSubagentSpawner, type SubagentSpawner } from "@innocenceharness/harness-agent";
-import { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type AttachmentResolver, type TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import {
   breakdownFromRequest,
   calibrate,
@@ -61,6 +61,8 @@ export interface LoopOptions {
   pendingInputs?: PendingInputMailbox;
   /** 系统提示词分段（技能索引段原文，供计量把技能单列；缺省并入系统提示词）。 */
   systemSegments?: { skills?: string };
+  /** 附件解析器（宿主注入：CAS 读取 + 视觉能力门控）；缺省附件以省略注记送达。 */
+  resolveAttachment?: AttachmentResolver;
 }
 
 export interface LoopResult {
@@ -96,6 +98,7 @@ interface ModelStepRequest {
   signal?: AbortSignal;
   onEvent?: HarnessEventListener;
   telemetry?: TraceAdapter;
+  resolveAttachment?: AttachmentResolver;
 }
 
 /**
@@ -176,6 +179,7 @@ async function runModelStep(request: ModelStepRequest): Promise<ModelStep> {
     messages: request.messages,
     tools: request.tools,
     signal: request.signal,
+    resolveAttachment: request.resolveAttachment,
   })) {
     switch (event.type) {
       case "text":
@@ -314,6 +318,7 @@ export async function runLoop(
     compactor,
     signal,
     telemetry,
+    resolveAttachment,
   } = opts;
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const toolTimeoutMs = opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
@@ -384,6 +389,7 @@ export async function runLoop(
         signal,
         onEvent,
         telemetry,
+        resolveAttachment,
       });
       if (step.metadata?.usage && step.metadata.usage.inputTokens !== undefined) {
         onEvent({
@@ -673,6 +679,7 @@ export async function runLoop(
         signal,
         onEvent,
         telemetry,
+        resolveAttachment,
       });
       if (epilogue.metadata?.usage && epilogue.metadata.usage.inputTokens !== undefined) {
         onEvent({

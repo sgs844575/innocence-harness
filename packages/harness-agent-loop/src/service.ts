@@ -1,4 +1,4 @@
-import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import type { AttachmentResolver, TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { SubagentSpawner } from "@innocenceharness/harness-agent";
 import type { PermissionEngine } from "@innocenceharness/harness-permissions";
 import type { Provider } from "@innocenceharness/harness-providers";
@@ -54,6 +54,8 @@ export interface LoopDeps {
   telemetry?: TraceAdapter;
   /** Steer mailbox shared by every run of this session (see LoopOptions). */
   pendingInputs?: PendingInputMailbox;
+  /** 附件解析器（宿主注入：CAS 读取 + 视觉能力门控）。 */
+  resolveAttachment?: AttachmentResolver;
 }
 
 /** Per-run options; each member overrides the {@link LoopDeps} default. */
@@ -101,6 +103,7 @@ export function createRunLoop(deps: LoopDeps): RunLoopFunction {
       telemetry: deps.telemetry,
       scope: opts.scope,
       pendingInputs: deps.pendingInputs,
+      resolveAttachment: deps.resolveAttachment,
     });
 }
 

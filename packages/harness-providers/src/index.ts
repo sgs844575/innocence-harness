@@ -1,5 +1,8 @@
 export type { ChatRequest, Delta, Provider, ToolSpec } from "./provider";
 export type {
+  AttachmentPart,
+  AttachmentRepresentation,
+  ContentRef,
   FinishReason,
   JsonSchema,
   Message,

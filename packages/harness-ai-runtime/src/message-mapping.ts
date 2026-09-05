@@ -1,8 +1,27 @@
-import type { Message, MessagePart } from "@innocenceharness/harness-providers";
+import type { AttachmentPart, Message, MessagePart } from "@innocenceharness/harness-providers";
 import type { ModelMessage } from "ai";
 
-/** Maps canonical messages to runtime model messages without replaying thinking. */
-export function toSdkMessages(messages: readonly Message[]): ModelMessage[] {
+/** 解析后的附件内容片段（与 ai-sdk user content 形态一致）。 */
+export type ResolvedAttachmentPiece =
+  | { type: "text"; text: string }
+  | { type: "image"; image: string; mediaType: string };
+
+/**
+ * 附件解析器：宿主注入（CAS 读取 + 模型能力门控）。文本表示恒可送；图像
+ * 表示仅视觉模型可送（false/unknown 时宿主自行给替代文本说明）。无解析器
+ * 时附件以显式省略注记送达（结构化输出等旁路请求不静默丢引用）。
+ */
+export type AttachmentResolver = (part: AttachmentPart) => Promise<ResolvedAttachmentPiece[]>;
+
+/**
+ * Maps canonical messages to runtime model messages without replaying thinking.
+ * Attachment parts resolve through the optional host resolver, preserving the
+ * original canonical order of text and attachment pieces (spec §8).
+ */
+export async function toSdkMessages(
+  messages: readonly Message[],
+  resolveAttachment?: AttachmentResolver,
+): Promise<ModelMessage[]> {
   const toolNames = new Map<string, string>();
   const mapped: ModelMessage[] = [];
   const recordedResults = new Set(messages.flatMap((message) =>
@@ -59,11 +78,35 @@ export function toSdkMessages(messages: readonly Message[]): ModelMessage[] {
       });
     }
 
-    const text = message.parts
-      .filter((part): part is Extract<MessagePart, { type: "text" }> => part.type === "text")
-      .map((part) => part.text)
-      .join("");
-    if (text) mapped.push({ role: "user", content: text });
+    // 用户内容：文本与附件按 canonical 顺序交错（规格 §8）；连续 text part
+    // 归并；无附件时保持纯字符串形态（既有请求体与缓存前缀不变）。
+    const pieces: ResolvedAttachmentPiece[] = [];
+    let textRun: string | null = null;
+    const flushText = (): void => {
+      if (textRun) pieces.push({ type: "text", text: textRun });
+      textRun = null;
+    };
+    for (const part of message.parts) {
+      if (part.type === "text") {
+        textRun = (textRun ?? "") + part.text;
+        continue;
+      }
+      if (part.type === "attachment") {
+        flushText();
+        if (resolveAttachment) {
+          pieces.push(...(await resolveAttachment(part)));
+        } else {
+          pieces.push({ type: "text", text: `[Attachment "${part.name}" is not included in this request.]` });
+        }
+      }
+    }
+    flushText();
+    if (pieces.length === 0) continue;
+    if (pieces.length === 1 && pieces[0]!.type === "text") {
+      if (pieces[0]!.text) mapped.push({ role: "user", content: pieces[0]!.text });
+      continue;
+    }
+    mapped.push({ role: "user", content: pieces });
   }
 
   return mapped;

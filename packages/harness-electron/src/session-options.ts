@@ -7,7 +7,7 @@ import type { SubagentLifecyclePort } from "@innocenceharness/harness-agent";
 import type { SessionLoaderPlugin } from "./session-loader";
 import type { SessionSpineSuite } from "./session-spine";
 
-import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import type { AttachmentResolver, TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 
@@ -62,6 +62,12 @@ export interface AgentSessionOptions {
    * explicitly).
    */
   pendingInputs?: PendingInputMailbox;
+  /**
+   * 附件解析器（宿主注入）：模型调用前把 canonical 附件 part 的表示解析为
+   * SDK 内容片段——文本表示恒可送，图像表示仅视觉模型（宿主做能力门控并
+   * 给替代说明）。缺省时附件以显式省略注记送达。
+   */
+  resolveAttachment?: AttachmentResolver;
   logger?: Logger;
 }
 

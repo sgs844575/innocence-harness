@@ -4,7 +4,7 @@
 // runtime-events.ts for the remaining collaborators).
 import type { PermissionClassifier, PermissionRequest } from "@innocenceharness/harness-permissions";
 import type { Message, ToolCallPart, ToolResultPart } from "@innocenceharness/harness-session";
-import type { TraceAdapter } from "@innocenceharness/harness-ai-runtime";
+import type { AttachmentResolver, TraceAdapter } from "@innocenceharness/harness-ai-runtime";
 import type { Provider, TurnCompletion } from "@innocenceharness/harness-providers";
 import type { ProjectTraits } from "@innocenceharness/harness-system-prompt";
 import type { ExecutionScope, Tool } from "@innocenceharness/harness-tools";
@@ -230,6 +230,12 @@ export interface RuntimeOptions {
   ) => PermissionClassifier | undefined;
   /** Optional allow-listed observability port owned by the host composition root. */
   telemetry?: TraceAdapter;
+  /**
+   * 附件解析器（宿主注入，透传 AgentSessionOptions → 循环 → 模型映射）：
+   * 模型调用前把附件 part 的 ContentRef 解析为 SDK 内容片段。文本表示恒可
+   * 送；图像表示仅视觉模型（宿主做能力门控并给替代说明文本）。
+   */
+  resolveAttachment?: AttachmentResolver;
   /**
    * Kernel scope factory for route sessions: called once per session BUILD
    * (cache hits reuse the existing session and never call it), and each call
