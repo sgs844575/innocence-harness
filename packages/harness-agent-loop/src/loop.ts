@@ -367,12 +367,14 @@ export async function runLoop(
         history.push({ role: "user", parts: [...input.message.parts] });
       }
 
+      const specs = tools.specs();
       if (compactor) {
-        const compacted = await compactor.maybeCompact(history, compactionProvider, signal);
-        if (compacted) onEvent({ type: "compaction", removedMessages: history.length });
+        const before = history.length;
+        const overhead = Math.ceil((systemPrompt.length + JSON.stringify(specs).length) / 4);
+        const compacted = await compactor.maybeCompact(history, compactionProvider, signal, overhead);
+        if (compacted) onEvent({ type: "compaction", removedMessages: before - history.length + 1 });
       }
 
-      const specs = tools.specs();
       const rawBreakdown = measure(specs);
       const step = await runModelStep({
         provider,

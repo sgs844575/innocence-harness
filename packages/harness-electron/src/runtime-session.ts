@@ -111,6 +111,10 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
         ...(host.options.sessionSpine ? { requireInjectedSpine: true } : {}),
         workspaceRoot,
         systemPrompt: BUILTIN_FALLBACK_PROMPT,
+        compaction: {
+          contextWindow: settings.profiles.find((profile) => profile.id === settings.activeProfileId)
+            ?.models.find((model) => model.id === settings.activeModel)?.contextWindow,
+        },
         agentMode: settings.activeAgentMode ?? "default",
         traits,
         ...(isolatedWorktree ? { isolatedWorktree: true } : {}),

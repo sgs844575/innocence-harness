@@ -47,7 +47,7 @@ export interface AgentSessionOptions {
    * 隔离纪律片段（父会话自身的片段由组合根按同一判定注册）。
    */
   isolatedWorktree?: boolean;
-  compaction?: Partial<{ maxContextTokens: number; keepRecent: number }>;
+  compaction?: Partial<import("@innocenceharness/harness-session").CompactionOptions>;
   maxTurns?: number;
   toolTimeoutMs?: number;
   /** Optional host-neutral child-agent lifecycle port. */

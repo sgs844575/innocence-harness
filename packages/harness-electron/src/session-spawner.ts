@@ -120,6 +120,7 @@ export function createSpawnerChildSession(
       ...(parentOptions.isolatedWorktree ? [worktreeNotesChildPlugin] : []),
     ],
     provider: materials.provider,
+    compaction: parentOptions.compaction,
     workspaceRoot: parentOptions.workspaceRoot,
     systemPrompt: materials.systemPrompt,
     spine: parentOptions.spine,

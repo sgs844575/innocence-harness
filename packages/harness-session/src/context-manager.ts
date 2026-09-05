@@ -2,9 +2,9 @@ import type { Provider } from "@innocenceharness/harness-providers";
 import { isPlainText, toTranscript, type Message } from "./types";
 
 export const SUMMARIZE_SYSTEM_PROMPT =
-  "你是对话压缩器。把下面的对话历史总结成一份简洁但信息完整的摘要，" +
-  "保留：任务目标、已做过的决定、已完成的工具操作及其结果要点、尚未完成的事项。" +
-  "直接输出摘要正文，不要任何开场白。";
+  "Summarize the conversation concisely, preserving task goals, decisions, " +
+  "completed tool operations and key results, and unfinished work. " +
+  "Return only the summary, without an introduction.";
 
 /**
  * English disclosure appended to the compacted head message. Three semantics
@@ -22,6 +22,8 @@ export const COMPACTION_DISCLOSURE =
   "and unaffected.";
 
 export interface CompactionOptions {
+  /** Configured model window; absent retains the legacy threshold. */
+  contextWindow?: number;
   /** Token estimate above this triggers compaction. Default 48000. */
   maxContextTokens: number;
   /** Recent messages always kept verbatim. Default 6. */
@@ -59,8 +61,16 @@ export class ContextManager {
     this.options = { ...DEFAULT_COMPACTION, ...options };
   }
 
-  needsCompaction(messages: Message[]): boolean {
-    return estimateTokens(messages) > this.options.maxContextTokens;
+  private historyBudget(overheadTokens: number): number | undefined {
+    const window = this.options.contextWindow;
+    if (!window || !Number.isFinite(window) || window <= 0) return undefined;
+    const reserve = Math.min(16_384, Math.ceil(window * 0.15));
+    return Math.max(1, window - reserve - Math.max(0, overheadTokens));
+  }
+
+  needsCompaction(messages: Message[], overheadTokens = 0): boolean {
+    const budget = this.historyBudget(overheadTokens);
+    return estimateTokens(messages) > (budget === undefined ? this.options.maxContextTokens : budget * 0.8);
   }
 
   /**
@@ -71,9 +81,22 @@ export class ContextManager {
     messages: Message[],
     provider: Provider,
     signal?: AbortSignal,
+    overheadTokens = 0,
   ): Promise<boolean> {
-    if (!this.needsCompaction(messages)) return false;
-    const split = findSplitIndex(messages, this.options.keepRecent);
+    if (!this.needsCompaction(messages, overheadTokens)) return false;
+    const budget = this.historyBudget(overheadTokens);
+    let split = findSplitIndex(messages, this.options.keepRecent);
+    if (budget !== undefined) {
+      // Keep the largest safe suffix fitting the target, leaving summary room.
+      // Hysteresis avoids repeatedly rewriting the cached history prefix.
+      const target = budget * 0.5 - Math.min(4096, budget * 0.1);
+      for (let i = 1; i <= split; i++) {
+        if (isPlainText(messages[i]) && estimateTokens(messages.slice(i)) <= target) {
+          split = i;
+          break;
+        }
+      }
+    }
     if (split <= 0) return false;
 
     const oldMessages = messages.slice(0, split);
@@ -99,6 +122,9 @@ export class ContextManager {
       ],
     };
     const tail = messages.slice(split);
+    if (budget !== undefined && estimateTokens([summaryMessage, ...tail]) >= estimateTokens(messages)) {
+      return false;
+    }
     messages.length = 0;
     messages.push(summaryMessage, ...tail);
     return true;
