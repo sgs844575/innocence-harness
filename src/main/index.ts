@@ -4,8 +4,10 @@ import { app, Menu, session } from "electron";
 import path from "node:path";
 import {
   handleAppScheme,
+  handleContentScheme,
   handlePluginScheme,
   registerAppScheme,
+  registerContentScheme,
   registerPluginScheme,
 } from "./protocol";
 import {
@@ -34,6 +36,8 @@ import { createMainAppLifecycle } from "./mainAppLifecycle";
 import { createOwnedShutdown } from "./ownedShutdown";
 import { registerIpcHandlers } from "./ipc";
 import { initSessionStore, getSession, getSidebarState, archiveSession, listSessions } from "./sessions";
+import { legacyTranscriptsRoot, sessionsRoot } from "./sessionFiles";
+import { attachmentStore, sweepAttachments } from "./attachments";
 import { buildAppMenu } from "./menu";
 import { watchTheme } from "./theme";
 import { logger } from "./logger";
@@ -100,6 +104,7 @@ if (process.platform === "win32") app.setAppUserModelId("InnocenceHarness");
 // Custom schemes must be registered before app ready.
 registerAppScheme();
 registerPluginScheme();
+registerContentScheme();
 
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
@@ -153,9 +158,18 @@ if (!gotLock) {
         userRoot: testOverrides.userPluginRoot ?? defaultUserPluginRoot(),
         builtinRoot: testOverrides.builtinPluginRoot ?? bootPaths().builtinRoot,
       });
+      // 附件内容直显（CAS → innocenceharness-content://obj/<key>）。
+      handleContentScheme(attachmentStore());
       initSessionStore(appDataRoot());
       registerIpcHandlers();
       await initHarness();
+
+      // 附件 GC 巡检（转录可达集 + tombstone 到期物理删除）：启动即一轮，
+      // best-effort 不阻塞也不抛错（sweepAttachments 内部兜底）。
+      void sweepAttachments(
+        [sessionsRoot(appDataRoot()), legacyTranscriptsRoot(appDataRoot())],
+        (level, msg, data) => logger[level](msg, data),
+      );
 
       // 自定义 CA：渲染层证书的兜底校验链（Chromium 默认结果有效时不受影
       // 响）；PEM 不可读/无有效证书时保留默认校验。

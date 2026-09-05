@@ -2,9 +2,10 @@
 import { app, dialog, ipcMain, shell, webContents } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IPC, isChatQuestionResponse, isPermissionChoice, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
+import { IPC, isChatQuestionResponse, isPermissionChoice, type AttachmentPart, type BrowserEmulateRequest, type MenuId } from "../shared/ipc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
+import { importAttachmentFromBytes, importAttachmentFromPath, validateAttachmentsForSend } from "./attachments";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
 import { authorizeWorkspaceRoot } from "./mcpAuthorization";
 import { TaskIpcChannels } from "../shared/taskIpc";
@@ -31,6 +32,7 @@ import {
   sendChatTurn,
   setHarnessSettings,
   getSkillCatalog,
+  activeModelVision,
   stopChatTurn,
   cancelSubagentRun,
   updateProviderApiKey,
@@ -298,25 +300,49 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.subagentCancel, (_e, sessionId: string, childId: string) =>
     cancelSubagentRun(sessionId, childId));
 
-  ipcMain.handle(IPC.chatSend, (_e, sessionId: string, text: string, userMessageId?: string) => {
+  ipcMain.handle(IPC.chatSend, (_e, sessionId: string, text: string, userMessageId?: string, attachments?: AttachmentPart[]) => {
     needWindow();
     const trimmed = text.trim();
-    if (!trimmed) throw new Error("empty message");
-    // 落账沿用渲染层乐观气泡的 id（见 adoptMessageId），保证后续编辑重发
-    // 的截断能在存储中找到这条用户消息。
-    sessions.appendMessage(sessionId, {
-      id: sessions.adoptMessageId(sessionId, userMessageId),
-      role: "user",
-      parts: [{ type: "text", text: trimmed }],
-      createdAt: Date.now(),
-    });
-    // First user message retitles + reorders the session — push immediately so
-    // the sidebar shows it before the stream completes.
-    broadcastSessions();
-    broadcastSidebar();
-    const messageId = sendChatTurn(sessionId, trimmed);
-    logger.info("chat:send", { sessionId, messageId });
-    return { messageId };
+    const parts = Array.isArray(attachments) ? attachments : [];
+    if (!trimmed && parts.length === 0) throw new Error("empty message");
+    // 附件发送权威门控（件数/形状/CAS 在位/视觉能力/扫描 PDF）——不过即抛
+    // 错，渲染层提示并保留附件（规格 §7：不静默降级、不丢用户选择）。
+    return validateAttachmentsForSend(parts, activeModelVision())
+      .then(() => {
+        // 落账沿用渲染层乐观气泡的 id（见 adoptMessageId），保证后续编辑重发
+        // 的截断能在存储中找到这条用户消息。附件-only 轮也是真实用户轮。
+        sessions.appendMessage(sessionId, {
+          id: sessions.adoptMessageId(sessionId, userMessageId),
+          role: "user",
+          parts: [
+            ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+            ...parts,
+          ],
+          createdAt: Date.now(),
+        });
+        // First user message retitles + reorders the session — push immediately so
+        // the sidebar shows it before the stream completes.
+        broadcastSessions();
+        broadcastSidebar();
+        const messageId = sendChatTurn(sessionId, trimmed, parts);
+        logger.info("chat:send", { sessionId, messageId, attachments: parts.length });
+        return { messageId };
+      });
+  });
+
+  // 附件导入：路径（资源管理器拖放/选择器）与字节（渲染层 File：粘贴/Web 拖
+  // 放）。返回 canonical part + 预览 DTO；超限/不可读抛结构化错误由渲染层提示。
+  ipcMain.handle(IPC.attachmentsImportPath, (_e, absPath: unknown) => {
+    if (typeof absPath !== "string" || absPath.trim() === "") {
+      throw new Error("attachments: invalid path");
+    }
+    return importAttachmentFromPath(absPath);
+  });
+  ipcMain.handle(IPC.attachmentsImportBytes, (_e, name: unknown, bytes: unknown) => {
+    if (typeof name !== "string" || !(bytes instanceof Uint8Array)) {
+      throw new Error("attachments: invalid payload");
+    }
+    return importAttachmentFromBytes(name, bytes);
   });
 
   // 编辑重发（替换语义）：主进程截断存储/转录并回退运行时历史后重开一轮；

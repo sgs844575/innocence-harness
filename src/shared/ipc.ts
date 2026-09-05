@@ -39,6 +39,9 @@ export const IPC = {
   sessionsChanged: "sessions:changed",
   messagesList: "messages:list",
   chatSend: "chat:send",
+  // 附件与多模态：路径/字节导入（CAS 落盘 → canonical part + 预览 DTO）。
+  attachmentsImportPath: "attachments:import-path",
+  attachmentsImportBytes: "attachments:import-bytes",
   /** 编辑重发（替换语义）：截断 fromMessageId 起的消息后以新文本重开一轮。 */
   chatResend: "chat:resend",
   chatStop: "chat:stop",
@@ -188,6 +191,23 @@ export interface AttachmentPart {
   name: string;
   source: ContentRef;
   representations: AttachmentRepresentation[];
+}
+
+/** 附件预览（IPC attachments:import-* 载荷的预览半边；无字节无路径）。 */
+export interface AttachmentPreviewDto {
+  kind: "text" | "image" | "binary";
+  excerpt?: string;
+  /** 缩略图 CAS 键（innocenceharness-content://obj/<key> 直显）。 */
+  thumbnailKey?: string;
+  width?: number;
+  height?: number;
+}
+
+/** 导入产物：canonical part（随消息往返）+ 预览 + 非致命提示。 */
+export interface AttachmentDraftDto {
+  part: AttachmentPart;
+  preview: AttachmentPreviewDto;
+  warnings: string[];
 }
 
 export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart | AttachmentPart;
@@ -796,8 +816,9 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   onSessionsChanged(cb: (list: Session[]) => void): () => void;
   listMessages(sessionId: string): Promise<ChatMessage[]>;
   /** userMessageId：渲染层乐观用户气泡的 id，主进程落账沿用同一 id，
-   *  保证后续编辑重发的截断能在存储中找到这条消息。 */
-  sendMessage(sessionId: string, text: string, userMessageId?: string): Promise<{ messageId: string }>;
+   *  保证后续编辑重发的截断能在存储中找到这条消息。attachments 为已导入
+   *  的 canonical 附件 part（主进程发送前权威门控：件数/在位/视觉）。 */
+  sendMessage(sessionId: string, text: string, userMessageId?: string, attachments?: AttachmentPart[]): Promise<{ messageId: string }>;
   /** 编辑重发：替换 fromMessageId（含）之后的消息并以 text 重开一轮；
    *  运行中/任务绑定会话或未知消息 id 时主进程抛错由渲染层提示。
    *  newMessageId 为乐观新用户气泡的 id，落账沿用（同 sendMessage）。 */
@@ -875,6 +896,10 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   listSkills(root: string): Promise<SkillInfo[]>;
   /** Fired after a development plugin client reload request. */
   onPluginsChanged(cb: () => void): () => void;
+  /** 附件：按绝对路径导入（拖放自资源管理器 / 文件选择器）。 */
+  importAttachmentFromPath(absPath: string): Promise<AttachmentDraftDto>;
+  /** 附件：按字节导入（渲染层 File：粘贴 / 拖放入 Web 内容）。 */
+  importAttachmentBytes(name: string, bytes: Uint8Array): Promise<AttachmentDraftDto>;
   /** 外部技能发现清单（main 探测已知外部智能体目录）。 */
   discoverSkills(): Promise<DiscoveredSkillMirror[]>;
   /** 导入一条已发现的技能到用户技能根（失败抛错由调用方提示）。 */

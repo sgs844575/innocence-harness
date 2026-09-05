@@ -27,7 +27,9 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocenceharness/harness-electron";
-import { IPC, type AgentModeInfo, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
+import { IPC, type AgentModeInfo, type AttachmentPart, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
+import type { Message } from "@innocenceharness/harness-session";
+import { createAttachmentResolver } from "./attachments";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { isWorktreeSession } from "./taskWorktreePredicate";
@@ -486,6 +488,9 @@ const desktopNotifier = createDesktopNotifier({
 
 const runtime = new HarnessRuntime({
   settings: () => settings,
+  // 附件解析器（模型步前把 ContentRef 解析为 SDK 内容）：文本表示恒送、
+  // 图像表示仅视觉模型（口径与发送门控同源——设置快照现读）。
+  resolveAttachment: createAttachmentResolver(activeModelVision),
   // 会话转写落盘端口：宿主持有 sessions/ 日期树布局（id → 文件映射由
   // 会话外观解析），主/路由文件、实时快照与终稿行都走同一解析。
   transcriptFileFor: sessions.runtimeTranscriptFileFor,
@@ -700,6 +705,14 @@ export function getSkillCatalog(root: string): Promise<SkillInfo[]> {
   return sessionComposition.skillCatalog(root);
 }
 
+/** 活跃模型的视觉能力（true=显式标记支持；false/undefined=unknown/否）。
+ *  附件发送门控与模型步解析器共用同一口径（设置快照现读，随切换生效）。 */
+export function activeModelVision(): boolean | undefined {
+  const profile = settings.profiles.find((candidate) => candidate.id === settings.activeProfileId);
+  const model = profile?.models.find((candidate) => candidate.id === settings.activeModel);
+  return model?.vision;
+}
+
 export function setHarnessSettings(next: HarnessSettingsPatch) {
   return settingsMutationGate.enqueue(async () => {
     const previous = settings;
@@ -824,7 +837,7 @@ export function getTaskHandle(taskId: string): { sessionId: string } | undefined
  * turn starts); a steered message merges into the running turn, so its
  * placeholder is skipped unless the runtime upgrades it to a queued
  * follow-up (onDisposition) when the run settles without draining it. */
-export function sendChatTurn(sessionId: string, text: string): string {
+export function sendChatTurn(sessionId: string, text: string, attachments: readonly AttachmentPart[] = []): string {
   const id = messageId();
   let placeholderAppended = false;
   const ensureAssistantPlaceholder = () => {
@@ -840,11 +853,22 @@ export function sendChatTurn(sessionId: string, text: string): string {
     broadcastSessions();
   };
   const binding = sessionTaskRoutes.get(sessionId);
+  // 附件轮：canonical Message 直接进 runtime.send（处理器链照走——技能展开
+  // 保留附件 parts，plugin-attachments 复验形状；附件-only 轮为真实用户轮）。
+  const input: string | Message = attachments.length === 0
+    ? text
+    : {
+        role: "user",
+        parts: [
+          ...(text ? [{ type: "text" as const, text }] : []),
+          ...attachments,
+        ],
+      };
   void runtime.send({
     sessionId,
     taskId: binding?.taskId ?? "",
     routeId: binding?.routeId ?? DEFAULT_ROUTE_ID,
-    text,
+    text: input,
     messageId: id,
     interactionMode: settings.interactionMode ?? "queue",
     // 同步落定通知：started/queued 立即落助手占位（与既有行为一致）；

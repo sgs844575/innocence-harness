@@ -70,8 +70,8 @@ const api: InnocenceCodeApi = {
   setSidebarGroupCollapsed: (id, collapsed) => ipcRenderer.invoke(IPC.sidebarGroupCollapse, id, collapsed),
   onSidebarChanged: (cb) => subscribe(IPC.sidebarChanged, cb as never),
   listMessages: (sessionId) => ipcRenderer.invoke(IPC.messagesList, sessionId),
-  sendMessage: (sessionId, text, userMessageId) =>
-    ipcRenderer.invoke(IPC.chatSend, sessionId, text, userMessageId),
+  sendMessage: (sessionId, text, userMessageId, attachments) =>
+    ipcRenderer.invoke(IPC.chatSend, sessionId, text, userMessageId, attachments),
   resendMessage: (sessionId, fromMessageId, text, newMessageId) =>
     ipcRenderer.invoke(IPC.chatResend, sessionId, fromMessageId, text, newMessageId),
   stopMessage: (sessionId, messageId) => ipcRenderer.invoke(IPC.chatStop, sessionId, messageId),
@@ -122,6 +122,10 @@ const api: InnocenceCodeApi = {
   getPluginInventory: () => ipcRenderer.invoke(IPC.pluginsList),
   listAgentModes: (): Promise<AgentModeInfo[]> => ipcRenderer.invoke(IPC.agentsModes),
   listSkills: (root: string): Promise<SkillInfo[]> => ipcRenderer.invoke(IPC.skillsList, root),
+  importAttachmentFromPath: (absPath: string) =>
+    ipcRenderer.invoke(IPC.attachmentsImportPath, absPath),
+  importAttachmentBytes: (name: string, bytes: Uint8Array) =>
+    ipcRenderer.invoke(IPC.attachmentsImportBytes, name, bytes),
   generateAutomationCandidate: (prompt) => ipcRenderer.invoke(IPC.automationCandidate, prompt),
   confirmAutomation: (request) => ipcRenderer.invoke(IPC.automationConfirm, request),
   updateAutomation: (request) => ipcRenderer.invoke(IPC.automationUpdate, request),

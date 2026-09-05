@@ -8,6 +8,7 @@ import path from "node:path";
 
 export const APP_SCHEME = "innocenceharness";
 export const PLUGIN_SCHEME = "innocenceharness-plugin";
+export const CONTENT_SCHEME = "innocenceharness-content";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -178,5 +179,64 @@ export function handlePluginScheme(options: PluginSchemeRoots): void {
 const PLUGIN_CORS = { "access-control-allow-origin": "*" } as const;
 
 function pluginResponse(body: string, status: number): Response {
+  return new Response(body, { status, headers: PLUGIN_CORS });
+}
+
+// ---- 附件内容直显（规格 §10.8：受控同源内容协议，不用巨型 data URL）-------
+// innocenceharness-content://obj/sha256:<hex> → CAS 对象字节；MIME 取导入时
+// 魔数嗅探写入 index 的元数据。仅 img-src 消费（CSP 白名单单独放开）。
+
+/** 内容对象读取面（附件 CAS 的同步子集；scheme 处理器不能 await IO 之外
+ *  的编排）。 */
+export interface ContentSchemeStore {
+  get(key: string): Promise<Uint8Array>;
+  entries(): Promise<Map<string, { mediaType: string; byteLength: number }>>;
+}
+
+export function registerContentScheme(): void {
+  // Must be called before app is ready. corsEnabled: consumed cross-origin by
+  // the renderer origin (app scheme / dev server).
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: CONTENT_SCHEME,
+      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+    },
+  ]);
+}
+
+const CONTENT_KEY_RE = /^sha256:[0-9a-f]{64}$/;
+
+export function handleContentScheme(store: ContentSchemeStore): void {
+  protocol.handle(CONTENT_SCHEME, async (request) => {
+    let key = "";
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== "obj") return contentResponse("Forbidden", 403);
+      key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    } catch {
+      return contentResponse("Forbidden", 403);
+    }
+    if (!CONTENT_KEY_RE.test(key)) return contentResponse("Forbidden", 403);
+    try {
+      const [bytes, entries] = await Promise.all([store.get(key), store.entries()]);
+      // 拷贝出精确尺寸 ArrayBuffer（Electron Response 的 BodyInit 口径）。
+      const body = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      return new Response(body, {
+        headers: {
+          ...PLUGIN_CORS,
+          "content-type": entries.get(key)?.mediaType ?? "application/octet-stream",
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+      });
+    } catch {
+      return contentResponse(`Not found: ${key}`, 404);
+    }
+  });
+}
+
+function contentResponse(body: string, status: number): Response {
   return new Response(body, { status, headers: PLUGIN_CORS });
 }
