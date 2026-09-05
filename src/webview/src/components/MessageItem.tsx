@@ -10,6 +10,7 @@ import { ToolTimeline } from "./chat/ToolRow";
 import { segmentParts } from "./chat/segmentParts";
 import { buildToolRows, type ToolRowModel } from "./chat/toolRows";
 import type { StreamDisplayOptions } from "./chat/toolGrouping";
+import { AttachmentStrip } from "./composer/AttachmentChips";
 import type { TaskRowClue } from "../state/subagentRuns";
 
 interface Props {
@@ -123,6 +124,10 @@ function UserBubble({
   onEditSend?: (text: string) => void;
 }): React.JSX.Element {
   const text = messageText(message.parts);
+  // 附件 part 独立于文本渲染（气泡内附件条：图像直显 + 文件 chip）。
+  const attachmentParts = message.parts.filter(
+    (part): part is Extract<typeof part, { type: "attachment" }> => part.type === "attachment",
+  );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -196,6 +201,7 @@ function UserBubble({
         </div>
       ) : (
         <div className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-[2px] border border-(--color-border) bg-(--color-surface) px-4 py-3 leading-relaxed whitespace-pre-wrap break-words text-(--color-foreground)">
+          <AttachmentStrip parts={attachmentParts} />
           {text}
         </div>
       )}

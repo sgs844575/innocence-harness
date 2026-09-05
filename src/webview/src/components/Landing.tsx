@@ -1,10 +1,11 @@
 // 落地页：淡化大 logo 水印 + 时间问候语 + 居中输入卡（项目/分支顶行）+ 快捷动作。
 import { GitBranch } from "lucide-react";
 import logoUrl from "../../../../logo.svg";
-import type { HarnessSettings } from "../../../shared/ipc";
+import type { AttachmentPart, HarnessSettings } from "../../../shared/ipc";
 import { Composer, type ComposerDraft } from "./Composer";
 import { ProjectPicker } from "./composer/ProjectPicker";
 import { QuickActions } from "./QuickActions";
+import { activeModelVision } from "../lib/modelVision";
 import { greetingKeyForHour } from "../lib/time";
 import type { RecentProject } from "../state/useSessions";
 
@@ -20,7 +21,7 @@ interface Props {
   settings: HarnessSettings | null;
   streaming: boolean;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: AttachmentPart[]) => void;
   onStop: () => void;
   draft?: ComposerDraft;
   onQuickPick: (prompt: string) => void;
@@ -73,6 +74,7 @@ export function Landing({
               workspaceRoot={pendingProject}
               draft={draft}
               onManageModels={onManageModels}
+              visionSupported={activeModelVision(settings)}
               header={
                 <div className="flex items-center gap-1">
                   <ProjectPicker

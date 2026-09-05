@@ -87,7 +87,7 @@ describe("ChatView", () => {
       { onSend },
     );
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
-    expect(onSend).toHaveBeenCalledWith(zhCN["chat.continue.prompt"]);
+    expect(onSend).toHaveBeenCalledWith(zhCN["chat.continue.prompt"], []);
   });
 
   it("最近一条用户消息编辑重发走 onEditResend（携带消息 id），不走普通发送", () => {

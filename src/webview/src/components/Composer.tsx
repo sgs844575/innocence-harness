@@ -1,14 +1,17 @@
 // 输入卡：raised 面 + 16px 圆角。落地态带项目/分支顶行；底行 = 「+」上下文
-// 菜单、权限模式、模型两级选择器、思考强度、发送/停止反色方形钮。
-// @ / / 前导符触发补全弹层（文件上下文 / 技能命令，composer/suggest 家族）。
+// 菜单（附件导入 / @ / / 补全）、权限模式、模型两级选择器、思考强度、发送/
+// 停止反色方形钮。附件走主进程 CAS（选择/拖放/粘贴 → chip → 随消息发送）。
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Plus, Square, ArrowUp, AtSign, Paperclip, Slash } from "lucide-react";
-import type { ChatContextUsageSnapshot, HarnessSettings, PermissionMode } from "../../../shared/ipc";
+import type { AttachmentDraftDto, AttachmentPart, ChatContextUsageSnapshot, HarnessSettings, PermissionMode } from "../../../shared/ipc";
+import { MAX_ATTACHMENTS_PER_MESSAGE } from "@innocenceharness/attachment-runtime";
+import { api } from "../lib/ipc";
 import { ModelPicker } from "./composer/ModelPicker";
 import { PermissionModePicker } from "./composer/PermissionModePicker";
 import { AgentModePicker } from "./composer/AgentModePicker";
 import { ThinkingEffortPicker, type EffortValue } from "./composer/ThinkingEffortPicker";
 import { ContextMeter } from "./composer/ContextMeter";
+import { AttachmentChip } from "./composer/AttachmentChips";
 import { ComposerSuggest, type SuggestRow } from "./composer/ComposerSuggest";
 import {
   applySuggestion,
@@ -33,7 +36,7 @@ interface Props {
   streaming: boolean;
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: AttachmentPart[]) => void;
   onStop: () => void;
   /** 会话/落地态的项目根（@ 文件补全数据源）；缺省 = 未绑定。 */
   workspaceRoot?: string;
@@ -46,6 +49,8 @@ interface Props {
   /** 上下文容量快照：undefined = 不渲染指示器（落地页/辅助对话）；
    *  null = 渲染 0% 灰环（会话内常显，快照未到）。 */
   contextUsage?: ChatContextUsageSnapshot | null;
+  /** 活跃模型视觉能力（true=可发图；false/undefined 阻断图片附件并禁发）。 */
+  visionSupported?: boolean;
 }
 
 export function Composer({
@@ -61,12 +66,18 @@ export function Composer({
   draft,
   onManageModels,
   contextUsage,
+  visionSupported,
 }: Props): React.JSX.Element {
   const [value, setValue] = useState("");
   const [caret, setCaret] = useState(0);
   // Esc 关闭后同 token 内保持关闭；token 归零（弹层自然收起）后复位。
   const [dismissed, setDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  // 附件草稿（导入产物 chip）：随消息发送清空；导入失败内联红字提示。
+  const [attachments, setAttachments] = useState<AttachmentDraftDto[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const agentModes = useAgentModes();
   const listboxId = useId();
@@ -142,14 +153,44 @@ export function Composer({
     });
   };
 
+  // ---- 附件（规格 §10：+ 选择 / 拖放 / 粘贴 → 主进程 CAS 导入 → chip）------
+
+  const hasImageAttachment = attachments.some((draft) =>
+    draft.part.representations.some((representation) => representation.kind === "image"),
+  );
+  // 视觉门控（渲染层前置；主进程发送侧仍权威复验）：图片附件 + 非视觉模型
+  // → 禁发并内联提示，不丢附件（规格 §7）。
+  const visionBlocked = hasImageAttachment && visionSupported !== true;
+
+  const importFiles = async (files: readonly File[]): Promise<void> => {
+    if (files.length === 0) return;
+    setAttachError(null);
+    for (const file of files) {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const draft = await api.importAttachmentBytes(file.name || "attachment", bytes);
+        setAttachments((current) =>
+          current.length >= MAX_ATTACHMENTS_PER_MESSAGE ? current : [...current, draft],
+        );
+      } catch (error) {
+        setAttachError(error instanceof Error ? error.message : String(error));
+      }
+    }
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+
   const submit = (): void => {
     const text = value.trim();
     // 流式中允许发送：主进程按 interactionMode 排队/引导（输入框照常清空、
     // 消息立即上屏）；流式中的可见动作钮仍是停止（见下方按钮分支）。
-    if (!text) return;
-    onSend(text);
+    // 附件-only 轮也是真实用户轮（文本可为空）。
+    if (!text && attachments.length === 0) return;
+    if (visionBlocked) return;
+    onSend(text, attachments.map((draft) => draft.part));
     setValue("");
     setCaret(0);
+    setAttachments([]);
+    setAttachError(null);
     requestAnimationFrame(() => ref.current?.focus());
   };
 
@@ -196,9 +237,9 @@ export function Composer({
     });
   };
 
-  // 发送门槛只看输入是否有内容：流式中回车仍可发送（排队/引导由主进程
-  // 决定）；按钮禁用面仍叠加 !streaming（流式中按钮是停止，永不禁用）。
-  const canSend = value.trim().length > 0;
+  // 发送门槛只看输入是否有内容（文本或附件）：流式中回车仍可发送（排队/引导
+  // 由主进程决定）；按钮禁用面叠加 !streaming 与视觉门控（流式中是停止钮）。
+  const canSend = value.trim().length > 0 || attachments.length > 0;
 
   // 反色圆角动作钮（参考规格）：品牌底（暗色=白）+ 反色图标。
   const squareButton =
@@ -219,7 +260,24 @@ export function Composer({
           onAccept={accept}
         />
       )}
-      <div className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-raised) p-3 transition-colors hover:border-(--color-border-hover) focus-within:border-(--color-border-hover)">
+      <div
+        className={`relative flex flex-col gap-3 overflow-hidden rounded-2xl border bg-(--color-raised) p-3 transition-colors focus-within:border-(--color-border-hover) ${
+          dragOver ? "border-(--color-accent)" : "border-(--color-border) hover:border-(--color-border-hover)"
+        }`}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) {
+            event.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+          event.preventDefault();
+          setDragOver(false);
+          void importFiles([...event.dataTransfer.files]);
+        }}
+      >
         {mode === "landing" && header && <div className="px-0.5 pt-0.5">{header}</div>}
         <textarea
           ref={ref}
@@ -231,6 +289,12 @@ export function Composer({
           }}
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           onKeyDown={onKeyDown}
+          onPaste={(event) => {
+            const files = event.clipboardData?.files;
+            if (!files || files.length === 0) return;
+            event.preventDefault();
+            void importFiles([...files]);
+          }}
           placeholder={t(mode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
           rows={1}
           aria-expanded={suggestOpen}
@@ -238,8 +302,29 @@ export function Composer({
           aria-activedescendant={suggestOpen && rows.length > 0 ? `${listboxId}-opt-${active}` : undefined}
           className="scrollbar-thin max-h-40 min-h-10 w-full flex-1 resize-none bg-transparent px-1 pt-1 leading-relaxed outline-none placeholder:text-(--color-faint) disabled:opacity-50"
         />
+        {/* 附件草稿区（chip 行 + 导入错误/视觉门控提示行）。 */}
+        {(attachments.length > 0 || attachError !== null || visionBlocked) && (
+          <div className="flex flex-col gap-1.5">
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {attachments.map((draft) => (
+                  <AttachmentChip
+                    key={draft.part.source.key}
+                    draft={draft}
+                    removeLabel={t("composer.attach.remove")}
+                    onRemove={() => setAttachments((current) => current.filter((item) => item !== draft))}
+                  />
+                ))}
+              </div>
+            )}
+            {attachError !== null && <div className="text-[12px] text-(--color-tool-err)">{attachError}</div>}
+            {visionBlocked && (
+              <div className="text-[12px] text-(--color-mode-accent)">{t("composer.attach.visionBlocked")}</div>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3 text-(--color-muted)">
-          {/* 「+」添加上下文菜单：附件暂不可用（禁用项带原因说明）。 */}
+          {/* 「+」添加上下文菜单：附件走主进程 CAS 导入（多选），@ / / 触发补全。 */}
           <DropdownMenu
             contentClassName="w-52"
             trigger={
@@ -253,7 +338,7 @@ export function Composer({
               </button>
             }
           >
-            <DropdownMenuItem disabled description={t("composer.attachUnavailable")}>
+            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
               <span className="flex items-center gap-2">
                 <Paperclip size={13} className="text-(--color-muted)" />
                 {t("composer.attach")}
@@ -272,6 +357,19 @@ export function Composer({
               </span>
             </DropdownMenuItem>
           </DropdownMenu>
+          {/* 隐藏文件选择器（多选；字节经 IPC 进主进程 CAS）。 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            data-testid="composer-file-input"
+            onChange={(event) => {
+              const files = event.target.files;
+              if (files && files.length > 0) void importFiles([...files]);
+              event.target.value = "";
+            }}
+          />
 
           <PermissionModePicker
             t={t}
@@ -315,9 +413,9 @@ export function Composer({
           <button
             type="button"
             onClick={streaming ? onStop : submit}
-            disabled={!streaming && !canSend}
+            disabled={!streaming && (!canSend || visionBlocked)}
             aria-label={streaming ? t("chat.stop") : t("chat.send")}
-            title={streaming ? t("chat.stop") : t("chat.send")}
+            title={visionBlocked && !streaming ? t("composer.attach.visionBlocked") : streaming ? t("chat.stop") : t("chat.send")}
             className={squareButton}
           >
             {streaming ? (

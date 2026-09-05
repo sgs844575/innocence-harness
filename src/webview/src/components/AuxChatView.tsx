@@ -7,6 +7,7 @@ import { MessageItem } from "./MessageItem";
 import { PermissionCard } from "./PermissionCard";
 import { Composer } from "./Composer";
 import { streamDisplayFromSettings } from "./chat/toolGrouping";
+import { activeModelVision } from "../lib/modelVision";
 import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../../shared/codeThemes";
 
 interface Props {
@@ -69,10 +70,11 @@ export function AuxChatView({ t, sessionId, settings, onPatchSettings, onManageM
           streaming={chat.streaming}
           settings={settings}
           onPatchSettings={onPatchSettings}
-          onSend={(text) => void chat.send(text)}
+          onSend={(text, attachments) => void chat.send(text, attachments)}
           onStop={() => void chat.stop()}
           workspaceRoot={settings?.workspaceRoot ?? ""}
           onManageModels={onManageModels}
+          visionSupported={activeModelVision(settings)}
         />
       </div>
     </div>

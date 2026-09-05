@@ -2,7 +2,7 @@
 // 中断的末条助手消息带「继续」图标钮；上滚脱离贴底时出回到底部钮；发送即回贴底。
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
-import type { ChatMessage, ChatContextUsageSnapshot, ChatPermissionEvent, ChatQuestionEvent, ChatQuestionResponse, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
+import type { AttachmentPart, ChatMessage, ChatContextUsageSnapshot, ChatPermissionEvent, ChatQuestionEvent, ChatQuestionResponse, HarnessSettings, PermissionChoice } from "../../../shared/ipc";
 import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PermissionCard } from "./PermissionCard";
@@ -12,6 +12,7 @@ import { ChatDashes } from "./chat/ChatDashes";
 import { WaitingRow } from "./chat/WaitingRow";
 import { capsuleHasContent, capsuleRightGutter, CAPSULE_SQUEEZE_MIN_WIDTH } from "./chat/chatLayout";
 import { streamDisplayFromSettings } from "./chat/toolGrouping";
+import { activeModelVision } from "../lib/modelVision";
 import type { ToolRowModel } from "./chat/toolRows";
 import type { TaskRowClue } from "../state/subagentRuns";
 import { DEFAULT_CODE_THEME_DARK, DEFAULT_CODE_THEME_LIGHT } from "../../../shared/codeThemes";
@@ -28,7 +29,7 @@ interface Props {
   question: ChatQuestionEvent | null;
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: AttachmentPart[]) => void;
   /** 会话项目根（输入卡 @ 文件补全数据源）。 */
   workspaceRoot?: string;
   /** 编辑重发（替换语义）：截断 messageId 起的消息并以新文本重开一轮。 */
@@ -175,10 +176,10 @@ export function ChatView({
   }, [messages]);
 
   // 发送（含「继续」）一律回到贴底跟随；编辑重发同样回贴底。
-  const handleSend = (text: string): void => {
+  const handleSend = (text: string, attachments: AttachmentPart[] = []): void => {
     setPinned(true);
     requestAnimationFrame(() => scrollToBottom("auto"));
-    onSend(text);
+    onSend(text, attachments);
   };
 
   const handleEditResend = (messageId: string, text: string): void => {
@@ -283,6 +284,7 @@ export function ChatView({
             workspaceRoot={workspaceRoot}
             onManageModels={onManageModels}
             contextUsage={contextUsage}
+            visionSupported={activeModelVision(settings)}
           />
         </div>
       </div>

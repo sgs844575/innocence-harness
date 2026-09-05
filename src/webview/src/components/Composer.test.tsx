@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { Composer } from "./Composer";
 import type { HarnessSettings } from "../../../shared/ipc";
 
@@ -38,7 +39,7 @@ describe("Composer", () => {
     const ta = screen.getByRole("textbox");
     fireEvent.change(ta, { target: { value: "hi" } });
     fireEvent.keyDown(ta, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("hi");
+    expect(onSend).toHaveBeenCalledWith("hi", []);
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -48,13 +49,12 @@ describe("Composer", () => {
     expect(screen.getByPlaceholderText("chat.placeholder")).toBeTruthy();
   });
 
-  it("「+」菜单：附件禁用带原因，@ 项写入前导符", async () => {
+  it("「+」菜单：附件项可用（打开文件选择器），@ 项写入前导符", async () => {
     renderComposer();
     fireEvent.keyDown(screen.getByRole("button", { name: "composer.addContext" }), { key: "Enter" });
     const menu = await waitFor(() => screen.getByRole("menu"));
-    const attachment = within(menu).getByRole("menuitem", { name: /composer.attach/ });
-    expect(attachment.getAttribute("data-disabled")).not.toBeNull();
-    expect(attachment.getAttribute("aria-description")).toMatch(/composer.attachUnavailable/);
+    const attachment = within(menu).getByRole("menuitem", { name: /^composer\.attach$/ });
+    expect(attachment.getAttribute("data-disabled")).toBeNull();
     fireEvent.click(within(menu).getByRole("menuitem", { name: /chat.hint.at/ }));
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("@");
   });
@@ -86,7 +86,7 @@ describe("Composer", () => {
     const ta = screen.getByRole("textbox");
     fireEvent.change(ta, { target: { value: "后续消息" } });
     fireEvent.keyDown(ta, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("后续消息");
+    expect(onSend).toHaveBeenCalledWith("后续消息", []);
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -138,7 +138,7 @@ function mockSuggestBridge(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   (window as unknown as { innocencecode: unknown }).innocencecode = bridge;
-  return bridge;
+  return bridge as typeof bridge & Record<string, unknown>;
 }
 
 function typeInto(ta: HTMLTextAreaElement, text: string): void {
@@ -223,7 +223,7 @@ describe("Composer 补全弹层", () => {
     typeInto(ta, "/debugging 修一下");
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.keyDown(ta, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("/debugging 修一下");
+    expect(onSend).toHaveBeenCalledWith("/debugging 修一下", []);
   });
 
   it("Esc 关闭后「+」菜单 @ 项重开弹层（显式意图解除关闭）", async () => {
@@ -239,5 +239,99 @@ describe("Composer 补全弹层", () => {
     const menu = await waitFor(() => screen.getByRole("menu"));
     fireEvent.click(within(menu).getByRole("menuitem", { name: /chat.hint.at/ }));
     await waitFor(() => screen.getByRole("listbox"));
+  });
+});
+
+// ---- 附件（选择 / 拖放 / 粘贴 → chip → 随消息发送） ---------------------------
+
+const imagePart = {
+  type: "attachment" as const,
+  name: "shot.png",
+  source: { key: `sha256:${"1".repeat(64)}`, mediaType: "image/png", byteLength: 10 },
+  representations: [{ kind: "image" as const, content: { key: `sha256:${"2".repeat(64)}`, mediaType: "image/png", byteLength: 10 } }],
+};
+
+function mockAttachBridge() {
+  return mockSuggestBridge({
+    importAttachmentBytes: vi.fn(async (name: string) => ({
+      part: { ...imagePart, name },
+      preview: { kind: "image" as const, thumbnailKey: `sha256:${"5".repeat(64)}`, width: 24, height: 24 },
+      warnings: [],
+    })),
+  });
+}
+
+function mockFile(name: string, bytes: number[] = [0x89, 0x50, 0x4e, 0x47]): File {
+  return new File([new Uint8Array(bytes)], name, { type: "application/octet-stream" });
+}
+
+describe("Composer 附件", () => {
+
+  it("文件选择导入出 chip，发送携带附件 part 并清空", async () => {
+    const bridge = mockAttachBridge();
+    const onSend = vi.fn();
+    renderComposer({ onSend, workspaceRoot: "D:/repo", visionSupported: true });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("shot.png")] } });
+    await waitFor(() => screen.getByText("shot.png"));
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    typeInto(ta, "看图");
+    fireEvent.keyDown(ta, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("看图", [imagePart]);
+    expect(bridge.importAttachmentBytes).toHaveBeenCalled();
+    expect(screen.queryByText("shot.png")).toBeNull();
+  });
+
+  it("拖放与粘贴导入（DataTransfer File）", async () => {
+    mockAttachBridge();
+    renderComposer({ workspaceRoot: "D:/repo" });
+    const card = screen.getByTestId("chat-composer").firstElementChild as HTMLElement;
+    fireEvent.drop(card, { dataTransfer: { files: [mockFile("dropped.png")], types: ["Files"] } });
+    await waitFor(() => screen.getByText("dropped.png"));
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.paste(ta, { clipboardData: { files: [mockFile("pasted.md", [0x68, 0x65])] } });
+    await waitFor(() => screen.getByText("pasted.md"));
+  });
+
+  it("非视觉模型：图片附件禁发并提示，移除后可发（规格 §7 不丢附件）", async () => {
+    mockAttachBridge();
+    const onSend = vi.fn();
+    renderComposer({ onSend, workspaceRoot: "D:/repo", visionSupported: false });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("shot.png")] } });
+    await waitFor(() => screen.getByText("composer.attach.visionBlocked"));
+    const send = screen.getByRole("button", { name: "chat.send" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+    // 输入文本后移除附件：门控解除、可发送。
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    typeInto(ta, "改用文字描述");
+    fireEvent.click(screen.getByRole("button", { name: "composer.attach.remove" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "chat.send" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("附件-only 轮可发送（空文本）；移除钮清 chip", async () => {
+    mockAttachBridge();
+    const onSend = vi.fn();
+    renderComposer({ onSend, workspaceRoot: "D:/repo", visionSupported: true });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("shot.png")] } });
+    await waitFor(() => screen.getByText("shot.png"));
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("", [imagePart]);
+  });
+
+  it("导入失败内联红字提示且不产 chip", async () => {
+    mockSuggestBridge({
+      importAttachmentBytes: vi.fn(async () => {
+        throw new Error("附件 huge.bin 超过 25 MiB 上限");
+      }),
+    });
+    renderComposer({ workspaceRoot: "D:/repo" });
+    const input = screen.getByTestId("composer-file-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [mockFile("huge.bin")] } });
+    await waitFor(() => screen.getByText(/25 MiB/));
+    expect(screen.queryByRole("button", { name: "composer.attach.remove" })).toBeNull();
   });
 });

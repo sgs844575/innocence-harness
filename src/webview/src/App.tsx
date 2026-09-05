@@ -890,7 +890,7 @@ export function App(): React.JSX.Element {
               settings={settings}
               streaming={chat.streaming}
               onPatchSettings={patchSettings}
-              onSend={(text) => void chat.send(text)}
+              onSend={(text, attachments) => void chat.send(text, attachments)}
               onStop={() => void chat.stop()}
               draft={draft}
               onQuickPick={(prompt) => setDraft({ text: prompt, nonce: Date.now() })}
@@ -908,7 +908,7 @@ export function App(): React.JSX.Element {
             settings={settings}
             workspaceRoot={sessionRoot}
             onPatchSettings={patchSettings}
-            onSend={(text) => void chat.send(text)}
+            onSend={(text, attachments) => void chat.send(text, attachments)}
             onEditResend={(messageId, text) => void chat.resend(messageId, text)}
             onStop={() => void chat.stop()}
             onPermissionRespond={(requestId, choice) => void chat.respondPermission(requestId, choice)}

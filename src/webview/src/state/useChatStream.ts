@@ -1,11 +1,11 @@
 // 会话聊天流：按激活会话装载消息 + 订阅流式事件进 reducer。
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { ChatMessage, ChatQuestionResponse, PermissionChoice } from "../../../shared/ipc";
+import type { AttachmentPart, ChatMessage, ChatQuestionResponse, PermissionChoice } from "../../../shared/ipc";
 import { api, hasBridge } from "../lib/ipc";
 import { initialChatStreamState, reduceChatStream, type ChatStreamState } from "./chatStream";
 
 export interface ChatStreamController extends ChatStreamState {
-  send: (text: string) => Promise<void>;
+  send: (text: string, attachments?: AttachmentPart[]) => Promise<void>;
   /** 编辑重发（替换语义）：乐观截断被编辑消息起的历史并重发新文本；
    *  失败时回读存储恢复截断前的真态。 */
   resend: (messageId: string, text: string) => Promise<void>;
@@ -107,9 +107,10 @@ export function useChatStream({
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: AttachmentPart[] = []) => {
       const content = text.trim();
-      if (!content) return;
+      // 附件-only 轮也是真实用户轮（文本可为空）。
+      if (!content && attachments.length === 0) return;
       let sessionId: string;
       try {
         sessionId = await ensureSessionForSend();
@@ -123,12 +124,15 @@ export function useChatStream({
         message: {
           id,
           role: "user",
-          parts: [{ type: "text", text: content }],
+          parts: [
+            ...(content ? [{ type: "text" as const, text: content }] : []),
+            ...attachments,
+          ],
           createdAt: Date.now(),
         },
       });
       try {
-        await api.sendMessage(sessionId, content, id);
+        await api.sendMessage(sessionId, content, id, attachments.length > 0 ? attachments : undefined);
       } catch {
         onError("sendMessage");
         dispatch({ type: "error", messageId: "", error: "send failed" });
