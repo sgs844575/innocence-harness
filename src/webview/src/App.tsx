@@ -20,6 +20,7 @@ import { useChatStream } from "./state/useChatStream";
 import { useSettings } from "./state/useSettings";
 import { useTerminalFont } from "./state/useTerminalFont";
 import { useSidebarState } from "./state/useSidebarState";
+import { useArchivedSessionGuard } from "./state/useArchivedSessionGuard";
 import { loadUiState, patchUiState } from "./state/uiState";
 import { useSubagentRuns } from "./state/useSubagentRuns";
 import { groupRunsByLiveness, runForTaskRow, runsForSession, type SubagentRun, type TaskRowClue } from "./state/subagentRuns";
@@ -58,6 +59,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     patchUiState({ shellView: view });
   }, [view]);
+  // 活动会话被归档（侧栏行归档/启动自动归档/重启回放）即离开——主区不得停留在
+  // 已归档任务上，标题栏菜单路径之外的全部归档来源由此统一兜底。
+  useArchivedSessionGuard(sessions.activeId, sidebar.archived, sessions.newSession);
   const [searchOpen, setSearchOpen] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -856,6 +860,9 @@ export function App(): React.JSX.Element {
               onPatchSettings={patchSettings}
               onPatchBrowserSettings={patch}
               onPatchComputerSettings={patch}
+              onPatchMemorySettings={patch}
+              memoryApi={hasBridge() ? api : undefined}
+              memoryWorkspace={titleProjectRoot || settings?.workspaceRoot}
               onClearBrowserData={hasBridge() ? api.browserClearData : undefined}
               onSetTheme={setThemeMode}
               onSetApiKey={
