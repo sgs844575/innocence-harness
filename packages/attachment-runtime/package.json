@@ -1,0 +1,24 @@
+{
+  "name": "@innocenceharness/attachment-runtime",
+  "version": "0.1.0",
+  "description": "InnocenceHarness attachment orchestration: content-addressed refs, import limits, GC planning",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@innocenceharness/harness-session": "^0.1.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/attachment-runtime"
+  }
+}

@@ -88,7 +88,34 @@ export interface ToolResultPart {
   isError?: boolean;
 }
 
-export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
+/**
+ * 内容寻址引用（附件与多模态）：消息只携带引用，字节经宿主 CAS 解析。
+ * 镜像契约：与 harness-session 同名类型逐字一致，修改任一侧必须同步另一侧。
+ */
+export interface ContentRef {
+  /** CAS 键，固定形态 `sha256:<64 hex>`。 */
+  key: string;
+  mediaType: string;
+  byteLength: number;
+  estimatedTokens?: number;
+}
+
+/** 附件的一条模型可见表示（文本抽取或规范化图像；PDF 表示带页码）。 */
+export interface AttachmentRepresentation {
+  kind: "text" | "image";
+  content: ContentRef;
+  page?: number;
+}
+
+/** 用户附件 part：source 为原始导入对象，representations 为按模型能力选送的表示。 */
+export interface AttachmentPart {
+  type: "attachment";
+  name: string;
+  source: ContentRef;
+  representations: AttachmentRepresentation[];
+}
+
+export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart | AttachmentPart;
 
 export type MessageRole = "user" | "assistant";
 

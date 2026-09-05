@@ -1,4 +1,7 @@
 export type {
+  AttachmentPart,
+  AttachmentRepresentation,
+  ContentRef,
   JsonSchema,
   Message,
   MessagePart,
@@ -9,7 +12,7 @@ export type {
   ToolResultImage,
   ToolResultPart,
 } from "./types";
-export { textMessage, isPlainText, messageText, toTranscript } from "./types";
+export { textMessage, isContentRef, isPlainText, messageText, toTranscript } from "./types";
 export type { ChatRequest, Delta, Provider, ToolSpec } from "@innocenceharness/harness-providers";
 export {
   processMessage,

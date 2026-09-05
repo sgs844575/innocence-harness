@@ -43,7 +43,34 @@ export interface ToolResultPart {
   invocationId?: string;
 }
 
-export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart;
+/**
+ * 内容寻址引用（附件与多模态）：消息只携带引用，永不携带原始 base64、
+ * PDF 字节或绝对路径；字节经宿主的内容存储（CAS）按需解析。
+ */
+export interface ContentRef {
+  /** CAS 键，固定形态 `sha256:<64 hex>`。 */
+  key: string;
+  mediaType: string;
+  byteLength: number;
+  estimatedTokens?: number;
+}
+
+/** 附件的一条模型可见表示（文本抽取或规范化图像；PDF 表示带页码）。 */
+export interface AttachmentRepresentation {
+  kind: "text" | "image";
+  content: ContentRef;
+  page?: number;
+}
+
+/** 用户附件 part：source 为原始导入对象，representations 为按模型能力选送的表示。 */
+export interface AttachmentPart {
+  type: "attachment";
+  name: string;
+  source: ContentRef;
+  representations: AttachmentRepresentation[];
+}
+
+export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ToolResultPart | AttachmentPart;
 
 export type MessageRole = "user" | "assistant";
 
@@ -72,6 +99,20 @@ export function messageText(message: Message): string {
     .join("");
 }
 
+/** `sha256:<64 hex>` 引用键形态（附件 CAS 键的规范化判定）。 */
+const CONTENT_KEY_RE = /^sha256:[0-9a-f]{64}$/;
+
+/** 形态校验的 ContentRef（防转录/IPC 侧伪造畸形引用）。 */
+export function isContentRef(value: unknown): value is ContentRef {
+  if (typeof value !== "object" || value === null) return false;
+  const ref = value as Partial<ContentRef>;
+  return (
+    typeof ref.key === "string" && CONTENT_KEY_RE.test(ref.key) &&
+    typeof ref.mediaType === "string" && ref.mediaType.length > 0 &&
+    typeof ref.byteLength === "number" && ref.byteLength >= 0
+  );
+}
+
 /** Serialize a message list to a readable transcript (used for compaction summaries). */
 export function toTranscript(messages: Message[]): string {
   return messages
@@ -88,6 +129,8 @@ export function toTranscript(messages: Message[]): string {
               return `[调用工具 ${p.toolName}，参数 ${boundedArgs(p.args)}]`;
             case "toolResult":
               return `[工具结果${p.isError ? "（出错）" : ""}：${p.content.slice(0, 400)}]`;
+            case "attachment":
+              return `[附件 ${p.name}（${p.source.mediaType}，${p.representations.length} 个表示）]`;
           }
         })
         .join("\n");
