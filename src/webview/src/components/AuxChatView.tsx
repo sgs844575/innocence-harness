@@ -71,6 +71,7 @@ export function AuxChatView({ t, sessionId, settings, onPatchSettings, onManageM
           onPatchSettings={onPatchSettings}
           onSend={(text) => void chat.send(text)}
           onStop={() => void chat.stop()}
+          workspaceRoot={settings?.workspaceRoot ?? ""}
           onManageModels={onManageModels}
         />
       </div>

@@ -27,7 +27,7 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocenceharness/harness-electron";
-import { IPC, type AgentModeInfo, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory } from "../shared/ipc";
+import { IPC, type AgentModeInfo, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
 import { isWorktreeSession } from "./taskWorktreePredicate";
@@ -692,6 +692,12 @@ export async function getPluginInventory(): Promise<PluginInventory> {
  *  sessionComposition 面现算，不缓存。 */
 export function getAgentModes(): Promise<AgentModeInfo[]> {
   return sessionComposition.agentModes();
+}
+
+/** 技能目录（IPC skills:list）：内置常驻 + 缺省双根磁盘扫描现算投影（磁盘
+ *  同名遮蔽内置、按名排序）——同 getAgentModes 形态现算，不缓存、不滤开关。 */
+export function getSkillCatalog(root: string): Promise<SkillInfo[]> {
+  return sessionComposition.skillCatalog(root);
 }
 
 export function setHarnessSettings(next: HarnessSettingsPatch) {

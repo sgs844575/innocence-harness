@@ -114,6 +114,8 @@ export const IPC = {
   // 技能发现/导入（任务 4）：main 探测外部智能体目录 / 复制到用户技能根。
   skillsDiscover: "skills:discover",
   skillsImport: "skills:import",
+  // 技能目录（输入卡 / 补全）：内置常驻 + 缺省双根磁盘扫描现算的 "/name" 可调用清单。
+  skillsList: "skills:list",
   // MCP 标准格式导入（任务 5）：main 解析项目 .mcp.json / 探测发现提示。
   mcpImport: "mcp:import",
   mcpDiscover: "mcp:discover",
@@ -449,6 +451,12 @@ export interface AgentModeInfo {
   id: string;
   title: string;
   description?: string;
+}
+
+/** IPC skills:list 载荷：一个 "/name" 可调用技能（内置常驻或磁盘扫描）。 */
+export interface SkillInfo {
+  name: string;
+  description: string;
 }
 
 // 镜像契约：以下发现 DTO 复制自 src/main/skillDiscovery.ts 的
@@ -835,6 +843,8 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   getPluginInventory(): Promise<PluginInventory>;
   /** Agent 模式目录（main 按 manifest + 用户根扫描现算；恒含 default）。 */
   listAgentModes(): Promise<AgentModeInfo[]>;
+  /** 技能目录（main 按内置常驻 + 缺省双根磁盘扫描现算；空 root = 仅用户根）。 */
+  listSkills(root: string): Promise<SkillInfo[]>;
   /** Fired after a development plugin client reload request. */
   onPluginsChanged(cb: () => void): () => void;
   /** 外部技能发现清单（main 探测已知外部智能体目录）。 */

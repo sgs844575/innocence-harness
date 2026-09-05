@@ -906,6 +906,7 @@ export function App(): React.JSX.Element {
             permission={chat.permission}
             question={chat.question}
             settings={settings}
+            workspaceRoot={sessionRoot}
             onPatchSettings={patchSettings}
             onSend={(text) => void chat.send(text)}
             onEditResend={(messageId, text) => void chat.resend(messageId, text)}

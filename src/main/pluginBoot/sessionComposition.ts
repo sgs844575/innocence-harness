@@ -22,6 +22,8 @@ import {
   unavailableTeammatePort,
   type SendToTeammatePort,
 } from "@innocenceharness/plugin-team";
+import { scanSkillCatalog, type SkillCatalogEntry } from "@innocenceharness/plugin-skills";
+import { builtinSkills } from "@innocenceharness/plugin-builtin-skills";
 import {
   unavailableAskUserPort,
   type AskUserPort,
@@ -53,7 +55,7 @@ import type {
   PluginToggleSource,
 } from "../plugin-toggles-local";
 import type { PluginInventoryEntry } from "../plugin-inventory";
-import type { AgentModeInfo } from "../../shared/ipc";
+import type { AgentModeInfo, SkillInfo } from "../../shared/ipc";
 
 /** Inputs of {@link createSessionComposition}. */
 export interface SessionCompositionOptions {
@@ -156,6 +158,13 @@ export interface SessionComposition {
    * 恒含 default 兜底）。每次调用现算，不缓存。
    */
   agentModes(): Promise<AgentModeInfo[]>;
+  /**
+   * 技能目录（IPC skills:list）：内置常驻技能 + 缺省双根磁盘扫描现算 →
+   * projectSkillCatalog 投影（磁盘同名遮蔽内置、按名排序）。不经 boot、
+   * 不缓存、不过滤 toggle（目录是可用性提示而非保证，与 agentModes 同
+   * 一裁定）。空 workspaceRoot = 仅用户根。
+   */
+  skillCatalog(workspaceRoot: string): Promise<SkillInfo[]>;
 }
 
 /** Project permission rules (.innocence/config.json) as a plugin, so the
@@ -666,6 +675,26 @@ export function projectAgentModes(
 }
 
 /**
+ * 技能目录投影（IPC skills:list 载荷源）：磁盘扫描条目同名遮蔽内置条目——与
+ * 运行时注册序一致（磁盘 skills 插件先装载、register first-wins，内置包后
+ * 装载被跳过），输出按 name 排序稳定化。纯函数、无 IO。
+ */
+export function projectSkillCatalog(
+  builtin: readonly { name: string; description: string }[],
+  disk: readonly SkillCatalogEntry[],
+): SkillInfo[] {
+  const byName = new Map<string, SkillInfo>();
+  for (const entry of disk) {
+    byName.set(entry.name, { name: entry.name, description: entry.description });
+  }
+  for (const entry of builtin) {
+    if (byName.has(entry.name)) continue;
+    byName.set(entry.name, { name: entry.name, description: entry.description });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Host composition root: one workspace's plugin set — workspace tools,
  * subagents, project permission rules, project skills, MCP servers, the
  * session todo tool and the settings-based provider. Declarative assembly:
@@ -897,6 +926,18 @@ export function createSessionComposition(
         scanCurrentUserRoot(),
       ]);
       return projectAgentModes(manifest, scanned.descriptors);
+    },
+    async skillCatalog(workspaceRoot: string): Promise<SkillInfo[]> {
+      // 现算：与 factoryConfig("skills") 的缺省双根一致（项目 .innocence/skills
+      // 前根优先 + 用户 ~/.innocence/skills）；yml group config 自定义 dirs 的
+      // 会话目录与实际可有出入——已接受（可用性提示，同 agentModes 边界）。
+      const root = workspaceRoot.trim();
+      const dirs = [
+        ...(root !== "" ? [path.join(root, ".innocence", "skills")] : []),
+        path.join(os.homedir(), ".innocence", "skills"),
+      ];
+      const disk = await scanSkillCatalog(dirs);
+      return projectSkillCatalog(builtinSkills, disk);
     },
   };
 }

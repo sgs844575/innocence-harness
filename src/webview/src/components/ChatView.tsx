@@ -29,6 +29,8 @@ interface Props {
   settings: HarnessSettings | null;
   onPatchSettings: (patch: Partial<HarnessSettings>) => void;
   onSend: (text: string) => void;
+  /** 会话项目根（输入卡 @ 文件补全数据源）。 */
+  workspaceRoot?: string;
   /** 编辑重发（替换语义）：截断 messageId 起的消息并以新文本重开一轮。 */
   onEditResend: (messageId: string, text: string) => void;
   onStop: () => void;
@@ -57,6 +59,7 @@ export function ChatView({
   settings,
   onPatchSettings,
   onSend,
+  workspaceRoot = "",
   onEditResend,
   onStop,
   onPermissionRespond,
@@ -277,6 +280,7 @@ export function ChatView({
             onPatchSettings={onPatchSettings}
             onSend={handleSend}
             onStop={onStop}
+            workspaceRoot={workspaceRoot}
             onManageModels={onManageModels}
             contextUsage={contextUsage}
           />

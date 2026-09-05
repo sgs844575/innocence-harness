@@ -63,6 +63,42 @@ async function loadSkillFrom(dir: string, entry: string): Promise<Skill | null> 
   };
 }
 
+/** Catalog projection of one scanned skill (frontmatter only, no body). */
+export interface SkillCatalogEntry {
+  name: string;
+  description: string;
+}
+
+/**
+ * Scans skill directories with createSkillsPlugin's exact semantics —
+ * subdirectory SKILL.md or a bare *.md entry, malformed files skipped
+ * silently, multi-root priority order (the first root that yields a name
+ * wins, later same-name entries skipped at the scan layer) — and returns
+ * the frontmatter projection only. This is the catalog face hosts list
+ * invocable "/name" skills from before any session exists; it never loads
+ * bodies and never touches the spine.
+ */
+export async function scanSkillCatalog(dirs: string[]): Promise<SkillCatalogEntry[]> {
+  const seen = new Set<string>();
+  const catalog: SkillCatalogEntry[] = [];
+  for (const dir of dirs) {
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      continue; // missing dir is normal (no skills yet)
+    }
+    for (const entry of entries) {
+      const skill = await loadSkillFrom(dir, entry);
+      if (skill && !seen.has(skill.name)) {
+        seen.add(skill.name);
+        catalog.push({ name: skill.name, description: skill.description });
+      }
+    }
+  }
+  return catalog;
+}
+
 export interface SkillsPluginOptions {
   /** Directories to scan; each subdirectory (or *.md file) may hold a SKILL.md.
    *  多根语义：根序即优先序——前根同名技能优先，后根同名在扫描层跳过。 */

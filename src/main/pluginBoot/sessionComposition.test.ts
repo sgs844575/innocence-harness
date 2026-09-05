@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, fsFactoryConfigFor, projectAgentModes, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
+import { buildProviderFromSettings, createSessionComposition, fsFactoryConfigFor, projectAgentModes, projectSkillCatalog, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
 import { resolveCommandShell } from "@innocenceharness/terminal-pty";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
@@ -145,6 +145,30 @@ describe("projectAgentModes (agents:modes catalog projection)", () => {
     const modes = projectAgentModes([mode("default", "Built-in Default")], [mode("extra")]);
     expect(modes.filter((m) => m.id === "default")).toHaveLength(1);
     expect(modes.find((m) => m.id === "default")?.title).toBe("Built-in Default");
+  });
+});
+
+describe("projectSkillCatalog (skills:list catalog projection)", () => {
+  const entry = (name: string, description: string) => ({ name, description });
+
+  it("disk entries shadow same-name builtin entries (registration order), output name-sorted", () => {
+    const builtin = [entry("debugging", "builtin debugging"), entry("verify", "builtin verify")];
+    const disk = [entry("review", "disk review"), entry("debugging", "disk debugging")];
+    const catalog = projectSkillCatalog(builtin, disk);
+    expect(catalog).toEqual([
+      { name: "debugging", description: "disk debugging" },
+      { name: "review", description: "disk review" },
+      { name: "verify", description: "builtin verify" },
+    ]);
+  });
+
+  it("empty inputs yield an empty catalog (no default fallback — skills are optional)", () => {
+    expect(projectSkillCatalog([], [])).toEqual([]);
+  });
+
+  it("builtin-only inputs pass through unchanged but sorted", () => {
+    const catalog = projectSkillCatalog([entry("zeta", "z"), entry("alpha", "a")], []);
+    expect(catalog.map((skill) => skill.name)).toEqual(["alpha", "zeta"]);
   });
 });
 

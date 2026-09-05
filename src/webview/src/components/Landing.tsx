@@ -70,6 +70,7 @@ export function Landing({
               onPatchSettings={onPatchSettings}
               onSend={onSend}
               onStop={onStop}
+              workspaceRoot={pendingProject}
               draft={draft}
               onManageModels={onManageModels}
               header={

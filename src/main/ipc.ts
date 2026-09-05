@@ -30,6 +30,7 @@ import {
   resendChatTurn,
   sendChatTurn,
   setHarnessSettings,
+  getSkillCatalog,
   stopChatTurn,
   cancelSubagentRun,
   updateProviderApiKey,
@@ -488,6 +489,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.pluginsList, () => getPluginInventory());
   // Agent 模式目录：manifest 直读 + 用户根扫描现算（无 boot 依赖）。
   ipcMain.handle(IPC.agentsModes, () => getAgentModes());
+  // 技能目录（输入卡 / 补全）：内置常驻 + 缺省双根扫描现算；空 root = 仅用户根。
+  ipcMain.handle(IPC.skillsList, (_e, root: unknown) =>
+    typeof root === "string" ? getSkillCatalog(root) : getSkillCatalog(""),
+  );
   ipcMain.handle(IPC.automationCandidate, (_e, prompt: string) => generateAutomationCandidate(prompt));
   ipcMain.handle(IPC.automationConfirm, (_e, request) => confirmAutomation(request.candidate, request.name, request.targetSessionId));
   ipcMain.handle(IPC.automationUpdate, (_e, request) => updateAutomation(
