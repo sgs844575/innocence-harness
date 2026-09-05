@@ -30,7 +30,9 @@ export const config: ForgeConfig = {
       // node-pty ships native .node binaries required at runtime — keep the
       // whole package (JS loader + prebuilds) outside the ASAR archive so
       // require("node-pty") works from the bundled main process.
-      unpack: "**/node_modules/node-pty/**",
+      // @napi-rs/canvas 同理：附件图像规范化经 optionalDependencies 平台包
+      // 装载预编译 Skia 二进制，同样必须以真实文件存在。
+      unpack: "**/node_modules/{node-pty,@napi-rs}/**",
     },
     executableName: packagingArtifactNames.executableName,
     // Prebuilt kernel libraries and plugins live outside the ASAR archive:
@@ -46,19 +48,22 @@ export const config: ForgeConfig = {
     // filter below is the single source of truth for what ships; pruning is
     // therefore off.
     prune: false,
-    // plugin-vite's default copy filter keeps ONLY /.vite — node-pty (the one
-    // runtime require vite.main.config.ts externalizes) would never reach the
-    // package and require("node-pty") would fail in the packaged app. A
-    // function-valued ignore takes over from the plugin: keep the .vite
-    // bundles, package.json and node-pty (JS + native prebuilds, unpacked
-    // above); every other project file is already inlined into the bundles.
+    // plugin-vite's default copy filter keeps ONLY /.vite — the runtime
+    // requires vite.main.config.ts externalizes (node-pty; 附件解析的
+    // @napi-rs/canvas 与 pdfjs-dist) would never reach the package and their
+    // require() would fail in the packaged app. A function-valued ignore
+    // takes over from the plugin: keep the .vite bundles, package.json and
+    // those node_modules subtrees (natives unpacked above); every other
+    // project file is already inlined into the bundles.
     ignore: (file) => {
       if (!file) return false; // the root path arrives empty — always keep it
       return (
         !file.startsWith("/.vite") &&
         file !== "/package.json" &&
         file !== "/node_modules" &&
-        !file.startsWith("/node_modules/node-pty")
+        !file.startsWith("/node_modules/node-pty") &&
+        !file.startsWith("/node_modules/@napi-rs") &&
+        !file.startsWith("/node_modules/pdfjs-dist")
       );
     },
     afterCopy: [pruneWindowsX64NodePtyPrebuilds],

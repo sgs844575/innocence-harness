@@ -10,8 +10,11 @@ import { defineConfig } from "vite";
 // Bare + node:-prefixed Node builtins. These MUST stay runtime requires: an
 // incomplete external list lets rolldown "externalize them for browser
 // compatibility" (empty stubs), which crashes the Electron main at load
-// (e.g. `(0, _.promisify) is not a function`). electron + electron/* and
-// node-pty (native addon, ASAR-unpacked by forge.config.ts) join them.
+// (e.g. `(0, _.promisify) is not a function`). electron + electron/*,
+// node-pty (native addon, ASAR-unpacked by forge.config.ts) and the
+// attachment parser's runtime deps join them: @napi-rs/canvas ships a
+// prebuilt native binary (ASAR-unpacked) and pdfjs-dist's legacy build is
+// only sane as a plain Node require.
 // (String | RegExp entries only: rolldown's bundler binding rejects plain
 // function externals when driven through forge's JS API.)
 const externalIds: Array<string | RegExp> = [
@@ -19,6 +22,8 @@ const externalIds: Array<string | RegExp> = [
   "electron/common",
   "electron/main",
   "node-pty",
+  /^@napi-rs\/canvas/,
+  /^pdfjs-dist/,
   /^node:/,
   ...builtinModules.flatMap((module) => [module, `node:${module}`]),
 ];
