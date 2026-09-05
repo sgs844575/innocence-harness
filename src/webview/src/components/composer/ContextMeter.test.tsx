@@ -26,15 +26,21 @@ describe("ContextMeter", () => {
   it("渲染触发环，点击后弹层头行按万格式给总量与百分比", async () => {
     render(<ContextMeter t={t} snapshot={snap()} />);
     expect(screen.getByTestId("chat-context-meter")).toBeDefined();
-    fireEvent.keyDown(screen.getByTestId("chat-context-meter"), { key: "Enter" });
+    fireEvent.click(screen.getByTestId("chat-context-meter"));
     expect(await screen.findByText("chat.contextMeter.title")).toBeDefined();
     // 头行：6.4万 / 100万（6.4%）
     expect(screen.getByText("6.4万 / 100万（6.4%）")).toBeDefined();
   });
 
-  it("null 快照渲染 0% 灰环（仍常显）", () => {
-    render(<ContextMeter t={t} snapshot={null} />);
-    expect(screen.getByTestId("chat-context-meter")).toBeDefined();
+  it("opens without usage and updates the open panel when usage arrives", async () => {
+    const view = render(<ContextMeter t={t} snapshot={null} />);
+    fireEvent.click(screen.getByTestId("chat-context-meter"));
+    expect(await screen.findByText("chat.contextMeter.unavailable")).toBeDefined();
+    view.rerender(<ContextMeter t={t} snapshot={snap()} />);
+    expect(screen.queryByText("chat.contextMeter.unavailable")).toBeNull();
+    expect(screen.getByText("6.4万 / 100万（6.4%）")).toBeDefined();
+    fireEvent.click(screen.getByTestId("chat-context-meter"));
+    expect(screen.queryByText("chat.contextMeter.title")).toBeNull();
   });
 
   it("pct=0 不渲染弧 circle（round 线帽 + 零长虚线会画出圆点）；pct>0 底环+弧", () => {

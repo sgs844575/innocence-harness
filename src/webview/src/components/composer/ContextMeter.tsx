@@ -1,13 +1,13 @@
 // 上下文容量指示器：18px 常显环（阈值三档色）+ 点击弹出容量明细清单弹层。
-// 颜色全部取语义 token（accent/tool-warn/tool-err/border），弹层复用 DropdownMenu。
-import { DropdownMenu } from "../ui/DropdownMenu";
+// 颜色全部取语义 token（accent/tool-warn/tool-err/border），弹层复用 Popover。
+import { Popover } from "../ui/Popover";
 import type { ChatContextUsageSnapshot } from "../../../../shared/ipc";
 
 interface Props {
   t: (key: string) => string;
   snapshot: ChatContextUsageSnapshot | null;
   /** 测试与故事板用受控展开：false = 不渲染；true = 跳过 Radix 直接渲染弹层面板；
-   *  undefined = 生产形态，由 DropdownMenu 自管开合。 */
+   *  undefined = 生产形态，由 Popover 自管开合。 */
   open?: boolean;
 }
 
@@ -143,19 +143,20 @@ function MeterTrigger({
 
 export function ContextMeter({ t, snapshot, open }: Props): React.JSX.Element | null {
   if (open === false) return null;
-  if (!snapshot) {
-    // 新会话（无快照）：0% 灰环常显，无可展开明细。
-    return <MeterTrigger t={t} pct={0} />;
-  }
-  // 故事板/测试受控展开：true = 不经 Radix 直接渲染面板，便于 jsdom 断言。
-  if (open === true) return <MeterPanel t={t} snapshot={snapshot} />;
-  const pct = snapshot.contextWindow ? snapshot.inputTokens / snapshot.contextWindow : 0;
+  const panel = snapshot ? <MeterPanel t={t} snapshot={snapshot} /> : (
+    <div className="w-72 p-3.5">
+      <div className="font-semibold text-(--color-foreground-strong)">{t("chat.contextMeter.title")}</div>
+      <p className="mt-2 text-(--color-muted)">{t("chat.contextMeter.unavailable")}</p>
+    </div>
+  );
+  if (open === true) return panel;
+  const pct = snapshot?.contextWindow ? snapshot.inputTokens / snapshot.contextWindow : 0;
   return (
-    <DropdownMenu
+    <Popover
       contentClassName="w-72"
       trigger={<MeterTrigger t={t} pct={pct} />}
     >
-      <MeterPanel t={t} snapshot={snapshot} />
-    </DropdownMenu>
+      {panel}
+    </Popover>
   );
 }
