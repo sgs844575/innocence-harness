@@ -80,6 +80,7 @@ function pickPath(args: Record<string, unknown>): string | undefined {
 
 /** MCP server entry in .innocence/config.json. */
 export interface McpServerConfig {
+  capability?: "computer";
   command: string;
   args?: string[];
   env?: Record<string, string>;

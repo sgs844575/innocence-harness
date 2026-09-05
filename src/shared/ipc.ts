@@ -98,6 +98,7 @@ export const IPC = {
   workspaceGitReviewDiff: "workspace:git-review-diff",
   /** dock 浏览器标签：访客页设备度量仿真（Emulation.setDeviceMetricsOverride）。 */
   browserEmulate: "browser:emulate",
+  browserClearData: "browser:clear-data",
   /** 会话「…」菜单：在系统文件管理器中打开目录。 */
   hostRevealPath: "host:reveal-path",
   /** 会话「…」菜单：打开外部链接（仅 http/https）。 */
@@ -524,6 +525,7 @@ export interface DiscoveredSkillMirror {
 // 必须同步另一侧（packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
 /** .mcp.json 中一条 MCP 服务器条目（IPC mcp:import 载荷形状）。 */
 export interface McpServerEntryMirror {
+  capability?: "computer";
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -653,6 +655,10 @@ export interface ProviderProfile {
 }
 
 export interface HarnessSettings {
+  computerEnabled?: boolean;
+  showComputerButton?: boolean;
+  browserEnabled?: boolean;
+  browserIgnoreCertificateErrors?: boolean;
   profiles: ProviderProfile[];
   activeProfileId: string;
   activeModel: string;
@@ -877,6 +883,7 @@ export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
   workspaceGitReviewDiff(root: string, scope: ReviewScope, path: string): Promise<ReviewFileDiffResult>;
   /** dock 浏览器：设备度量仿真（null 尺寸 = 适应窗口）；仅接受本窗口的 webview 访客。 */
   browserEmulate(request: BrowserEmulateRequest): Promise<{ ok: boolean; error?: string }>;
+  browserClearData(kind: import("./browserIpc").BrowserDataKind): Promise<import("./browserIpc").BrowserDataResult>;
   /** 在系统文件管理器中打开目录（失败静默）。 */
   revealPath(path: string): Promise<void>;
   /** 打开外部 http(s) 链接（其余 scheme 拒绝）。 */

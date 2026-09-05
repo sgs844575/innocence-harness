@@ -113,6 +113,7 @@ const api: InnocenceCodeApi = {
   workspaceGitReviewDiff: (root, scope, path) =>
     ipcRenderer.invoke(IPC.workspaceGitReviewDiff, root, scope, path),
   browserEmulate: (request) => ipcRenderer.invoke(IPC.browserEmulate, request),
+  browserClearData: (kind) => ipcRenderer.invoke(IPC.browserClearData, kind),
   revealPath: (path) => ipcRenderer.invoke(IPC.hostRevealPath, path),
   openExternal: (url) => ipcRenderer.invoke(IPC.hostOpenExternal, url),
   getSessionPaths: (id) => ipcRenderer.invoke(IPC.sessionPaths, id),

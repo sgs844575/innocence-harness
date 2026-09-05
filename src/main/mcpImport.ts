@@ -8,6 +8,7 @@ import path from "node:path";
 
 /** One MCP server entry (standard .mcp.json / config.json shape). */
 export interface McpServerEntry {
+  capability?: "computer";
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -60,7 +61,8 @@ export function parseMcpImport(text: string): ParsedMcpImport {
 
 function isMcpServerEntry(value: unknown): value is McpServerEntry {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const entry = value as { command?: unknown; args?: unknown; env?: unknown };
+  const entry = value as { command?: unknown; args?: unknown; env?: unknown; capability?: unknown };
+  if (entry.capability !== undefined && entry.capability !== "computer") return false;
   if (typeof entry.command !== "string" || entry.command.trim() === "") return false;
   if (entry.args !== undefined && (!Array.isArray(entry.args) || !entry.args.every((arg) => typeof arg === "string"))) return false;
   if (entry.env !== undefined && (
