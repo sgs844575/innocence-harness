@@ -12,6 +12,7 @@ export {
 } from "./execution-scope";
 export type { Tool, ToolContext, ToolImage, ToolResult, ToolSideEffect } from "./tool";
 export { sha256Hex } from "./tool";
+export { observeToolActivity, type ToolActivityObserver, type ToolActivityStart, type ToolActivityOutcome, type FinishToolActivity } from "./activity";
 export {
   DEFAULT_ABORT_GRACE_MS,
   TOOL_TIMEOUT,
