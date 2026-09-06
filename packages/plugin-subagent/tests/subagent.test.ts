@@ -13,7 +13,7 @@ import type { Delta, Provider } from "@innocenceharness/harness-providers";
 import type { HarnessEvent, Message } from "@innocenceharness/harness-session";
 import { BUILTIN_PRESETS, SubagentPlugin, createTaskTool, SUBAGENT_THREAD_NOTES, withThreadNotes } from "../src";
 import type { SubagentOptions } from "@innocenceharness/harness-agent";
-import { adaptedPresets } from "@innocenceharness/agent-presets";
+import { adaptedPresets, codingPresets } from "@innocenceharness/agent-presets";
 
 // The preset-driven Task tool replaces the former hard-coded taskTool export.
 const taskTool = createTaskTool(BUILTIN_PRESETS);
@@ -535,9 +535,9 @@ describe("thread notes (M3)", () => {  const fakeCtx = (run: unknown) => ({
   });
 
   it("appends the thread-notes block after the persona for every catalog preset", async () => {
-    // 与默认插件同一合并语义：内建 + 适配预设按 id 去重（extra 覆盖），
+    // 与默认插件同一合并语义：内建 + 适配 + 编码预设按 id 去重（extra 覆盖），
     // "每个子代理线程都带注记"是默认目录的属性而非两预设切片。
-    const catalog = [...new Map([...BUILTIN_PRESETS, ...adaptedPresets].map((p) => [p.id, p])).values()];
+    const catalog = [...new Map([...BUILTIN_PRESETS, ...adaptedPresets, ...codingPresets].map((p) => [p.id, p])).values()];
     const catalogTool = createTaskTool(catalog);
     const run = vi.fn(async (_options: { systemPrompt: string }) => ({ finalText: "done", turns: 1 }));
     for (const preset of catalog) {

@@ -1,7 +1,7 @@
 {
   "name": "@innocenceharness/agent-presets",
   "version": "0.1.0",
-  "description": "InnocenceHarness adapted subagent personas (code review / security review / planner / git worker / simplifier)",
+  "description": "InnocenceHarness subagent personas (adapted: code review / security review / planner / git worker / simplifier / summarizer; coding: implementer / test engineer / debugger / performance analyst)",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

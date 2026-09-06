@@ -3,8 +3,10 @@ import {
   type Tool,
   type ToolContext,
 } from "@innocenceharness/harness-tools";
-import { adaptedPresets } from "@innocenceharness/agent-presets";
+import { adaptedPresets, codingPresets } from "@innocenceharness/agent-presets";
 import { withThreadNotes } from "./thread-notes";
+import { createPresetCatalog } from "./catalog";
+export * from "./catalog";
 
 export { SUBAGENT_THREAD_NOTES, withThreadNotes } from "./thread-notes";
 
@@ -226,6 +228,11 @@ export function createSubagentPlugin(options: SubagentPluginOptions = {}) {
   };
 }
 
-/** Subagent plugin — registers the Task tool with built-in plus adapted presets. */
-export const SubagentPlugin = createSubagentPlugin({ extraPresets: adaptedPresets });
-export default SubagentPlugin;
+/** Subagent plugin — registers the Task tool with built-in plus adapted and coding presets. */
+export const SubagentPlugin = createSubagentPlugin({ extraPresets: [...adaptedPresets, ...codingPresets] });
+export const presetCatalog = createPresetCatalog([...BUILTIN_PRESETS, ...adaptedPresets, ...codingPresets]);
+export async function createScopedSubagentPlugin(userRoot: string, projectRoot?: string) {
+  const presets = (await presetCatalog.list(userRoot, projectRoot)).filter((p) => p.enabled);
+  return { name: "subagent", apply(ctx: Context) { ctx.tools.register(createTaskTool(presets)); } };
+}
+export default Object.assign(SubagentPlugin, { catalog: presetCatalog, createScoped: createScopedSubagentPlugin });

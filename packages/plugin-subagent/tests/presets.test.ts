@@ -67,13 +67,15 @@ describe("subagent presets", () => {
     expect(enumValues).toContain("custom");
   });
 
-  it("default plugin exposes the full eight-preset catalog in the Task enum", () => {
+  it("default plugin exposes the full twelve-preset catalog in the Task enum", () => {
     const registered: unknown[] = [];
     SubagentPlugin.apply({ tools: { register: (t: unknown) => registered.push(t) } } as never);
     const enumValues = (registered[0] as { parameters: { properties: { agentType: { enum: string[] } } } })
       .parameters.properties.agentType.enum;
     expect(enumValues).toEqual([
-      "explore", "general", "code-review", "security-review", "planner", "git-worker", "simplify", "summarizer",
+      "explore", "general",
+      "code-review", "security-review", "planner", "git-worker", "simplify", "summarizer",
+      "implementer", "test-engineer", "debugger", "perf-analyst",
     ]);
   });
 });
