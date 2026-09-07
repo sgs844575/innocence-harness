@@ -145,4 +145,15 @@ describe("owned shutdown", () => {
     expect(createAutomationResources).not.toHaveBeenCalled();
     expect(disposeAutomationLifecycle).toHaveBeenCalledOnce();
   });
+
+  it("releases language servers between the runtime and telemetry disposals (optional member)", async () => {
+    const events: string[] = [];
+    const shutdown = createOwnedShutdown(shutdownDeps({
+      disposeAllRuntime: vi.fn(async () => { events.push("runtime"); }),
+      disposeLspRuntime: vi.fn(async () => { events.push("lsp"); }),
+      disposeTelemetry: vi.fn(async () => { events.push("telemetry"); }),
+    }));
+    await shutdown();
+    expect(events).toEqual(["runtime", "lsp", "telemetry"]);
+  });
 });

@@ -6,6 +6,8 @@ export interface OwnedShutdownOptions {
   rejectAllPendingQuestions(): void;
   disposeAutomationLifecycle(): Promise<void>;
   disposeAllRuntime(): Promise<void>;
+  /** Releases language-server child processes (language-server wave). */
+  disposeLspRuntime?(): Promise<void>;
   disposeTelemetry(): Promise<void>;
   disposePluginBoot(): Promise<void>;
   disposeTaskRuntime(): Promise<void>;
@@ -21,6 +23,7 @@ export function createOwnedShutdown(options: OwnedShutdownOptions): () => Promis
     await options.waitForStartup();
     await options.disposeAutomationLifecycle();
     await options.disposeAllRuntime();
+    await options.disposeLspRuntime?.();
     await options.disposeTelemetry();
     await options.disposePluginBoot();
     await options.disposeTaskRuntime();
