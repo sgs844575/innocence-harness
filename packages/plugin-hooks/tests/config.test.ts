@@ -150,6 +150,7 @@ describe("createHooksPlugin", () => {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
       permissions: allowAll,
+      on: () => () => {},
     } as unknown as Context);
     expect(processors).toHaveLength(1);
     expect(middlewares).toHaveLength(1);

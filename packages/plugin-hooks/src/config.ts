@@ -23,6 +23,10 @@ export const HOOK_EVENTS = [
   "postToolCall",
   "sessionStart",
   "sessionStop",
+  // 生命周期事件（turnEnd 波）：一个代理回合完成（done 事件，含收尾步）
+  // 后触发。输出注入下一个用户回合（[hook context (turn end)] 信封），
+  // 失败走延迟警告通道；不可否决（回合已经结束）。
+  "turnEnd",
 ] as const;
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];

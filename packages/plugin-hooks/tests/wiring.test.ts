@@ -577,6 +577,7 @@ describe("createHooksPlugin", () => {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
       permissions: allowAllPermissions(),
+      on: () => () => {},
     } as unknown as Context;
     createHooksPlugin({
       getHooksConfig: async () => [],
@@ -596,6 +597,7 @@ describe("createHooksPlugin", () => {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (_m: ToolExecutionMiddleware) => {} },
       permissions: allowAllPermissions(),
+      on: () => () => {},
     } as unknown as Context;
     createHooksPlugin({
       // The -e payload stays one whitespace-free token: the command
@@ -624,6 +626,7 @@ describe("createHooksPlugin", () => {
       session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
       tools: { registerMiddleware: (_m: ToolExecutionMiddleware) => {} },
       permissions: allowAllPermissions(),
+      on: () => () => {},
       logger: {
         log: (level: string, message: string) => entries.push({ level, message }),
       },
@@ -662,5 +665,101 @@ describe("LLM hook conditions (final deferred)", () => {
     );
     expect(result).toEqual({ content: "write proceeds" });
     expect(calls).toEqual([]);
+  });
+});
+
+describe("turnEnd wiring", () => {
+  it("runs turn-end hooks on the owning session's done event and injects output on the next turn", async () => {
+    const calls: string[] = [];
+    const seen: HookRunInput[] = [];
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "turnEnd", command: "turn-sweep" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner((hook, input) => {
+        calls.push(hook.command);
+        seen.push(input);
+        return { ok: true, output: "turn summary line" };
+      }),
+    });
+    // The owning session is learned from the first processor call.
+    await wiring.processor.process(userMessage("first"), processorContext("sess-1"));
+    expect(calls).toEqual([]);
+    wiring.handleHarnessEvent({ type: "done", turns: 1 }, "sess-1");
+    // Fire-and-forget: drain the microtask queue before asserting.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(calls).toEqual(["turn-sweep"]);
+    expect(seen[0].cwd).toBe("D:/ws/root");
+    const next = await wiring.processor.process(userMessage("second"), processorContext("sess-1"));
+    const text = textOf(next);
+    expect(text).toContain("[hook context (turn end)]");
+    expect(text).toContain("turn summary line");
+    // 注入一次即清：再下一轮不再出现。
+    const third = await wiring.processor.process(userMessage("third"), processorContext("sess-1"));
+    expect(textOf(third)).not.toContain("turn summary line");
+  });
+
+  it("ignores done events of other sessions and unattributed events", async () => {
+    const calls: string[] = [];
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "turnEnd", command: "turn-sweep" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner((hook) => {
+        calls.push(hook.command);
+        return { ok: true, output: "" };
+      }),
+    });
+    await wiring.processor.process(userMessage("first"), processorContext("sess-owner"));
+    wiring.handleHarnessEvent({ type: "done", turns: 1 }, "sess-other");
+    wiring.handleHarnessEvent({ type: "done", turns: 1 });
+    wiring.handleHarnessEvent({ type: "token", text: "x" }, "sess-owner");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(calls).toEqual([]);
+  });
+
+  it("routes turn-end failures to the deferred warning channel, never blocks", async () => {
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "turnEnd", command: "broken-sweep" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => ({ ok: false, output: "exit 3" })),
+    });
+    await wiring.processor.process(userMessage("first"), processorContext("sess-1"));
+    wiring.handleHarnessEvent({ type: "done", turns: 1 }, "sess-1");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const next = await wiring.processor.process(userMessage("second"), processorContext("sess-1"));
+    expect(textOf(next)).toContain("[hook warning]");
+    expect(textOf(next)).toContain("broken-sweep");
+  });
+
+  it("subscribes harness events through the plugin apply and honors the fiber unsubscribe", async () => {
+    const listeners: Array<(event: unknown, sessionId?: string) => void> = [];
+    const calls: string[] = [];
+    const processors: MessageProcessor[] = [];
+    const unsubscribed: string[] = [];
+    const ctx = {
+      session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
+      tools: { registerMiddleware: (_m: ToolExecutionMiddleware) => {} },
+      permissions: allowAllPermissions(),
+      on: (name: string, listener: (event: unknown, sessionId?: string) => void) => {
+        listeners.push(listener);
+        return () => unsubscribed.push(name);
+      },
+    } as unknown as Context;
+    createHooksPlugin({
+      getHooksConfig: async () => [{ event: "turnEnd", command: "sweep" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      runner: fakeRunner((hook) => {
+        calls.push(hook.command);
+        return { ok: true, output: "" };
+      }),
+    }).apply(ctx);
+    expect(listeners).toHaveLength(1);
+    await processors[0].process(userMessage("go"), processorContext("sess-1"));
+    listeners[0]({ type: "done", turns: 1 }, "sess-1");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(calls).toEqual(["sweep"]);
+    expect(unsubscribed).toEqual([]);
   });
 });

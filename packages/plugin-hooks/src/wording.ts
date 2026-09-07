@@ -40,6 +40,15 @@ export function renderPromptContextReminder(output: string): string {
   return reminderEnvelope(`[hook context]\n${output.trimEnd()}`);
 }
 
+/**
+ * One turn-end hook's non-empty output: the turn it answers has already
+ * closed, so the envelope lands on the NEXT user turn and marks itself as
+ * end-of-turn context (batch turnEnd wave).
+ */
+export function renderTurnEndReminder(output: string): string {
+  return reminderEnvelope(`[hook context (turn end)]\n${output.trimEnd()}`);
+}
+
 /** Warning lines (deferred failures, parse problems) share one envelope. */
 export function renderWarningReminder(lines: readonly string[]): string {
   return reminderEnvelope(["[hook warning]", ...lines].join("\n"));

@@ -171,6 +171,14 @@ describe("event broadcast", () => {
     service.emit({ type: "done", turns: 1 });
     expect(seen).toEqual([{ type: "done", turns: 0 }]);
   });
+
+  it("stamps the emitting session id as the second bus argument", async () => {
+    const ctx = await withSession();
+    const attributed: Array<{ event: HarnessEvent; sessionId?: string }> = [];
+    ctx.on("harness/event", (event, sessionId) => attributed.push({ event, sessionId }));
+    ctx.session.emit({ type: "done", turns: 1 });
+    expect(attributed).toEqual([{ event: { type: "done", turns: 1 }, sessionId: "sess-test" }]);
+  });
 });
 
 describe("compactor holding", () => {

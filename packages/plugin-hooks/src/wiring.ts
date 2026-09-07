@@ -31,6 +31,7 @@
 import type { PermissionsService } from "@innocenceharness/harness-permissions";
 import {
   messageText,
+  type HarnessEvent,
   type Message,
   type MessageProcessor,
   type MessageProcessorContext,
@@ -55,6 +56,7 @@ import {
   renderHookVetoContent,
   renderPromptContextReminder,
   renderSessionStartReminder,
+  renderTurnEndReminder,
   renderWarningReminder,
 } from "./wording";
 
@@ -102,6 +104,15 @@ export interface HooksWiring {
    * fiber invokes it while the session unwinds.
    */
   readonly dispose: () => Promise<void>;
+  /**
+   * Kernel-bus event intake (turnEnd wave): the plugin's apply subscribes
+   * "harness/event" and forwards here. A done event of the wiring's owning
+   * session runs the turnEnd hooks; their output is queued for the next
+   * user turn. Session attribution is required — the bus is shared by the
+   * whole context tree, and events without an owning session id are ignored
+   * (inherited child sessions keep their own turn endings to themselves).
+   */
+  handleHarnessEvent(event: HarnessEvent, sessionId?: string): void;
 }
 
 /** Data behind the one-time continuation note after a veto. */
@@ -128,6 +139,11 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
   let firstTurn = true;
   let pendingWarnings: string[] = [];
   let pendingContinuation: ContinuationNote | null = null;
+  // turnEnd 输出队列：回合已结束无处注入，落到下一个用户回合。
+  let pendingTurnEndBlocks: string[] = [];
+  // 并发去重：上一次 turnEnd 批尚未落定时不叠跑（回合完成事件的间隔
+  // 远大于批耗时，这里只防抖不做队列）。
+  let turnEndInFlight = false;
 
   const loadHooks = async (): Promise<ParsedHooks> => {
     if (cache === undefined) {
@@ -213,6 +229,10 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
         ),
       );
       pendingContinuation = null;
+    }
+    if (pendingTurnEndBlocks.length > 0) {
+      blocks.push(...pendingTurnEndBlocks);
+      pendingTurnEndBlocks = [];
     }
     if (pendingWarnings.length > 0) {
       blocks.push(renderWarningReminder(pendingWarnings));
@@ -335,5 +355,45 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     },
   };
 
-  return { processor, middleware, dispose };
+  // Turn-end face (turnEnd wave): fires on the owning session's done events.
+  // Serial over the wiring's shared pieces (config cache, gate, guarded
+  // runner); outputs never inject into the finished turn — they queue for
+  // the next user turn, and failures take the deferred-warning channel.
+  // Cannot veto anything: the turn is already over.
+  const runTurnEndBatch = async (): Promise<void> => {
+    if (turnEndInFlight) return;
+    turnEndInFlight = true;
+    try {
+      const parsed = await loadHooks();
+      const turnEndHooks = parsed.hooks.filter((hook) => hook.event === "turnEnd");
+      if (turnEndHooks.length === 0) return;
+      const cwd = options.getWorkspaceRoot();
+      const blocks: string[] = [];
+      const failures: string[] = [];
+      for (const hook of turnEndHooks) {
+        const skip = await gate.authorize(hook);
+        if (skip !== null) {
+          failures.push(skip);
+          continue;
+        }
+        const result = await runGuarded(hook, { cwd });
+        if (result.ok && hasOutput(result)) blocks.push(renderTurnEndReminder(result.output));
+        else if (!result.ok) failures.push(formatHookFailure(hook, result));
+      }
+      if (blocks.length > 0) pendingTurnEndBlocks.push(...blocks);
+      if (failures.length > 0) pendingWarnings.push(...failures);
+    } finally {
+      turnEndInFlight = false;
+    }
+  };
+
+  const handleHarnessEvent = (event: HarnessEvent, sessionId?: string): void => {
+    if (event.type !== "done") return;
+    // Attribution is mandatory: the bus is shared tree-wide, and an event
+    // without a session id cannot be proven to belong to this wiring's owner.
+    if (sessionId === undefined || sessionId !== firstSessionId) return;
+    void runTurnEndBatch();
+  };
+
+  return { processor, middleware, dispose, handleHarnessEvent };
 }

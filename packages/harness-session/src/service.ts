@@ -17,7 +17,14 @@ declare module "@innocenceharness/kernel" {
     session: SessionService;
   }
   interface Events {
-    "harness/event"(event: HarnessEvent): void;
+    /**
+     * One HarnessEvent broadcast. The second argument is the emitting
+     * session's id (stamped by the session service): the bus is shared by
+     * the whole context tree, so listeners that need session attribution
+     * (turn-end hooks) discriminate on it. Older emitters that omit it stay
+     * compatible — the argument is optional.
+     */
+    "harness/event"(event: HarnessEvent, sessionId?: string): void;
   }
 }
 
@@ -101,7 +108,7 @@ export function createSessionPlugin(options: SessionPluginOptions): SessionPlugi
   return {
     name: "harness-session",
     apply(ctx) {
-      broadcast = (event) => ctx.emit("harness/event", event);
+      broadcast = (event) => ctx.emit("harness/event", event, options.sessionId);
       const withdraw = ctx.provide("session", service);
       return () => {
         broadcast = () => {};

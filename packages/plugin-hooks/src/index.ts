@@ -30,6 +30,7 @@ declare module "@innocenceharness/kernel" {
 
 export * from "./config";
 export * from "./condition";
+export * from "./ecosystem";
 export * from "./gate";
 export * from "./runner";
 export * from "./stop";
@@ -69,7 +70,7 @@ export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
       const providers = ctx.providers;
       const providerId = providers?.ids?.()[0];
       const provider = providerId ? providers.get(providerId) : undefined;
-      const { processor, middleware, dispose } = createHooksWiring({
+      const { processor, middleware, dispose, handleHarnessEvent } = createHooksWiring({
         ...options,
         getPermissions: () => ctx.permissions,
         ...(provider
@@ -79,6 +80,12 @@ export function createHooksPlugin(options: HooksPluginOptions): HooksPlugin {
       });
       ctx.session.registerProcessor(processor);
       ctx.tools.registerMiddleware(middleware);
+      // turnEnd 面：会话事件总线的 done 事件（含本插件所在 scope 的整个
+      // 上下文树共享总线——会话归属由 session service 的第二参盖章）。
+      // 订阅是插件 fiber 的 effect，卸载即自动退订。
+      ctx.on("harness/event", (event, sessionId) => {
+        handleHarnessEvent(event, sessionId);
+      });
       return dispose;
     },
   };
