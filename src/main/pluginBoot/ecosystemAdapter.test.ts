@@ -3,10 +3,26 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEcosystemAdapterPlugin } from "./ecosystemAdapter";
+import { scanUserPlugins, bundleProbe, nativeProbe } from "./userPluginScan";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "ecoadapt-")); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+it("registers custom bundle component paths after discovery, even when the repository contains package metadata", async () => {
+  const pluginRoot = join(dir, "installed-example");
+  mkdirSync(join(pluginRoot, ".codex-plugin"), { recursive: true });
+  mkdirSync(join(pluginRoot, "workflows", "review"), { recursive: true });
+  writeFileSync(join(pluginRoot, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "review-bundle", skills: "./workflows" }), "utf8");
+  writeFileSync(join(pluginRoot, "package.json"), JSON.stringify({ name: "build-scripts" }), "utf8");
+  writeFileSync(join(pluginRoot, "workflows", "review", "SKILL.md"), "---\nname: inspect-change\ndescription: Inspect a change\n---\nInspect the pending change.", "utf8");
+  const scanned = await scanUserPlugins(dir, [bundleProbe, nativeProbe]);
+  expect(scanned.descriptors[0]).toMatchObject({ id: "installed-example", format: "bundle" });
+  const registered: Array<{ name: string; loadBody(): Promise<string> }> = [];
+  await createEcosystemAdapterPlugin("installed-example", pluginRoot, () => {}).apply({ skills: { register: (skill: typeof registered[number]) => registered.push(skill) } } as never);
+  expect(registered[0].name).toBe("inspect-change");
+  expect(await registered[0].loadBody()).toBe("Inspect the pending change.");
+});
 
 function makeExternalPlugin() {
   mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
@@ -42,7 +58,7 @@ describe("createEcosystemAdapterPlugin", () => {
     const bare = registered.find((s) => s.name === "bare");
     expect(bare).toBeDefined(); // 无 frontmatter 降级：name=文件名、description 首行/缺省
   });
-  it("warns on agents and hooks directories, never registers them", async () => {
+  it("warns on hooks and leaves agent collection to session composition", async () => {
     makeExternalPlugin();
     const warnings: string[] = [];
     const registered: unknown[] = [];
@@ -51,7 +67,7 @@ describe("createEcosystemAdapterPlugin", () => {
     });
     await plugin.apply({ skills: { register: (s: unknown) => registered.push(s) } } as never);
     expect(registered).toHaveLength(3); // hello + bare + greet
-    expect(warnings.some((w) => w.includes("agents"))).toBe(true);
+    expect(warnings.some((w) => w.includes("agents"))).toBe(false);
     expect(warnings.some((w) => w.includes("hooks"))).toBe(true);
   });
   it("degrades per-file failures to warnings without aborting the plugin", async () => {

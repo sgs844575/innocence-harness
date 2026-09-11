@@ -1,0 +1,32 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { applyBundleServers, bundleServerName, collectBundleAgents } from "./bundleCapabilities";
+import { configuredSubagentPlugin } from "./subagentConfiguration";
+let root: string;
+beforeEach(async () => { root = await mkdtemp(path.join(os.tmpdir(), "bundle-host-")); });
+afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+it("injects namespaced servers through the supplied runtime and preserves the desktop access gate", async () => {
+  await writeFile(path.join(root, ".mcp.json"), JSON.stringify({ desktop: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] } }), "utf8");
+  const apply = vi.fn();
+  const createServers = vi.fn(() => ({ name: "fixture", apply }));
+  const ctx = {} as never;
+  await applyBundleServers(ctx, "one", root, {}, { getDataRoot: () => path.join(root, "data"), createServers }, vi.fn());
+  expect(createServers).toHaveBeenCalledWith({ [bundleServerName("one", "desktop")]: expect.objectContaining({ command: "node", capability: "computer", cwd: root }) });
+  expect(apply).toHaveBeenCalledWith(ctx);
+  expect(bundleServerName("one", "desktop")).not.toBe(bundleServerName("two", "desktop"));
+});
+it("namespaces agent ids and server references and supplies them to the staged subagent factory", async () => {
+  await writeFile(path.join(root, ".mcp.json"), JSON.stringify({ lookup: { command: "node" } }), "utf8");
+  await mkdir(path.join(root, "agents"));
+  await writeFile(path.join(root, "agents/review.md"), "---\nname: review\ndescription: Review files\ntools: Read, mcp__lookup__find\n---\nReview the files.", "utf8");
+  const agents = await collectBundleAgents([{ id: "one", dir: root }, { id: "two", dir: root }], vi.fn());
+  expect(agents.map((agent) => agent.id)).toEqual(["bundle:one:review", "bundle:two:review"]);
+  expect(agents[0].tools).toEqual(["Read", `mcp__${bundleServerName("one", "lookup")}__find`]);
+  const apply = vi.fn();
+  const createScoped = vi.fn(async () => ({ name: "fixture", apply }));
+  await configuredSubagentPlugin(async () => ({ createScoped }), () => root, "", agents).apply({} as never);
+  expect(createScoped).toHaveBeenCalledWith(root, undefined, agents);
+  expect(await collectBundleAgents([], vi.fn())).toEqual([]);
+});

@@ -7,6 +7,18 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { PluginDescriptor } from "../plugin-toggles-local";
+import { bundleManifest } from "@innocenceharness/harness-plugin-catalog";
+
+export const bundleProbe: UserPluginFormatProbe = {
+  format: "bundle",
+  matches: (entries) => entries.includes(".codex-plugin") || entries.includes(".claude-plugin"),
+  async describe(id, dir) {
+    const meta = await bundleManifest(dir);
+    if (!meta || typeof meta.name !== "string") return undefined;
+    const display = typeof meta.interface === "object" && meta.interface !== null ? (meta.interface as Record<string, unknown>).displayName : undefined;
+    return { id, dependencies: [], toggleable: true, title: typeof display === "string" ? display : meta.name, format: "bundle" };
+  },
+};
 
 export interface UserPluginScanResult {
   descriptors: PluginDescriptor[];

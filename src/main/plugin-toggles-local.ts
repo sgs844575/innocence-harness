@@ -27,7 +27,7 @@ export interface PluginDescriptor {
   /** 模式插件的可选中性描述（agentMode 元数据投影；模式切换器悬浮提示）。 */
   description?: string;
   /** 装载格式标记；缺省 native，"claude-code" = 外部生态布局（探测到描述符、由宿主适配器装载）。 */
-  format?: "native" | "claude-code";
+  format?: "native" | "claude-code" | "bundle";
 }
 
 export type PluginSkipReason = "disabled-by-config" | "dependency-disabled";

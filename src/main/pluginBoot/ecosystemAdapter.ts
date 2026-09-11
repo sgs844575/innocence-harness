@@ -1,12 +1,12 @@
-// 外部生态插件的内核插件包装：commands/*.md 与
-// skills/*/SKILL.md 映射为 harness 技能（经既有技能索引与 /name 展开通道
-// 生效）；agents/*.md 为子代理人设——预设注入通道未立，本批跳过并告警；
-// hooks 等其余目录同理。适配器只读外部目录、不写盘 shim、不持有资源；
-// 逐文件读取/解析失败降级为告警，不中断其余文件。
+// Bundle presentation adapter: skills register on the spine; server lifecycle
+// belongs to the injected staged factory. Agent presets are collected before
+// composing the Task capability, independently of plugin load order.
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseSkillMarkdown } from "@innocenceharness/plugin-skills";
 import type { Context, ObjectPlugin } from "@innocenceharness/kernel";
+import { bundleManifest, componentFiles } from "@innocenceharness/harness-plugin-catalog";
+import { applyBundleHooks, applyBundleServers, type BundleRuntimePort } from "./bundleCapabilities";
 
 /** 宿主告警缝：level/channel/detail 与组合根 options.log 对齐。 */
 export interface EcosystemAdapterLog {
@@ -54,6 +54,7 @@ export function createEcosystemAdapterPlugin(
   id: string,
   dir: string,
   log: EcosystemAdapterLog,
+  runtime?: BundleRuntimePort,
 ): ObjectPlugin {
   const warn = (detail: Record<string, unknown>): void => {
     log("warn", "ecosystem adapter", { plugin: id, ...detail });
@@ -75,9 +76,9 @@ export function createEcosystemAdapterPlugin(
   return {
     name: `ecosystem:${id}`,
     async apply(ctx) {
+      const manifest = await bundleManifest(dir);
       // 1) skills/<name>/SKILL.md → parseSkillMarkdown（null 告警跳过，无降级）。
-      for (const name of await listDir(path.join(dir, "skills"), warn)) {
-        const rel = path.join("skills", name, "SKILL.md");
+      for (const rel of await componentFiles(dir, "skills", manifest)) {
         let raw: string;
         try {
           raw = await readFile(path.join(dir, rel), "utf8");
@@ -94,8 +95,8 @@ export function createEcosystemAdapterPlugin(
       }
       // 2) commands/*.md → parseSkillMarkdown；无 frontmatter 降级文件名投影
       //    （有 fence 但解析失败不降级——按坏格式告警跳过）。
-      for (const name of (await listDir(path.join(dir, "commands"), warn)).filter((n) => n.endsWith(".md"))) {
-        const file = path.join(dir, "commands", name);
+      for (const name of await componentFiles(dir, "commands", manifest)) {
+        const file = path.join(dir, name);
         let raw: string;
         try {
           raw = await readFile(file, "utf8");
@@ -112,12 +113,15 @@ export function createEcosystemAdapterPlugin(
           warn({ file: name, warning: "command frontmatter malformed; skipped" });
         }
       }
-      // 3) agents/（子代理人设）与 hooks/（生命周期钩子）：预设注入通道与
-      //    钩子桥未立，整目录跳过并告警（不注册任何内容）。
-      for (const [sub, reason] of [["agents", "subagent personas"], ["hooks", "lifecycle hooks"]] as const) {
-        if ((await listDir(path.join(dir, sub), warn)).length > 0) {
-          warn({ directory: sub, warning: `${reason} are not supported yet; directory skipped` });
-        }
+      // Server resources unwind with this plugin fiber; lifecycle hooks from
+      // the ecosystem hooks/ directory map onto the native hook vocabulary
+      // (turnEnd wave) — mounted through the runtime port, gated by the same
+      // first-encounter permission gate as every other hook command.
+      if (runtime) await applyBundleServers(ctx, id, dir, manifest, runtime, log);
+      if (runtime?.createHooks) {
+        await applyBundleHooks(ctx, id, dir, runtime, log);
+      } else if ((await listDir(path.join(dir, "hooks"), warn)).length > 0) {
+        warn({ directory: "hooks", warning: "lifecycle hooks need a newer host runtime; directory skipped" });
       }
     },
   };
