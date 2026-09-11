@@ -31,6 +31,7 @@ interface Props {
   /** 「…」菜单项（缺省 = 按钮不渲染）。 */
   menuItems?: TitleBarMenuItem[];
   onOpenExternalEditor?: () => void;
+  externalEditor?: ReactNode;
   /** 右侧 dock（子代理面板）开关；缺省不渲染该按钮。 */
   dockOpen?: boolean;
   onToggleDock?: () => void;
@@ -56,6 +57,7 @@ export function TitleBar({
   branchSlot,
   menuItems,
   onOpenExternalEditor,
+  externalEditor,
   dockOpen,
   onToggleDock,
   terminalActive,
@@ -160,7 +162,7 @@ export function TitleBar({
       <div className="flex-1" />
 
       {/* 右簇：编辑器芯片（未配置时禁用）+ dock 开关（会话态）+ 自绘窗口控制。 */}
-      <button
+      {externalEditor ?? <button
         type="button"
         aria-label={t("titlebar.externalEditor")}
         title={t("titlebar.externalEditor")}
@@ -170,7 +172,7 @@ export function TitleBar({
       >
         <Code size={15} strokeWidth={1.5} />
         <ChevronDown size={12} className="text-(--color-muted)" />
-      </button>
+      </button>}
       {!landing && onToggleTerminal && (
         <button
           type="button"

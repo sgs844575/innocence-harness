@@ -1,3 +1,5 @@
+import { McpPanel } from "./settings/McpPanel";
+import type { McpSettingsApi } from "../../../shared/mcpSettingsIpc";
 // 设置页内容区（导航在左侧设置侧栏 SettingsSidebar）：卡片行样式（标题 +
 // 描述 + 右侧控件，行原语在 settings/rows）。常规（GeneralPanel）、外观（界面主题）、
 // 模型服务（ModelsPanel 供应商管理）、关于（版本/平台）。主体宽度随窗口变化。
@@ -9,6 +11,12 @@ import { GeneralPanel } from "./settings/GeneralPanel";
 import { ModelsPanel } from "./settings/ModelsPanel";
 import { BrowserPanel } from "./settings/BrowserPanel";
 import { ComputerPanel } from "./settings/ComputerPanel";
+import { MemoryPanel } from "./settings/MemoryPanel";
+import { SubagentsPanel } from "./settings/SubagentsPanel";
+import { PluginsPanel } from "./settings/plugins/PluginsPanel";
+import type { PluginCatalogApi } from "../../../shared/pluginCatalogIpc";
+import type { SubagentSettingsApi } from "../../../shared/subagentIpc";
+import type { MemoryIpcApi } from "../../../shared/memoryIpc";
 import type { BrowserDataKind, BrowserDataResult } from "../../../shared/browserIpc";
 import { SettingsRow } from "./settings/rows";
 import { Select } from "./ui/Select";
@@ -22,7 +30,8 @@ import {
   LIGHT_CODE_THEMES,
 } from "../../../shared/codeThemes";
 
-export type SettingsSection = "general" | "appearance" | "models" | "browser" | "computer" | "about";
+import { SkillsPanel, type SkillsApi } from "./settings/SkillsPanel";
+export type SettingsSection = "skills" | "mcp" | "general" | "appearance" | "models" | "browser" | "computer" | "memory" | "subagents" | "plugins" | "about";
 
 const THEME_MODES: { id: ThemeMode; label: string }[] = [
   { id: "system", label: "跟随系统" },
@@ -45,6 +54,14 @@ interface Props {
   onPatchSettings: (patch: HarnessSettingsPatch) => void;
   onPatchBrowserSettings?: (patch: HarnessSettingsPatch) => Promise<void>;
   onPatchComputerSettings?: (patch: HarnessSettingsPatch) => Promise<void>;
+  onPatchMemorySettings?: (patch: HarnessSettingsPatch) => Promise<void>;
+  skillsApi?: SkillsApi;
+  onCreateSkill?: (target: string | null) => Promise<void>;
+  memoryApi?: MemoryIpcApi;
+  mcpApi?: McpSettingsApi;
+  subagentApi?: SubagentSettingsApi;
+  pluginCatalogApi?: PluginCatalogApi;
+  memoryWorkspace?: string;
   onClearBrowserData?: (kind: BrowserDataKind) => Promise<BrowserDataResult>;
   onSetTheme: (mode: ThemeMode) => void;
   /** API 密钥写入宿主安全存储；缺省 = 面板隐藏密钥保存。 */
@@ -140,9 +157,14 @@ function CodePreviewCard({
   );
 }
 
-export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
+export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onPatchMemorySettings, skillsApi, onCreateSkill, memoryApi, mcpApi, subagentApi, pluginCatalogApi, memoryWorkspace, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto p-6">
+      {section === "skills" && <SkillsPanel t={t} api={skillsApi} onCreate={onCreateSkill} />}
+      {section === "mcp" && <McpPanel t={t} api={mcpApi} />}
+      {section === "plugins" && <PluginsPanel t={t} api={pluginCatalogApi} />}
+      {section === "subagents" && <SubagentsPanel t={t} api={subagentApi} />}
+      {section === "memory" && <MemoryPanel t={t} settings={settings} api={memoryApi} initialWorkspace={memoryWorkspace} onPatchSettings={onPatchMemorySettings ?? onPatchSettings} />}
       {section === "browser" && <BrowserPanel t={t} settings={settings} onPatchSettings={onPatchBrowserSettings ?? onPatchSettings} onClearData={onClearBrowserData} />}
       {section === "computer" && <ComputerPanel t={t} settings={settings} onPatchSettings={onPatchComputerSettings ?? onPatchSettings} />}
       {section === "general" && settings && (

@@ -1,5 +1,6 @@
 // App 组装层：settings/sessions/chat/sidebar 状态接线，外壳三视图
 // （chat/settings/automation）+ 搜索浮层 + 错误 toast。
+import { startSkillCreation } from "./state/skillCreation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppInfo, ThemeMode } from "../../shared/ipc";
 import type { HarnessSettingsPatch } from "../../shared/settingsPatch";
@@ -8,6 +9,7 @@ import { createT } from "./lib/i18n";
 import { applyTheme } from "./lib/theme";
 import { AppShell, type ShellView } from "./components/AppShell";
 import { TitleBar } from "./components/TitleBar";
+import { WorkspaceEditorLauncher } from "./components/EditorLauncher";
 import { Sidebar } from "./components/Sidebar";
 import { Landing } from "./components/Landing";
 import { ChatView } from "./components/ChatView";
@@ -776,6 +778,9 @@ export function App(): React.JSX.Element {
             )
           }
           menuItems={titleMenuItems}
+          externalEditor={view !== "settings" && <WorkspaceEditorLauncher api={hasBridge() ? api : undefined} t={t} onError={(cause) => showError(String(cause))} target={activeSession
+            ? (titleProjectRoot ? { sessionId: activeSession.id } : undefined)
+            : (sessions.pendingProject.trim() ? { workspaceRoot: sessions.pendingProject.trim() } : undefined)} />}
           appMenu={
             <AppMenu
               t={t}
@@ -826,7 +831,7 @@ export function App(): React.JSX.Element {
             onOpenSettings={openSettings}
             onSearch={() => setSearchOpen(true)}
             onAutomation={() => setView("automation")}
-            onPlugins={openSettings}
+            onPlugins={() => { setSettingsSection("plugins"); setView("settings"); }}
             onNewProject={hasBridge() ? () => void openWorkspace() : undefined}
             onNewTaskInProject={(root) => {
               sessions.setPendingProject(root);
@@ -862,6 +867,19 @@ export function App(): React.JSX.Element {
               onPatchComputerSettings={patch}
               onPatchMemorySettings={patch}
               memoryApi={hasBridge() ? api : undefined}
+              mcpApi={hasBridge() ? api : undefined}
+              subagentApi={hasBridge() ? api : undefined}
+              skillsApi={hasBridge() ? api : undefined}
+              onCreateSkill={hasBridge() ? (target) => startSkillCreation(target, {
+                selectMode: () => patch({ activeAgentMode: "skills-creator" }),
+                openChat: (root) => {
+                  sessions.newSession();
+                  sessions.setPendingProject(root ?? "");
+                  setDraft({ text: "", nonce: Date.now() });
+                  setView("chat");
+                },
+              }) : undefined}
+              pluginCatalogApi={hasBridge() ? api : undefined}
               memoryWorkspace={titleProjectRoot || settings?.workspaceRoot}
               onClearBrowserData={hasBridge() ? api.browserClearData : undefined}
               onSetTheme={setThemeMode}

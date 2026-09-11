@@ -39,13 +39,17 @@ describe("AppMenu", () => {
       "titlebar.appMenu.checkUpdates",
       "titlebar.appMenu.processMonitor",
       "titlebar.menu.feedback",
-      "titlebar.appMenu.featureRequest",
-      "titlebar.appMenu.community",
-      "titlebar.appMenu.docs",
       "titlebar.appMenu.exportLogs",
       "titlebar.appMenu.closeWindow",
     ]) {
       expect(screen.getByText(key)).toBeTruthy();
+    }
+    for (const key of [
+      "titlebar.appMenu.featureRequest",
+      "titlebar.appMenu.community",
+      "titlebar.appMenu.docs",
+    ]) {
+      expect(screen.queryByText(key)).toBeNull();
     }
     // 快捷键提示（非 mac 平台缺省 Ctrl+）。
     expect(screen.getByText("Ctrl+N")).toBeTruthy();

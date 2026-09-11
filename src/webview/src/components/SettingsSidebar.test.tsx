@@ -8,6 +8,20 @@ afterEach(cleanup);
 const t = (key: string) => key;
 
 describe("SettingsSidebar", () => {
+  it("places server settings directly below plugins", () => {
+    render(<SettingsSidebar t={t} section="mcp" onSelect={() => {}} onBack={() => {}} />);
+    const names = screen.getAllByRole("button").map((button) => button.textContent);
+    expect(names.indexOf("settings.section.mcp")).toBe(names.indexOf("settings.section.plugins") + 1);
+  });
+  it("places memory in the agent capabilities group", () => {
+    const onSelect = vi.fn();
+    render(<SettingsSidebar t={t} section="memory" onSelect={onSelect} onBack={() => {}} />);
+    const group = screen.getByRole("region", { name: "settings.group.agent" });
+    const button = within(group).getByRole("button", { name: "settings.section.memory" });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(button);
+    expect(onSelect).toHaveBeenCalledWith("memory");
+  });
   it("基础设置中浏览器紧随模型，关于归入帮助", () => {
     render(<SettingsSidebar t={t} section="general" onSelect={() => {}} onBack={() => {}} />);
     const buttons = screen.getAllByRole("button").map((button) => button.textContent);

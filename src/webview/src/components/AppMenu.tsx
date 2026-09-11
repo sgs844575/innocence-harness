@@ -107,15 +107,6 @@ export function AppMenu({
         <DropdownMenuItem disabled={onFeedback === undefined} description={onFeedback === undefined ? soon : undefined} onSelect={onFeedback}>
           {itemContent(t("titlebar.menu.feedback"))}
         </DropdownMenuItem>
-        <DropdownMenuItem disabled description={soon}>
-          {itemContent(t("titlebar.appMenu.featureRequest"))}
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled description={soon}>
-          {itemContent(t("titlebar.appMenu.community"))}
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled description={soon}>
-          {itemContent(t("titlebar.appMenu.docs"))}
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={exportLogs}>{itemContent(t("titlebar.appMenu.exportLogs"))}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={closeWindow}>{itemContent(t("titlebar.appMenu.closeWindow"))}</DropdownMenuItem>
