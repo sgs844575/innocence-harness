@@ -528,6 +528,27 @@ describe("HarnessRuntime", () => {
     }
   });
 
+  it("rebuilds on capability configuration changes while retaining history", async () => {
+    let revision = "1";
+    const built = recordingAgentFactory();
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions([{ text: "Done" }]),
+      configurationKey: () => revision,
+      agentFactory: built.factory,
+    });
+    try {
+      await chatTurn(runtime, "catalog-refresh", "First request", "catalog-1");
+      const first = built.sessions.get("catalog-refresh:main")!;
+      await chatTurn(runtime, "catalog-refresh", "Second request", "catalog-2");
+      expect(built.sessions.get("catalog-refresh:main")).toBe(first);
+      revision = "2";
+      await chatTurn(runtime, "catalog-refresh", "Third request", "catalog-3");
+      const second = built.sessions.get("catalog-refresh:main")!;
+      expect(second).not.toBe(first);
+      expect(JSON.stringify(second.history)).toContain("First request");
+    } finally { await runtime.disposeAll(); }
+  });
+
   it("rebuilds the cached agent session when settings change, keeping history", async () => {
     const recorded: Recorded = emptyRecorded();
     const settings: HarnessSettings = { ...DEFAULT_SETTINGS, workspaceRoot: workspace };

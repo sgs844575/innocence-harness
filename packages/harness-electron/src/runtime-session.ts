@@ -45,7 +45,7 @@ export async function buildSession(host: RuntimeSessionBuildHost, key: string): 
   if (!context) throw sessionDisposedError(key);
   const { sessionId, routeId, taskId, messageId } = context;
   const settings = host.options.settings();
-  const settingsKey = JSON.stringify(settings);
+  const settingsKey = JSON.stringify([settings, host.options.configurationKey?.()]);
   const cached = host.cache.peek(key);
   if (cached && cached.settingsKey === settingsKey) return cached.session;
 

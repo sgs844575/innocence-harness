@@ -174,6 +174,8 @@ export interface SessionScope {
 }
 
 export interface RuntimeOptions {
+  /** Host capability configuration revision; applied at the next idle turn. */
+  configurationKey?: () => string;
   settings(): HarnessSettings;
   hooks: RuntimeHooks;
   /** Host composition root: supplies the plugin set for each agent session

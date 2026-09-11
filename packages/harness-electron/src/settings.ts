@@ -93,6 +93,8 @@ export interface HarnessSettings extends BrowserSettings, ComputerSettings {
   /** 外部编辑器启动命令（Task 11 工作台入口）；"" = 未配置（入口禁用）。
    *  首个 token 可加引号（含空格的路径）；多余 token 作为前置参数透传。 */
   externalEditorCommand?: string;
+  /** Installed editor selection shared by host launch controls. */
+  externalEditorId?: string;
   /** 继承系统终端 Profile：启动内置终端时继承登录环境与系统终端字体；默认开。 */
   terminalInheritProfile?: boolean;
   /** 终端字体覆盖（CSS font-family 串）；"" = 自动（继承系统终端或等宽默认）。 */
@@ -102,6 +104,10 @@ export interface HarnessSettings extends BrowserSettings, ComputerSettings {
   /** 增强 Find/Grep 工具开关（优先 ripgrep 系外部引擎，关闭 = 内置扫描）；
    *  仅新会话生效，默认开。 */
   enhancedFindGrep?: boolean;
+  /** 语言服务器声明（语言服务器波）：每个声明启动一个 LSP 子进程并按
+   *  扩展名承接工作台焦点文件的诊断；空数组/缺省 = 不启用。坏项在
+   *  归一化时剔除，服务消费端再做严格校验（harness-lsp）。 */
+  languageServers?: LanguageServerSetting[];
   /** 出口流量 HTTP 代理 URL；"" = 直连（渲染层跟随系统代理）。重启生效。 */
   httpProxy?: string;
   /** 代理绕过主机列表（英文逗号分隔）；重启生效。 */
@@ -152,6 +158,54 @@ export interface HarnessSettings extends BrowserSettings, ComputerSettings {
 /** 集成终端 shell 候选；"auto" = Windows 优先 Git Bash 回退 cmd，POSIX 用 $SHELL。 */
 export type TerminalShell = "auto" | "cmd" | "powershell" | "gitbash" | "wsl";
 export const TERMINAL_SHELLS: TerminalShell[] = ["auto", "cmd", "powershell", "gitbash", "wsl"];
+
+/** 语言服务器声明的设置形状（id 命名段 + 真实可执行名 + 承接扩展名）。 */
+export interface LanguageServerSetting {
+  id: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** 承接的文件扩展名（点可有可无；归一化为小写含点）。 */
+  extensions: string[];
+}
+
+/** 归一化语言服务器声明：非对象/缺 id 或 command/无扩展名的项剔除；
+ *  args/env 过滤为纯字符串。缺省键保持缺省（pluginToggles 同款语义），
+ *  已写键归一为可能为空的数组。 */
+export function normalizeLanguageServers(raw: unknown): LanguageServerSetting[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return [];
+  const out: LanguageServerSetting[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.id !== "string" || !record.id.trim()) continue;
+    if (typeof record.command !== "string" || !record.command.trim()) continue;
+    const extensions = (Array.isArray(record.extensions) ? record.extensions : [])
+      .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+      .map((value) => {
+        const lowered = value.toLowerCase();
+        return lowered.startsWith(".") ? lowered : `.${lowered}`;
+      });
+    if (extensions.length === 0) continue;
+    const args = Array.isArray(record.args)
+      ? record.args.filter((value): value is string => typeof value === "string")
+      : undefined;
+    const env = record.env && typeof record.env === "object" && !Array.isArray(record.env)
+      ? Object.fromEntries(Object.entries(record.env as Record<string, unknown>).filter(
+          (item): item is [string, string] => typeof item[1] === "string",
+        ))
+      : undefined;
+    out.push({
+      id: record.id.trim(),
+      command: record.command.trim(),
+      ...(args !== undefined && args.length > 0 ? { args } : {}),
+      ...(env !== undefined && Object.keys(env).length > 0 ? { env } : {}),
+      extensions,
+    });
+  }
+  return out;
+}
 /** 运行中发送后续消息的交互行为。 */
 export type InteractionMode = "queue" | "steer";
 /** 自动归档保留时长候选（天）。 */
@@ -212,6 +266,7 @@ function mergeGeneralFeatures(src: Partial<HarnessSettings>): Partial<HarnessSet
     terminalFontFamily: stringOrEmpty(src.terminalFontFamily),
     terminalShell: normalizeTerminalShell(src.terminalShell),
     enhancedFindGrep: boolOr(src.enhancedFindGrep, true),
+    languageServers: normalizeLanguageServers(src.languageServers),
     httpProxy: stringOrEmpty(src.httpProxy),
     proxyBypass: stringOrEmpty(src.proxyBypass),
     customCaCert: stringOrEmpty(src.customCaCert),
@@ -542,6 +597,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
       permissionClassifier: src.permissionClassifier === true,
       pluginToggles: normalizePluginToggles(src.pluginToggles),
       externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
+      externalEditorId: normalizeExternalEditorCommand(src.externalEditorId) || undefined,
       ...mergeGeneralFeatures(src) };
   }
 
@@ -572,6 +628,7 @@ export function mergeSettings(raw: unknown): HarnessSettings {
     permissionClassifier: src.permissionClassifier === true,
     pluginToggles: normalizePluginToggles(src.pluginToggles),
     externalEditorCommand: normalizeExternalEditorCommand(src.externalEditorCommand),
+    externalEditorId: normalizeExternalEditorCommand(src.externalEditorId) || undefined,
     ...mergeGeneralFeatures(src),
   };
 }
