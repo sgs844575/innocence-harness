@@ -19,7 +19,7 @@ export interface EditorProcess {
 export type EditorSpawn = (
   file: string,
   args: string[],
-  options: { detached: true; shell: false; stdio: "ignore" },
+  options: { detached: true; shell: false; stdio: "ignore"; windowsHide?: boolean },
 ) => EditorProcess;
 
 export interface ExternalEditorDeps {
@@ -52,7 +52,7 @@ export function parseEditorCommand(spec: string): { file: string; args: string[]
 }
 
 /** Real spawner (node built-in, no electron): detached, stdio ignored. */
-function defaultSpawn(file: string, args: string[], options: { detached: true; shell: false; stdio: "ignore" }): EditorProcess {
+function defaultSpawn(file: string, args: string[], options: { detached: true; shell: false; stdio: "ignore"; windowsHide?: boolean }): EditorProcess {
   return nodeSpawn(file, args, options) as unknown as EditorProcess;
 }
 
@@ -78,24 +78,32 @@ export function createExternalEditor(deps: ExternalEditorDeps): ExternalEditorSe
         throw new Error("external editor: line/column must be positive integers");
       }
 
-      const { file, args: leading } = parseEditorCommand(command);
       // path:line:column — the generic convention shared by VS Code / Cursor /
       // Sublime style CLIs; without a line the bare path is passed.
       const target =
         line === undefined ? absolute : `${absolute}:${line}${column === undefined ? "" : `:${column}`}`;
 
-      const child = spawnEditor(file, [...leading, target], { detached: true, shell: false, stdio: "ignore" });
-      child.unref?.();
-      return await new Promise<ExternalEditorOpenResponse>((resolve) => {
-        child.on("error", (error: NodeJS.ErrnoException) => {
-          resolve({ launched: false, error: error.message });
-        });
-        // "spawn" fires when the process actually started — that is the
-        // launch signal; the editor's later exit code is not our concern.
-        child.on("spawn", () => resolve({ launched: true }));
-      });
+      return launchEditorFile(command, target, spawnEditor);
     },
   };
+}
+
+/** Launch an already authorized file using the shared command parser. */
+export async function launchEditorFile(command: string, target: string, spawnEditor: EditorSpawn = defaultSpawn): Promise<ExternalEditorOpenResponse> {
+  const { file, args: leading } = parseEditorCommand(command);
+  return launchEditorTarget(file, [...leading, target], spawnEditor);
+}
+
+/** Structured launch keeps detected paths and arguments out of command parsing. */
+export async function launchEditorTarget(file: string, args: string[], spawnEditor: EditorSpawn = defaultSpawn): Promise<ExternalEditorOpenResponse> {
+  const child = spawnEditor(file, args, { detached: true, shell: false, stdio: "ignore", windowsHide: true });
+  child.unref?.();
+  return await new Promise<ExternalEditorOpenResponse>((resolve) => {
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      resolve({ launched: false, error: error.message });
+    });
+    child.on("spawn", () => resolve({ launched: true }));
+  });
 }
 
 /** Registers the ipcMain handler (Electron host composition only). */
