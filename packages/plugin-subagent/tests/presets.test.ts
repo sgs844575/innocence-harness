@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { BUILTIN_PRESETS, createSubagentPlugin, createTaskTool, SubagentPlugin, withThreadNotes } from "../src";
 
 describe("subagent presets", () => {
+  it("preserves contributed allowlists and subtracts denied tools from the execution-time catalog", async () => {
+    const calls: Array<{ tools: string[] }> = [];
+    const ctx = { signal: new AbortController().signal, subagent: { run: async (options: { tools: string[] }) => { calls.push(options); return { finalText: "done" }; } } };
+    let tools = [{ name: "Read" }, { name: "Write" }];
+    const preset = { id: "bundle:sample:review", title: "Review", description: "Review files", systemPrompt: "Review files.", tools: "all" as const, disallowedTools: ["Write"] };
+    const tool = createTaskTool([preset, { ...preset, id: "restricted", tools: ["Read", "Write"] }], () => tools);
+    tools = [...tools, { name: "mcp__new__lookup" }];
+    await tool.execute({ agentType: preset.id, prompt: "Inspect files" }, ctx as never);
+    await tool.execute({ agentType: "restricted", prompt: "Inspect files" }, ctx as never);
+    expect(calls[0].tools).toEqual(["Read", "mcp__new__lookup"]);
+    expect(calls[1].tools).toEqual(["Read"]);
+  });
   it("built-in presets are English read-only/all pairs with unique ids", () => {
     const ids = BUILTIN_PRESETS.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -25,7 +37,7 @@ describe("subagent presets", () => {
       | Record<string, { enum?: string[] }>
       | undefined;
     const agentType = properties?.agentType;
-    expect(agentType?.enum).toEqual(["explore", "general"]);
+    expect(agentType?.enum).toEqual(["explore", "general", "skills-creator"]);
     expect(tool.description).toContain("explore");
     expect(tool.description).toContain("general");
   });
@@ -67,13 +79,13 @@ describe("subagent presets", () => {
     expect(enumValues).toContain("custom");
   });
 
-  it("default plugin exposes the full twelve-preset catalog in the Task enum", () => {
+  it("default plugin exposes the full thirteen-preset catalog in the Task enum", () => {
     const registered: unknown[] = [];
     SubagentPlugin.apply({ tools: { register: (t: unknown) => registered.push(t) } } as never);
     const enumValues = (registered[0] as { parameters: { properties: { agentType: { enum: string[] } } } })
       .parameters.properties.agentType.enum;
     expect(enumValues).toEqual([
-      "explore", "general",
+      "explore", "general", "skills-creator",
       "code-review", "security-review", "planner", "git-worker", "simplify", "summarizer",
       "implementer", "test-engineer", "debugger", "perf-analyst",
     ]);

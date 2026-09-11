@@ -1,3 +1,4 @@
+import { skillCreatorPreset } from "./skill-creator";
 import type { Context } from "@innocenceharness/kernel";
 import {
   type Tool,
@@ -21,11 +22,18 @@ export interface SubagentPreset {
   tools: "readOnly" | "all";
 }
 
+/** Runtime contributions are separate from the editable two-tier preset catalog. */
+export interface RuntimeSubagentPreset extends Omit<SubagentPreset, "tools"> {
+  tools: "readOnly" | "all" | string[];
+  disallowedTools?: string[];
+}
+
 /**
  * 内建预设注册表。人设正文一律英文（本仓规则：LLM 面内容英文），
  * 并按仓库现实引用工具名（Read/Glob/Grep/Bash）。
  */
 export const BUILTIN_PRESETS: readonly SubagentPreset[] = [
+
   {
     id: "explore",
     title: "Explorer",
@@ -62,15 +70,16 @@ export const BUILTIN_PRESETS: readonly SubagentPreset[] = [
       "Lead with the conclusion, then state compactly what was done, what changed, and what the caller should look at next. No greetings, no filler.",
     ].join("\n"),
   },
+  skillCreatorPreset,
 ];
 
 /** 预设目录行：`id — title: description`（目录行内容为英文字面量）。 */
-function catalogLines(presets: readonly SubagentPreset[]): string {
+function catalogLines(presets: readonly RuntimeSubagentPreset[]): string {
   return presets.map((p) => `${p.id} — ${p.title}: ${p.description}`).join("\n");
 }
 
 /** Task tool factory: derives the agentType enum and description from the preset registry. */
-export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
+export function createTaskTool(presets: readonly RuntimeSubagentPreset[], availableTools: () => readonly { name: string; readOnly?: boolean }[] = () => []): Tool {
   const byId = new Map(presets.map((p) => [p.id, p]));
   const ids = presets.map((p) => p.id);
   const fallbackId = ids[0] ?? "";
@@ -188,7 +197,9 @@ export function createTaskTool(presets: readonly SubagentPreset[]): Tool {
       const result = await ctx.subagent.run({
         // 人设 + 线程注记（M3）：注记是系统级线程纪律，逐线程附加，不入预设。
         systemPrompt: withThreadNotes(preset.systemPrompt),
-        tools: preset.tools,
+        tools: preset.disallowedTools?.length
+          ? (Array.isArray(preset.tools) ? preset.tools : availableTools().filter((tool) => preset.tools === "all" || tool.readOnly).map((tool) => tool.name)).filter((name) => !preset.disallowedTools!.includes(name))
+          : preset.tools,
         agentType,
         prompt,
         description: typeof description === "string" ? description : undefined,
@@ -231,8 +242,10 @@ export function createSubagentPlugin(options: SubagentPluginOptions = {}) {
 /** Subagent plugin — registers the Task tool with built-in plus adapted and coding presets. */
 export const SubagentPlugin = createSubagentPlugin({ extraPresets: [...adaptedPresets, ...codingPresets] });
 export const presetCatalog = createPresetCatalog([...BUILTIN_PRESETS, ...adaptedPresets, ...codingPresets]);
-export async function createScopedSubagentPlugin(userRoot: string, projectRoot?: string) {
-  const presets = (await presetCatalog.list(userRoot, projectRoot)).filter((p) => p.enabled);
-  return { name: "subagent", apply(ctx: Context) { ctx.tools.register(createTaskTool(presets)); } };
+export async function createScopedSubagentPlugin(userRoot: string, projectRoot?: string, contributions: readonly RuntimeSubagentPreset[] = []) {
+  const local = (await presetCatalog.list(userRoot, projectRoot)).filter((p) => p.enabled);
+  const merged = new Map<string, RuntimeSubagentPreset>(local.map((preset) => [preset.id, preset]));
+  for (const preset of contributions) if (!merged.has(preset.id)) merged.set(preset.id, preset);
+  return { name: "subagent", apply(ctx: Context) { ctx.tools.register(createTaskTool([...merged.values()], () => ctx.tools.specs())); } };
 }
 export default Object.assign(SubagentPlugin, { catalog: presetCatalog, createScoped: createScopedSubagentPlugin });

@@ -120,6 +120,7 @@ const BUILTIN_DESCRIPTORS = [
   { id: "reminders", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
   { id: "creation", kind: "agent-mode", dependencies: [] },
+  { id: "skills-creator", kind: "agent-mode", dependencies: [] },
   { id: "plan", kind: "agent-mode", dependencies: [] },
   { id: "focus", kind: "agent-mode", dependencies: [] },
   { id: "minimal", kind: "agent-mode", dependencies: [] },
@@ -159,6 +160,7 @@ const PLUGINS = [
   { dir: "packages/provider-mock", id: "provider-mock" },
   { dir: "packages/plugin-agent-default", id: "default" },
   { dir: "packages/plugin-agent-creation", id: "creation" },
+  { dir: "packages/plugin-agent-skills-creator", id: "skills-creator" },
   { dir: "packages/plugin-agent-plan", id: "plan" },
   { dir: "packages/plugin-agent-focus", id: "focus" },
   { dir: "packages/plugin-agent-minimal", id: "minimal" },
@@ -175,6 +177,8 @@ const PLUGINS = [
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";
 const EXTERNAL_RUNTIME_PACKAGES = [
+  "@modelcontextprotocol/sdk",
+  "cross-spawn",
   "ai",
   "zod",
   "@ai-sdk/openai",
