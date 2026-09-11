@@ -47,6 +47,7 @@ function stringField(meta: unknown, key: string): string | undefined {
 }
 
 async function loadSkillFrom(dir: string, entry: string): Promise<Skill | null> {
+  if (await fs.stat(path.join(dir, entry, ".disabled")).catch(() => null)) return null;
   const skillPath = path.join(dir, entry, "SKILL.md");
   const file = path.join(dir, entry);
   const target = await fs.stat(file).catch(() => null);
