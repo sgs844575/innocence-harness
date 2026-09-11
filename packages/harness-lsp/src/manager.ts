@@ -14,6 +14,7 @@ export interface LspServerDescriptor extends LspServerOptions {
   id: string;
   /** 承接的文件扩展名（小写含点，如 [".ts", ".tsx"]）。 */
   extensions: string[];
+  extensionToLanguage?: Record<string, string>;
 }
 
 export function normalizeServerDescriptor(raw: unknown): LspServerDescriptor | undefined {
@@ -124,7 +125,7 @@ export function createLspManager(events: LspManagerEvents = {}, spawnFn?: SpawnF
       },
       spawnFn,
     );
-    await client.start({ workspaceRoot: root });
+    try { await client.start({ workspaceRoot: root }); } catch (error) { await client.dispose(); throw error; }
     events.log?.("info", `LSP server ${descriptor.id} started for ${root}`);
     return { client, descriptor, diagnostics, openFiles: new Set() };
   };
@@ -183,7 +184,7 @@ export function createLspManager(events: LspManagerEvents = {}, spawnFn?: SpawnF
         return session.diagnostics.get(uri) ?? [];
       }
       session.openFiles.add(uri);
-      session.client.didOpen(uri, path.extname(relativePath).replace(".", "") || "plaintext", text);
+      session.client.didOpen(uri, session.descriptor.extensionToLanguage?.[path.extname(relativePath).toLowerCase()] ?? (path.extname(relativePath).replace(".", "") || "plaintext"), text);
       // 首份快照落定（空数组也算）或收敛上限：按当前已存快照返回。
       return await new Promise<DiagnosticNote[]>((resolve) => {
         const waiter: SessionWaiter = {

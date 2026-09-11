@@ -17,6 +17,8 @@ export interface LspServerOptions {
   env?: Record<string, string>;
   /** 服务器工作目录；缺省 = 服务的 workspace root。 */
   cwd?: string;
+  initializationOptions?: unknown;
+  settings?: unknown;
 }
 
 export interface LspClientEvents {
@@ -114,6 +116,7 @@ export class LspClient {
       throw new Error("LSP server stdio is not piped.");
     }
     const result = await this.request<{ capabilities?: unknown }>("initialize", {
+      initializationOptions: this.options.initializationOptions,
       processId: input.processId ?? process.pid,
       rootUri: pathToFileUriSafe(input.workspaceRoot),
       capabilities: {
@@ -123,6 +126,7 @@ export class LspClient {
     });
     this.capabilities = result?.capabilities;
     this.notify("initialized", {});
+    if (this.options.settings !== undefined) this.notify("workspace/didChangeConfiguration", { settings: this.options.settings });
   }
 
   private dispatch(message: LspMessage): void {

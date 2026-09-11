@@ -1,12 +1,13 @@
 // 语言服务器宿主面测试（语言服务器波）：settings 声明驱动 + 每根懒装载 +
 // 声明签名变化重建。夹具服务器复用 harness-lsp 测试的最小 LSP 形态
 // （process.execPath 起真子进程，可移植）。
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { normalizeLanguageServers, type HarnessSettings } from "@innocenceharness/harness-electron";
 import { createLspService } from "./lspService";
+import { collectBundleLanguages } from "./pluginBoot/bundleLanguages";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -67,6 +68,28 @@ describe("normalizeLanguageServers (settings)", () => {
 });
 
 describe("createLspService", () => {
+  it("runs an installed bundle server and releases it when disabled", async () => {
+    const server = fixtureServerFile();
+    const root = path.dirname(server);
+    const trace = path.join(root, "messages.jsonl");
+    writeFileSync(server, FIXTURE_SERVER.replace('buffer = buffer.subarray(start + length);', `buffer = buffer.subarray(start + length); require("node:fs").appendFileSync(${JSON.stringify(trace)}, JSON.stringify(message) + "\\n", "utf8");`), "utf8");
+    mkdirSync(path.join(root, ".codex-plugin"));
+    writeFileSync(path.join(root, ".codex-plugin/plugin.json"), JSON.stringify({ name: "fixture", lspServers: { checker: { command: process.execPath, args: [server], extensionToLanguage: { ".ts": "typescript" }, initializationOptions: { mode: "check" }, settings: { lint: true } } } }), "utf8");
+    writeFileSync(path.join(root, "bad.ts"), "boom", "utf8");
+    let enabled = true;
+    const messages: string[] = [];
+    const service = createLspService({ getSettings: () => ({}), getPluginServers: () => collectBundleLanguages(enabled ? [{ id: "fixture", dir: root }] : [], root, (message) => { throw new Error(message); }), log: (_level, message) => messages.push(message) });
+    try {
+      expect(await service.focusDiagnostics(root, "bad.ts")).toHaveLength(1);
+      const traceMessages = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(traceMessages.find((message) => message.method === "initialize").params.initializationOptions).toEqual({ mode: "check" });
+      expect(traceMessages.find((message) => message.method === "workspace/didChangeConfiguration").params.settings).toEqual({ lint: true });
+      expect(traceMessages.find((message) => message.method === "textDocument/didOpen").params.textDocument.languageId).toBe("typescript");
+      enabled = false;
+      expect(await service.focusDiagnostics(root, "bad.ts")).toEqual([]);
+      expect(messages.some((message) => message.includes("exited"))).toBe(true);
+    } finally { await service.disposeAll(); }
+  });
   function settingsOf(declarations: unknown): HarnessSettings {
     return { languageServers: declarations as HarnessSettings["languageServers"] } as HarnessSettings;
   }

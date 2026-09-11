@@ -14,6 +14,7 @@ import type { LanguageServerSetting } from "@innocenceharness/harness-electron";
 export interface LspServiceDeps {
   /** 当前 settings 快照（组合根注入 getter，设置变更下一次焦点即生效）。 */
   getSettings(): { languageServers?: LanguageServerSetting[] };
+  getPluginServers?(workspaceRoot: string): Promise<readonly LspServerDescriptor[]>;
   log?(level: "info" | "warn", message: string): void;
 }
 
@@ -29,6 +30,8 @@ export function createLspService(deps: LspServiceDeps): LspService {
     ...(deps.log ? { log: deps.log } : {}),
   });
   const rootSignatures = new Map<string, string>();
+  const pending = new Map<string, Promise<unknown>>();
+  let disposed = false;
 
   const descriptorsFor = (): LspServerDescriptor[] => {
     const declared = deps.getSettings().languageServers ?? [];
@@ -41,18 +44,27 @@ export function createLspService(deps: LspServiceDeps): LspService {
   };
 
   return {
-    async focusDiagnostics(workspaceRoot, relativePath) {
-      const descriptors = descriptorsFor();
-      if (descriptors.length === 0) return [];
-      const signature = JSON.stringify(descriptors);
-      if (rootSignatures.get(workspaceRoot) !== signature) {
-        await manager.disposeRoot(workspaceRoot);
-        await manager.ensureRoot(workspaceRoot, descriptors);
-        rootSignatures.set(workspaceRoot, signature);
-      }
-      return manager.focusFile(workspaceRoot, relativePath);
+    focusDiagnostics(workspaceRoot, relativePath) {
+      if (disposed) return Promise.resolve([]);
+      const task = (pending.get(workspaceRoot) ?? Promise.resolve()).catch(() => {}).then(async () => {
+        if (disposed) return [];
+        const descriptors = [...descriptorsFor(), ...(await deps.getPluginServers?.(workspaceRoot) ?? [])];
+        const signature = JSON.stringify(descriptors);
+        if (rootSignatures.get(workspaceRoot) !== signature) {
+          await manager.disposeRoot(workspaceRoot);
+          await manager.ensureRoot(workspaceRoot, descriptors);
+          rootSignatures.set(workspaceRoot, signature);
+        }
+        if (descriptors.length === 0) return [];
+        return manager.focusFile(workspaceRoot, relativePath);
+      });
+      pending.set(workspaceRoot, task);
+      void task.finally(() => { if (pending.get(workspaceRoot) === task) pending.delete(workspaceRoot); }).catch(() => {});
+      return task;
     },
     async disposeAll() {
+      disposed = true;
+      await Promise.allSettled([...pending.values()]);
       rootSignatures.clear();
       await manager.disposeAll();
     },
