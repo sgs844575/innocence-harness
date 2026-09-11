@@ -120,7 +120,7 @@ export interface CallbackQuery {
  * 系统分配（port 0），redirectUri 即授权服务器回跳地址。同一时间只服务
  * 一次等待；页面应答一个极简 HTML 后连接即关闭。
  */
-export async function startLoopbackReceiver(host = "127.0.0.1"): Promise<LoopbackCallback> {
+export async function startLoopbackReceiver(host = "127.0.0.1", requestedPort = 0): Promise<LoopbackCallback> {
   const queries: CallbackQuery[] = [];
   const waiters: Array<(query: CallbackQuery) => void> = [];
   let settled = false;
@@ -140,7 +140,7 @@ export async function startLoopbackReceiver(host = "127.0.0.1"): Promise<Loopbac
   });
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);
-    server.listen(0, host, () => resolvePromise());
+    server.listen(requestedPort, host, () => resolvePromise());
   });
   const port = (server.address() as AddressInfo).port;
   return {
@@ -151,6 +151,7 @@ export async function startLoopbackReceiver(host = "127.0.0.1"): Promise<Loopbac
       await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
     },
     waitForCallback(signal) {
+      if (signal.aborted) return Promise.reject(new DOMException("authorization callback wait aborted", "AbortError"));
       const queued = queries.shift();
       if (queued) return Promise.resolve(queued);
       return new Promise<CallbackQuery>((resolvePromise, rejectPromise) => {
@@ -175,6 +176,7 @@ export async function startLoopbackReceiver(host = "127.0.0.1"): Promise<Loopbac
 }
 
 export interface AuthorizationCodeFlowInput {
+  callbackPort?: number;
   /** 授权端点（来自授权服务器元数据或显式配置）。 */
   authorizationEndpoint: string;
   tokenEndpoint: string;
@@ -221,7 +223,7 @@ export function buildAuthorizationUrl(input: {
 export async function runAuthorizationCodeFlow(
   input: AuthorizationCodeFlowInput,
 ): Promise<TokenEndpointResult> {
-  const receiver = await startLoopbackReceiver();
+  const receiver = await startLoopbackReceiver(input.callbackPort ? "localhost" : "127.0.0.1", input.callbackPort);
   try {
     const verifier = createCodeVerifier();
     const state = createState();

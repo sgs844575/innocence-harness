@@ -8,6 +8,7 @@ import {
   createAuthorizationStore,
   needsRefresh,
   tokenFileKey,
+  startLoopbackReceiver,
   type AuthorizationStore,
 } from "../src/index";
 
@@ -130,6 +131,45 @@ describe("createAccountAuthorizer", () => {
       openExternal: async () => {},
     });
     expect(await authorizer.authorize({ key: "s", url: serverUrl })).toEqual({ status: "none" });
+  });
+  it("uses external client and metadata hints in the actual browser and token requests", async () => {
+    const store = await tempStore();
+    const receiver = await startLoopbackReceiver("localhost");
+    const callbackPort = receiver.port;
+    await receiver.close();
+    let opened: URL | undefined;
+    let exchanged: URLSearchParams | undefined;
+    const authorizer = createAccountAuthorizer({
+      store,
+      consent: async () => true,
+      fetchImpl: async (url, init) => {
+        if (url === serverUrl) return new Response("", { status: 401 });
+        if (url === "https://auth.example/custom-metadata") return Response.json({ authorization_endpoint: "https://auth.example/login", token_endpoint: "https://auth.example/token", scopes_supported: ["metadata-scope"] });
+        if (url === "https://auth.example/token") {
+          exchanged = new URLSearchParams(String(init?.body));
+          return Response.json({ access_token: "granted" });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+      openExternal: async (url) => {
+        opened = new URL(url);
+        await fetch(`${opened.searchParams.get("redirect_uri")}?${new URLSearchParams({ code: "code", state: opened.searchParams.get("state")! })}`);
+      },
+    });
+    expect(await authorizer.authorize({ key: "external", url: serverUrl, oauth: { clientId: "registered-client", callbackPort, authServerMetadataUrl: "https://auth.example/custom-metadata", scopes: ["explicit-scope"] } })).toMatchObject({ status: "authorized" });
+    expect(opened?.searchParams.get("redirect_uri")).toBe(`http://localhost:${callbackPort}/callback`);
+    expect(opened?.searchParams.get("client_id")).toBe("registered-client");
+    expect(opened?.searchParams.get("scope")).toBe("explicit-scope");
+    expect(exchanged?.get("client_id")).toBe("registered-client");
+    expect((await store.read("external"))?.profile.clientId).toBe("registered-client");
+  });
+  it("never sends a saved token to a replacement resource", async () => {
+    const store = await tempStore();
+    await store.write("external", { accessToken: "old-secret", profile: { clientId: "InnocenceHarness", resource: "https://original.example/mcp", tokenEndpoint: "https://original.example/token" }, storedAt: 1 });
+    const headers: Headers[] = [];
+    const authorizer = createAccountAuthorizer({ store, openExternal: async () => {}, fetchImpl: async (_url, init) => { headers.push(new Headers(init?.headers)); return new Response("ok"); } });
+    expect(await authorizer.authorize({ key: "external", url: serverUrl })).toEqual({ status: "none" });
+    expect(headers.every((entry) => !entry.has("authorization"))).toBe(true);
   });
 
   it("completes the interactive flow after consent and persists tokens", async () => {

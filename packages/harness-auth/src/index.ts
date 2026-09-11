@@ -6,9 +6,12 @@
 export * from "./metadata";
 export * from "./flow";
 export * from "./store";
+export * from "./config";
+import { parseServerAuthorizationConfig, type ServerAuthorizationConfig } from "./config";
 
 import {
   loadAuthorizationServerMetadata,
+  loadAuthorizationServerMetadataUrl,
   loadResourceMetadata,
   parseWwwAuthenticate,
   type AuthFetch,
@@ -38,6 +41,9 @@ export interface AccountAuthorizerOptions {
     | { authorizationEndpoint: string; tokenEndpoint: string }
     | undefined;
   clientId?: string;
+  callbackPort?: number;
+  authServerMetadataUrl?: string;
+  scopes?: string[];
   /** 控制一次授权尝试的取消；缺省 = 不设上限（等用户或流程自然结束）。 */
   signal?: AbortSignal;
   log?: (level: "info" | "warn" | "error", message: string) => void;
@@ -68,6 +74,7 @@ async function resolveEndpoints(
 ): Promise<{ authorizationEndpoint: string; tokenEndpoint: string; scope?: string }> {
   const explicit = options.endpoints?.(server);
   if (explicit) return explicit;
+  if (options.authServerMetadataUrl) return loadAuthorizationServerMetadataUrl(options.authServerMetadataUrl, options.fetchImpl);
   if (realm === undefined) {
     throw new Error("server requires authorization but exposes no discoverable metadata");
   }
@@ -94,7 +101,7 @@ export interface AccountAuthorizer {
    * 失效且服务器确实要求授权时，经同意端口发起浏览器 PKCE 流程并落盘。
    * 任何失败都以 failed/declined 结果返回，不抛出（取消除外）。
    */
-  authorize(server: { key: string; url: string }): Promise<AuthorizationOutcome>;
+  authorize(server: { key: string; url: string; oauth?: ServerAuthorizationConfig }): Promise<AuthorizationOutcome>;
   /** 撤销一个目标的已存令牌。 */
   revoke(serverKey: string): Promise<void>;
 }
@@ -105,7 +112,8 @@ export function createAccountAuthorizer(options: AccountAuthorizerOptions): Acco
 
   const refreshStored = async (server: { key: string; url: string }): Promise<StoredAuthorization | undefined> => {
     const stored = await options.store.read(server.key);
-    if (!stored) return undefined;
+    if (!stored || stored.profile.resource !== server.url || stored.profile.clientId !== clientId) return undefined;
+    if (options.scopes && stored.profile.scope !== options.scopes.join(" ")) return undefined;
     if (!needsRefresh(stored)) return stored;
     if (!stored.refreshToken) return stored;
     try {
@@ -127,6 +135,10 @@ export function createAccountAuthorizer(options: AccountAuthorizerOptions): Acco
   return {
     async authorize(server) {
       try {
+        if (server.oauth) {
+          const config = parseServerAuthorizationConfig(server.oauth);
+          return await createAccountAuthorizer({ ...options, ...config }).authorize({ key: server.key, url: server.url });
+        }
         const stored = await refreshStored(server);
         if (stored) {
           const probe = await probeResource(server.url, toHeaders(stored.accessToken), options.fetchImpl);
@@ -142,11 +154,13 @@ export function createAccountAuthorizer(options: AccountAuthorizerOptions): Acco
         const granted = await options.consent(server);
         if (!granted) return { status: "declined", reason: "user declined authorization" };
         const endpoints = await resolveEndpoints(server, anonymous.realm, options);
+        if (options.scopes) endpoints.scope = options.scopes.join(" ");
         const tokens: TokenSet = await runAuthorizationCodeFlow({
           authorizationEndpoint: endpoints.authorizationEndpoint,
           tokenEndpoint: endpoints.tokenEndpoint,
           resource: server.url,
           clientId,
+          callbackPort: options.callbackPort,
           ...(endpoints.scope !== undefined ? { scope: endpoints.scope } : {}),
           fetchImpl: options.fetchImpl,
           openExternal: options.openExternal,

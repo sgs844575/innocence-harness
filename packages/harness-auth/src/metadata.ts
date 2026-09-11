@@ -78,8 +78,9 @@ export function parseWwwAuthenticate(header: string | null | undefined): WwwAuth
         : match[3]!;
       parameters[match[1]!.toLowerCase()] = value;
     }
-    if (typeof parameters.realm !== "string" || parameters.realm === "") return undefined;
-    return { realm: parameters.realm, parameters };
+    const realm = parameters.resource_metadata ?? parameters.realm;
+    if (typeof realm !== "string" || realm === "") return undefined;
+    return { realm, parameters };
   }
   return undefined;
 }
@@ -169,6 +170,7 @@ export async function loadResourceMetadata(
 export interface AuthorizationServerMetadata {
   authorizationEndpoint: string;
   tokenEndpoint: string;
+  scope?: string;
 }
 
 /** RFC 8414 的已知插入路径：well-known 段插在路径首段之后（有路径时），
@@ -187,6 +189,11 @@ export async function loadAuthorizationServerMetadata(
   fetchImpl: AuthFetch,
 ): Promise<AuthorizationServerMetadata> {
   const url = wellKnownUrl(server, "oauth-authorization-server");
+  return loadAuthorizationServerMetadataUrl(url, fetchImpl);
+}
+
+export async function loadAuthorizationServerMetadataUrl(url: string, fetchImpl: AuthFetch): Promise<AuthorizationServerMetadata> {
+  assertMetadataUrl(url, "authorization metadata URL");
   const raw = await fetchJson(url, fetchImpl);
   const endpoint = (field: string): string => {
     const value = raw[field];
@@ -198,5 +205,6 @@ export async function loadAuthorizationServerMetadata(
   return {
     authorizationEndpoint: endpoint("authorization_endpoint"),
     tokenEndpoint: endpoint("token_endpoint"),
+    ...(raw.scopes_supported === undefined ? {} : { scope: readStringArray(raw.scopes_supported, "scopes_supported").join(" ") }),
   };
 }
