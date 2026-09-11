@@ -12,6 +12,8 @@ import {
 import type { Message, MessageProcessorContext } from "@innocenceharness/harness-session";
 import { StdioJsonRpcClient, type StdioServerOptions } from "./jsonrpc";
 import { WsJsonRpcClient, type WsServerOptions } from "./jsonrpc-ws";
+import type { ServerAuthorizationConfig } from "@innocenceharness/harness-auth/config";
+import { HttpJsonRpcClient, type HttpServerOptions } from "./jsonrpc-http";
 import { COMPUTER_DISABLED, isComputerCapability, type ComputerCapability } from "./computerAccess";
 import { mapMcpResult, type McpCallResult } from "./result";
 
@@ -36,11 +38,27 @@ export interface McpPluginOptions {
   /** server name -> launch config; each server's tools become mcp__name__tool.
    *  Transport is chosen per server: `command` spawns a stdio server, `url`
    *  connects to a WebSocket endpoint. */
-  servers: Record<string, (StdioServerOptions | WsServerOptions) & ComputerCapability>;
+  servers: Record<string, (StdioServerOptions | WsServerOptions | (HttpServerOptions & { oauth?: ServerAuthorizationConfig })) & ComputerCapability & { disabled?: boolean }>;
   /** Host-owned access getter; checked at activation and again before each desktop call. */
   isComputerEnabled?: () => boolean;
   computerActivity?: ToolActivityObserver;
+  /**
+   * Host-owned account authorization for url servers: called once before the
+   * first connect. "authorized" headers merge into the server's request
+   * headers; declined/failed lands in the failed-connection note with the
+   * reason; "none" connects anonymously. The port is expected to resolve
+   * stored tokens without interaction and to surface any browser flow through
+   * its own consent surface.
+   */
+  authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>;
 }
+
+/** Structural outcome of one authorization attempt (no package coupling). */
+export type McpAuthorizationOutcome =
+  | { status: "authorized"; headers: Record<string, string> }
+  | { status: "none" }
+  | { status: "declined"; reason: string }
+  | { status: "failed"; reason: string };
 
 /** The shared client face both transports expose to the connection glue. */
 type McpJsonRpcClient = {
@@ -52,12 +70,9 @@ type McpJsonRpcClient = {
   stop(): void;
 };
 
-function isWsServerOptions(options: StdioServerOptions | WsServerOptions): options is WsServerOptions {
-  return typeof (options as WsServerOptions).url === "string";
-}
-
-function createMcpClient(options: StdioServerOptions | WsServerOptions): McpJsonRpcClient {
-  return isWsServerOptions(options) ? new WsJsonRpcClient(options) : new StdioJsonRpcClient(options);
+function createMcpClient(options: StdioServerOptions | WsServerOptions | (HttpServerOptions & { oauth?: ServerAuthorizationConfig })): McpJsonRpcClient {
+  if (!("url" in options)) return new StdioJsonRpcClient(options);
+  return /^https?:/.test(options.url) ? new HttpJsonRpcClient(options as HttpServerOptions) : new WsJsonRpcClient(options);
 }
 
 interface ServerConnection {
@@ -77,6 +92,24 @@ interface ConnectionFailure {
 
 function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Resolves one url server's authorization headers (authorization port,
+ * connect-time). Non-url servers and absent ports connect unchanged; a
+ * declined/failed attempt throws so the server lands in the normal
+ * failed-connection path with its reason.
+ */
+async function authorizeHeaders(
+  port: McpPluginOptions["authorizeServer"],
+  serverName: string,
+  options: StdioServerOptions | WsServerOptions | (HttpServerOptions & { oauth?: ServerAuthorizationConfig }),
+): Promise<Record<string, string>> {
+  if (!port || !("url" in options) || typeof options.url !== "string" || options.url === "") return {};
+  const outcome = await port({ name: serverName, url: options.url, ...("oauth" in options ? { oauth: options.oauth } : {}) });
+  if (outcome.status === "authorized") return outcome.headers;
+  if (outcome.status === "none") return {};
+  throw new Error(`账号授权未完成（${outcome.reason}）`);
 }
 
 /**
@@ -108,7 +141,7 @@ function envelope(body: string): string {
 
 async function connect(
   serverName: string,
-  options: StdioServerOptions | WsServerOptions,
+  options: StdioServerOptions | WsServerOptions | (HttpServerOptions & { oauth?: ServerAuthorizationConfig }),
   log: (level: "info" | "warn" | "error", msg: string) => void,
 ): Promise<{
   client: McpJsonRpcClient;
@@ -116,10 +149,10 @@ async function connect(
   connection: ServerConnection;
 }> {
   const client = createMcpClient(options);
-  await client.start();
   try {
+    await client.start();
     await client.request("initialize", {
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: options.protocolVersion ?? PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: "InnocenceHarness", version: "0.1.0" },
     });
@@ -143,7 +176,7 @@ async function connect(
       },
     };
   } catch (err) {
-    client.stop();
+    await client.dispose();
     throw err;
   }
 }
@@ -174,12 +207,19 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
   return {
     name: "mcp",
     async apply(ctx) {
+      ctx.effect(() => release, "mcp clients");
       for (const [serverName, serverOptions] of Object.entries(options.servers)) {
+        if (serverOptions.disabled) continue;
         const computerServer = isComputerCapability(serverName, serverOptions);
         if (computerServer && options.isComputerEnabled?.() === false) continue;
         let connected: Awaited<ReturnType<typeof connect>>;
         try {
-          connected = await connect(serverName, serverOptions, (level, msg) =>
+          const authHeaders = await authorizeHeaders(options.authorizeServer, serverName, serverOptions);
+          const urlOptions = "url" in serverOptions ? serverOptions : undefined;
+          const effectiveOptions = urlOptions && Object.keys(authHeaders).length > 0
+            ? ({ ...urlOptions, headers: { ...(urlOptions.headers ?? {}), ...authHeaders } } as typeof urlOptions)
+            : serverOptions;
+          connected = await connect(serverName, effectiveOptions, (level, msg) =>
             ctx.logger.log(level, `[mcp] ${msg}`),
           );
         } catch (err) {
@@ -263,9 +303,6 @@ export function createMcpPlugin(options: McpPluginOptions): McpPlugin {
           },
         });
       }
-      // Registered after a successful activation, so a failed apply never
-      // triggers cleanup (the legacy dispose-after-activate semantics).
-      ctx.effect(() => release, "mcp clients");
     },
   };
 }
@@ -274,6 +311,7 @@ export { StdioJsonRpcClient } from "./jsonrpc";
 export { WsJsonRpcClient } from "./jsonrpc-ws";
 export type { StdioServerOptions } from "./jsonrpc";
 export type { WsServerOptions } from "./jsonrpc-ws";
+export { HttpJsonRpcClient, type HttpServerOptions } from "./jsonrpc-http";
 // Distribution default (kernel-loader unwrapExports convention): the factory,
 // so a disk-loaded module resolves to the single entry point hosts configure.
 export default createMcpPlugin;

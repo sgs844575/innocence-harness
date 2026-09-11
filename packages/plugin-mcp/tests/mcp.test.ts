@@ -17,7 +17,7 @@ const fixture = path.join(
 /** Mounts the plugin on a bare kernel context (logger + tools + session
  *  spines); the plugin fiber's unwind (ctx.fiber.dispose) replaces the old
  *  registry dispose. */
-async function mountMcp(servers: Record<string, StdioServerOptions>): Promise<Context> {
+async function mountMcp(servers: Record<string, StdioServerOptions & { disabled?: boolean }>): Promise<Context> {
   const ctx = new Context();
   await ctx.plugin(LoggerPlugin);
   await ctx.plugin(ToolsPlugin);
@@ -30,6 +30,12 @@ async function mountMcp(servers: Record<string, StdioServerOptions>): Promise<Co
   await ctx.plugin(createMcpPlugin({ servers }));
   return ctx;
 }
+
+it("does not start a disabled server", async () => {
+  const ctx = await mountMcp({ hidden: { command: process.execPath, args: [fixture], disabled: true } });
+  try { expect(ctx.tools.get("mcp__hidden__echo")).toBeUndefined(); }
+  finally { await ctx.fiber.dispose(); }
+});
 
 /** Polls process.kill(pid, 0) until every pid is gone (process tree exited). */
 async function waitGone(pids: number[], timeoutMs = 10_000): Promise<void> {

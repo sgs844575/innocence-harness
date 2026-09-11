@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import spawnPortable from "cross-spawn";
 
 export interface StdioServerOptions {
+  timeout?: number;
+  protocolVersion?: string;
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -85,7 +88,7 @@ export class StdioJsonRpcClient {
   }
 
   async start(): Promise<void> {
-    this.proc = spawn(this.options.command, this.options.args ?? [], {
+    this.proc = spawnPortable(this.options.command, this.options.args ?? [], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.options.cwd,
       env: { ...process.env, ...(this.options.env ?? {}) },
@@ -98,8 +101,11 @@ export class StdioJsonRpcClient {
     this.proc.stderr?.on("data", (chunk: Buffer) => {
       this.stderr += chunk.toString("utf8");
     });
-    this.proc.on("error", (err) => this.failAll(new Error(`启动失败：${err.message}`)));
-    this.proc.on("exit", (code, signal) => {
+    this.proc.on("error", (err) => {
+      if (this.proc?.pid === undefined) this.exited = true;
+      this.failAll(err);
+    });
+    this.proc.on("close", (code, signal) => {
       this.exited = true;
       const diagnostic = [
         `MCP 服务器进程已退出（code=${String(code)}, signal=${String(signal)}）`,
@@ -151,7 +157,7 @@ export class StdioJsonRpcClient {
         this.pending.delete(id);
         detach();
         reject(new Error(`MCP 请求超时：${method}`));
-      }, REQUEST_TIMEOUT_MS);
+      }, this.options.timeout ?? REQUEST_TIMEOUT_MS);
       signal?.addEventListener("abort", onAbort, { once: true });
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
@@ -189,7 +195,7 @@ export class StdioJsonRpcClient {
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, DISPOSE_GRACE_MS);
-        proc.once("exit", () => {
+        proc.once("close", () => {
           clearTimeout(timer);
           resolve();
         });
@@ -204,7 +210,7 @@ export class StdioJsonRpcClient {
     if (proc.pid === undefined) return Promise.resolve();
     return new Promise((resolve) => {
       const timer = setTimeout(resolve, FORCE_KILL_WAIT_MS);
-      proc.once("exit", () => {
+      proc.once("close", () => {
         clearTimeout(timer);
         resolve();
       });

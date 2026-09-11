@@ -1,6 +1,8 @@
 import { WebSocket } from "ws";
 
 export interface WsServerOptions {
+  timeout?: number;
+  protocolVersion?: string;
   /** WebSocket endpoint (ws:// or wss://). */
   url: string;
   /** Extra handshake headers (e.g. auth tokens). */
@@ -110,7 +112,7 @@ export class WsJsonRpcClient {
         this.pending.delete(id);
         detach();
         reject(new Error(`MCP 请求超时：${method}`));
-      }, REQUEST_TIMEOUT_MS);
+      }, this.options.timeout ?? REQUEST_TIMEOUT_MS);
       signal?.addEventListener("abort", onAbort, { once: true });
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
