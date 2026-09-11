@@ -14,7 +14,7 @@ import { createAutomationRuntimeDispatch } from "./automationRuntimeAdapter";
 import { createLazyNotifySink } from "./notifySink";
 import { createAutomationCandidateService, createCommitMessageService, createStructuredOutputPort, type CommitMessageService } from "@innocenceharness/harness-ai-runtime";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
-import { app, dialog, Notification, powerMonitor } from "electron";
+import { app, dialog, Notification, powerMonitor, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { openSecureStorage } from "@innocenceharness/secure-storage-node";
@@ -46,6 +46,7 @@ import {
   type PendingQuestionRegistry,
 } from "./askUserPort";
 import { createSendToTeammate } from "./teammatePort";
+import { accountTokensRoot, createMcpAuthorizationPort } from "./accountAuth";
 import { sessionHasFinishedTurn, summarizeSessionUsage } from "./sessionUsage";
 import * as sessions from "./sessions";
 import { ensureSessionScratchDir } from "./sessionScratch";
@@ -63,8 +64,32 @@ import { applyCloseToTray } from "./tray";
 import { applyKeepAwake } from "./powerBlocker";
 import { applyBrowserEnabled } from "./browserSession";
 import { createBackgroundJobs, type BackgroundJobsFacade } from "./backgroundJobs";
-import { getWorkbenchFocus, setWorkbenchFocus } from "./workbenchFocus";
+import { getWorkbenchFocus, setWorkbenchFocus, type WorkbenchDiagnostic } from "./workbenchFocus";
 import { diagnoseFocusedFile, diagnosticFingerprint } from "@innocenceharness/harness-diagnostics";
+import { createLspService, type LspService } from "./lspService";
+
+/** 跨源诊断指纹（进程内 TS 与 LSP 两路同口径去重）。 */
+function workbenchFingerprint(note: WorkbenchDiagnostic): string {
+  return `${note.code ?? ""}:${note.line}:${note.column}:${note.message}`;
+}
+
+/** 语言服务器面（语言服务器波）：settings 声明驱动的懒单例。 */
+let lspService: LspService | undefined;
+function getLspService(): LspService {
+  lspService ??= createLspService({
+    getPluginServers: (root) => sessionComposition.bundleLanguageServers(root, settings.pluginToggles),
+    getSettings: () => settings,
+    log: (level, message) => logger[level](`lsp ${message}`),
+  });
+  return lspService;
+}
+
+/** 宿主关机：释放语言服务器子进程（幂等）。 */
+export async function disposeLspRuntime(): Promise<void> {
+  const service = lspService;
+  lspService = undefined;
+  await service?.disposeAll();
+}
 
 /** S4：渲染层工作台焦点上报入口（ipc.ts 的 code:focus-changed 消费）。 */
 export function handleWorkbenchFocusNotice(notice: {
@@ -76,21 +101,37 @@ export function handleWorkbenchFocusNotice(notice: {
   if (!binding || typeof notice.relativePath !== "string" || !notice.relativePath.trim()) {
     return;
   }
-  const workspaceRoot = getTaskBridge().get(notice.taskId)?.workspaceRoot;
+  const task = getTaskBridge().get(notice.taskId);
+  const workspaceRoot = task?.workspaceRoot;
   const current = getWorkbenchFocus();
   const notes = workspaceRoot ? diagnoseFocusedFile(workspaceRoot, notice.relativePath) : [];
   // Only newly seen fingerprints are forwarded; a repeated focus change does
   // not keep re-announcing the same compiler errors on every Read.
   const previous = current?.sessionId === binding.sessionId && current.file === notice.relativePath
-    ? new Set((current.diagnostics ?? []).map(diagnosticFingerprint))
+    ? new Set((current.diagnostics ?? []).map(workbenchFingerprint))
     : new Set<string>();
-  const diagnostics = notes.filter((note) => !previous.has(diagnosticFingerprint(note)));
+  const diagnostics: WorkbenchDiagnostic[] = notes
+    .filter((note) => !previous.has(diagnosticFingerprint(note)))
+    .map((note) => ({ ...note, source: "TS" }));
   setWorkbenchFocus({
     sessionId: binding.sessionId,
     file: notice.relativePath,
     ...(typeof notice.line === "number" && notice.line > 0 ? { line: notice.line } : {}),
     ...(diagnostics.length ? { diagnostics } : {}),
   });
+  // 语言服务器波：LSP 诊断异步并流——首份快照落定后并入仍指向同一文件
+  // 的焦点状态（新指纹口径同上；面板已切走则丢弃）。
+  if (!workspaceRoot) return;
+  void getLspService().focusDiagnostics(workspaceRoot, notice.relativePath).then((lspNotes) => {
+    const live = getWorkbenchFocus();
+    if (!live || live.sessionId !== binding.sessionId || live.file !== notice.relativePath) return;
+    const seen = new Set((live.diagnostics ?? []).map(workbenchFingerprint));
+    const fresh = lspNotes
+      .map((note) => ({ code: note.code, line: note.line, column: note.column, message: note.message, ...(note.severity ? { severity: note.severity } : {}), ...(note.source ? { source: note.source } : {}) }) satisfies WorkbenchDiagnostic)
+      .filter((note) => !seen.has(workbenchFingerprint(note)));
+    if (fresh.length === 0) return;
+    setWorkbenchFocus({ ...live, diagnostics: [...(live.diagnostics ?? []), ...fresh] });
+  }).catch(() => {/* LSP 焦点失败静默：TS 诊断已就位 */});
 }
 import { hydrateCredentials, secureSettingsUpdate, setProfileCredential } from "./settingsCredentials";
 import { toPersistedSettings, toSettingsMirror } from "./settingsMirror";
@@ -360,6 +401,10 @@ export function bootPaths(): { kernelPath: string; builtinRoot: string } {
  *  closes over runtime/getTaskBridge() below — it only ever runs at session
  *  build time, long after both are initialized. */
 const sessionComposition = createSessionComposition({
+  getMemoryUserRoot: appDataRoot,
+  getMemoryWorkspaceRoot: (runtimeRoot, identity) => identity
+    ? (identity.taskId ? getTaskBridge().get(identity.taskId)?.workspaceRoot : sessions.getSession(identity.sessionId)?.workspaceRoot) ?? ""
+    : runtimeRoot,
   computerActivity,
   isComputerEnabled: () => settings.computerEnabled !== false && settings.pluginToggles?.computer !== false,
   resolvePaths: bootPaths,
@@ -396,6 +441,25 @@ const sessionComposition = createSessionComposition({
     const win = getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send(IPC.pluginsChanged);
   },
+  // MCP 账号授权端口（交互式授权波）：同意卡复用 ask_user 的聊天问题卡
+  // 面与同一 pendingQuestions 注册表（同会话串行）；令牌落 appDataRoot 下
+  // 的 auth-tokens 加固存储；浏览器打开走系统默认浏览器。
+  createMcpAuthorizer: (identity) =>
+    createMcpAuthorizationPort(
+      {
+        pendingQuestions,
+        askQueues,
+        send: sendChatQuestionEvent,
+        sendSettled: sendChatQuestionSettled,
+        resolveMessageId: currentAssistantMessageId,
+        questionAutoContinue: () => settings.questionAutoContinue === true,
+        notify: (sessionId) => desktopNotifier.notify("permission", sessionId),
+        tokensRoot: () => accountTokensRoot(appDataRoot()),
+        openExternal: (url) => shell.openExternal(url),
+        log: (level, message) => logger[level](`account-auth ${message}`),
+      },
+      identity,
+    ),
   // reminders 工厂的会话状态端口（批次 4F）：两者都从会话存储现算（最小面
   // ——不另维护累计 Map）：runtimeHooks onCompleted 已把每轮 completion.usage
   // 写进消息，listMessages 惰性水合同一 transcript，读写同源。usage 逐轮求和
@@ -414,6 +478,21 @@ const sessionComposition = createSessionComposition({
 
 function ensureBoot(): Promise<PluginBoot> {
   return sessionComposition.ensureBoot();
+}
+
+let subagentCatalogRevision = 0;
+export function refreshSubagentCatalog(): void { subagentCatalogRevision += 1; }
+export async function getSubagentCatalog(): Promise<import("@innocenceharness/plugin-subagent").PresetCatalog> {
+  const plugin = await (await ensureBoot()).importPlugin("subagent") as { catalog?: import("@innocenceharness/plugin-subagent").PresetCatalog };
+  if (!plugin?.catalog) throw new Error("Subagent settings are unavailable.");
+  return plugin.catalog;
+}
+
+/** Loads the management port through the same approved roots as session tools. */
+export async function getMemoryFiles(): Promise<import("@innocenceharness/plugin-memory").MemoryFiles> {
+  const plugin = await (await ensureBoot()).importPlugin("memory") as { files?: import("@innocenceharness/plugin-memory").MemoryFiles };
+  if (!plugin?.files?.list || !plugin.files.read || !plugin.files.resolve) throw new Error("The memory plugin does not support file browsing.");
+  return plugin.files;
 }
 
 /** App shutdown: unwinds the boot root (cascades into live route scopes).
@@ -491,6 +570,7 @@ const desktopNotifier = createDesktopNotifier({
 });
 
 const runtime = new HarnessRuntime({
+  configurationKey: () => String(subagentCatalogRevision),
   settings: () => settings,
   // 附件解析器（模型步前把 ContentRef 解析为 SDK 内容）：文本表示恒送、
   // 图像表示仅视觉模型（口径与发送门控同源——设置快照现读）。

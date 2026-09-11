@@ -24,6 +24,7 @@ import {
   startAutomationLifecycle,
   disposeAllRuntime,
   disposeAutomationLifecycle,
+  disposeLspRuntime,
   disposeTelemetry,
   disposePluginBoot,
   disposeTaskRuntime,
@@ -32,6 +33,7 @@ import {
   resolveRouteWorkspaceRoot,
 } from "./harnessGlue";
 import { defaultUserPluginRoot } from "./pluginBoot/compose";
+import { disposePluginCatalog } from "./pluginCatalogIpc";
 import { createMainWindow, getMainWindow } from "./appWindow";
 import { createMainAppLifecycle } from "./mainAppLifecycle";
 import { createOwnedShutdown } from "./ownedShutdown";
@@ -272,8 +274,9 @@ if (!gotLock) {
     rejectAllPendingQuestions,
     disposeAutomationLifecycle,
     disposeAllRuntime,
+    disposeLspRuntime,
     disposeTelemetry,
-    disposePluginBoot,
+    disposePluginBoot: async () => { await disposePluginCatalog(); await disposePluginBoot(); },
     disposeTaskRuntime,
     disposeTerminals: async () => {
       await terminalService?.disposeAll();

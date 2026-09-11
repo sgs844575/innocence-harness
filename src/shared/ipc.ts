@@ -1,9 +1,14 @@
+import type { McpSettingsApi } from "./mcpSettingsIpc";
 // Shared IPC contract — imported by both main and preload (bundled into each)
 // so both processes rely on the same channel names and types.
 import { SidebarIpcChannels, type SidebarApi } from "./sidebarIpc";
 import { TaskIpcChannels } from "./taskIpc";
 import { AutomationIpcChannels, type AutomationApi } from "./automationIpc";
 import type { HarnessSettingsPatch } from "./settingsPatch";
+import type { MemoryIpcApi } from "./memoryIpc";
+import type { SubagentSettingsApi } from "./subagentIpc";
+import type { PluginCatalogApi } from "./pluginCatalogIpc";
+import type { EditorIpcApi } from "./editorIpc";
 
 export const IPC = {
   appInfo: "app:info",
@@ -524,12 +529,7 @@ export interface DiscoveredSkillMirror {
 // McpServerEntry/McpImportResult（shared 不 import main），修改任何一侧时
 // 必须同步另一侧（packages/harness-electron/tests/mirror.test.ts 有 drift-guard）。
 /** .mcp.json 中一条 MCP 服务器条目（IPC mcp:import 载荷形状）。 */
-export interface McpServerEntryMirror {
-  capability?: "computer";
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
+export type McpServerEntryMirror = import("@innocenceharness/plugin-mcp/config").McpServerEntry;
 
 /** MCP 导入结果（imported 名称清单 + 同名跳过清单）。 */
 export interface McpImportResultMirror {
@@ -694,6 +694,8 @@ export interface HarnessSettings {
   /** 外部编辑器启动命令（工作台入口，Task 11）；"" = 未配置。与
    * harness-electron 同步（首个 token 可带引号；多余 token 作前置参数）。 */
   externalEditorCommand?: string;
+  /** Installed editor selection shared by host launch controls. */
+  externalEditorId?: string;
   /** 继承系统终端 Profile（登录环境 + 系统终端字体）；默认开。与 harness-electron 同步。 */
   terminalInheritProfile?: boolean;
   /** 终端字体覆盖；"" = 自动。与 harness-electron 同步。 */
@@ -781,7 +783,8 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
   { name: "Ollama 本地", kind: "openai", baseURL: "http://localhost:11434/v1", models: ["qwen3:8b", "llama3.1:8b"] },
 ];
 
-export interface InnocenceCodeApi extends SidebarApi, AutomationApi {
+import type { SkillSettingsApi } from "./skillSettingsIpc";
+export interface InnocenceCodeApi extends SkillSettingsApi, McpSettingsApi, SidebarApi, AutomationApi, MemoryIpcApi, EditorIpcApi, SubagentSettingsApi, PluginCatalogApi {
   getAppInfo(): Promise<AppInfo>;
   /** 进程监视器：当前各进程 CPU/内存快照（顶栏应用菜单）。 */
   getAppMetrics(): Promise<AppProcessMetric[]>;

@@ -1,9 +1,15 @@
+import { registerMcpSettingsIpc } from "./mcpSettingsIpc";
 // IPC surface — one handler per channel defined in src/shared/ipc.ts.
 import { app, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { IPC, isChatQuestionResponse, isPermissionChoice, type AttachmentPart, type MenuId } from "../shared/ipc";
 import { registerBrowserIpc } from "./browserIpc";
+import { registerMemoryIpc } from "./memoryIpc";
+import { registerSkillSettingsIpc } from "./skillSettingsIpc";
+import { registerSubagentSettingsIpc } from "./subagentSettingsIpc";
+import { registerPluginCatalogIpc } from "./pluginCatalogIpc";
+import { registerEditorIpc } from "./editorIpc";
 import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { importAttachmentFromBytes, importAttachmentFromPath, validateAttachmentsForSend } from "./attachments";
@@ -459,6 +465,12 @@ export function registerIpcHandlers(): void {
   );
 
   registerBrowserIpc(() => getMainWindow()?.webContents);
+  const editors = registerEditorIpc();
+  registerMemoryIpc(editors.openFile);
+  registerSubagentSettingsIpc();
+  registerSkillSettingsIpc();
+  registerMcpSettingsIpc();
+  registerPluginCatalogIpc();
 
   // 会话「…」菜单宿主动作：文件管理器打开目录 / 外部链接（仅 http(s)）。
   ipcMain.handle(IPC.hostRevealPath, async (_e, target: string) => {

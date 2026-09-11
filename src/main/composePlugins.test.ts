@@ -85,7 +85,7 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
   "reference", "web", "computer", "builtin-skills", "reminders",
-  "default", "creation", "plan", "focus", "minimal", "learning", "auto", "coordinator",
+  "default", "creation", "skills-creator", "plan", "focus", "minimal", "learning", "auto", "coordinator",
   "planflow",
   "memory",
   "hooks",
@@ -137,6 +137,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       reminders: "reminders",
       default: "default",
       creation: "creation",
+      "skills-creator": "skills-creator",
       plan: "plan",
       focus: "focus",
       minimal: "minimal",
@@ -190,7 +191,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     // staging id 必须等于注册的 agent 模式 id（default/creation 与
     // plan/focus/minimal/learning/auto/coordinator）——切换器按清单 id 写
     // 设置、会话按注册 id 解析提示词，此处锁死两侧的一致性命名。
-    for (const id of ["default", "creation", "plan", "focus", "minimal", "learning", "auto", "coordinator"]) {
+    for (const id of ["default", "creation", "skills-creator", "plan", "focus", "minimal", "learning", "auto", "coordinator"]) {
       const entry = byId.get(id);
       expect(entry, `manifest 缺少 "${id}" 条目`).toBeDefined();
       expect(entry).toMatchObject({ kind: "agent-mode", dependencies: [] });
@@ -429,6 +430,47 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
     }
   });
 
+  it("memory opt-out prevents mounting even when the workspace enables it", async () => {
+    const ws = await tempWorkspace({ ".innocence/plugins.yml": "plugins:\n  memory: true\n" });
+    expect((await composition.composePlugins(ws, { memory: false })).map((plugin) => plugin.name)).not.toContain("memory");
+    expect((await composition.composePlugins(ws, { memory: true })).map((plugin) => plugin.name)).toContain("memory");
+  });
+
+  it("staged memory browsing and session tools share the injected application root", async () => {
+    const ws = await tempWorkspace({});
+    const userRoot = await tempWorkspace({});
+    const runtimeRoot = await tempWorkspace({});
+    let memoryWorkspace = ws;
+    const local = createSessionComposition({
+      resolvePaths: stagingBootPaths,
+      getWorkspaceRoot: () => ws,
+      getUserPluginRoot: () => path.join(userRoot, "plugins"),
+      getMemoryUserRoot: () => userRoot,
+      getMemoryWorkspaceRoot: () => memoryWorkspace,
+      log: () => {},
+    });
+    try {
+      const plugins = await local.composePlugins(runtimeRoot);
+      const memory = plugins.find((plugin) => plugin.name === "memory");
+      const tools: Array<{ name: string; execute: (args: Record<string, unknown>, ctx: unknown) => Promise<unknown> }> = [];
+      if (!memory || !("plugin" in memory)) throw new Error("Missing memory factory");
+      await memory.plugin!.apply({ tools: { register: (tool: never) => tools.push(tool) }, session: { registerProcessor: () => {} } } as never);
+      await tools.find((tool) => tool.name === "memory_write")!.execute({ id: "user-note", scope: "user", content: "Shared preference." }, {});
+      await tools.find((tool) => tool.name === "memory_write")!.execute({ id: "project-note", content: "Keep project decisions." }, {});
+      const factory = await (await local.ensureBoot()).importPlugin("memory") as { files: import("@innocenceharness/plugin-memory").MemoryFiles };
+      expect((await factory.files.list(userRoot)).map((file) => file.name)).toEqual(["user-note.md"]);
+      expect((await factory.files.read(userRoot, "user-note.md")).content).toContain("Shared preference.");
+      expect((await factory.files.list(path.join(ws, ".innocence"))).map((file) => file.name)).toEqual(["project-note.md"]);
+      expect(existsSync(path.join(runtimeRoot, ".innocence", "memory"))).toBe(false);
+      memoryWorkspace = "";
+      const next = (await local.composePlugins(runtimeRoot)).find((plugin) => plugin.name === "memory");
+      tools.length = 0;
+      if (!next || !("plugin" in next)) throw new Error("Missing memory factory");
+      await next.plugin!.apply({ tools: { register: (tool: never) => tools.push(tool) }, session: { registerProcessor: () => {} } } as never);
+      expect(await tools.find((tool) => tool.name === "memory_write")!.execute({ id: "orphan", content: "No workspace." }, {})).toMatchObject({ isError: true });
+    } finally { await local.disposePluginBoot(); }
+  });
+
   it("hooks entry mounts the staged factory with both session and tool faces", async () => {
     // 仿 memory 装配形态的工厂调用探针（批次 4C）：条目名 "hooks"，内嵌
     // factory:hooks 插件；最小 ctx 必须同时供应 session.registerProcessor 与
@@ -459,6 +501,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       await factory?.apply({
         session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
         tools: { registerMiddleware: (m: ToolExecutionMiddleware) => middlewares.push(m) },
+        on: () => () => {},
       } as never);
       expect(processors).toHaveLength(1);
       expect(processors[0]).toMatchObject({ name: "hooks", order: -450 });
@@ -482,6 +525,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       await bareFactory?.apply({
         session: { registerProcessor: (p: MessageProcessor) => bareProcessors.push(p) },
         tools: { registerMiddleware: () => {} },
+        on: () => () => {},
       } as never);
       const quiet = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
       await bareProcessors[0].process(quiet as never, { scope: { sessionId: "hooks-quiet" } } as never);
@@ -519,6 +563,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
         await factory?.apply({
           session: { registerProcessor: (p: MessageProcessor) => processors.push(p) },
           tools: { registerMiddleware: () => {} },
+          on: () => () => {},
         } as never);
         const message = { role: "user" as const, parts: [{ type: "text" as const, text: "go" }] };
         await processors[0].process(message as never, { scope: { sessionId: "hooks-merge" } } as never);
@@ -581,6 +626,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
         const dispose = (await factory?.apply({
           session: { registerProcessor: () => {} },
           tools: { registerMiddleware: () => {} },
+          on: () => () => {},
           permissions: {
             engine: {
               async resolve() {

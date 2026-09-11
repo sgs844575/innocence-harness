@@ -1,3 +1,7 @@
+import { loadMcpSessionConfig } from "./mcpConfiguration";
+import { collectBundleLanguages } from "./bundleLanguages";
+import type { LspServerDescriptor } from "@innocenceharness/harness-lsp";
+import type { ServerAuthorizationConfig } from "@innocenceharness/harness-auth";
 // Session composition (split out of harnessGlue, Electron-free and
 // Node-testable): owns the plugin-boot singleton (with retry-on-failure
 // semantics), the builtin capability plugin loading/instantiation, the
@@ -27,10 +31,17 @@ import { scanSkillCatalog, type SkillCatalogEntry } from "@innocenceharness/plug
 import { builtinSkills } from "@innocenceharness/plugin-builtin-skills";
 import { computerControlSkill } from "@innocenceharness/tools-computer/skill";
 import { computerAccessFor, configureComputerEntry, configuredComputerPlugin } from "./computerControl";
+import { configuredSubagentPlugin } from "./subagentConfiguration";
+import { collectBundleAgents } from "./bundleCapabilities";
+import type { BundleAgent } from "@innocenceharness/harness-plugin-catalog";
+import { appDataRoot } from "../appDataRoot";
 import {
   unavailableAskUserPort,
   type AskUserPort,
 } from "@innocenceharness/plugin-ask";
+// MCP 授权端口的产出结构：accountAuth 的宿主侧镜像（plugin-mcp 插件保持
+// 运行时所有者，这里不静态依赖 staged 插件的类型面）。
+import type { McpAuthorizationOutcome } from "../accountAuth";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_ROUTE_ID,
@@ -50,7 +61,7 @@ import {
   readManifest,
   type PluginBoot,
 } from "./compose";
-import { scanUserPlugins, nativeProbe, claudeCodeProbe, type UserPluginScanResult } from "./userPluginScan";
+import { scanUserPlugins, nativeProbe, bundleProbe, type UserPluginScanResult } from "./userPluginScan";
 import { createEcosystemAdapterPlugin } from "./ecosystemAdapter";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type {
@@ -62,6 +73,10 @@ import type { AgentModeInfo, SkillInfo } from "../../shared/ipc";
 
 /** Inputs of {@link createSessionComposition}. */
 export interface SessionCompositionOptions {
+  getPluginDataRoot?: () => string;
+  getMemoryUserRoot?: () => string;
+  /** Persistent workspace identity, independent of temporary runtime working directories. */
+  getMemoryWorkspaceRoot?: (runtimeRoot: string, identity?: ComposeSessionIdentity) => string;
   computerActivity?: ToolActivityObserver;
   /** Current master access, read by already mounted desktop tools. */
   isComputerEnabled?: () => boolean;
@@ -97,6 +112,13 @@ export interface SessionCompositionOptions {
    */
   createAskUserPort?: (identity: ComposeSessionIdentity) => AskUserPort;
   /**
+   * MCP 服务器账号授权端口工厂（交互式授权波）：绑定到当次路由会话身份
+   * （同意卡归属该会话）。缺省或无身份 = 不注入，url 服务器匿名连接。
+   */
+  createMcpAuthorizer?: (
+    identity: ComposeSessionIdentity,
+  ) => (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>;
+  /**
    * Reads one session's cumulative token usage from the host session store
    * (batch 4F): feeds the reminders factory's usage-level getter. Absent
    * means the composition has no usage source and the reminder stays
@@ -130,6 +152,7 @@ export interface ComposeSessionIdentity {
 
 /** The composition face the host glue consumes. */
 export interface SessionComposition {
+  bundleLanguageServers(workspaceRoot: string, userToggles?: PluginToggleSource): Promise<LspServerDescriptor[]>;
   /** The boot singleton; a FAILED boot is not memoized (next call retries). */
   ensureBoot(): Promise<PluginBoot>;
   /** Unwind the boot root (app shutdown; cascades into live route scopes). */
@@ -199,12 +222,21 @@ export function worktreeIsolationPlugin(active: boolean): ObjectPlugin {
   };
 }
 
-/** S4 工作台焦点（IDE 双件内部适配）：面板当前查看文件 + 可选焦点行。 */
+/** S4 工作台焦点（IDE 双件内部适配）：面板当前查看文件 + 可选焦点行。
+ *  诊断来源两路：进程内 TS（code 数值、source "TS"）与 LSP 服务器
+ *  （语言服务器波；code 可为字符串、可带 source/severity）。 */
 export interface WorkbenchFocusInput {
   sessionId: string;
   file: string;
   line?: number;
-  diagnostics?: readonly { code: number; line: number; column: number; message: string }[];
+  diagnostics?: readonly {
+    code?: number | string;
+    line: number;
+    column: number;
+    message: string;
+    severity?: "error" | "warning" | "info" | "hint";
+    source?: string;
+  }[];
 }
 
 function normalizeForFocusMatch(value: string): string {
@@ -243,8 +275,15 @@ export function workbenchFocusPlugin(
           const line = typeof focus.line === "number" && focus.line > 0
             ? `（当前焦点行：第 ${focus.line} 行）`
             : "";
+          // 诊断标签：带源（LSP/TS 归一）按 `${source} ${code}`；无源数值码
+          // 保持 TS 数值码口径（TS2322）。来源混合时同一注记块并列。
           const diagnostic = focus.diagnostics?.length
-            ? `\n[新诊断注记：${focus.diagnostics.slice(0, 3).map((d) => `TS${d.code} 第 ${d.line}:${d.column} 行：${d.message}`).join("；")}]`
+            ? `\n[新诊断注记：${focus.diagnostics.slice(0, 3).map((d) => {
+                const label = d.source !== undefined
+                  ? `${d.source}${d.code !== undefined ? ` ${d.code}` : ""}`
+                  : `TS${d.code ?? ""}`;
+                return `${label} 第 ${d.line}:${d.column} 行：${d.message}`;
+              }).join("；")}]`
             : "";
           return {
             ...result,
@@ -354,7 +393,12 @@ function factoryPlugin(
   id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell",
   options: () =>
     | { dirs: string[] }
-    | { servers: Record<string, unknown>; isComputerEnabled?: () => boolean; computerActivity?: ToolActivityObserver }
+    | {
+        servers: Record<string, unknown>;
+        isComputerEnabled?: () => boolean;
+        computerActivity?: ToolActivityObserver;
+        authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>;
+      }
     | { userRoot: string }
     | {
         getPermissionMode: () => string;
@@ -394,19 +438,30 @@ function factoryConfig(
   project: InnocenceConfig,
   isComputerEnabled?: () => boolean,
   computerActivity?: ToolActivityObserver,
-): { dirs: string[] } | { servers: Record<string, unknown>; isComputerEnabled?: () => boolean; computerActivity?: ToolActivityObserver } {
+  authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>,
+): { dirs: string[] } | {
+  servers: Record<string, unknown>;
+  isComputerEnabled?: () => boolean;
+  computerActivity?: ToolActivityObserver;
+  authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>;
+} {
   if (id === "skills") {
     const configured = config as { dirs?: unknown } | undefined;
     if (config !== undefined && (!configured || !Array.isArray(configured.dirs) || !configured.dirs.every((v) => typeof v === "string"))) {
       throw new Error("invalid skills group config: dirs must be a string array");
     }
-    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(os.homedir(), ".innocence", "skills")] };
+    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(appDataRoot(), "skills")] };
   }
   const configured = config as { servers?: unknown } | undefined;
   if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
     throw new Error("invalid mcp group config: servers must be an object");
   }
-  return { servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown>, ...(isComputerEnabled ? { isComputerEnabled } : {}), ...(computerActivity ? { computerActivity } : {}) };
+  return {
+    servers: configured?.servers as Record<string, unknown> ?? (project.mcpServers ?? {}) as Record<string, unknown>,
+    ...(isComputerEnabled ? { isComputerEnabled } : {}),
+    ...(computerActivity ? { computerActivity } : {}),
+    ...(authorizeServer ? { authorizeServer } : {}),
+  };
 }
 
 function validGroupSegment(value: unknown): value is string {
@@ -493,6 +548,8 @@ async function resolveGroupEntries(
   ownerId: string,
   isComputerEnabled: () => boolean,
   computerActivity?: ToolActivityObserver,
+  subagentRoots?: { user: () => string; workspace: string; contributions?: readonly BundleAgent[] },
+  authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>,
 ): Promise<ResolvedGroupChild[]> {
   const resolved: ResolvedGroupChild[] = [];
   for (const raw of entries) {
@@ -514,15 +571,17 @@ async function resolveGroupEntries(
     if (FACTORY_ONLY_BUILTINS.has(childName)) {
       throw new Error(`loader group entry "${ownerId}" declares factory-only builtin "${childName}"; declare it at top level instead`);
     }
-    if (options.name === "computer" || options.name === "kernel:computer") {
+    if ((options.name === "subagent" || options.name === "kernel:subagent") && subagentRoots) {
+      options.plugin = configuredSubagentPlugin(() => boot.importPlugin("subagent"), subagentRoots.user, subagentRoots.workspace, subagentRoots.contributions);
+    } else if (options.name === "computer" || options.name === "kernel:computer") {
       options.plugin = configuredComputerPlugin(() => boot.importPlugin("computer"), isComputerEnabled, computerActivity);
     } else if (options.name === "skills" || options.name === "kernel:skills") {
       options.plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", options.config, workspaceRoot, config));
     } else if (options.name === "mcp" || options.name === "kernel:mcp") {
-      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config, isComputerEnabled, computerActivity));
+      options.plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", options.config, workspaceRoot, config, isComputerEnabled, computerActivity, authorizeServer));
     } else if (options.name === "kernel:group") {
       const nested = groupConfigOf(options.id, options.config);
-      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id, isComputerEnabled, computerActivity);
+      const nestedEntries = await resolveGroupEntries(boot, nested.entries, config, workspaceRoot, nested.id, isComputerEnabled, computerActivity, subagentRoots, authorizeServer);
       options.plugin = boot.spine.group.createGroupPlugin({ id: nested.id, entries: nestedEntries });
     }
     resolved.push(options);
@@ -550,6 +609,10 @@ async function builtinLoaderEntryFor(
   toolFactoryConfigs?: BuiltinToolFactoryConfigs,
   isComputerEnabled: () => boolean = () => true,
   computerActivity?: ToolActivityObserver,
+  authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>,
+  getMemoryUserRoot: () => string = () => path.join(os.homedir(), ".innocence"),
+  memoryWorkspaceRoot: string = workspaceRoot,
+  bundleAgents: readonly BundleAgent[] = [],
 ): Promise<SessionLoaderPlugin> {
   const id = entry.id;
   let plugin: ObjectPlugin | undefined;
@@ -561,6 +624,8 @@ async function builtinLoaderEntryFor(
     plugin = ecosystemPlugin;
   } else if (!entry.disabled && id === "computer") {
     plugin = configuredComputerPlugin(() => boot.importPlugin("computer"), isComputerEnabled, computerActivity);
+  } else if (!entry.disabled && id === "subagent") {
+    plugin = configuredSubagentPlugin(() => boot.importPlugin("subagent"), getMemoryUserRoot, memoryWorkspaceRoot, bundleAgents);
   } else if (!entry.disabled && id === "fs") {
     // Factory builtin like skills/mcp: the staged default export is the fs
     // factory; the config comes from the settings snapshot composePlugins
@@ -575,7 +640,7 @@ async function builtinLoaderEntryFor(
   } else if (!entry.disabled && id === "skills") {
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
-    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config, isComputerEnabled, computerActivity));
+    plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config, isComputerEnabled, computerActivity, authorizeServer));
   } else if (!entry.disabled && id === "creation") {
     // Factory builtin like skills/mcp: the staged default export is a factory
     // needing the host-resolved user plugin root (creation-mode directory
@@ -607,8 +672,8 @@ async function builtinLoaderEntryFor(
     // merged index reads the user root first (user shadows project on equal
     // ids, matching the resolver's dual-root direction).
     plugin = factoryPlugin(boot, "memory", () => ({
-      getUserRoot: () => path.join(os.homedir(), ".innocence"),
-      getProjectRoot: () => path.join(workspaceRoot, ".innocence"),
+      getUserRoot: getMemoryUserRoot,
+      getProjectRoot: () => memoryWorkspaceRoot ? path.join(memoryWorkspaceRoot, ".innocence") : "",
     }));
   } else if (!entry.disabled && id === "hooks") {
     // Same factory shape as creation/reminders/memory: the staged default
@@ -654,7 +719,7 @@ async function builtinLoaderEntryFor(
     }));
   } else if (!entry.disabled && id.startsWith("group:")) {
     const group = groupConfigOf(id, entry.config);
-    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id, isComputerEnabled, computerActivity);
+    const children = await resolveGroupEntries(boot, group.entries, config, workspaceRoot, group.id, isComputerEnabled, computerActivity, { user: getMemoryUserRoot, workspace: memoryWorkspaceRoot, contributions: bundleAgents }, authorizeServer);
     plugin = boot.spine.group.createGroupPlugin({ id: group.id, entries: children });
   }
   return {
@@ -741,7 +806,7 @@ export function createSessionComposition(
   const scanCurrentUserRoot = async (): Promise<UserPluginScanResult> => {
     const scanned = await scanUserPlugins(
       options.getUserPluginRoot?.() ?? defaultUserPluginRoot(),
-      [nativeProbe, claudeCodeProbe],
+      [bundleProbe, nativeProbe],
     );
     for (const warning of scanned.warnings) {
       options.log("warn", "user plugin scan", { warning });
@@ -781,6 +846,19 @@ export function createSessionComposition(
       } catch (err) {
         options.log("warn", "plugin boot dispose failed", { error: String(err) });
       }
+    },
+    async bundleLanguageServers(workspaceRoot, userToggles) {
+      const boot = await this.ensureBoot();
+      const scanned = await scanCurrentUserRoot();
+      const inventory = await boot.pluginInventory({ workspaceRoot, userToggles, extraDescriptors: scanned.descriptors });
+      const manifestIds = new Set((await readManifest(boot.builtinRoot)).map((entry) => entry.id));
+      const enabled = new Set(inventory.filter((entry) => entry.state === "active").map((entry) => entry.id));
+      const root = options.getUserPluginRoot?.() ?? defaultUserPluginRoot();
+      const entries = scanned.descriptors
+        .filter((entry) => entry.format === "bundle" && enabled.has(entry.id) && !manifestIds.has(entry.id))
+        .map((entry) => ({ id: entry.id, dir: path.join(root, entry.id) }));
+      return collectBundleLanguages(entries, options.getPluginDataRoot?.() ?? path.join(appDataRoot(), "plugin-data"),
+        (message) => options.log("warn", "bundle languages", { message }));
     },
     async pluginInventory(input): Promise<PluginInventoryEntry[]> {
       const boot = await ensureBoot();
@@ -847,7 +925,7 @@ export function createSessionComposition(
       // 用户根扫描现算（不缓存，与项目配置读取并行）；解析依赖扫描结果，
       // 故 resolveBuiltinSet 在其后串行。
       const [config, scanned] = await Promise.all([
-        loadInnocenceConfig(workspaceRoot),
+        loadMcpSessionConfig(workspaceRoot, options.getMemoryUserRoot?.() ?? appDataRoot(), loadInnocenceConfig),
         scanCurrentUserRoot(),
       ]);
       // 扫描描述符并入解析（manifest id 优先去重，由 boot 的
@@ -880,14 +958,25 @@ export function createSessionComposition(
       );
       const ecosystemDirs = new Map<string, string>(
         scanned.descriptors
-          .filter((descriptor) => descriptor.format === "claude-code" && !manifestIds.has(descriptor.id))
+          .filter((descriptor) => descriptor.format === "bundle" && !manifestIds.has(descriptor.id))
           .map((descriptor) => [descriptor.id, path.join(resolveUserPluginRoot(), descriptor.id)] as const),
       );
 
       const plugins: SessionPlugin[] = [];
+      // MCP 授权端口：绑定当次路由会话身份（同意卡归属）；无身份/未注入
+      // 工厂时保持 undefined，url 服务器匿名连接（行为与此前一致）。
+      const mcpAuthorizeServer = sessionIdentity && options.createMcpAuthorizer
+        ? options.createMcpAuthorizer(sessionIdentity)
+        : undefined;
+      const bundleAgents = await collectBundleAgents(resolved.entries.flatMap((entry) => {
+        const dir = ecosystemDirs.get(entry.id);
+        return dir && !entry.disabled ? [{ id: entry.id, dir }] : [];
+      }), (level, channel, detail) => options.log(level, channel, detail));
       const isComputerEnabled = computerAccessFor(settings, options.isComputerEnabled);
       for (const resolvedEntry of resolved.entries) {
         const entry = configureComputerEntry(resolvedEntry, isComputerEnabled);
+        // A user's memory opt-out also wins over a project's enabled default.
+        if (entry.id === "memory" && (settings?.pluginToggles?.memory === false || userToggles?.memory === false)) continue;
         if (entry.id === "example" || entry.disabled) continue;
         const ecosystemDir = ecosystemDirs.get(entry.id);
         plugins.push(await builtinLoaderEntryFor(
@@ -907,6 +996,23 @@ export function createSessionComposition(
               entry.id,
               ecosystemDir,
               (level, channel, detail) => options.log(level, channel, detail),
+              {
+                getDataRoot: () => options.getPluginDataRoot?.() ?? path.join(appDataRoot(), "plugin-data"),
+                createServers: (servers) => factoryPlugin(boot, "mcp", () => ({
+                  servers,
+                  isComputerEnabled,
+                  computerActivity: options.computerActivity,
+                  ...(mcpAuthorizeServer ? { authorizeServer: mcpAuthorizeServer } : {}),
+                })),
+                // 生态 hooks 声明 → staged hooks 工厂（turnEnd 波）：与顶层
+                // hooks 工厂同一装配面（getters 现读，授权/条件/结算机制
+                // 共享），声明本身来自适配器解析的生态词汇表。
+                createHooks: (hooks) => factoryPlugin(boot, "hooks", () => ({
+                  getHooksConfig: () => Promise.resolve(hooks),
+                  getWorkspaceRoot: () => workspaceRoot,
+                  ...(options.isHostShuttingDown ? { isHostShuttingDown: options.isHostShuttingDown } : {}),
+                })),
+              },
             )
             : undefined,
           sessionIdentity,
@@ -916,6 +1022,10 @@ export function createSessionComposition(
           toolFactoryConfigs,
           isComputerEnabled,
           options.computerActivity,
+          mcpAuthorizeServer,
+          options.getMemoryUserRoot,
+          options.getMemoryWorkspaceRoot?.(workspaceRoot, sessionIdentity) ?? workspaceRoot,
+          bundleAgents,
         ));
       }
       // 项目权限规则在声明式 builtin 集合之外（不可关闭），恒定注入。
@@ -954,7 +1064,7 @@ export function createSessionComposition(
       const root = workspaceRoot.trim();
       const dirs = [
         ...(root !== "" ? [path.join(root, ".innocence", "skills")] : []),
-        path.join(os.homedir(), ".innocence", "skills"),
+        path.join(appDataRoot(), "skills"),
       ];
       const disk = await scanSkillCatalog(dirs);
       let computerAvailable = false;

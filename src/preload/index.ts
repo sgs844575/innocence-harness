@@ -1,7 +1,12 @@
+import { McpSettingsChannels } from "../shared/mcpSettingsIpc";
 // Preload — the only bridge between the sandboxed renderer and the main
 // process. Exposes a minimal, typed API surface (contextBridge) with
 // sandbox + contextIsolation and no Node in the renderer.
 import { contextBridge, ipcRenderer } from "electron";
+import { MemoryIpcChannels } from "../shared/memoryIpc";
+import { SubagentSettingsChannels } from "../shared/subagentIpc";
+import { PluginCatalogChannels } from "../shared/pluginCatalogIpc";
+import { EditorIpcChannels } from "../shared/editorIpc";
 import { IPC, type AgentModeInfo, type DiscoveredSkillMirror, type InnocenceCodeApi, type SkillInfo, type ThemeMode } from "../shared/ipc";
 import {
   TaskIpcChannels,
@@ -32,7 +37,37 @@ function subscribe(channel: string, listener: (...args: never[]) => void): () =>
 const subscribeTask = <T>(channel: string, cb: (payload: T) => void): (() => void) =>
   subscribe(channel, cb as never);
 
+import { SkillSettingsChannels as skillChannels } from "../shared/skillSettingsIpc";
 const api: InnocenceCodeApi = {
+  skillSettingsList: (target) => ipcRenderer.invoke(skillChannels.skillSettingsList, target),
+  skillSettingsEnable: (target, id, enabled) => ipcRenderer.invoke(skillChannels.skillSettingsEnable, target, id, enabled),
+  skillSettingsRemove: (target, id) => ipcRenderer.invoke(skillChannels.skillSettingsRemove, target, id),
+  skillSettingsDiscover: (target) => ipcRenderer.invoke(skillChannels.skillSettingsDiscover, target),
+  skillSettingsImport: (target, source) => ipcRenderer.invoke(skillChannels.skillSettingsImport, target, source),
+  pluginCatalogSnapshot: (force?: boolean) => ipcRenderer.invoke(PluginCatalogChannels.pluginCatalogSnapshot, force === true),
+  pluginMarketAdd: (source) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketAdd, source),
+  pluginMarketRefresh: (id) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketRefresh, id),
+  pluginMarketRemove: (id) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketRemove, id),
+  pluginPreview: (source) => ipcRenderer.invoke(PluginCatalogChannels.pluginPreview, source),
+  pluginInstall: (token) => ipcRenderer.invoke(PluginCatalogChannels.pluginInstall, token),
+  pluginDiscard: (token) => ipcRenderer.invoke(PluginCatalogChannels.pluginDiscard, token),
+  pluginUninstall: (id) => ipcRenderer.invoke(PluginCatalogChannels.pluginUninstall, id),
+  pluginSetEnabled: (id, enabled) => ipcRenderer.invoke(PluginCatalogChannels.pluginSetEnabled, id, enabled),
+  editorsList: (refresh) => ipcRenderer.invoke(EditorIpcChannels.editorsList, refresh),
+  editorsSelect: (id) => ipcRenderer.invoke(EditorIpcChannels.editorsSelect, id),
+  editorOpenWorkspace: (target) => ipcRenderer.invoke(EditorIpcChannels.editorOpenWorkspace, target),
+  memoryWorkspaces: () => ipcRenderer.invoke(MemoryIpcChannels.memoryWorkspaces),
+  mcpSettingsWorkspaces: () => ipcRenderer.invoke(McpSettingsChannels.mcpSettingsWorkspaces),
+  mcpSettingsList: (root) => ipcRenderer.invoke(McpSettingsChannels.mcpSettingsList, root),
+  mcpSettingsSave: (root, name, entry, create) => ipcRenderer.invoke(McpSettingsChannels.mcpSettingsSave, root, name, entry, create),
+  mcpSettingsImport: (root, text) => ipcRenderer.invoke(McpSettingsChannels.mcpSettingsImport, root, text),
+  subagentWorkspaces: () => ipcRenderer.invoke(SubagentSettingsChannels.subagentWorkspaces),
+  subagentCatalog: (target) => ipcRenderer.invoke(SubagentSettingsChannels.subagentCatalog, target),
+  subagentSave: (target, preset, create) => ipcRenderer.invoke(SubagentSettingsChannels.subagentSave, target, preset, create),
+  subagentRemove: (target, id) => ipcRenderer.invoke(SubagentSettingsChannels.subagentRemove, target, id),
+  memoryFiles: (target) => ipcRenderer.invoke(MemoryIpcChannels.memoryFiles, target),
+  memoryReadFile: (target, name) => ipcRenderer.invoke(MemoryIpcChannels.memoryReadFile, target, name),
+  memoryOpenFile: (target, name, action) => ipcRenderer.invoke(MemoryIpcChannels.memoryOpenFile, target, name, action),
   getAppInfo: () => ipcRenderer.invoke(IPC.appInfo),
   getAppMetrics: () => ipcRenderer.invoke(IPC.appMetrics),
   exportLogs: () => ipcRenderer.invoke(IPC.appExportLogs),

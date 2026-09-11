@@ -8,6 +8,7 @@ import {
   createAccountAuthorizer,
   createAuthorizationStore,
   type AccountAuthorizer,
+  type ServerAuthorizationConfig,
   type AuthorizationStore,
 } from "@innocenceharness/harness-auth";
 import { createAskUserPort, type AskUserPortDeps } from "./askUserPort";
@@ -43,7 +44,7 @@ let storeCache: { root: string; store: AuthorizationStore } | undefined;
 
 async function tokensStore(deps: AccountAuthServiceDeps): Promise<AuthorizationStore> {
   const root = deps.tokensRoot();
-  storeCache ??= { root, store: createAuthorizationStore(await openSecureStorage(root, { dirs: [] })) };
+  if (storeCache?.root !== root) storeCache = { root, store: createAuthorizationStore(await openSecureStorage(root, { dirs: [] })) };
   return storeCache.store;
 }
 
@@ -60,7 +61,7 @@ export function resetAccountAuthCache(): void {
 export function createMcpAuthorizationPort(
   deps: AccountAuthServiceDeps,
   identity: { sessionId: string; routeId: string },
-): (server: { name: string; url: string }) => Promise<McpAuthorizationOutcome> {
+): (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome> {
   const ask = createAskUserPort(deps, identity);
   const authorizerPromise = (async (): Promise<AccountAuthorizer> =>
     createAccountAuthorizer({
@@ -85,7 +86,7 @@ export function createMcpAuthorizationPort(
     }))();
   return async (server) => {
     const authorizer = await authorizerPromise;
-    return authorizer.authorize({ key: server.name, url: server.url });
+    return authorizer.authorize({ key: server.name, url: server.url, oauth: server.oauth });
   };
 }
 
