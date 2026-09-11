@@ -66,6 +66,7 @@
     "@fiahfy/icns": "^0.0.7",
     "@innocenceharness/attachment-node": "^0.1.0",
     "@innocenceharness/attachment-runtime": "^0.1.0",
+    "@innocenceharness/harness-plugin-catalog": "^0.1.0",
     "@innocenceharness/plugin-attachments": "^0.1.0",
     "@innocenceharness/plugin-builtin-skills": "^0.1.0",
     "@innocenceharness/plugin-skills": "^0.1.0",
