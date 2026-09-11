@@ -26,6 +26,8 @@ export const APP_DATA_ENTRIES: readonly string[] = [
   "sessions.json",
   "sidebar.json",
   "sessions",
+  "memory",
+  "subagents.json",
   "logs",
   "tasks",
   "background",

@@ -130,10 +130,10 @@ describe("memory store", () => {
     seedRaw(root, "broken.md", "---\nid: broken\nscope: project\n"); // 残缺 frontmatter（无闭合围栏）
     seedRaw(root, "no-frontmatter.md", "Just plain text.");
     const { entries, warnings } = await listEntries([root]);
-    expect(entries.map((entry) => entry.id)).toEqual(["good-one"]);
-    expect(warnings).toHaveLength(2);
+    expect(entries.map((entry) => entry.id)).toEqual(["good-one", "no-frontmatter"]);
+    expect(warnings).toHaveLength(1);
     expect(warnings.join("\n")).toContain("broken.md");
-    expect(warnings.join("\n")).toContain("no-frontmatter.md");
+    expect(await readEntry([root], "no-frontmatter")).toMatchObject({ body: "Just plain text." });
     // 读路径同样未命中坏条目。
     expect(await readEntry([root], "broken")).toBeUndefined();
   });

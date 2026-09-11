@@ -12,10 +12,12 @@ import type { Context } from "@innocenceharness/kernel";
 import type {} from "@innocenceharness/harness-session";
 import { createMemoryTools, type MemoryToolsOptions } from "./tools";
 import { createMemoryIndexProcessor } from "./indexInjection";
+import { memoryFiles } from "./files";
 
 export * from "./store";
 export * from "./tools";
 export * from "./indexInjection";
+export * from "./files";
 
 export type MemoryPluginOptions = MemoryToolsOptions;
 
@@ -40,4 +42,4 @@ export function createMemoryPlugin(options: MemoryPluginOptions): MemoryPlugin {
 
 // Distribution default (kernel-loader unwrapExports convention): the factory,
 // so a disk-loaded module resolves to the single entry point hosts configure.
-export default createMemoryPlugin;
+export default Object.assign(createMemoryPlugin, { files: memoryFiles });

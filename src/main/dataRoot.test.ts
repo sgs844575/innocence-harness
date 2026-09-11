@@ -86,6 +86,23 @@ describe("guardDataRootTarget", () => {
 });
 
 describe("copyAppDataEntries", () => {
+  it("preserves global subagent settings when the data root moves", async () => {
+    const source = tempRoot(), target = tempRoot();
+    const content = JSON.stringify([{ id: "review", systemPrompt: "Review changes carefully." }]);
+    writeFileSync(path.join(source, "subagents.json"), content, "utf8");
+    await copyAppDataEntries(source, target);
+    expect(readFileSync(path.join(target, "subagents.json"), "utf8")).toBe(content);
+  });
+
+  it("preserves global memory when the application data root moves", async () => {
+    const source = tempRoot();
+    const target = tempRoot();
+    mkdirSync(path.join(source, "memory"));
+    writeFileSync(path.join(source, "memory", "preferences.md"), "Keep explanations concise.", "utf8");
+    await copyAppDataEntries(source, target);
+    expect(readFileSync(path.join(target, "memory", "preferences.md"), "utf8")).toBe("Keep explanations concise.");
+    expect(existsSync(path.join(source, "memory", "preferences.md"))).toBe(true);
+  });
   it("复制存在的应用数据项（含 sessions/ 树），缺项跳过", async () => {
     const source = path.join(tempRoot(), ".innocence");
     const parent = tempRoot();
