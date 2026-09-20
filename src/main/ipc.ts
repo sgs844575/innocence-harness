@@ -8,6 +8,7 @@ import { registerBrowserIpc } from "./browserIpc";
 import { registerMemoryIpc } from "./memoryIpc";
 import { registerSkillSettingsIpc } from "./skillSettingsIpc";
 import { registerCommandSettingsIpc } from "./commandSettingsIpc";
+import { registerHookSettingsIpc } from "./hookSettingsIpc";
 import { registerSubagentSettingsIpc } from "./subagentSettingsIpc";
 import { registerPluginCatalogIpc } from "./pluginCatalogIpc";
 import { registerEditorIpc } from "./editorIpc";
@@ -471,6 +472,7 @@ export function registerIpcHandlers(): void {
   registerSubagentSettingsIpc();
   registerSkillSettingsIpc();
   registerCommandSettingsIpc();
+  registerHookSettingsIpc();
   registerMcpSettingsIpc();
   registerPluginCatalogIpc();
 

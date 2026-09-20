@@ -32,7 +32,8 @@ import {
 
 import { SkillsPanel, type SkillsApi } from "./settings/SkillsPanel";
 import { CommandsPanel, type CommandsApi } from "./settings/CommandsPanel";
-export type SettingsSection = "skills" | "commands" | "mcp" | "general" | "appearance" | "models" | "browser" | "computer" | "memory" | "subagents" | "plugins" | "about";
+import { HooksPanel, type HooksApi } from "./settings/HooksPanel";
+export type SettingsSection = "skills" | "commands" | "hooks" | "mcp" | "general" | "appearance" | "models" | "browser" | "computer" | "memory" | "subagents" | "plugins" | "about";
 
 const THEME_MODES: { id: ThemeMode; label: string }[] = [
   { id: "system", label: "跟随系统" },
@@ -59,6 +60,7 @@ interface Props {
   skillsApi?: SkillsApi;
   onCreateSkill?: (target: string | null) => Promise<void>;
   commandsApi?: CommandsApi;
+  hooksApi?: HooksApi;
   memoryApi?: MemoryIpcApi;
   mcpApi?: McpSettingsApi;
   subagentApi?: SubagentSettingsApi;
@@ -159,11 +161,12 @@ function CodePreviewCard({
   );
 }
 
-export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onPatchMemorySettings, skillsApi, onCreateSkill, commandsApi, memoryApi, mcpApi, subagentApi, pluginCatalogApi, memoryWorkspace, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
+export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onPatchMemorySettings, skillsApi, onCreateSkill, commandsApi, hooksApi, memoryApi, mcpApi, subagentApi, pluginCatalogApi, memoryWorkspace, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto p-6">
       {section === "skills" && <SkillsPanel t={t} api={skillsApi} onCreate={onCreateSkill} />}
       {section === "commands" && <CommandsPanel t={t} api={commandsApi} />}
+      {section === "hooks" && <HooksPanel t={t} api={hooksApi} />}
       {section === "mcp" && <McpPanel t={t} api={mcpApi} />}
       {section === "plugins" && <PluginsPanel t={t} api={pluginCatalogApi} />}
       {section === "subagents" && <SubagentsPanel t={t} api={subagentApi} />}

@@ -1,6 +1,6 @@
 // 设置态侧栏（替换会话侧栏，同一灰色列）：返回工作区 + 分区导航
 // 基础设置与帮助分组 + 底部用户行（与主侧栏同式）。
-import { ArrowLeft, Bot, Box, Brain, Globe, Info, Monitor, Palette, Plug, Puzzle, SlidersHorizontal, SquareSlash } from "lucide-react";
+import { Anchor, ArrowLeft, Bot, Box, Brain, Globe, Info, Monitor, Palette, Plug, Puzzle, SlidersHorizontal, SquareSlash } from "lucide-react";
 import logoUrl from "../../../../logo.svg";
 import type { SettingsSection } from "./SettingsView";
 
@@ -21,7 +21,7 @@ const BASIC_SECTIONS: readonly { id: SettingsSection; key: string; icon: typeof 
 
 const GROUPS = [
   { key: "settings.group.basic", sections: BASIC_SECTIONS },
-  { key: "settings.group.agent", sections: [{ id: "memory" as const, key: "settings.section.memory", icon: Brain }, { id: "subagents" as const, key: "settings.section.subagents", icon: Bot }, { id: "plugins" as const, key: "settings.section.plugins", icon: Puzzle }, { id: "mcp" as const, key: "settings.section.mcp", icon: Plug }, { id: "skills" as const, key: "settings.section.skills", icon: Puzzle }, { id: "commands" as const, key: "settings.section.commands", icon: SquareSlash }] },
+  { key: "settings.group.agent", sections: [{ id: "memory" as const, key: "settings.section.memory", icon: Brain }, { id: "subagents" as const, key: "settings.section.subagents", icon: Bot }, { id: "plugins" as const, key: "settings.section.plugins", icon: Puzzle }, { id: "mcp" as const, key: "settings.section.mcp", icon: Plug }, { id: "skills" as const, key: "settings.section.skills", icon: Puzzle }, { id: "commands" as const, key: "settings.section.commands", icon: SquareSlash }, { id: "hooks" as const, key: "settings.section.hooks", icon: Anchor }] },
   { key: "settings.group.help", sections: [{ id: "about" as const, key: "settings.section.about", icon: Info }] },
 ];
 
