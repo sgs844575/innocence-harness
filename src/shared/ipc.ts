@@ -784,7 +784,8 @@ export const PROVIDER_PRESET_MIRROR: ProviderPresetMirror[] = [
 ];
 
 import type { SkillSettingsApi } from "./skillSettingsIpc";
-export interface InnocenceCodeApi extends SkillSettingsApi, McpSettingsApi, SidebarApi, AutomationApi, MemoryIpcApi, EditorIpcApi, SubagentSettingsApi, PluginCatalogApi {
+import type { CommandSettingsApi } from "./commandSettingsIpc";
+export interface InnocenceCodeApi extends SkillSettingsApi, CommandSettingsApi, McpSettingsApi, SidebarApi, AutomationApi, MemoryIpcApi, EditorIpcApi, SubagentSettingsApi, PluginCatalogApi {
   getAppInfo(): Promise<AppInfo>;
   /** 进程监视器：当前各进程 CPU/内存快照（顶栏应用菜单）。 */
   getAppMetrics(): Promise<AppProcessMetric[]>;

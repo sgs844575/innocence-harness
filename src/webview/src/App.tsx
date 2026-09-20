@@ -870,6 +870,7 @@ export function App(): React.JSX.Element {
               mcpApi={hasBridge() ? api : undefined}
               subagentApi={hasBridge() ? api : undefined}
               skillsApi={hasBridge() ? api : undefined}
+              commandsApi={hasBridge() ? api : undefined}
               onCreateSkill={hasBridge() ? (target) => startSkillCreation(target, {
                 selectMode: () => patch({ activeAgentMode: "skills-creator" }),
                 openChat: (root) => {

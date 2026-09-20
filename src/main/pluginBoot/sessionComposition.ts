@@ -450,7 +450,9 @@ function factoryConfig(
     if (config !== undefined && (!configured || !Array.isArray(configured.dirs) || !configured.dirs.every((v) => typeof v === "string"))) {
       throw new Error("invalid skills group config: dirs must be a string array");
     }
-    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(appDataRoot(), "skills")] };
+    // 缺省四根：skills 在前（同名技能优先于同名命令），commands 随后——
+    // 命令只是扁平 *.md 技能条目，经同一插件装载为 "/name" 可调用项。
+    return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(appDataRoot(), "skills"), path.join(workspaceRoot, ".innocence", "commands"), path.join(appDataRoot(), "commands")] };
   }
   const configured = config as { servers?: unknown } | undefined;
   if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
@@ -1058,13 +1060,16 @@ export function createSessionComposition(
       return projectAgentModes(manifest, scanned.descriptors);
     },
     async skillCatalog(workspaceRoot: string, settings?: HarnessSettings): Promise<SkillInfo[]> {
-      // 现算：与 factoryConfig("skills") 的缺省双根一致（项目 .innocence/skills
-      // 前根优先 + 用户 ~/.innocence/skills）；yml group config 自定义 dirs 的
+      // 现算：与 factoryConfig("skills") 的缺省四根一致（项目 .innocence/skills
+      // 前根优先 + 用户 ~/.innocence/skills，随后项目/用户 commands——同名技能
+      // 优先于同名命令）；yml group config 自定义 dirs 的
       // 会话目录与实际可有出入——已接受（可用性提示，同 agentModes 边界）。
       const root = workspaceRoot.trim();
       const dirs = [
         ...(root !== "" ? [path.join(root, ".innocence", "skills")] : []),
         path.join(appDataRoot(), "skills"),
+        ...(root !== "" ? [path.join(root, ".innocence", "commands")] : []),
+        path.join(appDataRoot(), "commands"),
       ];
       const disk = await scanSkillCatalog(dirs);
       let computerAvailable = false;

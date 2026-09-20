@@ -1,5 +1,6 @@
 import { skillsZh, skillsEn } from "./skillsI18n";
 import { mcpZh, mcpEn } from "./mcpI18n";
+import { commandsZh, commandsEn } from "./commandsI18n";
 // 极简 i18n 字典：zh-CN 为主，en-US 兜底；两字典键集必须一致（i18n.test.ts 钉住）。
 export type Dict = Record<string, string>;
 import { pluginCatalogEn, pluginCatalogZh } from "./pluginCatalogI18n";
@@ -7,6 +8,7 @@ import { builtinPluginEn, builtinPluginZh } from "./builtinPluginI18n";
 
 export const zhCN: Dict = {
   ...skillsZh,
+  ...commandsZh,
   ...pluginCatalogZh,
   ...mcpZh,
   ...builtinPluginZh,
@@ -610,6 +612,7 @@ export const zhCN: Dict = {
 
 export const enUS: Dict = {
   ...skillsEn,
+  ...commandsEn,
   ...pluginCatalogEn,
   ...mcpEn,
   ...builtinPluginEn,

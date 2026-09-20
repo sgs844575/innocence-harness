@@ -7,6 +7,7 @@ import { IPC, isChatQuestionResponse, isPermissionChoice, type AttachmentPart, t
 import { registerBrowserIpc } from "./browserIpc";
 import { registerMemoryIpc } from "./memoryIpc";
 import { registerSkillSettingsIpc } from "./skillSettingsIpc";
+import { registerCommandSettingsIpc } from "./commandSettingsIpc";
 import { registerSubagentSettingsIpc } from "./subagentSettingsIpc";
 import { registerPluginCatalogIpc } from "./pluginCatalogIpc";
 import { registerEditorIpc } from "./editorIpc";
@@ -469,6 +470,7 @@ export function registerIpcHandlers(): void {
   registerMemoryIpc(editors.openFile);
   registerSubagentSettingsIpc();
   registerSkillSettingsIpc();
+  registerCommandSettingsIpc();
   registerMcpSettingsIpc();
   registerPluginCatalogIpc();
 

@@ -38,12 +38,18 @@ const subscribeTask = <T>(channel: string, cb: (payload: T) => void): (() => voi
   subscribe(channel, cb as never);
 
 import { SkillSettingsChannels as skillChannels } from "../shared/skillSettingsIpc";
+import { CommandSettingsChannels as commandChannels } from "../shared/commandSettingsIpc";
 const api: InnocenceCodeApi = {
   skillSettingsList: (target) => ipcRenderer.invoke(skillChannels.skillSettingsList, target),
   skillSettingsEnable: (target, id, enabled) => ipcRenderer.invoke(skillChannels.skillSettingsEnable, target, id, enabled),
   skillSettingsRemove: (target, id) => ipcRenderer.invoke(skillChannels.skillSettingsRemove, target, id),
   skillSettingsDiscover: (target) => ipcRenderer.invoke(skillChannels.skillSettingsDiscover, target),
   skillSettingsImport: (target, source) => ipcRenderer.invoke(skillChannels.skillSettingsImport, target, source),
+  commandSettingsList: (target) => ipcRenderer.invoke(commandChannels.commandSettingsList, target),
+  commandSettingsCreate: (target, input) => ipcRenderer.invoke(commandChannels.commandSettingsCreate, target, input),
+  commandSettingsRemove: (target, id) => ipcRenderer.invoke(commandChannels.commandSettingsRemove, target, id),
+  commandSettingsDiscover: (target) => ipcRenderer.invoke(commandChannels.commandSettingsDiscover, target),
+  commandSettingsImport: (target, sourceFile) => ipcRenderer.invoke(commandChannels.commandSettingsImport, target, sourceFile),
   pluginCatalogSnapshot: (force?: boolean) => ipcRenderer.invoke(PluginCatalogChannels.pluginCatalogSnapshot, force === true),
   pluginMarketAdd: (source) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketAdd, source),
   pluginMarketRefresh: (id) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketRefresh, id),
