@@ -19,11 +19,14 @@ vi.mock("electron", () => ({
 import {
   APP_SCHEME,
   PLUGIN_SCHEME,
+  WORKBENCH_SCHEME,
   appIndexUrl,
   handleAppScheme,
   handlePluginScheme,
+  handleWorkbenchScheme,
   registerAppScheme,
   registerPluginScheme,
+  registerWorkbenchScheme,
 } from "./protocol";
 
 /** Minimal request shape consumed by the scheme handlers (url only). */
@@ -236,5 +239,66 @@ describe("handlePluginScheme", () => {
     expect(ok.headers.get("access-control-allow-origin")).toBe("*");
     const miss = get(`${PLUGIN_SCHEME}://ghost/dist/index.js`);
     expect(miss.headers.get("access-control-allow-origin")).toBe("*");
+  });
+});
+
+describe("workbench scheme", () => {
+  let workbenchRootDir = "";
+  beforeEach(() => {
+    workbenchRootDir = mkdtempSync(path.join(tmpdir(), "ic-workbench-scheme-"));
+    roots.push(workbenchRootDir);
+    write(workbenchRootDir, path.join("demo", "index.html"), "<!doctype html><title>demo</title>\n");
+    write(workbenchRootDir, path.join("demo", "app.js"), "console.log('demo');\n");
+    handleWorkbenchScheme(workbenchRootDir);
+  });
+  const getWorkbench = (url: string): Response => schemeHandler(WORKBENCH_SCHEME)({ url });
+
+  it("registers the scheme with standard/secure/supportFetchAPI/corsEnabled privileges", () => {
+    registerWorkbenchScheme();
+    expect(vi.mocked(protocol.registerSchemesAsPrivileged)).toHaveBeenCalledWith([
+      {
+        scheme: WORKBENCH_SCHEME,
+        privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+      },
+    ]);
+  });
+
+  it("serves the workbench document with the html content type and CORS opt-in", async () => {
+    const res = getWorkbench(`${WORKBENCH_SCHEME}://demo/index.html`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await res.text()).toContain("demo");
+  });
+
+  it("falls back to index.html for the bare workbench root", async () => {
+    const res = getWorkbench(`${WORKBENCH_SCHEME}://demo/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+
+  it("maps the js content type and ignores the cache-buster query", async () => {
+    const plain = getWorkbench(`${WORKBENCH_SCHEME}://demo/app.js`);
+    const versioned = getWorkbench(`${WORKBENCH_SCHEME}://demo/app.js?v=2`);
+    expect(versioned.status).toBe(200);
+    expect(versioned.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+    expect(await versioned.text()).toBe(await plain.text());
+  });
+
+  it("returns 404 for unknown ids and files", () => {
+    expect(getWorkbench(`${WORKBENCH_SCHEME}://ghost/index.html`).status).toBe(404);
+    expect(getWorkbench(`${WORKBENCH_SCHEME}://demo/missing.css`).status).toBe(404);
+  });
+
+  it.each([
+    ["dot-prefixed host", `${WORKBENCH_SCHEME}://../a/index.html`],
+    ["percent-encoded slash in host", `${WORKBENCH_SCHEME}://a%2Fb/index.html`],
+    ["percent-encoded drive letter", `${WORKBENCH_SCHEME}://C%3A%5Cx/index.html`],
+  ])("rejects malicious workbench id (%s) with 403", (_label, url) => {
+    expect(getWorkbench(url).status).toBe(403);
+  });
+
+  it("rejects an encoded traversal file path that escapes the root with 403", () => {
+    expect(getWorkbench(`${WORKBENCH_SCHEME}://demo/..%2f..%2fsecret.txt`).status).toBe(403);
   });
 });

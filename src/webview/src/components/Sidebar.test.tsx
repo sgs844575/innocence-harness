@@ -28,7 +28,7 @@ function renderSidebar(extra: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       onOpenSettings={() => {}}
       onSearch={() => {}}
       onAutomation={() => {}}
-      onPlugins={() => {}}
+      onWorkbench={() => {}}
       {...extra}
     />,
   );
@@ -40,7 +40,7 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: /sidebar.nav.newChat/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /sidebar.nav.search/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /sidebar.nav.automation/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /sidebar.nav.plugins/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /sidebar.nav.workbench/ })).toBeTruthy();
     expect(screen.getByText("Ctrl+N")).toBeTruthy();
   });
 

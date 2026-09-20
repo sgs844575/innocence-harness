@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { loadUiState, patchUiState } from "../state/uiState";
 
-export type ShellView = "chat" | "settings" | "automation";
+export type ShellView = "chat" | "settings" | "automation" | "workbench";
 
 export interface AppShellNav {
   view: ShellView;

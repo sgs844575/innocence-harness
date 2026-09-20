@@ -9,6 +9,7 @@ import { registerMemoryIpc } from "./memoryIpc";
 import { registerSkillSettingsIpc } from "./skillSettingsIpc";
 import { registerCommandSettingsIpc } from "./commandSettingsIpc";
 import { registerHookSettingsIpc } from "./hookSettingsIpc";
+import { registerWorkbenchIpc } from "./workbenchIpc";
 import { registerSubagentSettingsIpc } from "./subagentSettingsIpc";
 import { registerPluginCatalogIpc } from "./pluginCatalogIpc";
 import { registerEditorIpc } from "./editorIpc";
@@ -473,6 +474,7 @@ export function registerIpcHandlers(): void {
   registerSkillSettingsIpc();
   registerCommandSettingsIpc();
   registerHookSettingsIpc();
+  registerWorkbenchIpc();
   registerMcpSettingsIpc();
   registerPluginCatalogIpc();
 

@@ -7,7 +7,7 @@
 export interface UiState {
   /** Last open conversation; null = landing page. */
   lastSessionId: string | null;
-  shellView: "chat" | "settings" | "automation";
+  shellView: "chat" | "settings" | "automation" | "workbench";
   sidebarOpen: boolean;
   sidebarView: "projects" | "groups";
   sidebarLayout: "tree" | "timeline";
@@ -59,7 +59,7 @@ export function loadUiState(storage: Storage | undefined = defaultStorage()): Ui
   const bool = (value: unknown, fallback: boolean) => (typeof value === "boolean" ? value : fallback);
   return {
     lastSessionId: typeof candidate.lastSessionId === "string" ? candidate.lastSessionId : null,
-    shellView: oneOf(candidate.shellView, ["chat", "settings", "automation"], "chat"),
+    shellView: oneOf(candidate.shellView, ["chat", "settings", "automation", "workbench"], "chat"),
     sidebarOpen: bool(candidate.sidebarOpen, true),
     sidebarView: oneOf(candidate.sidebarView, ["projects", "groups"], "projects"),
     sidebarLayout: oneOf(candidate.sidebarLayout, ["tree", "timeline"], "tree"),

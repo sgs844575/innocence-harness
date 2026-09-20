@@ -1,4 +1,4 @@
-// 侧栏：菜单块（新建/搜索/自动化/插件市场）+ 分组/项目芯片 + 收起全部 +
+// 侧栏：菜单块（新建/搜索/自动化/工作台）+ 分组/项目芯片 + 收起全部 +
 // 筛选弹出面板（视图：按项目/时间线；排序：更新时间/创建时间）+ 项目会话树 +
 // 底部用户行。项目视图按 workspaceRoot 聚合后再包「项目/任务」顶层分组
 // （SidebarProjectTree：可折叠、悬停拖拽调序、「+」新建项目/新会话）；
@@ -16,7 +16,7 @@ import {
   Filter,
   Folder,
   Hash,
-  LayoutGrid,
+  LayoutDashboard,
   ListTree,
   Search,
   Settings,
@@ -63,7 +63,7 @@ interface Props {
   onOpenSettings: () => void;
   onSearch: () => void;
   onAutomation: () => void;
-  onPlugins: () => void;
+  onWorkbench: () => void;
   /** 项目组「+」：选目录新建项目（缺省 = 不渲染该钮）。 */
   onNewProject?: () => void;
   /** 项目行「新建任务」：在该项目根下开新会话（缺省 = 不渲染该钮）。 */
@@ -79,13 +79,13 @@ interface Props {
 const NAV_ITEMS: readonly {
   icon: typeof CirclePlus;
   key: string;
-  action: "new" | "search" | "automation" | "plugins";
+  action: "new" | "search" | "automation" | "workbench";
   kbd?: string;
 }[] = [
   { icon: CirclePlus, key: "sidebar.nav.newChat", action: "new", kbd: "Ctrl+N" },
   { icon: Search, key: "sidebar.nav.search", action: "search", kbd: "Ctrl+K" },
   { icon: Workflow, key: "sidebar.nav.automation", action: "automation" },
-  { icon: LayoutGrid, key: "sidebar.nav.plugins", action: "plugins" },
+  { icon: LayoutDashboard, key: "sidebar.nav.workbench", action: "workbench" },
 ];
 
 export function Sidebar({
@@ -105,7 +105,7 @@ export function Sidebar({
   onOpenSettings,
   onSearch,
   onAutomation,
-  onPlugins,
+  onWorkbench,
   onNewProject,
   onNewTaskInProject,
   onOpenProjectFile,
@@ -172,7 +172,7 @@ export function Sidebar({
     if (action === "new") return onNew;
     if (action === "search") return onSearch;
     if (action === "automation") return onAutomation;
-    return onPlugins;
+    return onWorkbench;
   };
 
   return (

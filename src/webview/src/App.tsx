@@ -16,6 +16,7 @@ import { ChatView } from "./components/ChatView";
 import { SettingsView, type SettingsSection } from "./components/SettingsView";
 import { SettingsSidebar } from "./components/SettingsSidebar";
 import { AutomationView } from "./components/AutomationView";
+import { WorkbenchView } from "./components/workbench/WorkbenchView";
 import { SearchDialog } from "./components/SearchDialog";
 import { useSessions, projectName } from "./state/useSessions";
 import { useChatStream } from "./state/useChatStream";
@@ -831,7 +832,7 @@ export function App(): React.JSX.Element {
             onOpenSettings={openSettings}
             onSearch={() => setSearchOpen(true)}
             onAutomation={() => setView("automation")}
-            onPlugins={() => { setSettingsSection("plugins"); setView("settings"); }}
+            onWorkbench={() => setView("workbench")}
             onNewProject={hasBridge() ? () => void openWorkspace() : undefined}
             onNewTaskInProject={(root) => {
               sessions.setPendingProject(root);
@@ -918,6 +919,21 @@ export function App(): React.JSX.Element {
         }
         if (nav.view === "automation") {
           return <AutomationView t={t} onBack={nav.backToChat} />;
+        }
+        if (nav.view === "workbench") {
+          return (
+            <WorkbenchView
+              t={t}
+              api={hasBridge() ? api : undefined}
+              onBack={nav.backToChat}
+              onOpenChat={(dir, prompt) => {
+                sessions.setPendingProject(dir);
+                sessions.newSession();
+                if (prompt) setDraft({ text: prompt, nonce: Date.now() });
+                setView("chat");
+              }}
+            />
+          );
         }
         if (landing) {
           return (

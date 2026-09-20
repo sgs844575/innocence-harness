@@ -40,6 +40,7 @@ const subscribeTask = <T>(channel: string, cb: (payload: T) => void): (() => voi
 import { SkillSettingsChannels as skillChannels } from "../shared/skillSettingsIpc";
 import { CommandSettingsChannels as commandChannels } from "../shared/commandSettingsIpc";
 import { HookSettingsChannels as hookChannels } from "../shared/hookSettingsIpc";
+import { WorkbenchChannels as workbenchChannels } from "../shared/workbenchIpc";
 const api: InnocenceCodeApi = {
   skillSettingsList: (target) => ipcRenderer.invoke(skillChannels.skillSettingsList, target),
   skillSettingsEnable: (target, id, enabled) => ipcRenderer.invoke(skillChannels.skillSettingsEnable, target, id, enabled),
@@ -54,6 +55,12 @@ const api: InnocenceCodeApi = {
   hookSettingsList: (target) => ipcRenderer.invoke(hookChannels.hookSettingsList, target),
   hookSettingsCreate: (target, hook) => ipcRenderer.invoke(hookChannels.hookSettingsCreate, target, hook),
   hookSettingsRemove: (target, index) => ipcRenderer.invoke(hookChannels.hookSettingsRemove, target, index),
+  workbenchList: () => ipcRenderer.invoke(workbenchChannels.workbenchList),
+  workbenchCreate: (name) => ipcRenderer.invoke(workbenchChannels.workbenchCreate, name),
+  workbenchRemove: (id) => ipcRenderer.invoke(workbenchChannels.workbenchRemove, id),
+  workbenchWatch: (id) => ipcRenderer.invoke(workbenchChannels.workbenchWatch, id),
+  workbenchUnwatch: (id) => ipcRenderer.invoke(workbenchChannels.workbenchUnwatch, id),
+  onWorkbenchChanged: (cb) => subscribe(workbenchChannels.workbenchChanged, cb as never),
   pluginCatalogSnapshot: (force?: boolean) => ipcRenderer.invoke(PluginCatalogChannels.pluginCatalogSnapshot, force === true),
   pluginMarketAdd: (source) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketAdd, source),
   pluginMarketRefresh: (id) => ipcRenderer.invoke(PluginCatalogChannels.pluginMarketRefresh, id),

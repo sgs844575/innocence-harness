@@ -9,6 +9,7 @@ import path from "node:path";
 export const APP_SCHEME = "innocenceharness";
 export const PLUGIN_SCHEME = "innocenceharness-plugin";
 export const CONTENT_SCHEME = "innocenceharness-content";
+export const WORKBENCH_SCHEME = "innocenceharness-workbench";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -180,6 +181,56 @@ const PLUGIN_CORS = { "access-control-allow-origin": "*" } as const;
 
 function pluginResponse(body: string, status: number): Response {
   return new Response(body, { status, headers: PLUGIN_CORS });
+}
+
+// ---- 工作台协议（innocenceharness-workbench://<id>/<file...>）：工作台
+// iframe 文档源——单根（工作台存储根）、与应用 scheme 同一 MIME 表（含
+// text/html），纯 id + 根内守卫与插件 scheme 同款；空路径回落 index.html。
+
+export function registerWorkbenchScheme(): void {
+  // Must be called before app is ready. corsEnabled：工作台 iframe 的文档源
+  // 与渲染层源不同（iframe 文档加载需 scheme 参与 CORS）。
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: WORKBENCH_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+      },
+    },
+  ]);
+}
+
+export function handleWorkbenchScheme(root: string): void {
+  const base = path.resolve(root);
+  protocol.handle(WORKBENCH_SCHEME, (request) => {
+    let id = "";
+    let rel = "";
+    try {
+      const url = new URL(request.url);
+      id = decodeURIComponent(url.hostname);
+      rel = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    } catch {
+      return pluginResponse("Forbidden", 403);
+    }
+    if (!isPlainPluginId(id)) {
+      return pluginResponse("Forbidden", 403);
+    }
+    const resolved = path.normalize(path.join(base, id, rel === "" ? "index.html" : rel));
+    if (!isInsideRoot(resolved, base)) {
+      return pluginResponse("Forbidden", 403);
+    }
+    try {
+      // fs 直读（同 app/plugin scheme 的 asar 安全理由）。
+      const body = fs.readFileSync(resolved);
+      const type = MIME[path.extname(resolved).toLowerCase()] ?? "application/octet-stream";
+      return new Response(body, { headers: { ...PLUGIN_CORS, "content-type": type } });
+    } catch {
+      return pluginResponse(`Not found: ${request.url}\n`, 404);
+    }
+  });
 }
 
 // ---- 附件内容直显（规格 §10.8：受控同源内容协议，不用巨型 data URL）-------

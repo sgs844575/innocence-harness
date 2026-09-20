@@ -9,6 +9,8 @@ import {
   registerAppScheme,
   registerContentScheme,
   registerPluginScheme,
+  handleWorkbenchScheme,
+  registerWorkbenchScheme,
 } from "./protocol";
 import {
   bindSessionTaskRoute,
@@ -34,6 +36,7 @@ import {
 } from "./harnessGlue";
 import { defaultUserPluginRoot } from "./pluginBoot/compose";
 import { disposePluginCatalog } from "./pluginCatalogIpc";
+import { disposeWorkbenchWatchers } from "./workbenchIpc";
 import { createMainWindow, getMainWindow } from "./appWindow";
 import { createMainAppLifecycle } from "./mainAppLifecycle";
 import { createOwnedShutdown } from "./ownedShutdown";
@@ -51,6 +54,7 @@ import { createDockTerminalIpcService, registerDockTerminalIpc, type DockTermina
 import { recoverPersistedTaskRuntimes, wireTaskRuntimeIpc, type TaskRuntimeIpcDeps } from "./taskRuntimeIpc";
 import { currentTestOverrides } from "./testOverrides";
 import { appDataRoot, initAppDataRoot } from "./appDataRoot";
+import { workbenchRoot } from "./workbenchStore";
 import { cleanupElectronDebris, defaultDataRoot, migrateAppData, readDataRootPointer } from "./userDataRoot";
 import { migrateLegacyTranscripts } from "./sessionFiles";
 import { applyEarlyBootSettings } from "./earlyBoot";
@@ -110,6 +114,7 @@ if (process.platform === "win32") app.setAppUserModelId("InnocenceHarness");
 registerAppScheme();
 registerPluginScheme();
 registerContentScheme();
+registerWorkbenchScheme();
 
 /** Terminal IPC service — disposed on quit so no shell trees survive exit. */
 let terminalService: TerminalIpcService | undefined;
@@ -165,6 +170,8 @@ if (!gotLock) {
       });
       // 附件内容直显（CAS → innocenceharness-content://obj/<key>）。
       handleContentScheme(attachmentStore());
+      // 工作台文档源（innocenceharness-workbench://<id>/<file>，工作台存储根）。
+      handleWorkbenchScheme(workbenchRoot());
       initSessionStore(appDataRoot());
       registerIpcHandlers();
       await initHarness();
@@ -290,6 +297,7 @@ if (!gotLock) {
     autoArchiveService?.stop();
     disposeKeepAwake();
     disposeComputerActivity();
+    disposeWorkbenchWatchers();
     const phase = shutdown.onBeforeQuit();
     if (phase === "release") return;
     e.preventDefault();

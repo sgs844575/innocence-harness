@@ -2,6 +2,7 @@ import { skillsZh, skillsEn } from "./skillsI18n";
 import { mcpZh, mcpEn } from "./mcpI18n";
 import { commandsZh, commandsEn } from "./commandsI18n";
 import { hooksZh, hooksEn } from "./hooksI18n";
+import { workbenchZh, workbenchEn } from "./workbenchI18n";
 // 极简 i18n 字典：zh-CN 为主，en-US 兜底；两字典键集必须一致（i18n.test.ts 钉住）。
 export type Dict = Record<string, string>;
 import { pluginCatalogEn, pluginCatalogZh } from "./pluginCatalogI18n";
@@ -11,6 +12,7 @@ export const zhCN: Dict = {
   ...skillsZh,
   ...commandsZh,
   ...hooksZh,
+  ...workbenchZh,
   ...pluginCatalogZh,
   ...mcpZh,
   ...builtinPluginZh,
@@ -68,7 +70,6 @@ export const zhCN: Dict = {
   "sidebar.nav.newChat": "新建任务",
   "sidebar.nav.search": "搜索",
   "sidebar.nav.automation": "自动化",
-  "sidebar.nav.plugins": "插件市场",
   "sidebar.projects": "项目",
   "sidebar.groups": "分组",
   "sidebar.filter": "筛选会话",
@@ -616,6 +617,7 @@ export const enUS: Dict = {
   ...skillsEn,
   ...commandsEn,
   ...hooksEn,
+  ...workbenchEn,
   ...pluginCatalogEn,
   ...mcpEn,
   ...builtinPluginEn,
@@ -673,7 +675,6 @@ export const enUS: Dict = {
   "sidebar.nav.newChat": "New task",
   "sidebar.nav.search": "Search",
   "sidebar.nav.automation": "Automations",
-  "sidebar.nav.plugins": "Plugin market",
   "sidebar.projects": "Projects",
   "sidebar.groups": "Groups",
   "sidebar.filter": "Filter sessions",
