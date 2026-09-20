@@ -23,7 +23,7 @@ export function PluginRow({ entry, installed, t, busy, onToggle, onUpdate, onRem
       </button>
       <span className="hidden text-[12px] text-(--color-muted) sm:inline">{label(`state.${entry.state}`)}</span>
       <Switch tone="neutral" checked={entry.state === "active"} disabled={busy || !entry.toggleable || entry.via === "project"} label={`${label("enabled")} ${title}`} onChange={onToggle} />
-      <button className="rounded p-1 text-(--color-muted) hover:bg-(--color-hover)" aria-label={`${label("details")} ${title}`} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronDown size={15} className={open ? "rotate-180" : ""} /></button>
+      <button className="rounded p-1 text-(--color-muted) hover:bg-(--color-hover)" aria-label={`${label("details")} ${title}`} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronDown size={15} className={`transition-transform duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${open ? "rotate-180" : ""}`} /></button>
     </div>
     {open && <div className="space-y-3 border-t border-(--color-hairline) px-4 py-4 text-[12px]">
       {entry.via === "project" && <p className="text-(--color-tool-warn)">{label("projectOverride")}</p>}

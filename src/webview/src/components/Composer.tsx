@@ -273,7 +273,7 @@ export function Composer({
 
   // 反色圆角动作钮（参考规格）：品牌底（暗色=白）+ 反色图标。
   const squareButton =
-    "grid size-7 shrink-0 place-items-center rounded-lg bg-(--color-brand) text-(--color-inverse) transition-opacity hover:opacity-80 active:scale-95 disabled:opacity-30";
+    "grid size-7 shrink-0 place-items-center rounded-lg bg-(--color-brand) text-(--color-inverse) transition-[opacity,transform] duration-(--duration-quick) ease-(--ease-smooth-out) motion-reduce:transition-none hover:opacity-80 active:scale-95 disabled:opacity-30";
 
   return (
     <div data-testid="chat-composer" className="relative w-full">

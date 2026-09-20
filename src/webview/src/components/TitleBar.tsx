@@ -98,7 +98,7 @@ export function TitleBar({
 
       {/* 右段：黑色主区的一部分（与 main 连成一体），侧栏展开时左上 12px 圆角。 */}
       <div
-        className={`flex min-w-0 flex-1 items-center bg-(--color-background) transition-[border-radius] duration-200 ease-out motion-reduce:transition-none ${
+        className={`flex min-w-0 flex-1 items-center bg-(--color-background) transition-[border-radius] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${
           sidebarOpen ? "rounded-tl-[12px]" : "rounded-none"
         }`}
       >

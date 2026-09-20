@@ -188,7 +188,7 @@ export function GroupsView({
                 title={`${isCollapsed ? t("sidebar.expand") : t("sidebar.collapse")} ${group.name}`}
                 className="text-(--color-muted)"
               >
-                <ChevronRight size={13} className={isCollapsed ? "" : "rotate-90"} />
+                <ChevronRight size={13} className={`transition-transform duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${isCollapsed ? "" : "rotate-90"}`} />
               </button>
               <Hash size={13} className="shrink-0" style={{ color: groupColorVar(group.color) }} aria-hidden />
               <span className="truncate font-medium text-(--color-foreground)">{group.name}</span>

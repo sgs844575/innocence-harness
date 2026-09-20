@@ -48,7 +48,7 @@ export function ThinkingRow({
         <ChevronRight
           size={16}
           aria-hidden
-          className={`size-4 shrink-0 text-(--color-faint) transition-[transform,opacity] motion-reduce:transition-none ${
+          className={`size-4 shrink-0 text-(--color-faint) transition-[transform,opacity] duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${
             open ? "rotate-90 opacity-100" : "opacity-0 group-hover/reasoning:opacity-100"
           }`}
         />

@@ -71,10 +71,10 @@ export function AutomationView({
                 type="button"
                 onClick={() => void toggle(item)}
                 aria-pressed={item.enabled}
-                className={`h-5 w-9 shrink-0 rounded-full transition-colors ${item.enabled ? "bg-(--color-accent)" : "bg-(--color-border)"}`}
+                className={`h-5 w-9 shrink-0 rounded-full transition-colors duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${item.enabled ? "bg-(--color-accent)" : "bg-(--color-border)"}`}
               >
                 <span
-                  className={`block size-4 rounded-full bg-(--color-foreground-strong) transition-transform ${
+                  className={`block size-4 rounded-full bg-(--color-foreground-strong) transition-transform duration-(--duration-fast) ease-(--ease-bounce) motion-reduce:transition-none ${
                     item.enabled ? "translate-x-[18px]" : "translate-x-[2px]"
                   }`}
                 />

@@ -113,7 +113,7 @@ export function FileExplorer({ t, root, onBack, onOpenFile }: Props): React.JSX.
               aria-expanded={expanded.has(entry.rel)}
               className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-left text-(--color-foreground) hover:bg-(--color-hover)"
             >
-              <ChevronRight size={12} className={`shrink-0 text-(--color-faint) ${expanded.has(entry.rel) ? "rotate-90" : ""}`} />
+              <ChevronRight size={12} className={`shrink-0 text-(--color-faint) transition-transform duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${expanded.has(entry.rel) ? "rotate-90" : ""}`} />
               <Folder size={13} className="shrink-0 text-(--color-faint)" aria-hidden />
               <span className="min-w-0 truncate">{entry.name}</span>
               {dot(entry.rel)}

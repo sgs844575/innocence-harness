@@ -280,7 +280,7 @@ export function GitCapsule({
               onClick={() => setProcessOpen((value) => !value)}
               className={`${row} text-(--color-muted) hover:text-(--color-foreground)`}
             >
-              <ChevronRight size={12} className={`transition-transform motion-reduce:transition-none ${processOpen ? "rotate-90" : ""}`} />
+              <ChevronRight size={12} className={`transition-transform duration-(--duration-fast) ease-(--ease-smooth-out) motion-reduce:transition-none ${processOpen ? "rotate-90" : ""}`} />
               <span>{t("capsule.process")}</span>
               <span className="ml-auto font-mono text-(--color-tool-ok)">
                 {done}/{data.todos.length}
