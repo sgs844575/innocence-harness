@@ -82,9 +82,15 @@ async function tempWorkspace(files: Record<string, string>): Promise<string> {
 // 形态走通用装载链——仅 Windows 宿主注册 computer_screenshot 与
 // computer_click/computer_type/computer_key/computer_scroll 五个工具；
 // 非 Windows 宿主 apply 直接返回，不注册任何工具。
+// instructions 为工作区指令注入插件（AGENT.md 注入新会话首条消息）：默认
+// 导出是工厂（同 creation/reminders 形态），由宿主 factoryPlugin 装配并
+// 传入会话工作区根与延续会话信号。
+// workspace-clean 为工作区清洁纪律插件：默认导出即插件对象（name 同 id），
+// 静态形态走通用装载链——向系统提示词注册共享桶片段（任务收尾清理本任务
+// 创建的过程临时文件 + 工具优先执行纪律）。
 const MANIFEST_IDS = [
   "fs", "shell", "subagent", "skills", "mcp", "ssh", "archive", "todo",
-  "reference", "web", "computer", "builtin-skills", "reminders",
+  "reference", "web", "computer", "builtin-skills", "reminders", "instructions", "workspace-clean",
   "default", "creation", "skills-creator", "plan", "focus", "minimal", "learning", "auto", "coordinator",
   "planflow",
   "memory",
@@ -135,6 +141,8 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       computer: "computer",
       "builtin-skills": "builtin-skills",
       reminders: "reminders",
+      instructions: "instructions",
+      "workspace-clean": "workspace-clean",
       default: "default",
       creation: "creation",
       "skills-creator": "skills-creator",
