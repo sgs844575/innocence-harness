@@ -158,35 +158,41 @@ describe("Edit tool", () => {
   });
 
   it("not-found failures locate the nearest similar region and prescribe the Read window", async () => {
-    // 缩进不同导致精确匹配失败：失败结果指向相似区段行号与 Read 参数。
+    // 折行/空白差异已被策略链与归一吸收——留给失败兜底的是连宽容匹配都
+    // 无法对应的形态：单行内部空白不同（无任何策略可吸收）。
     await writeTool.execute(
-      { path: "indent.txt", content: "header\n  alpha()\n    beta = 1\nfooter\n" },
-      ctx(),
+      { path: "locate.txt", content: "header\n  alpha()\n    beta = 1\nfooter\n" },
+      ctx("Write"),
     );
-    const miss = await editTool.execute(
-      { path: "indent.txt", old_string: "alpha()\n  beta = 1", new_string: "x" },
-      ctx(),
+    // 整段空格折成单空格的相似区段：探测定位到第 2 行并给 Read 窗口。
+    const near = await editTool.execute(
+      { path: "locate.txt", old_string: "alpha() beta = 1", new_string: "x" },
+      ctx("Edit"),
     );
-    expect(miss.isError).toBe(true);
-    expect(miss.content).toContain("第 2 行附近有相似内容");
-    expect(miss.content).toContain("offset=1, limit=20");
+    expect(near.isError).toBe(true);
+    expect(near.content).toContain("第 2 行附近有相似内容");
+    expect(near.content).toContain("offset=1, limit=20");
 
-    // 行尾空白差异同样可定位。
-    await writeTool.execute({ path: "trailing.txt", content: "a = 1 \nb = 2\n" }, ctx());
-    const trailing = await editTool.execute(
-      { path: "trailing.txt", old_string: "a = 1\nb = 2", new_string: "x" },
-      ctx(),
-    );
-    expect(trailing.content).toContain("第 1 行附近有相似内容");
-
-    // 完全无关内容：退回通用“先 Read 核对原文”指引，不带误导性定位。
+    // 完全无关内容：退回通用"先 Read 核对原文"指引，不带误导性定位。
     const unrelated = await editTool.execute(
-      { path: "indent.txt", old_string: "totally absent", new_string: "x" },
-      ctx(),
+      { path: "locate.txt", old_string: "totally absent", new_string: "x" },
+      ctx("Edit"),
     );
     expect(unrelated.content).toContain("未找到");
     expect(unrelated.content).not.toContain("附近有相似内容");
-    expect(unrelated.content).toContain("请先 Read indent.txt");
+    expect(unrelated.content).toContain("请先 Read locate.txt");
+  });
+
+  it("line-trimmed matches hitting multiple occurrences keep line numbers in the failure", async () => {
+    // line_trimmed 命中的文本在文件里出现多次：按多处命中报行号。
+    await writeTool.execute({ path: "amb.txt", content: "aa bb\ncc aa bb\ndd\n" }, ctx("Write"));
+    const multi = await editTool.execute(
+      { path: "amb.txt", old_string: "  aa bb  ", new_string: "x" },
+      ctx("Edit"),
+    );
+    expect(multi.isError).toBe(true);
+    expect(multi.content).toContain("出现 2 次");
+    expect(multi.content).toContain("第 1, 2 行");
   });
 
   it("missing file returns a specific isError result instead of throwing", async () => {
@@ -194,6 +200,77 @@ describe("Edit tool", () => {
     expect(r.isError).toBe(true);
     expect(r.content).toContain("读取文件失败");
     expect(r.content).toContain("ENOENT");
+  });
+
+  it("CRLF files: LF old_string matches, replacements keep the CRLF style", async () => {
+    // 模型给 LF、文件是 CRLF：匹配成功且写回仍是 CRLF。
+    await fs.writeFile(path.join(root, "crlf.txt"), "alpha\r\nbeta\r\ngamma\r\n", "utf8");
+    const ok = await editTool.execute(
+      { path: "crlf.txt", old_string: "beta\n", new_string: "BETA\nextra\n" },
+      ctx("Edit"),
+    );
+    expect(ok.isError).toBeUndefined();
+    expect(ok.content).toContain("保持 CRLF 行尾");
+    const after = await fs.readFile(path.join(root, "crlf.txt"), "utf8");
+    expect(after).toBe("alpha\r\nBETA\r\nextra\r\ngamma\r\n");
+
+    // replace_all 同样保持 CRLF。
+    await fs.writeFile(path.join(root, "crlf2.txt"), "x\r\nx\r\ny\r\n", "utf8");
+    const all = await editTool.execute(
+      { path: "crlf2.txt", old_string: "x\n", new_string: "z\n", replace_all: true },
+      ctx("Edit"),
+    );
+    expect(all.content).toContain("2 处");
+    const afterAll = await fs.readFile(path.join(root, "crlf2.txt"), "utf8");
+    expect(afterAll).toBe("z\r\nz\r\ny\r\n");
+  });
+
+  it("LF files are never converted to CRLF", async () => {
+    // e.txt 当前为 AA/BB/AA：取唯一的 BB 做替换，写回不得混入 \r。
+    const after = await editTool.execute(
+      { path: "e.txt", old_string: "BB", new_string: "bb" },
+      ctx("Edit"),
+    );
+    expect(after.isError).toBeUndefined();
+    const content = await fs.readFile(path.join(root, "e.txt"), "utf8");
+    expect(content).not.toContain("\r");
+  });
+
+  it("strategy chain absorbs Read line-number prefixes and literal escapes", async () => {
+    await writeTool.execute(
+      { path: "prefixed.txt", content: "const a = 1;\nconst b = 2;\n" },
+      ctx("Write"),
+    );
+    // 模型把 Read 输出的行号前缀带进了 old_string。
+    const prefixed = await editTool.execute(
+      { path: "prefixed.txt", old_string: "1\tconst a = 1;\n2\tconst b = 2;", new_string: "const a = 10;\nconst b = 20;" },
+      ctx("Edit"),
+    );
+    expect(prefixed.isError).toBeUndefined();
+    const content = await fs.readFile(path.join(root, "prefixed.txt"), "utf8");
+    expect(content).toBe("const a = 10;\nconst b = 20;\n");
+
+    // 字面转义（\n）也能匹配真实换行，new_string 的转义同步反转义写入。
+    await writeTool.execute({ path: "esc.txt", content: "first\nsecond\n" }, ctx("Write"));
+    const escaped = await editTool.execute(
+      { path: "esc.txt", old_string: "first\\nsecond", new_string: "one\\ntwo" },
+      ctx("Edit"),
+    );
+    expect(escaped.isError).toBeUndefined();
+    const escContent = await fs.readFile(path.join(root, "esc.txt"), "utf8");
+    expect(escContent).toBe("one\ntwo\n");
+  });
+
+  it("strategy chain absorbs indentation drift", async () => {
+    await writeTool.execute(
+      { path: "indent2.txt", content: "def f():\n    alpha()\n    beta = 1\n" },
+      ctx("Write"),
+    );
+    const ok = await editTool.execute(
+      { path: "indent2.txt", old_string: "alpha()\n  beta = 1", new_string: "alpha(2)\n  beta = 2" },
+      ctx("Edit"),
+    );
+    expect(ok.isError).toBeUndefined();
   });
 });
 
