@@ -4,6 +4,7 @@ import type { PromptFragment } from "@innocenceharness/harness-system-prompt";
 // into src-only builds (tsconfig.build.json excludes the test-side imports).
 import type {} from "@innocenceharness/harness-agent";
 import { createInstallUserPluginTool } from "./installUserPlugin";
+import { createCreationDocsTool } from "./creationDocsTool";
 import { personaFragments } from "./fragments/persona";
 import { workflowFragments } from "./fragments/workflow";
 import { knowledgeFragments } from "./fragments/knowledge";
@@ -32,6 +33,7 @@ export function createCreationPlugin(options: { userRoot: string }) {
     apply(ctx: Context) {
       ctx.agents.register({ id: "creation", title: "Creation" });
       for (const fragment of creationFragments) ctx.systemPrompt.registerFragment(fragment);
+      ctx.tools.register(createCreationDocsTool());
       ctx.tools.register(createInstallUserPluginTool(options));
     },
   };

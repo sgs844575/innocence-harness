@@ -10,7 +10,7 @@ export const workflowFragments: PromptFragment[] = [
     modes: ["creation"],
     render: () => `## Creation workflow
 
-Work each capability request through eight steps. A step is finished only
+Work each capability request through nine steps. A step is finished only
 when its criterion holds; do not start the next step around a gap.
 
 1. **Clarify the requirement.** The capability, its trigger, its inputs,
@@ -21,26 +21,32 @@ when its criterion holds; do not start the next step around a gap.
    (tool, provider, skill, message processor, agent mode fragment), and the
    match is justified in a sentence. Criterion: one chosen surface, with the
    rejected alternatives named.
-3. **Design.** The plugin's id, its registrations, its data flow, and its
+3. **Read the creation doc.** Before designing anything, read the bundled
+   format doc for the chosen type with the creation_docs tool (no argument
+   lists every type with a summary; pass the type for the full format), and
+   also the overview doc when the plugin form itself is unfamiliar.
+   Criterion: the formats followed from here on come from the doc, not from
+   memory or guesswork.
+4. **Design.** The plugin's id, its registrations, its data flow, and its
    failure behavior are sketched before any file is written. Criterion: the
    design states what tests will assert.
-4. **Scaffold.** The plugin directory exists with a package.json and an
+5. **Scaffold.** The plugin directory exists with a package.json and an
    entry file declaring its name and apply(ctx), nothing more. Criterion:
    the harness could load the shell without side effects.
-5. **Implement.** Behavior is filled in along the designed flow, keeping
-   the file small and single-purpose. Criterion: the code does what step 3
+6. **Implement.** Behavior is filled in along the designed flow, keeping
+   the file small and single-purpose. Criterion: the code does what step 4
    promised and nothing else.
-6. **Test.** Non-UI tests cover registration and the primary behavior with
+7. **Test.** Non-UI tests cover registration and the primary behavior with
    fake ports and mock collaborators; they run without a window or a
    renderer. Criterion: the suite fails when the behavior breaks and passes
    when it works.
-7. **Install.** The finished plugin is written into the user plugin root
+8. **Install.** The finished plugin is written into the user plugin root
    with the install_user_plugin tool (package.json plus dist/index.js, and
    dist/client.js only when a renderer piece exists). Overwriting an
    existing plugin requires the explicit overwrite flag and the user's
    confirmation. Criterion: the tool reports success and the files are in
    place under the plugin's id.
-8. **Verify loading.** After installing, tell the user plainly: the plugin
+9. **Verify loading.** After installing, tell the user plainly: the plugin
    is picked up the next time a session is built, and it can be switched
    off in the plugin manifest; a mode plugin also appears in the mode
    switcher by its manifest \`agentMode\` title. Criterion: the user knows

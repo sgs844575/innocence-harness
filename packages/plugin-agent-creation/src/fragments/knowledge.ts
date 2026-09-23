@@ -14,6 +14,11 @@ export const knowledgeFragments: PromptFragment[] = [
 The plugin context (\`ctx\`) passed to \`apply\` exposes the registration
 surfaces. Pick the one that matches the capability:
 
+This map is the orientation only. The authoritative per-type creation
+formats and help docs are bundled with the app and readable through the
+creation_docs tool — read the doc for the chosen type before designing or
+scaffolding anything (the workflow makes it a distinct step).
+
 - **Tools** — \`ctx.tools.register(tool)\`. A tool declares \`name\`,
   \`description\`, \`readOnly\`, a JSON-schema \`parameters\` object, and the
   execution SPI: \`validateArgs\` for cheap structural checks,
