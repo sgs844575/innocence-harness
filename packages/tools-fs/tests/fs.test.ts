@@ -141,7 +141,10 @@ describe("Edit tool", () => {
     expect(ok.content).toContain("已替换 1 处");
     const dup = await editTool.execute({ path: "e.txt", old_string: "aa", new_string: "x" }, ctx());
     expect(dup.isError).toBe(true);
-    expect(dup.content).toContain("不唯一");
+    // 多处命中：列出全部行号并引导先 Read 再补充上下文。
+    expect(dup.content).toContain("出现 2 次");
+    expect(dup.content).toContain("第 1, 3 行");
+    expect(dup.content).toContain("请先 Read");
     const all = await editTool.execute(
       { path: "e.txt", old_string: "aa", new_string: "AA", replace_all: true },
       ctx(),
@@ -149,7 +152,41 @@ describe("Edit tool", () => {
     expect(all.content).toContain("2 处");
     const missing = await editTool.execute({ path: "e.txt", old_string: "zz", new_string: "x" }, ctx());
     expect(missing.isError).toBe(true);
-    expect(missing.content).toContain("不存在");
+    expect(missing.content).toContain("未找到");
+    expect(missing.content).toContain("请先 Read e.txt");
+    expect(missing.content).toContain("不要凭记忆连续重试");
+  });
+
+  it("not-found failures locate the nearest similar region and prescribe the Read window", async () => {
+    // 缩进不同导致精确匹配失败：失败结果指向相似区段行号与 Read 参数。
+    await writeTool.execute(
+      { path: "indent.txt", content: "header\n  alpha()\n    beta = 1\nfooter\n" },
+      ctx(),
+    );
+    const miss = await editTool.execute(
+      { path: "indent.txt", old_string: "alpha()\n  beta = 1", new_string: "x" },
+      ctx(),
+    );
+    expect(miss.isError).toBe(true);
+    expect(miss.content).toContain("第 2 行附近有相似内容");
+    expect(miss.content).toContain("offset=1, limit=20");
+
+    // 行尾空白差异同样可定位。
+    await writeTool.execute({ path: "trailing.txt", content: "a = 1 \nb = 2\n" }, ctx());
+    const trailing = await editTool.execute(
+      { path: "trailing.txt", old_string: "a = 1\nb = 2", new_string: "x" },
+      ctx(),
+    );
+    expect(trailing.content).toContain("第 1 行附近有相似内容");
+
+    // 完全无关内容：退回通用“先 Read 核对原文”指引，不带误导性定位。
+    const unrelated = await editTool.execute(
+      { path: "indent.txt", old_string: "totally absent", new_string: "x" },
+      ctx(),
+    );
+    expect(unrelated.content).toContain("未找到");
+    expect(unrelated.content).not.toContain("附近有相似内容");
+    expect(unrelated.content).toContain("请先 Read indent.txt");
   });
 
   it("missing file returns a specific isError result instead of throwing", async () => {
