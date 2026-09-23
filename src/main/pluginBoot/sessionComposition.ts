@@ -390,7 +390,7 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell" | "instructions",
   options: () =>
     | { dirs: string[] }
     | {
@@ -414,7 +414,11 @@ function factoryPlugin(
     | { sendToTeammate: SendToTeammatePort }
     | { askUser: AskUserPort }
     | FsPluginConfig
-    | ShellPluginConfig,
+    | ShellPluginConfig
+    | {
+        getWorkspaceRoot: () => string | undefined;
+        isContinuationSession?: () => boolean;
+      },
 ): ObjectPlugin {
     return {
     name: `factory:${id}`,
@@ -514,7 +518,7 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // bridge is host-owned, so a group child cannot bare-load the factory either.
 // "fs"/"shell" receive the settings-snapshot tool configs
 // (enhancedFindGrep/terminalShell — same composePlugins channel).
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team", "ask", "fs", "shell"]);
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team", "ask", "fs", "shell", "instructions"]);
 
 /**
  * fs 工厂入参（当次 settings 快照 → 工具行为）：
@@ -662,6 +666,19 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "reminders", () => ({
       getPermissionMode: () => resolvePermissionMode(),
       ...(reminderState?.getSessionUsage ? { getSessionUsage: reminderState.getSessionUsage } : {}),
+      ...(reminderState?.isContinuationSession
+        ? { isContinuationSession: reminderState.isContinuationSession }
+        : {}),
+    }));
+  } else if (!entry.disabled && id === "instructions") {
+    // Same factory shape as reminders: the staged default export is the
+    // workspace-instructions factory (AGENT.md injection into the first turn
+    // of new sessions). The workspace root is this composition's session
+    // root; the continuation getter reuses the reminders state (continuation
+    // only on the main route, where the runtime re-seeds stored transcripts —
+    // those already carry the injected envelope in their stored first turn).
+    plugin = factoryPlugin(boot, "instructions", () => ({
+      getWorkspaceRoot: () => workspaceRoot,
       ...(reminderState?.isContinuationSession
         ? { isContinuationSession: reminderState.isContinuationSession }
         : {}),

@@ -26,9 +26,9 @@ async function setup(extraSkills = false): Promise<Context> {
 }
 
 describe("builtin skills", () => {
-  it("registers seventeen skills with unique names", () => {
+  it("registers eighteen skills with unique names", () => {
     const names = builtinSkills.map((s) => s.name);
-    expect(new Set(names).size).toBe(17);
+    expect(new Set(names).size).toBe(18);
     expect(names).toEqual([
       "debugging",
       "code-review",
@@ -47,6 +47,7 @@ describe("builtin skills", () => {
       "autonomous-loop",
       "session-to-skill",
       "hooks-configuration",
+      "init",
     ]);
     for (const s of builtinSkills) {
       expect(s.description.length).toBeGreaterThan(20);
@@ -72,7 +73,7 @@ describe("builtin skills", () => {
     }
   });
 
-  it("registers all sixteen on the skills service in order", async () => {
+  it("registers all on the skills service in order", async () => {
     const ctx = await setup();
     expect(ctx.skills.all().map((s) => s.name)).toEqual(
       builtinSkills.map((s) => s.name),
@@ -83,7 +84,19 @@ describe("builtin skills", () => {
     const ctx = await setup(true);
     const debugging = ctx.skills.get("debugging");
     expect(await debugging?.loadBody()).toBe("disk body");
-    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(17);
+    expect(ctx.skills.all().map((s) => s.name)).toHaveLength(18);
+  });
+
+  it("init targets AGENT.md, prefers editing existing candidates, and mentions auto-injection", () => {
+    const skill = builtinSkills.find((s) => s.name === "init");
+    expect(skill).toBeDefined();
+    expect(skill!.body).toMatch(/AGENT\.md/);
+    // 已有文件优先原地更新而非整体重写。
+    expect(skill!.body).toMatch(/update it in place/);
+    // 候选文件检查顺序。
+    expect(skill!.body).toMatch(/AGENT\.md, agent\.md, AGENTS\.md, agents\.md/);
+    // 写完提醒：新会话将自动加载该文件。
+    expect(skill!.body).toMatch(/automatically/);
   });
 
   it("is English and free of banned tokens", () => {

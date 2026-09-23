@@ -118,6 +118,10 @@ const BUILTIN_DESCRIPTORS = [
   { id: "computer", dependencies: [] },
   { id: "builtin-skills", dependencies: [] },
   { id: "reminders", dependencies: [] },
+  // instructions 为工作区指令注入插件（AGENT.md 注入新会话首条消息）：
+  // 默认导出是工厂（同 creation/reminders 形态），由宿主 factoryPlugin 装配
+  // 并传入会话工作区根与延续会话信号。
+  { id: "instructions", dependencies: [] },
   { id: "default", kind: "agent-mode", dependencies: [] },
   { id: "creation", kind: "agent-mode", dependencies: [] },
   { id: "skills-creator", kind: "agent-mode", dependencies: [] },
@@ -154,6 +158,7 @@ const PLUGINS = [
   { dir: "packages/plugin-task", id: "task" },
   { dir: "packages/plugin-builtin-skills", id: "builtin-skills" },
   { dir: "packages/plugin-reminders", id: "reminders" },
+  { dir: "packages/plugin-instructions", id: "instructions" },
   { dir: "packages/provider-anthropic", id: "provider-anthropic" },
   { dir: "packages/provider-google", id: "provider-google" },
   { dir: "packages/provider-openai", id: "provider-openai" },

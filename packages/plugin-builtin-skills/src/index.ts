@@ -15,6 +15,7 @@ import { modelMigrationSkill } from "./skills/modelMigration";
 import { permissionAllowlistSkill } from "./skills/permissionAllowlist";
 import { harnessConfigurationSkill } from "./skills/harnessConfiguration";
 import { repoInstructionsSkill } from "./skills/repoInstructions";
+import { projectInitSkill } from "./skills/projectInit";
 import { memoryUpkeepSkill } from "./skills/memoryUpkeep";
 import { autonomousLoopSkill } from "./skills/autonomousLoop";
 import { sessionToSkillSkill } from "./skills/sessionToSkill";
@@ -43,10 +44,11 @@ export const builtinSkills = [
   autonomousLoopSkill,
   sessionToSkillSkill,
   hooksConfigurationSkill,
+  projectInitSkill,
 ] as const;
 
 /**
- * Built-in skill pack plugin — registers the seventeen resident skills on the
+ * Built-in skill pack plugin — registers the eighteen resident skills on the
  * spine skills service at apply time (no scanning; bodies are compiled
  * in). Name collisions are tolerated silently and resolved first-wins:
  * in manifest order this plugin mounts after the disk-scanning "skills"

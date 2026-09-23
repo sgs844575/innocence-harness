@@ -12,6 +12,7 @@ const labels: Record<string, [string, string, string, string]> = {
   computer: ["电脑控制", "查看屏幕并操作桌面应用。", "Computer control", "Read the screen and operate desktop apps."],
   "builtin-skills": ["内置技能集", "提供常用的开发和检查流程。", "Built-in workflows", "Common development and verification workflows."],
   reminders: ["任务提醒", "在执行过程中补充必要提示。", "Task reminders", "Provide relevant guidance during execution."],
+  instructions: ["工作区指令", "新会话首次对话时注入工作区指令文件（AGENT.md）。", "Workspace instructions", "Inject the workspace instruction file (AGENT.md) into the first chat of new sessions."],
   default: ["默认模式", "日常开发与通用任务。", "Default mode", "Everyday development and general tasks."],
   creation: ["创建模式", "创建可复用的插件与能力。", "Creation mode", "Create reusable plugins and capabilities."],
   plan: ["计划模式", "先分析需求并形成实施计划。", "Planning mode", "Analyze requirements and prepare an implementation plan."],
