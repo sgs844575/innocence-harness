@@ -14,6 +14,15 @@ export {
 } from "./proxy-fetch";
 export { classifyModelRequestError, formatUnknownError, streamOneHarnessStep, type HarnessStepEvent, type StreamOneHarnessStepRequest } from "./stream-step";
 export {
+  createTextToolCallGate,
+  parseTextToolCalls,
+  textToolCallTable,
+  type TextToolCall,
+  type TextToolCallGate,
+  type TextToolCallGateOutput,
+  type TextToolCallTable,
+} from "./text-tool-calls";
+export {
   AutomationCandidateSchema,
   createAutomationCandidateService,
   createStructuredOutputPort,

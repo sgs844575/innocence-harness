@@ -521,4 +521,123 @@ describe("streamOneHarnessStep", () => {
 
     expect(events).toEqual([{ type: "abort" }]);
   });
+
+  it("recovers a text-form tool call streamed as markup instead of a native tool_calls field", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: '<tool_call> <function=Bash> <parameter=command>' },
+          {
+            type: "text-delta",
+            id: "text-1",
+            delta: 'node .ws-probe\\count.cjs ".innocence" & echo -- & node .ws-probe\\count.cjs "plugins"',
+          },
+          { type: "text-delta", id: "text-1", delta: " </parameter> </function></tool_call>" },
+          { type: "text-end", id: "text-1" },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "stop" } },
+        ]),
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: { value: model, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [{ name: "Bash", description: "run", parameters: { type: "object" } }],
+      }),
+    );
+
+    expect(events).toEqual([
+      {
+        type: "usage",
+        usage: {
+          inputTokens: 3,
+          outputTokens: 2,
+          totalTokens: 5,
+          reasoningTokens: 1,
+          cachedInputTokens: 0,
+        },
+      },
+      {
+        type: "toolCall",
+        id: expect.stringMatching(/^textcall-/),
+        toolName: "Bash",
+        args: {
+          command: 'node .ws-probe\\count.cjs ".innocence" & echo -- & node .ws-probe\\count.cjs "plugins"',
+        },
+      },
+      {
+        type: "finish",
+        metadata: expect.objectContaining({ providerId: "test", modelId: "model", finishReason: "stop" }),
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("<tool_call>");
+  });
+
+  it("keeps prose answers untouched, including markup quoted after prose", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "Use the shell. Example: " },
+          { type: "text-delta", id: "text-1", delta: "<tool_call><function=Bash><parameter=command>dir</parameter></function></tool_call>" },
+          { type: "text-end", id: "text-1" },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "stop" } },
+        ]),
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: { value: model, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [{ name: "Bash", description: "run", parameters: { type: "object" } }],
+      }),
+    );
+
+    expect(events[0]).toEqual({
+      type: "text",
+      text: "Use the shell. Example: ",
+    });
+    expect(events[1]).toEqual({
+      type: "text",
+      text: "<tool_call><function=Bash><parameter=command>dir</parameter></function></tool_call>",
+    });
+    expect(events.some((event) => event.type === "toolCall")).toBe(false);
+  });
+
+  it("returns markup verbatim as text when the tool name is not registered", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "<tool_call><function=Shell><parameter=command>dir</parameter></function></tool_call>" },
+          { type: "text-end", id: "text-1" },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "stop" } },
+        ]),
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: { value: model, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [{ name: "Bash", description: "run", parameters: { type: "object" } }],
+      }),
+    );
+
+    const textEvent = events.find((event) => event.type === "text");
+    expect(textEvent).toEqual({
+      type: "text",
+      text: "<tool_call><function=Shell><parameter=command>dir</parameter></function></tool_call>",
+    });
+    expect(events.some((event) => event.type === "toolCall")).toBe(false);
+  });
 });

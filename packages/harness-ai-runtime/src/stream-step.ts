@@ -21,6 +21,7 @@ import { hasUsage, toUsageMetadata } from "./metadata";
 import { toSdkMessages, type AttachmentResolver } from "./message-mapping";
 import { modelProtocolOf, toSdkRequestOptions } from "./request-options";
 import { toSdkTools, type SchemaOnlyTools } from "./tool-mapping";
+import { createTextToolCallGate, textToolCallTable, type TextToolCallGateOutput } from "./text-tool-calls";
 
 export interface StreamOneHarnessStepRequest {
   model: ProviderModel;
@@ -54,6 +55,21 @@ export async function* streamOneHarnessStep(
     return;
   }
 
+  // 兼容端点可能把工具调用以纯文本标记输出：经门处理后要么放行原文，
+  // 要么在 finish 时还原成 toolCall 事件（见 text-tool-calls.ts）。
+  const textGate = createTextToolCallGate(textToolCallTable(request.tools));
+  const gateEvents = function* (outputs: readonly TextToolCallGateOutput[]): Generator<HarnessStepEvent> {
+    for (const output of outputs) {
+      if (output.kind === "text") {
+        if (output.text) yield { type: "text", text: output.text };
+      } else {
+        for (const call of output.calls) {
+          yield { type: "toolCall", id: call.id, toolName: call.toolName, args: call.args };
+        }
+      }
+    }
+  };
+
   try {
     // Anthropic prompt caching: the provider allows at most 4 cache
     // breakpoints per request. This runtime places exactly 2: breakpoint 1 at
@@ -85,13 +101,26 @@ export async function* streamOneHarnessStep(
       if (event.type === "finish") {
         const response = await result.response;
         responseId = typeof response.id === "string" && response.id.length > 0 ? response.id : undefined;
+        yield* gateEvents(textGate.finalize());
+      }
+      if (event.type === "text-delta") {
+        const released = textGate.pushText(event.text);
+        if (released) yield { type: "text", text: released };
+        continue;
+      }
+      if (event.type === "abort" || event.type === "error") {
+        const held = textGate.flushAsText();
+        if (held) yield { type: "text", text: held };
       }
       const mapped = mapStreamEvent(event, request.model, latestUsage, responseId);
       if (!mapped) continue;
       if (mapped.type === "usage") latestUsage = mapped.usage;
       yield mapped;
     }
+    yield* gateEvents(textGate.finalize());
   } catch (error) {
+    const held = textGate.flushAsText();
+    if (held) yield { type: "text", text: held };
     if (request.signal?.aborted) {
       yield { type: "abort" };
     } else {
