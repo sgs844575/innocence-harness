@@ -30,7 +30,7 @@
     "package:preflight": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/outPreflight.ts",
     "package:smoke": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/runPackageSmoke.ts",
     "icons:icns": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/generateIconIcns.ts",
-    "premake": "npm run build:plugins",
+    "premake": "npm run build:plugins && node --experimental-strip-types --experimental-default-type=module scripts/packaging/ensureSquirrel7z.ts",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",
     "typecheck:packages": "npm run typecheck --workspaces --if-present",

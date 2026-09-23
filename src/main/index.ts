@@ -1,7 +1,9 @@
 // InnocenceHarness main entry: single-instance lock, protocol registration,
 // then window.
 import { app, Menu, session } from "electron";
+import { spawn } from "node:child_process";
 import path from "node:path";
+import { squirrelEventFromArgv, squirrelShortcutAction } from "./squirrel-events";
 import {
   handleAppScheme,
   handleContentScheme,
@@ -66,45 +68,61 @@ import { startAutoArchive, type AutoArchiveService } from "./autoArchive";
 import { broadcastSidebar } from "./sessionEvents";
 import { resolveShellLaunch } from "@innocenceharness/terminal-pty";
 
+// Squirrel.Windows 安装事件（Windows 分发）：Setup/Update 在安装、更新、卸载
+// 时以 --squirrel-* 启动应用——安装/更新代建快捷方式、卸载移除，随后退出。
+// 必须先于一切启动副作用（数据根迁移、测试根、单实例锁、窗口）拦截；
+// 停留 1s 让分离拉起的 Update.exe 完成请求递交（官方样例同款节奏）。
+const squirrelEvent = squirrelEventFromArgv(process.argv);
+if (squirrelEvent !== null) {
+  const shortcut = squirrelShortcutAction(squirrelEvent, process.execPath);
+  if (shortcut) {
+    spawn(shortcut.exe, shortcut.args, { detached: true, stdio: "ignore" }).unref();
+  }
+  setTimeout(() => app.quit(), 1000);
+}
+
 // Test roots are opt-in through the centralized controlled marker. Packaged
 // production ignores all test override variables unless the acceptance launcher
 // also supplies the dedicated argument.
 const testOverrides = currentTestOverrides(app.isPackaged);
-if (testOverrides.userData) {
-  // 验收/测试根：Electron 缓存与会话数据都隔离到测试根。
-  app.setPath("userData", testOverrides.userData);
-  initAppDataRoot(testOverrides.userData);
-} else {
-  // 应用数据根与会话真相源：所有应用产生的数据（会话、设置、日志、凭据、
-  // 任务）都落在 ~/.innocence（用户改过存储位置时指针文件 data-root.json
-  // 优先），会话转写进 sessions/ 日期树（自描述 JSONL，实时追加，索引可由
-  // 扫描重建）。Electron 自身的 userData 不再重定向——Chromium 缓存/档案留
-  // 在默认 Roaming/<name>，历史重定向残留在数据根里的 Electron 垃圾一次性
-  // 清走。改名前的旧默认根（appData/InnocenceCode）与当前名根都作为迁移
-  // 源：应用数据项整项搬（目标存在跳过），transcripts 旧布局按会话逐文件
-  // 并入 sessions 树（见 sessionFiles），索引由启动扫描重建吸收。
-  const legacyRoots = [app.getPath("userData")];
-  const appDataDir = app.getPath("appData");
-  const preRenameRoot = appDataDir ? `${appDataDir}${path.sep}InnocenceCode` : "";
-  if (preRenameRoot && !legacyRoots.includes(preRenameRoot)) legacyRoots.push(preRenameRoot);
-  const dataRoot = readDataRootPointer(path.join(defaultDataRoot(), "data-root.json")) ?? defaultDataRoot();
-  const migrations: string[] = [];
-  for (const legacy of legacyRoots) {
-    migrations.push(...migrateAppData(legacy, dataRoot));
+if (squirrelEvent === null) {
+  if (testOverrides.userData) {
+    // 验收/测试根：Electron 缓存与会话数据都隔离到测试根。
+    app.setPath("userData", testOverrides.userData);
+    initAppDataRoot(testOverrides.userData);
+  } else {
+    // 应用数据根与会话真相源：所有应用产生的数据（会话、设置、日志、凭据、
+    // 任务）都落在 ~/.innocence（用户改过存储位置时指针文件 data-root.json
+    // 优先），会话转写进 sessions/ 日期树（自描述 JSONL，实时追加，索引可由
+    // 扫描重建）。Electron 自身的 userData 不再重定向——Chromium 缓存/档案留
+    // 在默认 Roaming/<name>，历史重定向残留在数据根里的 Electron 垃圾一次性
+    // 清走。改名前的旧默认根（appData/InnocenceCode）与当前名根都作为迁移
+    // 源：应用数据项整项搬（目标存在跳过），transcripts 旧布局按会话逐文件
+    // 并入 sessions 树（见 sessionFiles），索引由启动扫描重建吸收。
+    // Squirrel 事件运行跳过本块：安装器代跑不触碰数据根与迁移。
+    const legacyRoots = [app.getPath("userData")];
+    const appDataDir = app.getPath("appData");
+    const preRenameRoot = appDataDir ? `${appDataDir}${path.sep}InnocenceCode` : "";
+    if (preRenameRoot && !legacyRoots.includes(preRenameRoot)) legacyRoots.push(preRenameRoot);
+    const dataRoot = readDataRootPointer(path.join(defaultDataRoot(), "data-root.json")) ?? defaultDataRoot();
+    const migrations: string[] = [];
+    for (const legacy of legacyRoots) {
+      migrations.push(...migrateAppData(legacy, dataRoot));
+    }
+    const transcriptMigration = migrateLegacyTranscripts(dataRoot, legacyRoots);
+    migrations.push(
+      ...transcriptMigration.moved.map((id) => `migrated transcript ${id} into sessions tree`),
+      ...transcriptMigration.failed,
+    );
+    initAppDataRoot(dataRoot);
+    const debris = cleanupElectronDebris(dataRoot);
+    for (const outcome of [...migrations, ...debris]) logger.info(`data root migration: ${outcome}`);
   }
-  const transcriptMigration = migrateLegacyTranscripts(dataRoot, legacyRoots);
-  migrations.push(
-    ...transcriptMigration.moved.map((id) => `migrated transcript ${id} into sessions tree`),
-    ...transcriptMigration.failed,
-  );
-  initAppDataRoot(dataRoot);
-  const debris = cleanupElectronDebris(dataRoot);
-  for (const outcome of [...migrations, ...debris]) logger.info(`data root migration: ${outcome}`);
-}
 
-// 早期启动设置（硬件加速/代理/自定义 CA 的子进程环境）必须在 app ready 前
-// 施加；设置文件路径指向生效应用数据根。
-applyEarlyBootSettings(path.join(appDataRoot(), "harness-settings.json"));
+  // 早期启动设置（硬件加速/代理/自定义 CA 的子进程环境）必须在 app ready 前
+  // 施加；设置文件路径指向生效应用数据根。
+  applyEarlyBootSettings(path.join(appDataRoot(), "harness-settings.json"));
+}
 
 // Windows toast 通知需要稳定的 AppUserModelId（与打包元数据同一字符串），
 // 否则系统通知静默丢弃。
@@ -141,7 +159,9 @@ const broadcast = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
-const gotLock = app.requestSingleInstanceLock();
+// Squirrel 事件运行直接走「未取得锁」分支：不注册托盘/单实例/whenReady，
+// 主进程只等顶部排定的退出。
+const gotLock = squirrelEvent !== null ? false : app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
