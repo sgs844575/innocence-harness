@@ -166,4 +166,89 @@ describe("hydrateSessionMessages", () => {
     expect(assistants).toHaveLength(1);
     expect(assistants[0]!.parts.map((p) => p.type)).toEqual(["text", "toolCall", "toolResult", "text"]);
   });
+
+  // 附件回放（规格 §11）：转录里的合法附件 part 原样恢复；纯附件用户轮是
+  // 真实轮次，不并入前一助手气泡。
+  const attachmentPart = {
+    type: "attachment",
+    name: "shot.png",
+    source: { key: `sha256:${"a".repeat(64)}`, mediaType: "image/png", byteLength: 3 },
+    representations: [
+      { kind: "image", content: { key: `sha256:${"b".repeat(64)}`, mediaType: "image/png", byteLength: 3 } },
+    ],
+  };
+
+  it("restores attachment parts on reloaded user turns", () => {
+    const file = writeTranscript([
+      {
+        at: "2026-08-31T00:00:00.000Z",
+        type: "turn-v2",
+        turnId: "t1",
+        completion,
+        messages: [
+          { role: "user", parts: [{ type: "text", text: "看这张图" }, attachmentPart] },
+          { role: "assistant", parts: [{ type: "text", text: "答" }] },
+        ],
+      },
+    ]);
+    const rec = record();
+    hydrateSessionMessages(rec, { transcriptFile: file, persistIndex });
+    const user = rec.messages.find((m) => m.role === "user");
+    expect(user).toBeDefined();
+    const attachments = user!.parts.filter((p) => p.type === "attachment");
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({ type: "attachment", name: "shot.png" });
+    expect((attachments[0] as { source: { key: string } }).source.key).toBe(`sha256:${"a".repeat(64)}`);
+    expect(textsOf(user!)).toBe("看这张图");
+  });
+
+  it("keeps attachment-only user turns standalone (never merged into the previous assistant)", () => {
+    const file = writeTranscript([
+      {
+        at: "2026-08-31T00:00:00.000Z",
+        type: "turn-v2",
+        turnId: "t1",
+        completion,
+        messages: [
+          { role: "user", parts: [{ type: "text", text: "第一问" }] },
+          { role: "assistant", parts: [{ type: "text", text: "第一答" }] },
+          { role: "user", parts: [attachmentPart] },
+          { role: "assistant", parts: [{ type: "text", text: "第二答" }] },
+        ],
+      },
+    ]);
+    const rec = record();
+    hydrateSessionMessages(rec, { transcriptFile: file, persistIndex });
+    expect(rec.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    const attachmentTurn = rec.messages[2]!;
+    expect(attachmentTurn.parts.some((p) => p.type === "attachment")).toBe(true);
+    expect(textsOf(rec.messages[1]!)).toBe("第一答");
+  });
+
+  it("drops malformed attachments but keeps the message text", () => {
+    const file = writeTranscript([
+      {
+        at: "2026-08-31T00:00:00.000Z",
+        type: "turn-v2",
+        turnId: "t1",
+        completion,
+        messages: [
+          {
+            role: "user",
+            parts: [
+              { type: "text", text: "看图" },
+              { type: "attachment", name: "bad.png", source: { key: "not-a-ref" } },
+            ],
+          },
+          { role: "assistant", parts: [{ type: "text", text: "答" }] },
+        ],
+      },
+    ]);
+    const rec = record();
+    hydrateSessionMessages(rec, { transcriptFile: file, persistIndex });
+    const user = rec.messages.find((m) => m.role === "user");
+    expect(user).toBeDefined();
+    expect(user!.parts.some((p) => p.type === "attachment")).toBe(false);
+    expect(textsOf(user!)).toBe("看图");
+  });
 });

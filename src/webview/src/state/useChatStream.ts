@@ -1,6 +1,7 @@
 // 会话聊天流：按激活会话装载消息 + 订阅流式事件进 reducer。
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { AttachmentPart, ChatMessage, ChatQuestionResponse, PermissionChoice } from "../../../shared/ipc";
+import { attachmentPartsOf } from "../../../shared/ipc";
 import { api, hasBridge } from "../lib/ipc";
 import { initialChatStreamState, reduceChatStream, type ChatStreamState } from "./chatStream";
 
@@ -159,6 +160,11 @@ export function useChatStream({
     async (messageId: string, text: string) => {
       const content = text.trim();
       if (!content) return;
+      // 编辑重发保留被编辑消息的附件（替换文本、保留图片）：乐观气泡与
+      // 主进程落账同一形状（[text, ...attachments]）。
+      const attachments = attachmentPartsOf(
+        stateRef.current.messages.find((m) => m.id === messageId)?.parts ?? [],
+      );
       let sessionId: string;
       try {
         sessionId = await ensureSessionForSend();
@@ -173,7 +179,7 @@ export function useChatStream({
         message: {
           id,
           role: "user",
-          parts: [{ type: "text", text: content }],
+          parts: [{ type: "text", text: content }, ...attachments],
           createdAt: Date.now(),
         },
       });

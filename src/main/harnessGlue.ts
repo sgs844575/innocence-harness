@@ -27,7 +27,7 @@ import {
   mergeSettings,
   type HarnessSettings as PkgSettings,
 } from "@innocenceharness/harness-electron";
-import { IPC, type AgentModeInfo, type AttachmentPart, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
+import { IPC, attachmentPartsOf, type AgentModeInfo, type AttachmentPart, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
 import type { Message } from "@innocenceharness/harness-session";
 import { createAttachmentResolver } from "./attachments";
 import type { PluginBoot } from "./pluginBoot";
@@ -984,28 +984,33 @@ export function cancelSubagentRun(sessionId: string, childId: string): boolean {
 /**
  * Edit-and-resend (replace semantics): truncates the edited message and
  * everything after it (store + rewritten transcript), rewinds the route's
- * in-memory history, then starts a fresh turn with the edited text. Guards:
- * a running route and a task-bound session both refuse — a live turn would
- * race the rewind, and the task layer's checkpoints cannot be rewound with
- * the text layer. `newMessageId` is the renderer's optimistic bubble id,
- * adopted for the persisted user message so a later resend can find it.
- * Returns the new assistant message id.
+ * in-memory history, then starts a fresh turn with the edited text. The
+ * edited message's attachment parts are preserved verbatim onto the resent
+ * turn (replace the text, keep the images). Guards: a running route and a
+ * task-bound session both refuse — a live turn would race the rewind, and
+ * the task layer's checkpoints cannot be rewound with the text layer.
+ * `newMessageId` is the renderer's optimistic bubble id, adopted for the
+ * persisted user message so a later resend can find it. Returns the new
+ * assistant message id.
  */
 export function resendChatTurn(sessionId: string, fromMessageId: string, text: string, newMessageId?: string): string {
   if (runtime.isRouteRunning(sessionId)) throw new Error("session is streaming");
   if (sessionTaskRoutes.has(sessionId)) throw new Error("task-bound session cannot rewind");
   const trimmed = text.trim();
   if (!trimmed) throw new Error("empty message");
+  const preserved = attachmentPartsOf(
+    sessions.listMessages(sessionId).find((m) => m.id === fromMessageId)?.parts ?? [],
+  );
   const rewind = sessions.truncateMessagesFrom(sessionId, fromMessageId);
   if (!rewind) throw new Error("message not found");
   runtime.rewindHistory(sessionId, rewind.keptUserTurns);
   sessions.appendMessage(sessionId, {
     id: sessions.adoptMessageId(sessionId, newMessageId),
     role: "user",
-    parts: [{ type: "text", text: trimmed }],
+    parts: [{ type: "text", text: trimmed }, ...preserved],
     createdAt: Date.now(),
   });
-  return sendChatTurn(sessionId, trimmed);
+  return sendChatTurn(sessionId, trimmed, preserved);
 }
 
 /** Releases one chat session's agent resources (aborts runs, disposes its

@@ -309,30 +309,7 @@ export function Composer({
         }}
       >
         {mode === "landing" && header && <div className="px-0.5 pt-0.5">{header}</div>}
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setCaret(e.target.selectionStart ?? e.target.value.length);
-            autosize(e.target);
-          }}
-          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
-          onKeyDown={onKeyDown}
-          onPaste={(event) => {
-            const files = event.clipboardData?.files;
-            if (!files || files.length === 0) return;
-            event.preventDefault();
-            void importFiles([...files]);
-          }}
-          placeholder={t(mode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
-          rows={1}
-          aria-expanded={suggestOpen}
-          aria-controls={suggestOpen ? listboxId : undefined}
-          aria-activedescendant={suggestOpen && rows.length > 0 ? `${listboxId}-opt-${active}` : undefined}
-          className="scrollbar-thin max-h-40 min-h-10 w-full flex-1 resize-none bg-transparent px-1 pt-1 leading-relaxed outline-none placeholder:text-(--color-faint) disabled:opacity-50"
-        />
-        {/* 附件草稿区（chip 行 + 导入错误/发送阻断提示行）。 */}
+        {/* 附件草稿区在输入框上方（chip 行 + 导入错误/发送阻断提示行）。 */}
         {(attachments.length > 0 || attachError !== null || sendBlocked) && (
           <div className="flex flex-col gap-1.5">
             {attachments.length > 0 && (
@@ -359,6 +336,29 @@ export function Composer({
             )}
           </div>
         )}
+        <textarea
+          ref={ref}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+            autosize(e.target);
+          }}
+          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          onKeyDown={onKeyDown}
+          onPaste={(event) => {
+            const files = event.clipboardData?.files;
+            if (!files || files.length === 0) return;
+            event.preventDefault();
+            void importFiles([...files]);
+          }}
+          placeholder={t(mode === "landing" ? "chat.placeholder" : "chat.placeholder.followUp")}
+          rows={1}
+          aria-expanded={suggestOpen}
+          aria-controls={suggestOpen ? listboxId : undefined}
+          aria-activedescendant={suggestOpen && rows.length > 0 ? `${listboxId}-opt-${active}` : undefined}
+          className="scrollbar-thin max-h-40 min-h-10 w-full flex-1 resize-none bg-transparent px-1 pt-1 leading-relaxed outline-none placeholder:text-(--color-faint) disabled:opacity-50"
+        />
         <div className="flex flex-wrap items-center gap-3 text-(--color-muted)">
           {/* 「+」添加上下文菜单：附件走主进程 CAS 导入（多选），@ / / 触发补全。 */}
           <DropdownMenu

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Check, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import type { ChatMessage } from "../../../shared/ipc";
-import { messageText } from "../../../shared/ipc";
+import { attachmentPartsOf, messageText } from "../../../shared/ipc";
 import { MarkdownView, type CodeAppearance } from "./chat/MarkdownView";
 import { TurnSummary } from "./chat/TurnSummary";
 import { ThinkingRow } from "./chat/ThinkingRow";
@@ -127,10 +127,9 @@ function UserBubble({
   onEditSend?: (text: string) => void;
 }): React.JSX.Element {
   const text = messageText(message.parts);
-  // 附件 part 独立于文本渲染（气泡内附件条：图像直显 + 文件 chip）。
-  const attachmentParts = message.parts.filter(
-    (part): part is Extract<typeof part, { type: "attachment" }> => part.type === "attachment",
-  );
+  // 附件 part 独立于文本渲染（气泡内附件条：图像直显 + 文件 chip）；
+  // 编辑视图中同样展示（编辑改文本，附件原样保留并可见）。
+  const attachmentParts = attachmentPartsOf(message.parts);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -161,6 +160,7 @@ function UserBubble({
     <div className="rise-in group/user-row flex flex-col items-end">
       {editing ? (
         <div className="flex w-full max-w-xl flex-col gap-2">
+          {attachmentParts.length > 0 && <AttachmentStrip parts={attachmentParts} />}
           <textarea
             ref={areaRef}
             value={draft}

@@ -252,6 +252,11 @@ export function messageText(parts: MessagePart[]): string {
     .join("");
 }
 
+/** 消息里的全部附件 part（气泡附件条 / 编辑重发保留同源）。 */
+export function attachmentPartsOf(parts: MessagePart[]): AttachmentPart[] {
+  return parts.filter((p): p is AttachmentPart => p.type === "attachment");
+}
+
 /** 不可变地把 delta 追加到末尾 text part（React state 更新用）。 */
 export function appendText(parts: MessagePart[], delta: string): MessagePart[] {
   if (!delta) return parts;

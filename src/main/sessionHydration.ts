@@ -7,6 +7,7 @@
 // injected so the module stays free of store wiring.
 import fs from "node:fs";
 import { decodeTranscript } from "@innocenceharness/harness-electron";
+import { isContentRef } from "@innocenceharness/harness-session";
 import type { SessionRecord } from "./sessionIndexStore";
 import {
   messageText,
@@ -25,7 +26,9 @@ export interface HydrateOptions {
 /** Defensive mapping of one untyped transcript part onto the shared
  *  MessagePart union; anything malformed or unknown maps to null and is
  *  dropped. Tool and thinking parts survive hydration so restored
- *  transcripts match the live stream's structured view. */
+ *  transcripts match the live stream's structured view; attachment parts
+ *  survive too (shape-validated like the transcript codec — a malformed
+ *  attachment degrades to a dropped part, never a fabricated one). */
 function toMessagePart(p: unknown): MessagePart | null {
   if (typeof p !== "object" || p === null) return null;
   const t = (p as { type?: unknown }).type;
@@ -47,6 +50,24 @@ function toMessagePart(p: unknown): MessagePart | null {
       content: String((p as { content?: unknown }).content ?? ""),
       isError: (p as { isError?: unknown }).isError === true,
     };
+  if (t === "attachment") {
+    const part = p as { name?: unknown; source?: unknown; representations?: unknown };
+    if (typeof part.name !== "string" || part.name.length === 0) return null;
+    if (!isContentRef(part.source) || !Array.isArray(part.representations)) return null;
+    const representations = part.representations.flatMap((rep) => {
+      if (typeof rep !== "object" || rep === null) return [];
+      const r = rep as { kind?: unknown; content?: unknown; page?: unknown };
+      if ((r.kind !== "text" && r.kind !== "image") || !isContentRef(r.content)) return [];
+      const kind = r.kind as "text" | "image";
+      return [{ kind, content: r.content, ...(typeof r.page === "number" ? { page: r.page } : {}) }];
+    });
+    return {
+      type: "attachment",
+      name: part.name,
+      source: part.source,
+      representations,
+    };
+  }
   return null;
 }
 
@@ -149,7 +170,12 @@ export function hydrateSessionMessages(record: SessionRecord, options: HydrateOp
     // stream appends them to the assistant message — the shape pairTools
     // expects. Merge such turns into the preceding assistant message; only a
     // textless user turn with no assistant predecessor stays standalone.
-    if (role === "user" && !mapped.some((p) => p.type === "text")) {
+    // Attachment-only user turns are real turns (规格 §11), never tool
+    // results — they stay standalone bubbles so the strip renders on them.
+    if (
+      role === "user" &&
+      !mapped.some((p) => p.type === "text" || p.type === "attachment")
+    ) {
       const prev = messages[messages.length - 1];
       if (prev?.role === "assistant") {
         prev.parts.push(...mapped);

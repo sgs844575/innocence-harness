@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "../../../shared/ipc";
+import type { AttachmentPart, ChatMessage } from "../../../shared/ipc";
 import { MessageItem } from "./MessageItem";
 import type { StreamDisplayOptions } from "./chat/toolGrouping";
 
@@ -50,10 +50,27 @@ describe("MessageItem", () => {
     expect(onEditSend).toHaveBeenCalledTimes(2);
   });
 
+  it("编辑态保留附件条：图片在编辑视图中可见（附件随重发保留）", () => {
+    const attachment: AttachmentPart = {
+      type: "attachment",
+      name: "shot.png",
+      source: { key: `sha256:${"a".repeat(64)}`, mediaType: "image/png", byteLength: 3 },
+      representations: [
+        { kind: "image", content: { key: `sha256:${"b".repeat(64)}`, mediaType: "image/png", byteLength: 3 } },
+      ],
+    };
+    const withImage = message({ id: "u1", role: "user", parts: [{ type: "text", text: "看图" }, attachment] });
+    render(<MessageItem t={t} message={withImage} canEdit onEditSend={() => {}} />);
+    // 非编辑态：图像直显；进入编辑态：附件条仍在（编辑改文本、附件可见）。
+    expect(screen.getByRole("img", { name: "shot.png" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "chat.edit" }));
+    expect(screen.getByRole("textbox", { name: "chat.edit" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "shot.png" })).toBeTruthy();
+  });
+
   it("编辑态发送图标钮在空文本（纯空白）时禁用", () => {
     render(<MessageItem t={t} message={message({ id: "u1", role: "user" })} canEdit onEditSend={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "chat.edit" }));
-    const area = screen.getByRole("textbox", { name: "chat.edit" });
+    fireEvent.click(screen.getByRole("button", { name: "chat.edit" }));    const area = screen.getByRole("textbox", { name: "chat.edit" });
     fireEvent.change(area, { target: { value: "   " } });
     const send = screen.getByRole("button", { name: "chat.edit.send" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
