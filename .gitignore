@@ -45,3 +45,4 @@ documentation/
 # derivable icon artifact (npm run icons:icns)
 assets/icon.icns
 skills-lock.json
+/.ws-probe/
