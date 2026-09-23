@@ -7,14 +7,18 @@ import {
   normalizeReplacementForMatch,
   preserveQuoteStyle,
 } from "./edit-matchers";
+import { readContextKey, type ReadFileRegistry } from "./read-state";
 import type { Tool, ToolContext } from "@innocenceharness/harness-tools";
 
 /** Exact-string replacement with tolerance matching: matching happens on the
  *  LF-normalized text (CRLF never breaks old_string), a strategy chain
  *  absorbs the usual copy artifacts (Read line-number prefixes, literal
  *  escapes, curly quotes, indentation drift), and the file's dominant line
- *  ending style is preserved on write-back. */
-export function createEditTool(): Tool {
+ *  ending style is preserved on write-back. The session's read-state
+ *  registry (same instance the Read tool records into) lets a not-found
+ *  failure say the truth: when the file changed on disk since the model's
+ *  last read, the stale read is the diagnosis — not imaginary whitespace. */
+export function createEditTool(registry?: ReadFileRegistry): Tool {
   return {
     name: "Edit",
     description:
@@ -69,6 +73,16 @@ export function createEditTool(): Tool {
 
       const match = findEditMatch({ content, search: oldString, replaceAll });
       if (match.status === "not_found") {
+        // 过期读取优先诊断：文件在本会话上次读取后已被外部改动（并行会话/
+        // 外部编辑器）时，模型手里的原文大概率整体过期——先告知重读基于
+        // 当前内容重写编辑，而不是误导去核对并不存在的“缩进差异”。
+        if (await staleSinceLastRead(target, ctx, registry)) {
+          return failure(
+            `old_string 未找到，且磁盘文件在你本会话上次读取之后已被修改（大小或修改时间不同）——` +
+              `你依据的原文已过期，重试同样的摘录不会成功。` +
+              `请重新 Read ${displayPath} 定位目标区段，基于当前内容重新给出 old_string 与 new_string。`,
+          );
+        }
         const near = nearestOccurrenceLine(content, oldString);
         if (near !== null) {
           const offset = Math.max(1, near - 5);
@@ -198,3 +212,24 @@ function collapseWhitespace(value: string): string {
 
 /** Zero-config Edit tool（默认：persisted args 正文全量保留）。 */
 export const editTool: Tool = createEditTool();
+
+/**
+ * 过期读取判定：本会话上下文读过此文件、且当前磁盘签名与上次读取记录不同
+ * （mtime 或 size 变化）→ true。注册表缺省（zero-config 实例）或无读取
+ * 记录时不判定，走既有失败文案。
+ */
+async function staleSinceLastRead(
+  target: string,
+  ctx: ToolContext,
+  registry: ReadFileRegistry | undefined,
+): Promise<boolean> {
+  if (!registry) return false;
+  const previous = registry.lookup(target, readContextKey(ctx.scope));
+  if (!previous) return false;
+  try {
+    const stat = await fs.stat(target);
+    return stat.mtimeMs !== previous.signature.mtimeMs || stat.size !== previous.signature.size;
+  } catch {
+    return false;
+  }
+}

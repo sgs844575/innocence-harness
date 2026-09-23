@@ -28,6 +28,8 @@ export interface ReadFileRegistry {
     full: boolean,
     contextKey: string,
   ): ReadFileRecord | undefined;
+  /** 查询该桶内此文件的上次读取记录（不落新记录；无记录为 undefined）。 */
+  lookup(target: string, contextKey: string): ReadFileRecord | undefined;
 }
 
 export function createReadFileRegistry(): ReadFileRegistry {
@@ -46,6 +48,9 @@ export function createReadFileRegistry(): ReadFileRegistry {
       const previous = bucket.get(target);
       bucket.set(target, { signature, full });
       return previous;
+    },
+    lookup(target, contextKey) {
+      return bucketOf(contextKey).get(target);
     },
   };
 }

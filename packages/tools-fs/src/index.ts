@@ -37,7 +37,9 @@ export function createFsPlugin(config: FsPluginConfig = {}) {
       const readFileRegistry = createReadFileRegistry();
       ctx.tools.register(createReadTool(readFileRegistry));
       ctx.tools.register(createWriteTool());
-      ctx.tools.register(createEditTool());
+      // Edit 共享同一已读注册表：not_found 时可诊断“读取后磁盘被外部改动”
+      // 的过期读取（并行会话/外部编辑器），给出准确重读指引。
+      ctx.tools.register(createEditTool(readFileRegistry));
       ctx.tools.register(createGlobTool(config));
       ctx.tools.register(createGrepTool(config));
     },

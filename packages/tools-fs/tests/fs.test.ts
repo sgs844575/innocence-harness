@@ -5,7 +5,7 @@ import path from "node:path";
 import { Context } from "@innocenceharness/kernel";
 import { ToolsPlugin } from "@innocenceharness/harness-tools";
 import { createExecutionScope, type ToolContext } from "@innocenceharness/harness-tools";
-import { editTool } from "../src/edit";
+import { createEditTool, editTool } from "../src/edit";
 import { createReadTool } from "../src/read";
 import { createReadFileRegistry } from "../src/read-state";
 import { globTool, grepTool } from "../src/search";
@@ -271,6 +271,53 @@ describe("Edit tool", () => {
       ctx("Edit"),
     );
     expect(ok.isError).toBeUndefined();
+  });
+});
+
+describe("Edit stale-read diagnosis", () => {
+  // 与 Read 共享同一注册表实例；显式 sessionId 让两个工具落入同一分桶。
+  const scopedCtx = (toolName: string, sessionId: string): ToolContext => ({
+    workspaceRoot: root,
+    signal: new AbortController().signal,
+    log: () => {},
+    scope: createExecutionScope(toolName, undefined, { sessionId }),
+  });
+
+  it("not-found after an external disk change reports the stale read instead of whitespace advice", async () => {
+    await fs.mkdir(path.join(root, "state"), { recursive: true });
+    const file = path.join(root, "state", "stale-edit.txt");
+    await fs.writeFile(file, "alpha\nbeta\ngamma\n", "utf8");
+    const registry = createReadFileRegistry();
+    const read = createReadTool(registry);
+    const edit = createEditTool(registry);
+    await read.execute({ path: "state/stale-edit.txt" }, scopedCtx("Read", "sess-stale"));
+    // 外部改动（并行会话/编辑器）：目标行整体消失且字节数必不同。
+    await fs.writeFile(file, "alpha\ngamma-rewritten-externally\ndelta\n", "utf8");
+    const outcome = await edit.execute(
+      { path: "state/stale-edit.txt", old_string: "beta", new_string: "beta2" },
+      scopedCtx("Edit", "sess-stale"),
+    );
+    expect(outcome.isError).toBe(true);
+    expect(outcome.content).toContain("已被修改");
+    expect(outcome.content).toContain("过期");
+    expect(outcome.content).not.toContain("缩进/空白可能不同");
+  });
+
+  it("not-found without an external change keeps the nearest-region advice", async () => {
+    await fs.mkdir(path.join(root, "state"), { recursive: true });
+    const file = path.join(root, "state", "fresh-edit.txt");
+    await fs.writeFile(file, "alpha\nbeta\ngamma\n", "utf8");
+    const registry = createReadFileRegistry();
+    const read = createReadTool(registry);
+    const edit = createEditTool(registry);
+    await read.execute({ path: "state/fresh-edit.txt" }, scopedCtx("Read", "sess-fresh"));
+    const outcome = await edit.execute(
+      { path: "state/fresh-edit.txt", old_string: "beta with drift", new_string: "x" },
+      scopedCtx("Edit", "sess-fresh"),
+    );
+    expect(outcome.isError).toBe(true);
+    expect(outcome.content).not.toContain("已被修改");
+    expect(outcome.content).toContain("未找到");
   });
 });
 
