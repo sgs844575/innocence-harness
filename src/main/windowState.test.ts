@@ -32,8 +32,8 @@ describe("normalizeWindowState", () => {
 
   it("clamps undersized dimensions up to the window minimums", () => {
     expect(normalizeWindowState({ width: 300, height: 200 })).toEqual({
-      width: 760,
-      height: 520,
+      width: 480,
+      height: 640,
       maximized: false,
     });
   });

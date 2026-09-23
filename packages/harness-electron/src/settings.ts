@@ -294,7 +294,7 @@ function mergeGeneralFeatures(src: Partial<HarnessSettings>): Partial<HarnessSet
 
 /** 界面/代码字号收窄区间（px）与默认值；normalizeFontSize 共用。 */
 export const FONT_SIZE_MIN = 12;
-export const FONT_SIZE_MAX = 18;
+export const FONT_SIZE_MAX = 20;
 export const FONT_SIZE_DEFAULT = 14;
 
 /** Built-in offline profile — always available, models: ["mock"]. */

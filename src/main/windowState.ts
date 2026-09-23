@@ -23,8 +23,8 @@ export interface DisplayArea {
 }
 
 /** Smallest window the shell allows; restored sizes are clamped up to it. */
-export const MIN_WINDOW_WIDTH = 760;
-export const MIN_WINDOW_HEIGHT = 520;
+export const MIN_WINDOW_WIDTH = 480;
+export const MIN_WINDOW_HEIGHT = 640;
 
 /** <userData>/window-state.json */
 export function windowStateFile(userDataDir: string): string {

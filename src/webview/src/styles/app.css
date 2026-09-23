@@ -35,7 +35,7 @@
 
   /* 语义 token（浅色默认，.dark 下覆盖）。文字三级：foreground / muted(subtle) / faint(subtlest)。 */
   --color-background: #f8f8f8; /* 主区画布 */
-  --color-sidebar: #ececee; /* 页面底/侧栏 */
+  --color-sidebar: #f0f0f0; /* 页面底/侧栏 */
   --color-raised: #ffffff; /* 输入卡、芯片（对齐参考的 input/card 面） */
   --color-popup: #ffffff; /* 弹层 */
   --color-panel: #ffffff; /* 面板（终端卡等） */
@@ -51,8 +51,8 @@
   --color-border: #0d0d0d1a;
   --color-border-hover: #0d0d0d26;
   --color-hairline: #0d0d0d0f;
-  --color-accent: #2f7ddb;
-  --color-mode-accent: #c26a1b; /* 权限「完全访问」橙 */
+  --color-accent: #0b7fff;
+  --color-mode-accent: #e07b00; /* 权限「完全访问」橙 */
   --color-diff-add: #1e8a3e;
   --color-diff-del: #e03131;
   --color-tool-ok: #1e8a3e;
@@ -99,7 +99,7 @@
   --color-hover: #ffffff0d;
   --color-selected: #ffffff1a;
   --color-foreground: var(--color-neutral-300);
-  --color-foreground-strong: #f0f0f0;
+  --color-foreground-strong: #f8f8f8;
   --color-muted: #d4d4d499;
   --color-faint: #d4d4d44d;
   --color-inverse: #000000;
@@ -107,14 +107,14 @@
   --color-border: #ffffff1a;
   --color-border-hover: #ffffff26;
   --color-hairline: #ffffff0d;
-  --color-accent: #3a8edb;
-  --color-mode-accent: #f0872f;
+  --color-accent: #4099ff;
+  --color-mode-accent: #ff8a30;
   --color-diff-add: #46bf72;
   --color-diff-del: #ff5c5c;
   --color-tool-ok: #46bf72;
   --color-tool-err: #ff5c5c;
   --color-tool-warn: #ff8a30;
-  --color-inline-code: #3f3f3f;
+  --color-inline-code: #363636;
   --color-markdown-code: #171717;
   --color-markdown-code-header: #202020;
   --color-markdown-table: #171717;
@@ -137,7 +137,7 @@
    与 @theme 的浅色默认值同步（新增语义 token 时两侧都要加）。 */
 .light-scope {
   --color-background: #f8f8f8;
-  --color-sidebar: #ececee;
+  --color-sidebar: #f0f0f0;
   --color-raised: #ffffff;
   --color-popup: #ffffff;
   --color-panel: #ffffff;
@@ -153,8 +153,8 @@
   --color-border: #0d0d0d1a;
   --color-border-hover: #0d0d0d26;
   --color-hairline: #0d0d0d0f;
-  --color-accent: #2f7ddb;
-  --color-mode-accent: #c26a1b;
+  --color-accent: #0b7fff;
+  --color-mode-accent: #e07b00;
   --color-diff-add: #1e8a3e;
   --color-diff-del: #e03131;
   --color-tool-ok: #1e8a3e;

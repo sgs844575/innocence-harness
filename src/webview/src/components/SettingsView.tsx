@@ -84,7 +84,7 @@ interface Props {
   resolvedTheme?: "dark" | "light";
 }
 
-/** 字号步进框（12..18 px，失焦/回车提交并收窄）。 */
+/** 字号步进框（12..20 px，失焦/回车提交并收窄）。 */
 function FontSizeInput({
   value,
   onCommit,
@@ -98,7 +98,7 @@ function FontSizeInput({
   useEffect(() => setDraft(String(value)), [value]);
   const commit = (): void => {
     const n = Number(draft);
-    if (Number.isFinite(n) && draft.trim() !== "") onCommit(Math.min(18, Math.max(12, Math.round(n))));
+    if (Number.isFinite(n) && draft.trim() !== "") onCommit(Math.min(20, Math.max(12, Math.round(n))));
     else setDraft(String(value));
   };
   return (

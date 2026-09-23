@@ -194,14 +194,14 @@ describe("mergeSettings", () => {
     });
   });
 
-  it("字号归一化：12..18 收窄、四舍五入、缺失/非法回落 14", () => {
+  it("字号归一化：12..20 收窄、四舍五入、缺失/非法回落 14", () => {
     expect(mergeSettings({ profiles: [], uiFontSize: 16, codeFontSize: 13 })).toMatchObject({
       uiFontSize: 16,
       codeFontSize: 13,
     });
     expect(mergeSettings({ profiles: [], uiFontSize: 8, codeFontSize: 24 })).toMatchObject({
       uiFontSize: 12,
-      codeFontSize: 18,
+      codeFontSize: 20,
     });
     expect(mergeSettings({ profiles: [], uiFontSize: 14.6 })).toMatchObject({ uiFontSize: 15 });
     expect(mergeSettings({ profiles: [], uiFontSize: "16", codeFontSize: null })).toMatchObject({

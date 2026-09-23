@@ -17,6 +17,8 @@ import { isBrowserEnabled } from "./browserSession";
 import {
   fitWindowStateToDisplays,
   loadWindowState,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
   saveWindowState,
   windowStateFile,
 } from "./windowState";
@@ -74,20 +76,20 @@ export async function createMainWindow(onRendererReady?: () => void): Promise<Br
   const stateFile = stateRoot ? windowStateFile(stateRoot) : null;
   const restored = stateFile
     ? fitWindowStateToDisplays(
-        loadWindowState(stateFile) ?? { width: 1280, height: 800, maximized: false },
+        loadWindowState(stateFile) ?? { width: 1200, height: 800, maximized: false },
         screen.getAllDisplays().map((display) => display.workArea),
       )
-    : { width: 1280, height: 800, maximized: false };
+    : { width: 1200, height: 800, maximized: false };
 
   const win = new BrowserWindow({
     width: restored.width,
     height: restored.height,
     ...(restored.x !== undefined && restored.y !== undefined ? { x: restored.x, y: restored.y } : {}),
-    minWidth: 760,
-    minHeight: 520,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     show: false,
     // 窗口底色 = 页面灰（侧栏色）；黑主区由网页层圆角浮起。
-    backgroundColor: resolved === "dark" ? "#1e1e1e" : "#ececee",
+    backgroundColor: resolved === "dark" ? "#1e1e1e" : "#f0f0f0",
     ...(iconPath ? { icon: iconPath } : {}),
     // 自绘窗口控制：Win/Linux 无边框 + 网页内控制钮（TitleBar 渲染，
     // window:* IPC 驱动）；macOS 保留系统红绿灯（hiddenInset）。

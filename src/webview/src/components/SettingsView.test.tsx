@@ -57,13 +57,13 @@ describe("SettingsView 外观分区", () => {
     expect(onPatchSettings).toHaveBeenCalledWith({ codeWordWrap: true });
   });
 
-  it("字号提交收窄到 12..18", () => {
+  it("字号提交收窄到 12..20", () => {
     const onPatchSettings = vi.fn();
     renderAppearance({ onPatchSettings });
     const input = screen.getByLabelText("settings.appearance.fontSize");
     fireEvent.change(input, { target: { value: "30" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onPatchSettings).toHaveBeenCalledWith({ uiFontSize: 18 });
+    expect(onPatchSettings).toHaveBeenCalledWith({ uiFontSize: 20 });
   });
 
   it("浅色主题下浅色预览带「当前生效」徽章", () => {
