@@ -27,6 +27,7 @@
     "build:plugins": "node scripts/build-plugins.mjs",
     "prepackage": "npm run package:preflight && npm run build:plugins",
     "package": "electron-forge package",
+    "postpackage": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/bumpPatchVersion.ts",
     "package:preflight": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/outPreflight.ts",
     "package:smoke": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/runPackageSmoke.ts",
     "icons:icns": "node --experimental-strip-types --experimental-default-type=module scripts/packaging/generateIconIcns.ts",
