@@ -15,12 +15,16 @@
 // hydration depends on that name and shape, byte-identical to the pre-route
 // behavior); every other route appends turn-v3 rows with explicit route
 // identity to `{sessionId}_{routeId}.jsonl`, so routes never share a file.
+// Realtime persistence writes turns INCREMENTALLY: the prompt snapshot and
+// the turn's first history row are full snapshots (turn-v2/turn-v3), every
+// later boundary appends a turn-delta row carrying only the new messages —
+// a turn's transcript cost stays linear in its logical size.
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import type { Message } from "@innocenceharness/harness-session";
 import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
-import { encodeContextUsage, encodeTurnV2, encodeTurnV3 } from "./transcript";
+import { encodeContextUsage, encodeTurnDelta, encodeTurnV2, encodeTurnV3 } from "./transcript";
 import { DEFAULT_ROUTE_ID } from "./runtime-types";
 
 let persistSeq = 0;
@@ -111,6 +115,17 @@ async function appendLine(file: string, line: string): Promise<void> {
   });
 }
 
+/**
+ * Appends one completed turn (or an interim full-turn snapshot) to the
+ * session's JSONL transcript. Snapshot rows RESET the turn's accumulated
+ * state in the decoder (last-wins); realtime persistence uses them only for
+ * the turn's first history row and falls back to them on write failures.
+ *
+ * Returns true when a row landed on disk, false when persistence is
+ * disabled/skipped or the write failed (best-effort: never throws, never
+ * fails the turn) — the caller keeps its incremental cursor and retries the
+ * same span in its next flush.
+ */
 export async function persistTurn(
   options: TurnPersistenceOptions,
   input: {
@@ -121,18 +136,18 @@ export async function persistTurn(
     /** Present on final rows; interim snapshots omit it (turn still open). */
     completion?: TurnCompletion;
   },
-): Promise<void> {
+): Promise<boolean> {
   const { sessionId, turnId, messages } = input;
   const routeId = input.routeId || DEFAULT_ROUTE_ID;
-  if (messages.length === 0) return;
-  if (!options.persistDir && !options.fileFor) return;
+  if (messages.length === 0) return false;
+  if (!options.persistDir && !options.fileFor) return false;
   try {
     const file = resolveTranscriptFile(options, sessionId, routeId);
     if (!file) {
       // Best-effort layer: an unsafe route id skips persistence (warn) but
       // never fails the completed turn.
       options.log("warn", "route transcript skipped: unsafe route id", { sessionId, routeId });
-      return;
+      return false;
     }
     const line =
       routeId === DEFAULT_ROUTE_ID
@@ -148,18 +163,20 @@ export async function persistTurn(
             completion: input.completion,
           });
     await appendLine(file, line);
+    return true;
   } catch (err) {
     options.log("warn", "persist failed", String(err));
+    return false;
   }
 }
 
 /**
  * Real-time interim snapshot of a running turn (same turnId as the eventual
  * final row, no completion — the turn is still open): the user prompt is
- * durable the moment the turn starts, and each structural event boundary
- * (tool call/result) refreshes the snapshot. The decoder folds same-turn rows
- * last-wins, so the final row replaces the snapshots and a crash mid-turn
- * still leaves the turn's latest state on disk.
+ * durable the moment the turn starts. The decoder folds same-turn rows, so
+ * the turn's later rows replace/supplement the snapshot and a crash mid-turn
+ * still leaves the turn's latest state on disk. Boolean result matches
+ * persistTurn's best-effort contract.
  */
 export function persistTurnSnapshot(
   options: TurnPersistenceOptions,
@@ -169,8 +186,56 @@ export function persistTurnSnapshot(
     routeId: string;
     messages: Message[];
   },
-): Promise<void> {
+): Promise<boolean> {
   return persistTurn(options, input);
+}
+
+/**
+ * Appends one INCREMENTAL row of a running turn: `appended` carries only the
+ * messages added since this turn's previous row (see TurnDeltaRecord). The
+ * closing row of a turn carries `completion`; interim rows omit it.
+ *
+ * Same best-effort contract and boolean result as persistTurn: false means
+ * nothing landed and the caller must NOT advance its incremental cursor —
+ * the missed span is retried (as part of the next delta) or recovered by a
+ * full-turn snapshot flush.
+ */
+export async function persistTurnDelta(
+  options: TurnPersistenceOptions,
+  input: {
+    sessionId: string;
+    turnId: string;
+    routeId: string;
+    /** Writer-side monotonic sequence (keeps identical-content deltas distinct). */
+    seq: number;
+    appended: Message[];
+    /** Present on the turn's closing row; interim deltas omit it. */
+    completion?: TurnCompletion;
+  },
+): Promise<boolean> {
+  const routeId = input.routeId || DEFAULT_ROUTE_ID;
+  if (input.appended.length === 0 && input.completion === undefined) return false;
+  if (!options.persistDir && !options.fileFor) return false;
+  try {
+    const file = resolveTranscriptFile(options, input.sessionId, routeId);
+    if (!file) {
+      options.log("warn", "route transcript skipped: unsafe route id", { sessionId: input.sessionId, routeId });
+      return false;
+    }
+    const line = encodeTurnDelta({
+      at: new Date().toISOString(),
+      seq: input.seq,
+      turnId: input.turnId,
+      routeId,
+      appended: input.appended,
+      ...(input.completion !== undefined ? { completion: input.completion } : {}),
+    });
+    await appendLine(file, line);
+    return true;
+  } catch (err) {
+    options.log("warn", "persist delta failed", String(err));
+    return false;
+  }
 }
 
 /**

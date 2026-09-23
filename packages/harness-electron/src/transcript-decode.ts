@@ -4,7 +4,7 @@
 import type { TurnCompletion } from "@innocenceharness/harness-providers";
 import { isContentRef, type Message, type MessagePart, type ToolResultPart } from "@innocenceharness/harness-session";
 import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
-import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnRecordV2, TurnRecordV3 } from "./transcript";
+import type { LegacyTurnRecord, SessionMetaRecord, TranscriptRoute, TurnDeltaRecord, TurnRecordV2, TurnRecordV3 } from "./transcript";
 
 /**
  * A decoded message: the canonical harness shape plus any parts whose type is
@@ -237,6 +237,16 @@ function isTurnRecordV3Shape(record: Record<string, unknown>): boolean {
   );
 }
 
+function isTurnDeltaShape(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.turnId === "string" &&
+    record.turnId.length > 0 &&
+    typeof record.routeId === "string" &&
+    record.routeId.length > 0 &&
+    Array.isArray(record.appended)
+  );
+}
+
 export interface DecodedTranscript {
   /** Main-route conversation history (v2 rows, v3 "main" rows, legacy snapshots). */
   history: DecodedMessage[];
@@ -268,14 +278,17 @@ function routeOf(routes: Map<string, RouteEntry>, routeId: string, parentTurnId:
 }
 
 /** One turn's folding slot: rows of the same (route, turnId) collapse onto the
- * slot and the LAST row wins — interim snapshots (real-time persistence during
- * a live turn) are replaced by the turn's final row; identical re-appends after
- * a crash stay idempotent. Order of appearance decides the slot's position. */
+ * slot — snapshot rows REPLACE the accumulated messages (realtime interim
+ * snapshots and crash replays reset the turn; the last snapshot wins),
+ * incremental turn-delta rows APPEND to it. The slot's completion comes from
+ * the last snapshot row or the last completion-carrying delta. Order of
+ * appearance decides the slot's position. */
 interface TurnSlot {
   routeId: string;
   parentTurnId: string | null;
   order: number;
   messages: DecodedMessage[];
+  completion?: TurnCompletion;
 }
 
 function validMetaRecord(raw: unknown): SessionMetaRecord | null {
@@ -369,12 +382,19 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       if (!Array.isArray(record.messages)) continue;
       validRecords += 1;
       const key = turnSlotKey(MAIN_ROUTE, record.turnId);
-      const canonical = attachCompletion(canonicalizeHistory(record.messages), decodeCompletion(record.completion));
+      const canonical = canonicalizeHistory(record.messages);
       const existing = slots.get(key);
       if (existing) {
         existing.messages = canonical;
+        existing.completion = decodeCompletion(record.completion);
       } else {
-        slots.set(key, { routeId: MAIN_ROUTE, parentTurnId: null, order: order++, messages: canonical });
+        slots.set(key, {
+          routeId: MAIN_ROUTE,
+          parentTurnId: null,
+          order: order++,
+          messages: canonical,
+          completion: decodeCompletion(record.completion),
+        });
         timeline.push({ turn: key });
       }
       continue;
@@ -386,12 +406,45 @@ export function decodeTranscript(raw: string): DecodedTranscript {
       const v3Record = parsed as TurnRecordV3;
       validRecords += 1;
       const key = turnSlotKey(v3Record.routeId, v3Record.turnId);
-      const canonical = attachCompletion(canonicalizeHistory(v3Record.messages), decodeCompletion(v3Record.completion));
+      const canonical = canonicalizeHistory(v3Record.messages);
       const existing = slots.get(key);
       if (existing) {
         existing.messages = canonical;
+        existing.completion = decodeCompletion(v3Record.completion);
       } else {
-        slots.set(key, { routeId: v3Record.routeId, parentTurnId: v3Record.parentTurnId, order: order++, messages: canonical });
+        slots.set(key, {
+          routeId: v3Record.routeId,
+          parentTurnId: v3Record.parentTurnId,
+          order: order++,
+          messages: canonical,
+          completion: decodeCompletion(v3Record.completion),
+        });
+        timeline.push({ turn: key });
+      }
+      continue;
+    }
+
+    if (parsed.type === "turn-delta") {
+      const record = parsed as unknown as Record<string, unknown>;
+      if (!isTurnDeltaShape(record)) continue;
+      const deltaRecord = parsed as TurnDeltaRecord;
+      validRecords += 1;
+      const key = turnSlotKey(deltaRecord.routeId, deltaRecord.turnId);
+      const canonical = canonicalizeHistory(deltaRecord.appended);
+      const completion = decodeCompletion(deltaRecord.completion);
+      const existing = slots.get(key);
+      if (existing) {
+        existing.messages.push(...canonical);
+        // 无 completion 的增量行不清空此前记录的 completion（仅收尾行携带）。
+        if (completion !== undefined) existing.completion = completion;
+      } else {
+        slots.set(key, {
+          routeId: deltaRecord.routeId,
+          parentTurnId: null,
+          order: order++,
+          messages: canonical,
+          ...(completion !== undefined ? { completion } : {}),
+        });
         timeline.push({ turn: key });
       }
       continue;
@@ -439,9 +492,10 @@ export function decodeTranscript(raw: string): DecodedTranscript {
     if (!slot) continue;
     const route = routeOf(routes, slot.routeId, slot.parentTurnId);
     route.turnIds.push(slotKeyTurnId(entry.turn));
-    route.messages.push(...slot.messages);
+    const messages = attachCompletion(slot.messages, slot.completion);
+    route.messages.push(...messages);
     if (slot.routeId === MAIN_ROUTE) {
-      history.push(...slot.messages);
+      history.push(...messages);
     }
   }
   return { history, routes, ...(meta ? { meta } : {}), ...(contextUsage ? { contextUsage } : {}), lastAt, validRecords };

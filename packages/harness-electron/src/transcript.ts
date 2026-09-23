@@ -49,6 +49,52 @@ export interface TranscriptRoute {
   messages: readonly DecodedMessage[];
 }
 
+/**
+ * One INCREMENTAL append within a running turn: `appended` carries only the
+ * messages added since this turn's previous row (snapshot or delta). Realtime
+ * persistence writes one delta per history growth instead of re-writing the
+ * whole turn at every tool boundary, so a turn's byte cost stays linear in
+ * its logical size. A snapshot row for the same (routeId, turnId) RESETS the
+ * accumulated messages; deltas append after it. The closing delta carries
+ * `completion`; interim deltas omit it.
+ */
+export interface TurnDeltaRecord {
+  type: "turn-delta";
+  at: string;
+  /** Writer-side monotonic sequence for this turn: distinct-but-identical
+   * consecutive deltas (same-ms timestamp, same content) stay distinct lines
+   * so the decoder's raw-line dedup never drops a legitimate append. */
+  seq: number;
+  turnId: string;
+  routeId: string;
+  appended: Message[];
+  completion?: TurnCompletion;
+}
+
+export interface TurnDeltaRecordInput {
+  at: string;
+  seq: number;
+  turnId: string;
+  routeId: string;
+  /** Accepts plain Message[] or already-decoded messages with preservedParts. */
+  appended: readonly DecodedMessage[];
+  completion?: TurnCompletion;
+}
+
+/** Encodes one turn-delta line; preserved unknown parts survive re-encoding. */
+export function encodeTurnDelta(input: TurnDeltaRecordInput): string {
+  const record: TurnDeltaRecord = {
+    type: "turn-delta",
+    at: input.at,
+    seq: input.seq,
+    turnId: input.turnId,
+    routeId: input.routeId,
+    appended: canonicalizeHistory(input.appended),
+    ...(input.completion ? { completion: input.completion } : {}),
+  };
+  return `${JSON.stringify(record)}\n`;
+}
+
 /** Raw shape of a legacy full-history snapshot row (decoding only). */
 export interface LegacyTurnRecord {
   at?: unknown;

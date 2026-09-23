@@ -240,6 +240,88 @@ describe("HarnessRuntime", () => {
     expect(JSON.stringify(decoded)).toContain("读完了");
   });
 
+  it("persists incremental turn-delta rows at tool boundaries (no full-turn rewrites after the first)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const runtime = makeRuntime(
+      [
+        { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+        { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+        { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+        { text: "读完了" },
+      ],
+      { workspaceRoot: workspace },
+      recorded,
+    );
+
+    await chatTurn(runtime, "sess-delta", "读一下", "msg_delta");
+
+    const file = path.join(persistDir, "sess-delta.jsonl");
+    const rows = await readRows(file);
+    // 先行用户快照 + 首个历史边界整轮快照（reset）+ 其后每轮新增的增量行
+    // （含收尾行；空边界不落行，IO 交错只会改变增量行的切分，不减内容）。
+    expect(rows[0]!.messages).toEqual([
+      { role: "user", parts: [{ type: "text", text: "读一下" }] },
+    ]);
+    expect(rows[1]!.type).toBe("turn-v2");
+    expect(rows[1]!.messages).toHaveLength(2);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(rows.slice(2).every((r) => r.type === "turn-delta")).toBe(true);
+    // 增量行只携带新增消息：不再重写提示词与既有内容（字节成本线性）。
+    for (const row of rows.slice(2)) {
+      expect(JSON.stringify(row)).not.toContain("读一下");
+      expect((row.appended as unknown[]).length).toBeGreaterThan(0);
+    }
+    expect(rows.at(-1)!.completion).toBeDefined();
+    expect(rows.slice(0, -1).every((r) => r.completion === undefined)).toBe(true);
+
+    const decoded = decodeTranscript(await fs.readFile(file, "utf8")).history;
+    // 3 个工具轮 + 1 个文本轮 = 8 条消息；提示词只出现一次。
+    expect(decoded).toHaveLength(8);
+    expect(decoded.filter((m) => m.role === "user" && m.parts.some((p) => p.type === "text" && p.text === "读一下"))).toHaveLength(1);
+    expect(JSON.stringify(decoded)).toContain("读完了");
+    expect(decoded.at(-1)!.completion).toBeDefined();
+  });
+
+  it("self-heals a failed delta write with a full-turn snapshot (no silent history gaps)", async () => {
+    const recorded: Recorded = emptyRecorded();
+    const treeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "innocence-heal-"));
+    const goodFile = path.join(treeRoot, "sess-heal.jsonl");
+    // 首两次解析（先行提示快照 + 首个边界快照）落到被同名文件挡住的路径上
+    // 必然失败；其后恢复到正常路径 —— 游标不推进、下一边界以整轮快照补齐。
+    await fs.writeFile(path.join(treeRoot, "blocked"), "not a dir", "utf8");
+    let resolves = 0;
+    const runtime = new HarnessRuntime({
+      ...runtimeOptions(
+        [
+          { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+          { toolCalls: [{ toolName: "Read", args: { path: "hello.txt" } }] },
+          { text: "读完了" },
+        ],
+        { workspaceRoot: workspace },
+        recorded,
+      ),
+      persistDir: undefined,
+      transcriptFileFor: (_sessionId, _routeId) => {
+        resolves += 1;
+        return resolves <= 2 ? path.join(treeRoot, "blocked", "sess-heal.jsonl") : goodFile;
+      },
+    });
+
+    await chatTurn(runtime, "sess-heal", "读一下", "msg_heal");
+
+    const rows = await readRows(goodFile);
+    // 自愈路径：首行即整轮快照（含提示词），其后的新增走增量（切分随 IO
+    // 交错而变，但内容无损）。
+    expect(rows[0]!.type).toBe("turn-v2");
+    expect(JSON.stringify(rows[0])).toContain("读一下");
+    const decoded = decodeTranscript(await fs.readFile(goodFile, "utf8")).history;
+    expect(decoded).toHaveLength(6);
+    expect(decoded.filter((m) => m.role === "user" && m.parts.some((p) => p.type === "text" && p.text === "读一下"))).toHaveLength(1);
+    expect(JSON.stringify(decoded)).toContain("读完了");
+    expect(decoded.at(-1)!.completion).toBeDefined();
+    await fs.rm(treeRoot, { recursive: true, force: true });
+  });
+
   it("places transcripts through the host transcriptFileFor port (date-tree main and route files)", async () => {
     const recorded: Recorded = emptyRecorded();
     const placed: string[] = [];

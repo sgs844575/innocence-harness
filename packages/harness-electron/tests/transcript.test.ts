@@ -5,6 +5,7 @@ import {
   decodeTranscript,
   encodeContextUsage,
   encodeSessionMeta,
+  encodeTurnDelta,
   encodeTurnV2,
   encodeTurnV3,
   type TurnRecordV3,
@@ -369,5 +370,112 @@ describe("attachment parts (content-ref form)", () => {
     // canonical parts 保留附件）。
     expect(decoded.history).toHaveLength(3);
     expect(decoded.history[2]?.parts[0]?.type).toBe("attachment");
+  });
+});
+
+describe("turn-delta incremental rows", () => {
+  const completion = {
+    providerId: "test",
+    modelId: "m",
+    finishReason: "stop" as const,
+    aborted: false,
+    usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+  };
+  const at = "2026-09-23T00:00:00.000Z";
+
+  it("folds prompt snapshot + reset snapshot + deltas + closing delta into one turn", () => {
+    const raw =
+      encodeTurnV2("t1", at, [{ role: "user", parts: [{ type: "text", text: "读一下" }] }]) +
+      encodeTurnV2("t1", at, [
+        { role: "user", parts: [{ type: "text", text: "读一下" }] },
+        { role: "assistant", parts: [{ type: "toolCall", id: "c1", toolName: "Read", args: { path: "a" } }] },
+      ]) +
+      encodeTurnDelta({
+        at,
+        seq: 0,
+        turnId: "t1",
+        routeId: "main",
+        appended: [
+          { role: "user", parts: [{ type: "toolResult", toolCallId: "c1", content: "内容" }] },
+          { role: "assistant", parts: [{ type: "text", text: "读完了" }] },
+        ],
+        completion,
+      });
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    expect(text(decoded.history[1]!)).toBe("");
+    expect(decoded.history[1]!.parts[0]).toMatchObject({ type: "toolCall", toolName: "Read" });
+    expect(text(decoded.history[3]!)).toBe("读完了");
+    // completion 挂到该轮最后一个 assistant 块。
+    expect(decoded.history[3]!.completion).toMatchObject({ finishReason: "stop" });
+    expect(decoded.history[1]!.completion).toBeUndefined();
+    expect(decoded.routes.get("main")!.turnIds).toEqual(["t1"]);
+  });
+
+  it("deltas append after their slot's snapshot; a later snapshot resets the accumulation (crash replay)", () => {
+    const raw =
+      encodeTurnV2("t1", at, pair("问", "答一")) +
+      encodeTurnDelta({ at, seq: 0, turnId: "t1", routeId: "main", appended: [{ role: "assistant", parts: [{ type: "text", text: "追加" }] }] }) +
+      encodeTurnV2("t1", at, pair("问", "答二"));
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history.map(text)).toEqual(["问", "答二"]);
+  });
+
+  it("a delta row without completion never clears a previously recorded completion", () => {
+    const raw =
+      encodeTurnV2("t1", at, pair("问", "答"), completion) +
+      encodeTurnDelta({ at, seq: 0, turnId: "t1", routeId: "main", appended: [] });
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history.at(-1)!.completion).toMatchObject({ finishReason: "stop" });
+  });
+
+  it("route-scoped deltas feed the route map without leaking into main history", () => {
+    const raw = encodeTurnDelta({
+      at,
+      seq: 0,
+      turnId: "tr-1",
+      routeId: "route_child",
+      appended: pair("子任务", "子答"),
+      completion,
+    });
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history).toEqual([]);
+    expect(decoded.routes.get("route_child")).toMatchObject({ routeId: "route_child", turnIds: ["tr-1"] });
+    expect(decoded.routes.get("route_child")!.messages.map(text)).toEqual(["子任务", "子答"]);
+    expect(decoded.routes.get("route_child")!.messages.at(-1)!.completion).toMatchObject({ finishReason: "stop" });
+  });
+
+  it("malformed delta rows are ignored, not fatal", () => {
+    const raw = [
+      JSON.stringify({ type: "turn-delta", at, routeId: "main", appended: [] }),
+      JSON.stringify({ type: "turn-delta", at, turnId: "t1", appended: [] }),
+      JSON.stringify({ type: "turn-delta", at, turnId: "t1", routeId: "main", appended: "nope" }),
+      encodeTurnV2("t1", at, pair("问", "答")),
+    ].join("\n");
+    const decoded = decodeTranscript(raw);
+    expect(decoded.history.map(text)).toEqual(["问", "答"]);
+    expect(decoded.validRecords).toBe(1);
+  });
+
+  it("identical duplicate delta lines stay idempotent (crash re-append), distinct seq keeps repeats distinct", () => {
+    const delta = encodeTurnDelta({
+      at,
+      seq: 0,
+      turnId: "t1",
+      routeId: "main",
+      appended: [{ role: "assistant", parts: [{ type: "text", text: "追加" }] }],
+    });
+    const decoded = decodeTranscript(encodeTurnV2("t1", at, pair("问", "答")) + delta + delta);
+    expect(decoded.history.map(text)).toEqual(["问", "答", "追加"]);
+
+    const repeated = encodeTurnDelta({
+      at,
+      seq: 1,
+      turnId: "t1",
+      routeId: "main",
+      appended: [{ role: "assistant", parts: [{ type: "text", text: "追加" }] }],
+    });
+    const decoded2 = decodeTranscript(encodeTurnV2("t1", at, pair("问", "答")) + delta + repeated);
+    expect(decoded2.history.map(text)).toEqual(["问", "答", "追加", "追加"]);
   });
 });

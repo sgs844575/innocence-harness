@@ -53,17 +53,20 @@ export {
   canonicalizeHistory,
   decodeTranscript,
   encodeSessionMeta,
+  encodeTurnDelta,
   encodeTurnV2,
   encodeTurnV3,
   type DecodedMessage,
   type DecodedTranscript,
   type SessionMetaRecord,
   type TranscriptRoute,
+  type TurnDeltaRecord,
+  type TurnDeltaRecordInput,
   type TurnRecordV2,
   type TurnRecordV3,
   type TurnRecordV3Input,
 } from "./transcript";
-export { persistTurn, persistTurnSnapshot, routeFileBeside } from "./turn-persistence";
+export { persistTurn, persistTurnDelta, persistTurnSnapshot, routeFileBeside } from "./turn-persistence";
 // Session family (moved here when the retired core package was deleted):
 // the conversational AgentSession, its kernel composition, the legacy
 // plugin-registration face and the compat view over the spine services.

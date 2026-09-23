@@ -10,7 +10,7 @@ import type { Message } from "@innocenceharness/harness-session";
 import type { ContextUsageSnapshot } from "@innocenceharness/harness-context-meter";
 import { createPendingInputMailbox, type PendingInputMailbox } from "@innocenceharness/harness-agent-loop";
 import { AgentSession } from "./session";
-import { persistContextUsage, persistTurn, persistTurnSnapshot } from "./turn-persistence";
+import { persistContextUsage, persistTurn, persistTurnDelta, persistTurnSnapshot } from "./turn-persistence";
 import { forwardHarnessEvent } from "./runtime-events";
 import { RouteSessionCache, routeCacheKey, routeKeyPrefix, sessionDisposedError } from "./route-cache";
 import { buildSession, type RouteBuildContext } from "./runtime-session";
@@ -128,10 +128,12 @@ export class HarnessRuntime {
       });
       let fatalError: string | undefined;
       let doneCompletion: TurnCompletion | undefined;
-      // Real-time persistence options (same file resolution as the final row):
-      // the user prompt row lands before the turn runs, and every structural
-      // event boundary refreshes an interim snapshot. All snapshots share the
-      // turn's id, which the decoder folds last-wins into the final row.
+      // Real-time persistence options (same file resolution as the final row).
+      // The user prompt is durable the moment the turn starts (a tiny
+      // snapshot), then the turn's FIRST history row resets the slot as a
+      // full snapshot and every later boundary appends only the NEW messages
+      // as turn-delta rows — a turn's byte cost stays linear in its logical
+      // size instead of re-writing the whole turn per tool boundary.
       const persistence = {
         persistDir: this.options.persistDir,
         fileFor: this.options.transcriptFileFor,
@@ -145,16 +147,57 @@ export class HarnessRuntime {
           ? { role: "user", parts: [{ type: "text", text: request.text }] }
           : { role: request.text.role, parts: [...request.text.parts] }],
       });
+      // 增量游标：只在行真正落盘后推进。首个历史行（或写失败后的自愈行）
+      // 是整轮快照，其余边界只追加新增消息；失败不清游标，下一边界用全量
+      // 快照重写覆盖缺口。串行链保证每步的快照/增量决策看到上一步结果。
+      let persistCursor = historyStart;
+      let historyRowWritten = false;
+      let persistBroken = false;
+      let persistSeq = 0;
+      let flushChain: Promise<void> = Promise.resolve();
+      const enqueueFlush = (completion?: TurnCompletion): Promise<void> => {
+        const run = async (): Promise<void> => {
+          // 切片与提交长度必须取自同一快照：await 落盘期间历史仍会增长，
+          // 若游标推进到「落盘后」的当前长度，就会跳过这段未持久化的增长。
+          const historyNow = agent.history;
+          if (!historyRowWritten || persistBroken) {
+            const messages = historyNow.slice(historyStart);
+            if (messages.length === 0) return;
+            const committed = historyNow.length;
+            const written = await persistTurn(persistence, {
+              sessionId: request.sessionId,
+              turnId: request.messageId,
+              routeId,
+              messages,
+              ...(completion !== undefined ? { completion } : {}),
+            });
+            historyRowWritten = historyRowWritten || written;
+            persistBroken = !written;
+            if (written) persistCursor = committed;
+            return;
+          }
+          const appended = historyNow.slice(persistCursor);
+          if (appended.length === 0 && completion === undefined) return;
+          const committed = historyNow.length;
+          const written = await persistTurnDelta(persistence, {
+            sessionId: request.sessionId,
+            turnId: request.messageId,
+            routeId,
+            seq: persistSeq++,
+            appended,
+            ...(completion !== undefined ? { completion } : {}),
+          });
+          persistBroken = !written;
+          if (written) persistCursor = committed;
+        };
+        flushChain = flushChain.then(run, run);
+        return flushChain;
+      };
       const unsubscribe = agent.on((event) => {
         if (event.type === "error" && event.fatal) fatalError = event.message;
         if (event.type === "done") doneCompletion = event.completion;
         if (event.type === "toolCall" || event.type === "toolResult") {
-          void persistTurnSnapshot(persistence, {
-            sessionId: request.sessionId,
-            turnId: request.messageId,
-            routeId,
-            messages: agent.history.slice(historyStart),
-          }).catch(() => {
+          void enqueueFlush().catch(() => {
             // Best-effort snapshots: the final row remains the authority.
           });
         }
@@ -181,13 +224,7 @@ export class HarnessRuntime {
         ? { ...completionBase, finishReason: "error" as const, aborted: false }
         : completionBase;
       const turnMessages = agent.history.slice(historyStart);
-      await persistTurn(persistence, {
-        sessionId: request.sessionId,
-        turnId: request.messageId,
-        routeId,
-        messages: turnMessages,
-        completion,
-      });
+      await enqueueFlush(completion);
       routeTrace?.complete({
         ...completion,
         response: turnMessages,
