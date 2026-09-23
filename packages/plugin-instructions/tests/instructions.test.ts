@@ -5,9 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { MessageProcessor } from "@innocenceharness/harness-session";
 import {
   INSTRUCTION_FILE_CANDIDATES,
+  buildEnvironmentEnvelope,
   buildInstructionEnvelope,
   capInstructionContent,
   createInstructionsPlugin,
+  describeCommandShell,
+  osLabel,
   readInstructionFile,
 } from "../src";
 
@@ -31,11 +34,21 @@ function makeContext(sessionId = "s") {
     scope: { sessionId },
   } as never;
 }
-const textOf = (m: { parts: Array<{ type: string; text?: string }> }) =>
-  m.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
+const partsOf = (m: { parts: Array<{ type: string; text?: string }> }) => m.parts.map((p) => (p as { text: string }).text);
 
-function processorsOf(root: () => string | undefined, isContinuation?: () => boolean): MessageProcessor[] {
-  const plugin = createInstructionsPlugin({ getWorkspaceRoot: root, isContinuationSession: isContinuation });
+function processorsOf(
+  root: () => string | undefined,
+  isContinuation?: () => boolean,
+  shell?: () => { file: string; args: readonly string[] } | undefined,
+): MessageProcessor[] {
+  const plugin = createInstructionsPlugin({
+    getWorkspaceRoot: root,
+    isContinuationSession: isContinuation,
+    getCommandShell: shell,
+    // 固定时钟/平台缝：断言可复现。
+    now: () => new Date("2026-09-23T14:05:33"),
+    platform: "win32",
+  });
   const processors: MessageProcessor[] = [];
   plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
   return processors;
@@ -60,6 +73,40 @@ describe("instruction file resolution", () => {
 
   it("candidate order is singular-first", () => {
     expect([...INSTRUCTION_FILE_CANDIDATES]).toEqual(["AGENT.md", "agent.md", "AGENTS.md", "agents.md"]);
+  });
+});
+
+describe("environment envelope", () => {
+  it("carries time with weekday and UTC offset, time zone, OS, and the shell invocation", () => {
+    const envelope = buildEnvironmentEnvelope(
+      new Date("2026-09-23T14:05:33+08:00"),
+      "win32",
+      { file: "C:\\Program Files\\Git\\bin\\bash.exe", args: ["--login", "-c"] },
+    );
+    expect(envelope.startsWith("<system-reminder>\nSession environment")).toBe(true);
+    expect(envelope).toContain("2026-09-23 14:05:33 (Wednesday)");
+    expect(envelope).toContain("UTC+08:00");
+    expect(envelope).toContain("Operating system: Windows (win32)");
+    expect(envelope).toContain('"C:\\Program Files\\Git\\bin\\bash.exe" --login -c <command>');
+    expect(envelope).toContain("bash syntax (POSIX-compatible)");
+    expect(envelope).toContain("Write shell commands for that shell only.");
+    expect(envelope).toContain("Time zone: ");
+    expect(envelope.endsWith("\n</system-reminder>")).toBe(true);
+  });
+
+  it("falls back to the platform-default line without a shell template", () => {
+    const envelope = buildEnvironmentEnvelope(new Date("2026-09-23T14:05:33Z"), "linux", undefined);
+    expect(envelope).toContain("Operating system: Linux (linux)");
+    expect(envelope).toContain("platform default shell expansion");
+  });
+
+  it("maps platforms and shell executables to labels", () => {
+    expect(osLabel("win32")).toBe("Windows");
+    expect(osLabel("darwin")).toBe("macOS");
+    expect(osLabel("linux")).toBe("Linux");
+    expect(describeCommandShell({ file: "C:\\Windows\\system32\\cmd.exe", args: ["/d", "/s", "/c"] })).toContain("cmd.exe syntax");
+    expect(describeCommandShell({ file: "powershell.exe", args: ["-NoProfile", "-Command"] })).toContain("PowerShell syntax");
+    expect(describeCommandShell({ file: "wsl.exe", args: ["-e", "bash", "-lc"] })).toContain("WSL");
   });
 });
 
@@ -89,35 +136,45 @@ describe("instructions processor", () => {
     expect(processors[0].inheritToSubagents).toBe(false);
   });
 
-  it("injects the file into the first turn only", async () => {
+  it("injects the environment envelope FIRST, then the instruction file, on the first turn only", async () => {
     const root = await tmpRoot();
     await fs.writeFile(path.join(root, "AGENT.md"), "build with npm test", "utf8");
-    const [processor] = processorsOf(() => root);
+    const [processor] = processorsOf(() => root, undefined, () => ({ file: "bash.exe", args: ["-c"] }));
 
     const first = await processor.process(makeMessage("你好"), makeContext());
-    expect(textOf(first)).toContain("你好");
-    expect(textOf(first)).toContain("build with npm test");
-    expect(textOf(first)).toContain("Workspace instructions loaded from AGENT.md");
+    const parts = partsOf(first);
+    expect(parts).toHaveLength(3);
+    expect(parts[0]).toBe("你好");
+    expect(parts[1]).toContain("Session environment");
+    expect(parts[1]).toContain("Command shell (used by the Bash tool)");
+    expect(parts[2]).toContain("build with npm test");
+    expect(parts[2]).toContain("Workspace instructions loaded from AGENT.md");
 
     const second = await processor.process(makeMessage("继续"), makeContext());
-    expect(textOf(second)).toBe("继续");
+    expect(partsOf(second)).toEqual(["继续"]);
   });
 
-  it("skips continuation sessions (stored first turn already carries the envelope)", async () => {
+  it("injects the environment envelope even without a workspace root or instruction file", async () => {
+    const [noRoot] = processorsOf(() => undefined);
+    const parts = partsOf(await noRoot.process(makeMessage("hi"), makeContext()));
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toBe("hi");
+    expect(parts[1]).toContain("Session environment");
+    expect(parts[1]).not.toContain("Workspace instructions loaded");
+
+    const empty = await tmpRoot();
+    const [noFile] = processorsOf(() => empty);
+    const parts2 = partsOf(await noFile.process(makeMessage("hi"), makeContext()));
+    expect(parts2).toHaveLength(2);
+    expect(parts2[1]).toContain("Session environment");
+  });
+
+  it("skips continuation sessions entirely (stored first turn already carries the envelopes)", async () => {
     const root = await tmpRoot();
     await fs.writeFile(path.join(root, "AGENT.md"), "rules", "utf8");
     const [processor] = processorsOf(() => root, () => true);
     const message = await processor.process(makeMessage("继续"), makeContext());
-    expect(textOf(message)).toBe("继续");
-  });
-
-  it("skips without a workspace root or instruction file", async () => {
-    const [noRoot] = processorsOf(() => undefined);
-    expect(textOf(await noRoot.process(makeMessage("hi"), makeContext()))).toBe("hi");
-
-    const empty = await tmpRoot();
-    const [noFile] = processorsOf(() => empty);
-    expect(textOf(await noFile.process(makeMessage("hi"), makeContext()))).toBe("hi");
+    expect(partsOf(message)).toEqual(["继续"]);
   });
 
   it("consumes the attempt even when skipped (a later file waits for the next session)", async () => {
@@ -126,6 +183,6 @@ describe("instructions processor", () => {
     await processor.process(makeMessage("first"), makeContext());
     await fs.writeFile(path.join(root, "AGENT.md"), "late rules", "utf8");
     const second = await processor.process(makeMessage("second"), makeContext());
-    expect(textOf(second)).toBe("second");
+    expect(partsOf(second)).toEqual(["second"]);
   });
 });

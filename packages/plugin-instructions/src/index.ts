@@ -1,11 +1,14 @@
-// Workspace instructions plugin: injects the workspace instruction file
-// (AGENT.md; case variants and the plural AGENTS.md convention are accepted)
-// into the FIRST user turn of every NEW session as a message-side envelope —
-// the system prompt is never touched (caching discipline). Factory form (same
-// staged shape as the reminders plugin) so the host session composition
-// supplies the workspace root and the continuation signal. Continuation
-// sessions (rebuilt from a stored transcript seed) skip the injection: their
-// stored first turn already carries the envelope.
+// Workspace instructions plugin: injects two message-side envelopes into the
+// FIRST user turn of every NEW session — an environment header (current
+// time, time zone, operating system, and the command shell the Bash tool
+// actually uses, resolved from the terminalShell setting) FIRST, then the
+// workspace instruction file (AGENT.md; case variants and the plural
+// AGENTS.md convention are accepted) — the system prompt is never touched
+// (caching discipline). Factory form (same staged shape as the reminders
+// plugin) so the host session composition supplies the workspace root, the
+// continuation signal, and the command-shell template. Continuation
+// sessions (rebuilt from a stored transcript seed) skip both injections:
+// their stored first turn already carries the envelopes.
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Context } from "@innocenceharness/kernel";
@@ -24,15 +27,30 @@ export const INSTRUCTION_FILE_CANDIDATES = ["AGENT.md", "agent.md", "AGENTS.md",
 /** Injection budget (bytes): oversized files truncate with a visible note. */
 export const INSTRUCTION_MAX_BYTES = 100 * 1024;
 
+/** The command shell template the Bash tool executes commands through
+ *  (host-resolved from the terminalShell setting; same shape tools-shell
+ *  consumes as `commandShell`). */
+export interface CommandShellTemplate {
+  file: string;
+  args: readonly string[];
+}
+
 export interface InstructionsPluginOptions {
-  /** Workspace root of the session; empty/undefined means no injection. */
+  /** Workspace root of the session; empty/undefined means no instruction file. */
   getWorkspaceRoot: () => string | undefined;
   /**
    * True when this session continues stored history (the host rebuilt the
-   * session with a transcript seed); the injected envelope is already in the
-   * stored first turn, so a fresh injection would duplicate it.
+   * session with a transcript seed); the injected envelopes are already in
+   * the stored first turn, so fresh injections would duplicate them.
    */
   isContinuationSession?: () => boolean;
+  /** The command shell the Bash tool uses; absent = platform-default
+   *  expansion (the envelope says so instead of naming a shell). */
+  getCommandShell?: () => CommandShellTemplate | undefined;
+  /** Clock seam for tests; defaults to the real current time. */
+  now?: () => Date;
+  /** Platform seam for tests; defaults to the real process platform. */
+  platform?: NodeJS.Platform;
 }
 
 export interface InstructionsPlugin {
@@ -43,7 +61,7 @@ export interface InstructionsPlugin {
 /**
  * Pipeline position: after the host processors (0) and the early
  * skill-expansion pass (-1000), ahead of the reminders tail (900) — the
- * envelope lands on the same outbound first turn the reminders append to.
+ * envelopes land on the same outbound first turn the reminders append to.
  */
 const INSTRUCTIONS_PROCESSOR_ORDER = 800;
 
@@ -57,6 +75,81 @@ export function buildInstructionEnvelope(fileName: string, content: string): str
     "",
     "</system-reminder>",
   ].join("\n");
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** Human label for the process platform (kept neutral, no vendor names). */
+export function osLabel(platform: NodeJS.Platform): string {
+  switch (platform) {
+    case "win32":
+      return "Windows";
+    case "darwin":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return platform;
+  }
+}
+
+/** Syntax hint derived from the resolved shell executable. */
+export function describeCommandShell(shell: CommandShellTemplate): string {
+  const name = path.basename(shell.file).toLowerCase();
+  // powershell/pwsh 判定必须先于 bash/sh：名字里都含 "sh"。
+  if (name.includes("powershell") || name.includes("pwsh")) {
+    return "PowerShell syntax";
+  }
+  if (name.includes("bash") || name.includes("sh")) {
+    return "bash syntax (POSIX-compatible)";
+  }
+  if (name.startsWith("cmd")) {
+    return "cmd.exe syntax (CMD builtins and %VAR% expansion)";
+  }
+  if (name.startsWith("wsl")) {
+    return "Linux commands inside the WSL bash environment";
+  }
+  return "unknown shell — verify syntax with a harmless probe before relying on it";
+}
+
+/**
+ * The environment header injected FIRST on every new session's opening
+ * turn: wall-clock time with UTC offset, time zone, operating system, and
+ * the exact command shell the Bash tool runs commands through.
+ */
+export function buildEnvironmentEnvelope(
+  now: Date,
+  platform: NodeJS.Platform,
+  shell: CommandShellTemplate | undefined,
+): string {
+  const offsetMinutes = -now.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMinutes);
+  const offset = `UTC${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown";
+  const lines = [
+    "<system-reminder>",
+    "Session environment (captured at the start of this session):",
+    `- Time: ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ` +
+      `(${WEEKDAYS[now.getDay()]}) ${offset}`,
+    `- Time zone: ${timeZone}`,
+    `- Operating system: ${osLabel(platform)} (${platform})`,
+  ];
+  if (shell) {
+    const invocation = [shell.file, ...shell.args, "<command>"].map((part) =>
+      /\s/.test(part) ? `"${part}"` : part,
+    ).join(" ");
+    lines.push(`- Command shell (used by the Bash tool): ${invocation} — ${describeCommandShell(shell)}`);
+  } else {
+    lines.push("- Command shell (used by the Bash tool): the platform default shell expansion");
+  }
+  lines.push("Write shell commands for that shell only.", "</system-reminder>");
+  return lines.join("\n");
 }
 
 /**
@@ -107,6 +200,16 @@ export function createInstructionsPlugin(options: InstructionsPluginOptions): In
           if (attempted) return message;
           attempted = true;
           if (options.isContinuationSession?.()) return message;
+          // 环境信封恒在最前：与指令文件是否存在无关（时间/系统/命令行
+          // 对每个新会话都是有效上下文）。
+          message.parts.push({
+            type: "text",
+            text: buildEnvironmentEnvelope(
+              options.now?.() ?? new Date(),
+              options.platform ?? process.platform,
+              options.getCommandShell?.(),
+            ),
+          });
           const root = options.getWorkspaceRoot();
           if (!root) return message;
           const file = await readInstructionFile(root);

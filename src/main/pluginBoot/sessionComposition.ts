@@ -418,6 +418,7 @@ function factoryPlugin(
     | {
         getWorkspaceRoot: () => string | undefined;
         isContinuationSession?: () => boolean;
+        getCommandShell?: () => { file: string; args: readonly string[] } | undefined;
       },
 ): ObjectPlugin {
     return {
@@ -672,16 +673,22 @@ async function builtinLoaderEntryFor(
     }));
   } else if (!entry.disabled && id === "instructions") {
     // Same factory shape as reminders: the staged default export is the
-    // workspace-instructions factory (AGENT.md injection into the first turn
-    // of new sessions). The workspace root is this composition's session
-    // root; the continuation getter reuses the reminders state (continuation
-    // only on the main route, where the runtime re-seeds stored transcripts —
-    // those already carry the injected envelope in their stored first turn).
+    // workspace-instructions factory (environment header + AGENT.md
+    // injection into the first turn of new sessions). The workspace root is
+    // this composition's session root; the continuation getter reuses the
+    // reminders state (continuation only on the main route, where the
+    // runtime re-seeds stored transcripts — those already carry the
+    // envelopes in their stored first turn). The command shell comes from
+    // the same factory-config snapshot the shell tool consumes
+    // (toolFactoryConfigs.shell.commandShell — terminalShell resolved at
+    // compose time); absent config means platform-default expansion for the
+    // tool AND the envelope alike.
     plugin = factoryPlugin(boot, "instructions", () => ({
       getWorkspaceRoot: () => workspaceRoot,
       ...(reminderState?.isContinuationSession
         ? { isContinuationSession: reminderState.isContinuationSession }
         : {}),
+      getCommandShell: () => toolFactoryConfigs?.shell.commandShell,
     }));
   } else if (!entry.disabled && id === "memory") {
     // Same factory shape as creation/reminders: the staged default export is
