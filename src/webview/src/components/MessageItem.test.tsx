@@ -79,9 +79,11 @@ describe("MessageItem", () => {
   });
 
   it("思考显示关闭：只渲染首个思考块，后续思考段隐藏；开启时全部渲染", () => {
+    // 工具边界分隔的两段思考（无边界时思考会跨正文归并为一段）。
     const parts: ChatMessage["parts"] = [
       { type: "thinking", text: "第一段" },
       { type: "text", text: "正文" },
+      { type: "toolCall", id: "c1", toolName: "Read", args: {} },
       { type: "thinking", text: "第二段" },
     ];
     const thinkingMessage = message({ id: "a1", role: "assistant", streaming: false, parts });
@@ -94,6 +96,18 @@ describe("MessageItem", () => {
     // 缺省 stream prop = 旧行为（全显）。
     render(<MessageItem t={t} message={thinkingMessage} />);
     expect(screen.getAllByTitle("chat.thinking.label")).toHaveLength(2);
+  });
+
+  it("交错推理流：思考与正文交替的 parts 归并成一条思考行 + 一段连续正文", () => {
+    const parts: ChatMessage["parts"] = [
+      { type: "thinking", text: "思考一" },
+      { type: "text", text: '{"a": ' },
+      { type: "thinking", text: "思考二" },
+      { type: "text", text: "1}" },
+    ];
+    const interleaved = message({ id: "a1", role: "assistant", streaming: false, parts });
+    render(<MessageItem t={t} message={interleaved} stream={STREAM_DEFAULTS} />);
+    expect(screen.getAllByTitle("chat.thinking.label")).toHaveLength(1);
   });
 
   it("todo 显示关闭：todo 工具行隐藏（其余行保留，滤空段不渲染）；开启时显示", () => {

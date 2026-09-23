@@ -19,6 +19,35 @@ describe("segmentParts", () => {
     expect(segments[0]).toMatchObject({ text: "ab" });
     expect(segments[2]).toMatchObject({ parts: expect.arrayContaining([expect.objectContaining({ id: "c2" })]) });
   });
+
+  it("交错推理流：工具边界内正文归并成一段、思考归并成一段", () => {
+    const parts: MessagePart[] = [
+      { type: "thinking", text: "t1" },
+      { type: "text", text: '{"a": ' },
+      { type: "thinking", text: "t2" },
+      { type: "text", text: "1}" },
+    ];
+    const segments = segmentParts(parts);
+    expect(segments.map((s) => s.kind)).toEqual(["thinking", "text"]);
+    expect(segments[0]).toMatchObject({ text: "t1t2" });
+    expect(segments[1]).toMatchObject({ text: '{"a": 1}' });
+  });
+
+  it("工具边界挡住跨段归并：后续步骤的思考/正文不并入前文", () => {
+    const parts: MessagePart[] = [
+      { type: "thinking", text: "t1" },
+      { type: "text", text: "x1" },
+      { type: "toolCall", id: "c1", toolName: "Read", args: {} },
+      { type: "toolResult", toolCallId: "c1", content: "ok", isError: false },
+      { type: "thinking", text: "t2" },
+      { type: "text", text: "x2" },
+    ];
+    const segments = segmentParts(parts);
+    expect(segments.map((s) => s.kind)).toEqual(["thinking", "text", "tools", "thinking", "text"]);
+    expect(segments[1]).toMatchObject({ text: "x1" });
+    expect(segments[3]).toMatchObject({ text: "t2" });
+    expect(segments[4]).toMatchObject({ text: "x2" });
+  });
 });
 
 describe("buildToolRows", () => {

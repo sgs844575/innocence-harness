@@ -475,8 +475,12 @@ export async function runLoop(
         part.type === "toolCall"
           ? { ...part, args: structuredClone(prepared.get(part.id)?.args ?? part.args) }
           : part;
-      history.push({ role: "assistant", parts: mergeTextParts(parts).map(withCompleteArgs) });
-      onEvent({ type: "assistantMessage", parts: parts.map(withCompleteArgs) });
+      // 合并一次、两处共享同一结果（mergeTextParts 历史上会改写入参 text，
+      // 二次调用会把正文拼重）。
+      const assistantParts = mergeTextParts(parts).map(withCompleteArgs);
+      history.push({ role: "assistant", parts: assistantParts });
+      // 事件与历史同一合并语义：交错流下消费者看到同样的连续正文段。
+      onEvent({ type: "assistantMessage", parts: assistantParts });
 
       if (calls.length === 0) break;
 
@@ -758,15 +762,17 @@ function toolFailureMessage(error: unknown, outcome: ToolOutcome): string {
   }
 }
 
-/** Collapses consecutive text deltas into one part (readable history, clean transcripts). */
+/** Collapses consecutive text/thinking deltas into one part (readable history,
+ * clean transcripts). Never mutates the input parts: a merge replaces the tail
+ * with a fresh part object, so callers may re-run it over the same array. */
 function mergeTextParts(parts: MessagePart[]): MessagePart[] {
   const merged: MessagePart[] = [];
   for (const part of parts) {
     const last = merged[merged.length - 1];
     if (part.type === "text" && last?.type === "text") {
-      last.text += part.text;
+      merged[merged.length - 1] = { ...last, text: last.text + part.text };
     } else if (part.type === "thinking" && last?.type === "thinking") {
-      last.text += part.text;
+      merged[merged.length - 1] = { ...last, text: last.text + part.text };
     } else {
       merged.push(part);
     }
