@@ -32,18 +32,6 @@ function fakeTool(
   return t;
 }
 
-/** Provider whose every turn requests the same tool (maxTurns probe). */
-function loopingProvider(): Provider {
-  let i = 0;
-  return {
-    id: "looping",
-    async *chat(): AsyncIterable<Delta> {
-      i += 1;
-      yield { type: "toolCall", id: `call_${i}`, toolName: "Loop", args: {} };
-    },
-  };
-}
-
 interface Turn {
   text?: string;
   toolCalls?: Array<{ toolName: string; args?: Record<string, unknown> }>;
@@ -72,6 +60,16 @@ function scriptedProvider(turns: Turn[]): Provider {
 const allowAll = () =>
   new PermissionEngine({ mode: "auto", decider: { ask: async () => "deny" as const } });
 
+/** Bounded default provider: one text answer per run (run-tests override it). */
+function answerProvider(): Provider {
+  return {
+    id: "answer",
+    async *chat(): AsyncIterable<Delta> {
+      yield { type: "text", text: "ok" };
+    },
+  };
+}
+
 /** Loads a tools service with one call-counting Loop tool and binds loop deps. */
 async function makeDeps(overrides: Partial<LoopDeps> = {}): Promise<{ deps: LoopDeps; tool: Tool & { calls: number } }> {
   const kernel = new Context();
@@ -83,7 +81,7 @@ async function makeDeps(overrides: Partial<LoopDeps> = {}): Promise<{ deps: Loop
     deps: {
       tools: kernel.tools,
       permission: allowAll(),
-      provider: loopingProvider(),
+      provider: answerProvider(),
       history: [],
       systemPrompt: "test",
       workspaceRoot: "/tmp/ws",
@@ -118,22 +116,6 @@ describe("loop service lifecycle on the kernel", () => {
 });
 
 describe("createRunLoop binding", () => {
-  it("lets per-run options override the session-level defaults", async () => {
-    const { deps, tool } = await makeDeps({ maxTurns: 5 });
-    const run = createRunLoop(deps);
-    const result = await run(textMessage("user", "go"), { maxTurns: 2 });
-    expect(result.turns).toBe(2);
-    expect(tool.calls).toBe(2);
-  });
-
-  it("falls back to the deps default when the run passes no override", async () => {
-    const { deps, tool } = await makeDeps({ maxTurns: 3 });
-    const run = createRunLoop(deps);
-    const result = await run(textMessage("user", "go"));
-    expect(result.turns).toBe(3);
-    expect(tool.calls).toBe(3);
-  });
-
   it("resolves a function systemPrompt once per run", async () => {
     const systems: string[] = [];
     const provider: Provider = {

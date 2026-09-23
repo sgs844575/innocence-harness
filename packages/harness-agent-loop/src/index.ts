@@ -1,6 +1,5 @@
 export {
   runLoop,
-  DEFAULT_MAX_TURNS,
   DEFAULT_TOOL_TIMEOUT_MS,
   type LoopOptions,
   type LoopResult,

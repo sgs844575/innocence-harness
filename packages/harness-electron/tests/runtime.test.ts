@@ -267,10 +267,13 @@ describe("HarnessRuntime", () => {
     expect(rows.length).toBeGreaterThanOrEqual(4);
     expect(rows.slice(2).every((r) => r.type === "turn-delta")).toBe(true);
     // 增量行只携带新增消息：不再重写提示词与既有内容（字节成本线性）。
-    for (const row of rows.slice(2)) {
+    // 中间增量必有新增内容；收尾行只承载 completion（边界时序可能已把全部
+    // 内容先行落盘）。
+    for (const row of rows.slice(2, -1)) {
       expect(JSON.stringify(row)).not.toContain("读一下");
       expect((row.appended as unknown[]).length).toBeGreaterThan(0);
     }
+    expect(JSON.stringify(rows.at(-1))).not.toContain("读一下");
     expect(rows.at(-1)!.completion).toBeDefined();
     expect(rows.slice(0, -1).every((r) => r.completion === undefined)).toBe(true);
 

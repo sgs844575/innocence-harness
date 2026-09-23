@@ -166,7 +166,6 @@ async function setup(
     run: (
       text: string,
       extra: {
-        maxTurns?: number;
         signal?: AbortSignal;
         toolTimeoutMs?: number;
         abortGraceMs?: number;
@@ -505,32 +504,6 @@ describe("runLoop", () => {
     expect(toolResult && toolResult.type === "toolResult" && toolResult.outcome).toBe("timeout");
   });
 
-  it("enforces outer max turns for SDK steps (plus one tools-free wrap-up)", async () => {
-    const loop = fakeTool("Loop", async () => ({ content: "again" }));
-    const { provider, model } = sdkProviderForTurns([
-      [
-        { type: "stream-start", warnings: [] },
-        sdkToolCall("loop-1", "Loop", {}),
-        sdkFinish("tool-calls"),
-      ],
-      [
-        { type: "stream-start", warnings: [] },
-        sdkToolCall("loop-2", "Loop", {}),
-        sdkFinish("tool-calls"),
-      ],
-      [...sdkText("wrap-up"), sdkFinish()],
-    ]);
-    const { run } = await setup([loop], provider);
-
-    const result = await run("loop", { maxTurns: 2 });
-
-    expect(result.turns).toBe(2);
-    expect(loop.calls).toHaveLength(2);
-    // 轮次封顶后恰好一次收尾步（无工具定义）：第 3 次模型调用逼出文本结论。
-    expect(model.doStreamCalls).toHaveLength(3);
-    expect(result.finalText).toBe("wrap-up");
-  });
-
   it("does not ask permission for remaining SDK calls after a stop", async () => {
     const stop = new AbortController();
     let asks = 0;
@@ -650,44 +623,33 @@ describe("runLoop", () => {
     );
   });
 
-  it("stops after maxTurns even if the model keeps calling tools", async () => {
-    const loop = fakeTool("Loop", async () => ({ content: "again" }));
-    const provider = scriptedProvider([{ toolCalls: [{ toolName: "Loop" }] }]);
-    const { run } = await setup([loop], provider);
-    const result = await run("go", { maxTurns: 3 });
-    expect(result.turns).toBe(3);
-    expect(loop.calls).toHaveLength(3);
-  });
-
-  it("maxTurns exhaustion forces a tools-free wrap-up step (no silent no-conclusion)", async () => {
+  it("runs until the model stops calling tools (no turn cap)", async () => {
     const loop = fakeTool("Loop", async () => ({ content: "again" }));
     const provider = scriptedProvider([
+      { toolCalls: [{ toolName: "Loop" }] },
       { toolCalls: [{ toolName: "Loop" }] },
       { toolCalls: [{ toolName: "Loop" }] },
       { text: "最终结论" },
     ]);
     const { history, run } = await setup([loop], provider);
-    const result = await run("go", { maxTurns: 2 });
-    // 轮次封顶：工具只执行了两轮，收尾步不计数。
-    expect(result.turns).toBe(2);
-    expect(loop.calls).toHaveLength(2);
-    // 收尾步逼出文本结论，落在工具结果轮之后。
+    const result = await run("go");
+    expect(result.turns).toBe(4);
+    expect(loop.calls).toHaveLength(3);
     expect(result.finalText).toBe("最终结论");
     const tail = history[history.length - 1];
     expect(tail?.role).toBe("assistant");
     expect(tail?.parts[0]).toMatchObject({ type: "text", text: "最终结论" });
   });
 
-  it("no wrap-up step when the run already ended with a text answer", async () => {
+  it("a text answer ends the run after a single model call", async () => {
     let chatCalls = 0;
     const provider = scriptedProvider([{ text: "答案" }], () => {
       chatCalls += 1;
     });
     const { run } = await setup([], provider);
-    const result = await run("go", { maxTurns: 2 });
+    const result = await run("go");
     expect(result.finalText).toBe("答案");
     expect(result.turns).toBe(1);
-    // 文本结论轮后未再请求模型（无收尾步）。
     expect(chatCalls).toBe(1);
   });
 
@@ -1115,13 +1077,13 @@ describe("runLoop", () => {
     expect(events.some((event) => event.type === "contextUsage")).toBe(false);
   });
 
-  it("收尾步同样发 contextUsage（每模型步一事件）", async () => {
+  it("每个带 usage 的模型步各发一次 contextUsage（工具步 + 结论步）", async () => {
     const loopTool = fakeTool("Loop", async () => ({ content: "again" }));
     const { provider } = sdkProviderForTurns([
       [
         { type: "stream-start", warnings: [] },
         sdkToolCall("loop-1", "Loop", {}),
-        sdkFinish("tool-calls"),
+        sdkFinish("tool-calls", { total: 300, noCache: 300, cacheRead: 0 }),
       ],
       [...sdkText("wrap-up"), sdkFinish("stop", { total: 500, noCache: 250, cacheRead: 250 }, 10)],
     ]);
@@ -1136,10 +1098,8 @@ describe("runLoop", () => {
       systemPrompt: "test",
       workspaceRoot: "/tmp/ws",
       onEvent: (event) => events.push(event),
-      maxTurns: 1,
     });
 
-    // 轮次封顶触发收尾步：主步 + 收尾步各发一次。
     expect(result.finalText).toBe("wrap-up");
     const usages = events.filter(
       (event): event is Extract<HarnessEvent, { type: "contextUsage" }> =>

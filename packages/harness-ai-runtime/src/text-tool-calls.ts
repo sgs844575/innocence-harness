@@ -8,8 +8,10 @@ import type { ToolSpec } from "@innocenceharness/harness-providers";
  *
  * 识别刻意保守，避免吞掉正文里引用标记的正常回答：
  * - 整条文本（去除首尾空白后）必须完全由完整的 `<tool_call>` 块组成；
- * - 每个块解析出的工具名必须在本次请求注册的工具表内；
- * - 任一块未闭合、无法解析或名字未知 → 整条保持纯文本。
+ * - 注册了工具表时，每个块解析出的工具名必须在表内；未注册任何工具的
+ *   请求（轮次耗尽的收尾步、压缩摘要步）不做名字校验——标记仍消费为
+ *   调用事件交给调用方丢弃，而不是以原文漏出到界面；
+ * - 任一块未闭合、无法解析或名字未知（有工具表时）→ 整条保持纯文本。
  */
 export interface TextToolCall {
   id: string;
@@ -75,9 +77,11 @@ export function parseTextToolCalls(text: string, table: TextToolCallTable): Text
   if (extracted.residue.trim() !== "") return null;
 
   const calls: TextToolCall[] = [];
+  const requireKnownNames = table.names.size > 0;
   for (const inner of extracted.blocks) {
     const parsed = parseToolCallInner(inner.trim(), table);
-    if (parsed === null || !table.names.has(parsed.toolName)) return null;
+    if (parsed === null) return null;
+    if (requireKnownNames && !table.names.has(parsed.toolName)) return null;
     calls.push({ id: nextTextToolCallId(), toolName: parsed.toolName, args: parsed.args });
   }
   return calls;

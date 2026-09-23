@@ -129,7 +129,6 @@ export function createSpawnerChildSession(
       decider: parentOptions.permission.decider,
       engine: materials.permission, // shared rules, grants and mode
     },
-    maxTurns: materials.maxTurns,
     logger: materials.logger,
     lifecycle: parentOptions.lifecycle,
   }),

@@ -51,7 +51,6 @@ function materials(): SpawnerChildMaterials {
     provider: scriptedProvider(),
     permission: allowEngine(),
     systemPrompt: "CHILD",
-    maxTurns: 5,
     logger: () => {},
   };
 }

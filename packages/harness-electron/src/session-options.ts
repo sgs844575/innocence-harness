@@ -48,7 +48,6 @@ export interface AgentSessionOptions {
    */
   isolatedWorktree?: boolean;
   compaction?: Partial<import("@innocenceharness/harness-session").CompactionOptions>;
-  maxTurns?: number;
   toolTimeoutMs?: number;
   /** Optional host-neutral child-agent lifecycle port. */
   lifecycle?: SubagentLifecyclePort;

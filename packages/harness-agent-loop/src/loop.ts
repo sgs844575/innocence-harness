@@ -38,7 +38,6 @@ export interface LoopOptions {
   onEvent: HarnessEventListener;
   compactor?: ContextManager;
   signal?: AbortSignal;
-  maxTurns?: number;
   toolTimeoutMs?: number;
   /** Extra wait after the timeout abort before a tool is declared unstable. */
   abortGraceMs?: number;
@@ -80,7 +79,6 @@ export interface LoopResult {
   completion: TurnCompletion;
 }
 
-export const DEFAULT_MAX_TURNS = 40;
 export const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
 
 interface ModelStep {
@@ -320,7 +318,6 @@ export async function runLoop(
     telemetry,
     resolveAttachment,
   } = opts;
-  const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const toolTimeoutMs = opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
 
   // Shallow copy: history owns its entries even when the caller reuses the
@@ -360,7 +357,9 @@ export async function runLoop(
     });
 
   try {
-    for (let turn = 1; turn <= maxTurns; turn++) {
+    // 无轮次上限：循环由模型的自然收尾（无工具调用的文本结论）、中止信号
+    // 或终态错误结束；失控保护交给用户停止、上下文压缩与配额计费。
+    for (let turn = 1; ; turn++) {
       if (signal?.aborted) break;
       turns = turn;
       onEvent({ type: "turnStart", turn });
@@ -595,7 +594,7 @@ export async function runLoop(
         // the derived AbortController, middleware chain, real abort-on-timeout
         // and outcome standardization. Complete args are retained in history,
         // events, audit and telemetry. Delegated tools (subagent runs) skip the session deadline:
-        // they own their budget (child maxTurns, caller-set timeouts) and are
+        // they own their budget (caller-set timeouts) and are
         // stopped by the run signal, never by a wall-clock guess (repo rule:
         // no default timeout while waiting on subagents). Tools that await a
         // HUMAN answer (ask_user) skip it for the same reason — the question
@@ -656,61 +655,6 @@ export async function runLoop(
       }
       await Promise.allSettled(inflight);
       history.push({ role: "user", parts: resultParts });
-    }
-
-    // 轮次耗尽兜底（「跑满轮次不出结论」）：末轮仍是工具结果、模型还没给
-    // 文本结论时，追加一次无工具的收尾步——没有工具定义，模型只能作答。
-    // 中止/终态错误/已有文本结论（末轮非工具结果轮）都不触发。
-    const tail = history[history.length - 1];
-    if (
-      !aborted &&
-      !terminalError &&
-      !signal?.aborted &&
-      turns === maxTurns &&
-      tail?.role === "user" &&
-      tail.parts.some((part) => part.type === "toolResult")
-    ) {
-      const epilogueRawBreakdown = measure([]);
-      const epilogue = await runModelStep({
-        provider,
-        system: systemPrompt,
-        messages: history,
-        tools: [],
-        signal,
-        onEvent,
-        telemetry,
-        resolveAttachment,
-      });
-      if (epilogue.metadata?.usage && epilogue.metadata.usage.inputTokens !== undefined) {
-        onEvent({
-          type: "contextUsage",
-          snapshot: calibrate(epilogueRawBreakdown, epilogue.metadata.usage.inputTokens, {
-            modelId: providerModelId(provider),
-            cachedInputTokens: epilogue.metadata.usage.cachedInputTokens,
-          }),
-        });
-      }
-      if (epilogue.metadata) {
-        stepMetadata.push(epilogue.metadata);
-        usage = addUsage(usage, epilogue.metadata.usage);
-        finishReason = epilogue.metadata.finishReason;
-      }
-      if (epilogue.aborted) {
-        aborted = true;
-      } else if (epilogue.error) {
-        terminalError = true;
-        terminalBlock = appendTerminalError(history, epilogue.parts, epilogue.error, onEvent);
-        onEvent({ type: "error", message: epilogue.error, fatal: true });
-      } else {
-        // 收尾步只取文本/思考；模型在无工具定义下仍执意发的调用轮被丢弃。
-        const textParts = epilogue.parts.filter(
-          (part) => part.type === "text" || part.type === "thinking",
-        );
-        if (textParts.length > 0) {
-          history.push({ role: "assistant", parts: mergeTextParts(textParts) });
-          onEvent({ type: "assistantMessage", parts: mergeTextParts(textParts) });
-        }
-      }
     }
   } catch (err) {
     if (isAbortError(err)) {

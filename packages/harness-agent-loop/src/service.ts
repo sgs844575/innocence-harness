@@ -47,7 +47,6 @@ export interface LoopDeps {
   compactor?: ContextManager;
   /** Spawner bound to each invocation scope with the parent identity (agent spine). */
   spawner?: SubagentSpawner;
-  maxTurns?: number;
   toolTimeoutMs?: number;
   abortGraceMs?: number;
   /** Optional allow-listed observability port injected by the host. */
@@ -67,7 +66,6 @@ export interface LoopRunOptions {
    * with the parent's identity plus the spawning invocation's id.
    */
   scope?: ExecutionScopeIdentity;
-  maxTurns?: number;
   toolTimeoutMs?: number;
   abortGraceMs?: number;
 }
@@ -96,7 +94,6 @@ export function createRunLoop(deps: LoopDeps): RunLoopFunction {
       onEvent: deps.onEvent,
       compactor: deps.compactor,
       signal: opts.signal,
-      maxTurns: opts.maxTurns ?? deps.maxTurns,
       toolTimeoutMs: opts.toolTimeoutMs ?? deps.toolTimeoutMs,
       abortGraceMs: opts.abortGraceMs ?? deps.abortGraceMs,
       spawner: deps.spawner,

@@ -29,7 +29,6 @@ function materials(onSystem: (system: string) => void): SpawnerChildMaterials {
     provider: capturingProvider(onSystem),
     permission: allowEngine(),
     systemPrompt: "CHILD-PERSONA",
-    maxTurns: 5,
     logger: () => {},
   };
 }

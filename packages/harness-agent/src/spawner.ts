@@ -85,9 +85,6 @@ export interface SpawnerSessionInput {
   tools: string[] | "readOnly" | "all";
   /** Parent state the child re-registers: processors and tool middlewares as-is, in order. */
   inherit: { processors: MessageProcessor[]; middlewares: ToolExecutionMiddleware[] };
-  /** Maximum loop turns for the child (default: unlimited — the loop ends when
-   *  the model stops calling tools, on abort, or on error). */
-  maxTurns?: number;
   /** Short human-readable task summary shown in lifecycle projections. */
   description?: string;
   /** Agent preset id spawning this child (shown in lifecycle projections). */
@@ -136,8 +133,6 @@ export interface SpawnerChildMaterials {
   /** Permission engine shared with the spawning session: same rules, grants and mode. */
   permission: PermissionEngine;
   systemPrompt: string;
-  /** Child turn cap; the unlimited default (`maxTurns ?? Infinity`) already applied. */
-  maxTurns: number;
   logger: SpawnerLogger;
   signal?: AbortSignal;
   /** S2b：种子历史（有界父会话尾部），子会话建后、首跑前压入其账本。 */
@@ -559,7 +554,6 @@ export function createSpawnerPlugin(deps: SpawnerDeps): SpawnerPlugin {
             provider: deps.provider,
             permission: deps.permission, // shared rules, grants and mode
             systemPrompt: input.systemPrompt,
-            maxTurns: input.maxTurns ?? Number.POSITIVE_INFINITY,
             logger,
             signal,
             ...(seedHistory?.length ? { seedHistory } : {}),

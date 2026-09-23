@@ -479,16 +479,6 @@ describe("spawner child plugin set construction", () => {
     expect(children[0]!.materials.permission).toBe(permission);
   });
 
-  it("defaults the child maxTurns to unlimited and honors an explicit cap", async () => {
-    const { factory, children, gates } = makeFactory();
-    const ctx = await withSpawner({ sessionFactory: factory });
-
-    await runOne(ctx, gates);
-    expect(children[0]!.materials.maxTurns).toBe(Number.POSITIVE_INFINITY);
-    await runOne(ctx, gates, { ...baseInput, maxTurns: 7 });
-    expect(children[1]!.materials.maxTurns).toBe(7);
-  });
-
   it("passes the spawn system prompt to the child materials", async () => {
     const { factory, children, gates } = makeFactory();
     const ctx = await withSpawner({ sessionFactory: factory });

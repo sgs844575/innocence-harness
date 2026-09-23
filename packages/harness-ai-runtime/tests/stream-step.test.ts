@@ -577,6 +577,38 @@ describe("streamOneHarnessStep", () => {
     expect(JSON.stringify(events)).not.toContain("<tool_call>");
   });
 
+  it("consumes markup as tool-call events even with no registered tools (wrap-up/compaction steps never leak raw markup)", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "<tool_call>\n<function=Bash>\n<parameter=command>dir /b\n</parameter>\n</function>\n</tool_call>" },
+          { type: "text-end", id: "text-1" },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "stop" } },
+        ]),
+      },
+    });
+
+    const events = await collect(
+      streamOneHarnessStep({
+        model: { value: model, providerId: "test", modelId: "model" },
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [],
+      }),
+    );
+
+    expect(events.some((event) => event.type === "text")).toBe(false);
+    expect(events).toContainEqual({
+      type: "toolCall",
+      id: expect.stringMatching(/^textcall-/),
+      toolName: "Bash",
+      args: { command: "dir /b" },
+    });
+    expect(JSON.stringify(events)).not.toContain("<tool_call>");
+  });
+
   it("keeps prose answers untouched, including markup quoted after prose", async () => {
     const model = new MockLanguageModelV3({
       doStream: {

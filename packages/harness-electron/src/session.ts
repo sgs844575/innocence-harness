@@ -94,7 +94,6 @@ export class AgentSession {
       onEvent: (event) => kernel.services.session.emit(event),
       compactor: kernel.services.session.compactor,
       spawner: this.spawner,
-      maxTurns: options.maxTurns ?? spine.loop.DEFAULT_MAX_TURNS,
       toolTimeoutMs: options.toolTimeoutMs ?? spine.loop.DEFAULT_TOOL_TIMEOUT_MS,
       telemetry: options.telemetry,
       pendingInputs: options.pendingInputs,

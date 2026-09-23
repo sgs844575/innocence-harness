@@ -79,9 +79,6 @@ export interface SubagentOptions {
   systemPrompt: string;
   /** Tool names the child may use; "readOnly" = every readOnly tool; "all" = everything (Task itself is always excluded). */
   tools: string[] | "readOnly" | "all";
-  /** Maximum loop turns for the child (default: unlimited — the loop ends when
-   *  the model stops calling tools, on abort, or on error). */
-  maxTurns?: number;
   /** Agent preset id spawning this child (shown in lifecycle projections). */
   agentType?: string;
   prompt: string;
