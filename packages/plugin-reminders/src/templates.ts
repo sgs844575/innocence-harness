@@ -44,6 +44,15 @@ export interface ReminderState {
    */
   todoStale?: boolean;
   /**
+   * True on non-first owner turns that start without an active list (never
+   * built, or the latest one fully completed) past the re-arm window: the
+   * start-of-task workflow reminder fires so a genuinely new multi-step
+   * task still gets its analyze-then-list discipline even deep into a
+   * session where the system-prompt text has aged out of attention.
+   * Throttled by the injector (once per absence period).
+   */
+  todoWorkflowStart?: boolean;
+  /**
    * Present only on turns where the usage-level reminder fires: the
    * session's cumulative usage at or beyond the crossing level (first
    * threshold, then each +50% step). Absent on every other turn and in
@@ -124,12 +133,26 @@ const todoFreshnessTemplate: ReminderTemplate = {
   when: (state) => state.todoStale === true,
   render: () =>
     "The session's task list still holds open entries while the recent turns have left it " +
-    "untouched. Re-check the list against where the work actually stands: entries whose " +
-    "work has wrapped up should be marked completed, and newly started work should be " +
-    "entered promptly rather than held in memory alone. When the list stops matching the " +
-    "effort at hand — the work finished or the plan changed — clear it instead of letting it " +
-    "drift. Multi-step work should be tracked with the list tool from start to finish, " +
-    "kept as a live record rather than a one-time snapshot.",
+    "untouched. Refresh the list through the list tool NOW so it matches where the work " +
+    "actually stands, and keep it item-by-item from here on: mark an entry in progress the " +
+    "moment work on it starts, and mark it completed the moment it finishes — one finished " +
+    "item is one update, never a batch saved for later. When the list stops matching the " +
+    "effort at hand — the work finished or the plan changed — clear or rebuild it instead of " +
+    "letting it drift.",
+};
+
+// Start-of-task workflow (companion to the freshness reminder above). Deep
+// sessions dilute the system-prompt workflow discipline; this fires once per
+// open-list absence period on a non-first owner turn, re-anchoring the
+// analyze-then-list-then-execute routine for a genuinely new task.
+const todoWorkflowStartTemplate: ReminderTemplate = {
+  id: "todo-workflow-start",
+  when: (state) => state.todoWorkflowStart === true,
+  render: () =>
+    "A new round of work is starting with no active task list. Before executing: analyze the " +
+    "requirement, then lay the steps out with the todo list tool and run strictly by that " +
+    "list — each item marked in progress when work on it starts and completed the moment it " +
+    "finishes. A reply-only round or a single trivial step needs no list.",
 };
 
 // Token usage level (source: system-reminder-token-usage.md). The state
@@ -173,6 +196,7 @@ export const reminderTemplates: readonly ReminderTemplate[] = [
   externalTrustBoundaryTemplate,
   planPermissionActiveTemplate,
   todoFreshnessTemplate,
+  todoWorkflowStartTemplate,
   usageLevelTemplate,
   sessionContinuationTemplate,
 ];

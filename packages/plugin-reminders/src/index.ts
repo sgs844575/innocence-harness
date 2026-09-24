@@ -63,43 +63,98 @@ function envelope(body: string): string {
 /** Tool name of the session's todo list tool (whole-replace semantics). */
 const TODO_TOOL_NAME = "TodoWrite";
 /**
- * Recency window: a list counts as stale once five messages have accumulated
- * after its last refresh. Histories shorter than the window simply hold all
- * their messages inside it, so any refresh still inside such a history is
- * always "recent".
+ * Recency window shared by both list reminders. A list counts as stale once
+ * three messages have accumulated after its last refresh — the workflow
+ * contract is item-by-item updates (start one → in_progress, finish one →
+ * completed immediately), so two tool round-trips of silence is already
+ * drift and nagging must arrive on the next turn, not several turns later.
  */
-const TODO_STALE_WINDOW = 5;
+const TODO_STALE_WINDOW = 3;
+/**
+ * Throttle between consecutive start-of-task reminders inside one open-list
+ * absence period: once fired, the next re-arm waits six more messages, so a
+ * Q&A stretch is never nagged every turn while a genuinely new task a few
+ * messages later still gets its reminder.
+ */
+const TODO_ABSENT_REARM_WINDOW = 6;
+
+/** The latest list-tool call a history holds, with its open-entry state. */
+interface TodoListSnapshot {
+  /** Index of the message carrying the most recent list-tool call. */
+  refreshIndex: number;
+  /** True when the latest list holds at least one non-completed entry. */
+  hasOpenEntry: boolean;
+}
 
 /**
- * Derives the todo-freshness state from the session-local history view. The
- * most recent list-tool call wins (each call whole-replaces the list);
- * malformed args — missing, non-array, or empty todos — count as "no list"
- * and never arm the reminder. A list is stale only when it holds an entry
- * not marked completed AND its last refresh falls outside the recency
- * window (a refresh inside the window means the model just touched it, and
- * nagging would only add noise).
+ * Derives the todo-list state from the session-local history view. The most
+ * recent list-tool call wins (each call whole-replaces the list); malformed
+ * args — missing, non-array, or empty todos — count as "no list" (null).
  *
  * Child sessions are naturally safe without an owner-session gate: the
  * history accessor reflects the child's own ledger, which never contains
- * the parent's list-tool calls, so the derivation yields "no list" there.
+ * the parent's list-tool calls, so the derivation yields null there.
  */
-function todoListStale(history: readonly Message[]): boolean {
-  let refreshIndex = -1;
-  let todos: unknown;
+function todoListSnapshot(history: readonly Message[]): TodoListSnapshot | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const part = history[i].parts.find(
       (p): p is ToolCallPart => p.type === "toolCall" && p.toolName === TODO_TOOL_NAME,
     );
-    if (part) {
-      refreshIndex = i;
-      todos = part.args?.todos;
-      break;
+    if (!part) continue;
+    const todos = part.args?.todos;
+    if (!Array.isArray(todos) || todos.length === 0) return null;
+    return {
+      refreshIndex: i,
+      hasOpenEntry: todos.some((entry) => (entry as { status?: string })?.status !== "completed"),
+    };
+  }
+  return null;
+}
+
+/**
+ * Stale-open rule for the freshness reminder: an open list whose last
+ * refresh falls outside the recency window (a refresh inside the window
+ * means the model just touched it, and nagging would only add noise).
+ */
+function todoListStale(history: readonly Message[]): boolean {
+  const list = todoListSnapshot(history);
+  if (list === null || !list.hasOpenEntry) return false;
+  return history.length - 1 - list.refreshIndex >= TODO_STALE_WINDOW;
+}
+
+/**
+ * Start-of-task rule for the workflow reminder: the turn is NOT the first
+ * (the first turn already carries the system-prompt workflow discipline)
+ * and no open list exists — either the session never built one, or the
+ * latest list is fully completed/closed — while enough messages have passed
+ * since the list went away (or since the session began) for a genuinely new
+ * task to be starting.
+ */
+function todoWorkflowAbsent(history: readonly Message[]): boolean {
+  const list = todoListSnapshot(history);
+  if (list !== null && list.hasOpenEntry) return false; // open list → freshness owns the nag
+  // Absence = no valid list at all, or the latest one fully completed (the
+  // task it tracked has wrapped up). Either way the re-arm clock counts from
+  // the last list-tool call; a never-used session counts from its start.
+  const lastCall =
+    list !== null ? list.refreshIndex : lastSeenListCallIndex(history);
+  return lastCall !== null
+    ? history.length - 1 - lastCall >= TODO_STALE_WINDOW
+    : history.length >= TODO_STALE_WINDOW;
+}
+
+/** Index of the LAST message carrying any list-tool call (null = none). */
+function lastSeenListCallIndex(history: readonly Message[]): number | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (
+      history[i].parts.some(
+        (p): p is ToolCallPart => p.type === "toolCall" && p.toolName === TODO_TOOL_NAME,
+      )
+    ) {
+      return i;
     }
   }
-  if (refreshIndex < 0 || !Array.isArray(todos) || todos.length === 0) return false;
-  const hasOpenEntry = todos.some((entry) => entry?.status !== "completed");
-  if (!hasOpenEntry) return false;
-  return history.length - 1 - refreshIndex >= TODO_STALE_WINDOW;
+  return null;
 }
 
 /**
@@ -124,7 +179,10 @@ function todoListStale(history: readonly Message[]): boolean {
  * the trust boundary is already consumed by the parent's first turn. The
  * todo-freshness reminder needs no such gate: it derives from the turn's
  * own history accessor, and a child session's ledger holds no list-tool
- * calls, so it stays unarmed there by construction.
+ * calls, so it stays unarmed there by construction. The todo workflow-start
+ * reminder IS owner-gated: child contracts already carry the workflow
+ * discipline on the thread-notes channel, and the throttle budget belongs
+ * to the parent's absence period.
  */
 export function createRemindersPlugin(options: RemindersPluginOptions): RemindersPlugin {
   return {
@@ -138,6 +196,10 @@ export function createRemindersPlugin(options: RemindersPluginOptions): Reminder
       // so inherited child sessions neither see the reminder nor consume
       // the watermark.
       let usageWatermark: number | undefined;
+      // Start-of-task reminder throttle: history length at the last fire.
+      // Owner-session turns only, so child sessions never consume the
+      // re-arm budget of the parent's absence period.
+      let todoAbsentRemindedAt: number | undefined;
       ctx.session.registerProcessor({
         name: "reminders",
         order: REMINDERS_PROCESSOR_ORDER,
@@ -153,15 +215,29 @@ export function createRemindersPlugin(options: RemindersPluginOptions): Reminder
               ? totalTokens >= USAGE_FIRST_THRESHOLD_TOKENS
               : totalTokens >= usageWatermark * USAGE_GROWTH_FACTOR);
           if (usageCrossed) usageWatermark = totalTokens;
+          const history = context.history?.();
+          // Start-of-task (workflow) reminder: a non-first owner turn with
+          // no open list arms once per absence period; the freshness
+          // reminder below needs no gate (a child ledger holds no list
+          // calls of its own).
+          let todoWorkflowStart: boolean | undefined;
+          if (ownerSession && !firstTurn && history !== undefined) {
+            todoWorkflowStart =
+              todoWorkflowAbsent(history) &&
+              (todoAbsentRemindedAt === undefined ||
+                history.length - todoAbsentRemindedAt >= TODO_ABSENT_REARM_WINDOW);
+            if (todoWorkflowStart) todoAbsentRemindedAt = history.length;
+          }
           const state: ReminderState = {
             provider: { id: context.provider?.id ?? "unknown" },
             permissionMode: options.getPermissionMode(),
             firstTurn,
             ownerSession,
             // History is an optional context member: hosts and fakes that
-            // supply no accessor simply leave the list reminder unarmed
+            // supply no accessor simply leave the list reminders unarmed
             // (undefined → template off, and no read is attempted).
-            todoStale: context.history ? todoListStale(context.history()) : undefined,
+            todoStale: history ? todoListStale(history) : undefined,
+            ...(todoWorkflowStart ? { todoWorkflowStart: true } : {}),
             ...(usageCrossed ? { usageLevel: usage } : {}),
             ...(ownerSession && options.isContinuationSession?.() ? { continuation: true } : {}),
           };

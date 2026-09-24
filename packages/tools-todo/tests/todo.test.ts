@@ -44,6 +44,16 @@ describe("TodoWrite tool metadata", () => {
     expect(todos.items.properties.status.enum).toEqual(["pending", "in_progress", "completed"]);
     expect(todos.items.properties.priority.enum).toEqual(["high", "medium", "low"]);
   });
+
+  it("description carries the item-by-item update discipline", () => {
+    // 逐项更新纪律落在工具描述上：模型每次调用前都会重读它，比系统
+    // 提示词更抗长上下文稀释。
+    expect(todoWriteTool.description).toMatch(/开工前先列出全部步骤/);
+    expect(todoWriteTool.description).toMatch(/标为 in_progress/);
+    expect(todoWriteTool.description).toMatch(/每完成一项就立即/);
+    expect(todoWriteTool.description).toMatch(/标为 completed/);
+    expect(todoWriteTool.description).toMatch(/不要攒到最后批量改/);
+  });
 });
 
 describe("validateArgs rejects malformed todos", () => {

@@ -134,14 +134,16 @@ describe("todo freshness reminder", () => {
     return textOf(message);
   }
 
-  it("injects when open entries exist and the list was last touched five messages back", async () => {
+  it("injects when open entries exist and the list was last touched three or more messages back", async () => {
     const text = await runWith(() => [todoCall(openList), ...filler(5)]);
     expect(text).toMatch(/task list/i);
     expect(text).toMatch(/<system-reminder>/);
+    const tighter = await runWith(() => [todoCall(openList), ...filler(3)]);
+    expect(tighter).toMatch(/task list/i);
   });
 
-  it("does not inject when the list was refreshed four messages back (inside the window)", async () => {
-    const text = await runWith(() => [todoCall(openList), ...filler(4)]);
+  it("does not inject when the list was refreshed two messages back (inside the window)", async () => {
+    const text = await runWith(() => [todoCall(openList), ...filler(2)]);
     expect(text).not.toMatch(/task list/i);
   });
 
@@ -167,6 +169,81 @@ describe("todo freshness reminder", () => {
 
   it("does not inject and does not throw when the context carries no history accessor", async () => {
     await expect(runWith()).resolves.not.toMatch(/task list/i);
+  });
+});
+
+describe("todo workflow-start reminder", () => {
+  const openList = [{ content: "wire the port", status: "pending", priority: "high" }];
+  const doneList = [{ content: "wire the port", status: "completed", priority: "high" }];
+
+  function todoCall(todos: unknown, id = "tc-1") {
+    return {
+      role: "assistant" as const,
+      parts: [{ type: "toolCall" as const, id, toolName: "TodoWrite", args: { todos } }],
+    };
+  }
+  const filler = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: `turn ${i}` }],
+    }));
+  const WORKFLOW = /no active task list/i;
+
+  async function freshProcessor() {
+    const plugin = createRemindersPlugin({ getPermissionMode: () => "auto" });
+    const processors: MessageProcessor[] = [];
+    plugin.apply({ session: { registerProcessor: (p: MessageProcessor) => processors.push(p) } } as never);
+    return processors[0];
+  }
+
+  it("fires on a later turn when no list ever existed, once per absence period", async () => {
+    const processor = await freshProcessor();
+    await processor.process(makeMessage("first"), makeContext("s", () => filler(2)));
+    const second = makeMessage("third round, new task");
+    await processor.process(second, makeContext("s", () => filler(4)));
+    expect(textOf(second)).toMatch(WORKFLOW);
+    // Throttled: the immediately following turns stay quiet (re-arm window).
+    const third = makeMessage("another quick follow-up");
+    await processor.process(third, makeContext("s", () => filler(5)));
+    expect(textOf(third)).not.toMatch(WORKFLOW);
+  });
+
+  it("re-arms after the throttle window passes with still no list", async () => {
+    const processor = await freshProcessor();
+    await processor.process(makeMessage("first"), makeContext("s", () => filler(2)));
+    const second = makeMessage("go");
+    await processor.process(second, makeContext("s", () => filler(4)));
+    expect(textOf(second)).toMatch(WORKFLOW);
+    const later = makeMessage("much later");
+    await processor.process(later, makeContext("s", () => filler(12)));
+    expect(textOf(later)).toMatch(WORKFLOW);
+  });
+
+  it("fires when the latest list is fully completed and the window has passed", async () => {
+    const processor = await freshProcessor();
+    await processor.process(makeMessage("first"), makeContext("s", () => filler(1)));
+    const second = makeMessage("new task");
+    await processor.process(second, makeContext("s", () => [todoCall(doneList), ...filler(3)]));
+    expect(textOf(second)).toMatch(WORKFLOW);
+  });
+
+  it("stays quiet while an open list exists (freshness owns that case) and on the first turn", async () => {
+    const processor = await freshProcessor();
+    const first = makeMessage("first turn, discipline rides the system prompt");
+    await processor.process(first, makeContext("s", () => filler(6)));
+    expect(textOf(first)).not.toMatch(WORKFLOW);
+    const second = makeMessage("continue");
+    await processor.process(second, makeContext("s", () => [todoCall(openList), ...filler(5)]));
+    expect(textOf(second)).not.toMatch(WORKFLOW);
+    expect(textOf(second)).toMatch(/task list/i); // freshness carries the nag instead
+  });
+
+  it("never fires in inherited child sessions (owner-session gate)", async () => {
+    const processor = await freshProcessor();
+    await processor.process(makeMessage("parent first"), makeContext("parent", () => filler(2)));
+    const child = makeMessage("child task");
+    await processor.process(child, makeContext("child", () => filler(4)));
+    expect(textOf(child)).not.toMatch(WORKFLOW);
   });
 });
 

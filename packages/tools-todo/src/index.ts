@@ -72,7 +72,7 @@ function echoContent(content: string): string {
 export const todoWriteTool: Tool = {
   name: "TodoWrite",
   description:
-    "维护当前任务清单：整体替换 todos 数组（content/status/priority）。复杂任务用它跟踪执行进度。",
+    "维护当前任务清单：整体替换 todos 数组（content/status/priority）。多步任务开工前先列出全部步骤；开始执行一项时把它标为 in_progress，每完成一项就立即再次调用本工具把该项标为 completed（连同其余条目整体替换）——随进度逐项更新，不要攒到最后批量改。",
   // 纯会话状态：清单只写 transcript，无工作区/进程/网络副作用——按只读
   // 分类（plan 模式放行），permissionResource 的 write/todo/session 描述的
   // 是"写入会话清单"这一逻辑动作，而非外部副作用。
