@@ -1,7 +1,7 @@
 const entries: Record<string, [string, string]> = {
   importScope: ["导入作用域", "Import scope"],
   pagination: ["技能分页", "Skill pages"], previous: ["上一页", "Previous page"], next: ["下一页", "Next page"],
-  provided: ["其他可用技能", "Other available skills"],
+  provided: ["其他可用技能", "Other available skills"], pluginProvided: ["插件贡献", "From plugins"],
   scope: ["技能范围", "Skill scope"], global: ["用户", "User"], search: ["搜索技能…", "Search skills…"],
   installed: ["已安装", "Installed"], more: ["更多操作", "More actions"], refresh: ["刷新", "Refresh"],
   create: ["新建技能", "New skill"], import: ["导入", "Import"], enabled: ["启用", "Enable"],

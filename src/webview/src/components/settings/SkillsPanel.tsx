@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Folder, Monitor, MoreHorizontal, Plus, RefreshCw, Search, Trash2, WandSparkles } from "lucide-react";
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import type { SkillSettingsApi, ManagedSkill } from "../../../../shared/skillSettingsIpc";
+import type { SkillSettingsApi, ManagedSkill, PluginSkillGroup } from "../../../../shared/skillSettingsIpc";
 import { Select } from "../ui/Select";
 import { Switch } from "../ui/Switch";
 import { AvailableSkills } from "./AvailableSkills";
@@ -14,6 +14,7 @@ export function SkillsPanel({ api, t, onCreate }: { api?: SkillsApi; t: (key: st
   const [spaces, setSpaces] = useState<{ root: string; name: string }[]>([]);
   const [rows, setRows] = useState<ManagedSkill[]>([]);
   const [provided, setProvided] = useState<{ name: string; description: string }[]>([]);
+  const [pluginGroups, setPluginGroups] = useState<PluginSkillGroup[]>([]);
   const [query, setQuery] = useState("");
   const [tick, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -25,10 +26,10 @@ export function SkillsPanel({ api, t, onCreate }: { api?: SkillsApi; t: (key: st
   const label = (key: string) => t(`settings.skills.${key}`);
   useEffect(() => {
     let current = true;
-    setRows([]); setProvided([]); setLoading(true); setError("");
+    setRows([]); setProvided([]); setPluginGroups([]); setLoading(true); setError("");
     if (!api) { setLoading(false); return; }
-    void Promise.all([api.subagentWorkspaces(), api.skillSettingsList(target), api.listSkills?.(target ?? "") ?? Promise.resolve([])]).then(([workspaces, skills, catalog]) => {
-      if (current) { setSpaces(workspaces); setRows(skills); setProvided(catalog.filter((s) => !skills.some((row) => row.name === s.name))); }
+    void Promise.all([api.subagentWorkspaces(), api.skillSettingsList(target), api.listSkills?.(target ?? "") ?? Promise.resolve([]), api.skillSettingsPlugins?.(target) ?? Promise.resolve([])]).then(([workspaces, skills, catalog, groups]) => {
+      if (current) { setSpaces(workspaces); setRows(skills); setProvided(catalog.filter((s) => !skills.some((row) => row.name === s.name))); setPluginGroups(groups.filter((group) => group.skills.length > 0)); }
     }).catch((e) => { if (current) setError(String(e)); }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [api, target, tick]);
@@ -62,6 +63,20 @@ export function SkillsPanel({ api, t, onCreate }: { api?: SkillsApi; t: (key: st
     </li>)}</ul>
     {!visible.length && <p role="status" className="py-12 text-center text-(--color-muted)">{label(!api ? "unavailable" : loading ? "loading" : "empty")}</p>}
     {provided.length > 0 && <AvailableSkills key={`${target}:${query}:${tick}`} skills={provided} query={query} label={label} />}
+    {pluginGroups.length > 0 && <section className="mt-7" aria-label={label("pluginProvided")} data-testid="skills-plugin-groups">
+      <h2 className="mb-4">{label("pluginProvided")}</h2>
+      {pluginGroups.map((group) => {
+        const matched = group.skills.filter((s) => `${s.name} ${s.description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+        if (!matched.length) return null;
+        return <div key={group.id} className="mb-4">
+          <h3 className="mb-2 text-[12px] text-(--color-muted)">{group.title} <span className="text-(--color-faint)">{matched.length}</span></h3>
+          <ul className="divide-y divide-(--color-hairline) overflow-hidden rounded-(--radius-pop) bg-(--color-panel)">{matched.map((skill) => <li key={`${group.id}:${skill.name}`} className="flex items-center gap-3 px-4 py-3">
+            <WandSparkles size={18} strokeWidth={1.4} className="shrink-0 text-(--color-muted)" />
+            <div className="min-w-0"><p className="truncate">{skill.name}</p><p title={skill.description} className="truncate text-[12px] text-(--color-muted)">{skill.description}</p></div>
+          </li>)}</ul>
+        </div>;
+      })}
+    </section>}
     <p className="mt-4 text-[12px] text-(--color-muted)">{label("hint")}</p>
     {dialog === "import" && api && <SkillImportDialog api={api} target={target} spaces={spaces} label={label} onClose={() => { setDialog(null); setTick((n) => n + 1); }} />}
   </div>;

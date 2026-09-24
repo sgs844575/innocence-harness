@@ -1,10 +1,15 @@
+import fs from "node:fs/promises";
 import path from "node:path";
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 import { listManagedSkills, setSkillEnabled, removeManagedSkill, copyManagedSkill } from "@innocenceharness/plugin-skills/management";
-import { SkillSettingsChannels as channels } from "../shared/skillSettingsIpc";
+import { parseSkillMarkdown } from "@innocenceharness/plugin-skills";
+import { bundleManifest, componentFiles } from "@innocenceharness/harness-plugin-catalog";
+import { SkillSettingsChannels as channels, type PluginSkillGroup } from "../shared/skillSettingsIpc";
 import { appDataRoot } from "./appDataRoot";
 import { listSessions } from "./sessions";
-import { getHarnessSettings } from "./harnessGlue";
+import { getHarnessSettings, getPluginInventory, bootPaths } from "./harnessGlue";
+import { defaultUserPluginRoot } from "./pluginBoot/compose";
+import { currentTestOverrides } from "./testOverrides";
 import { discoverExternalSkills } from "./skillDiscovery";
 
 export function registerSkillSettingsIpc(): void {
@@ -33,4 +38,42 @@ export function registerSkillSettingsIpc(): void {
     if (!skill) throw new Error("Skill source is unavailable or already imported.");
     await copyManagedSkill(root(target), skill.sourceDir, skill.name);
   });
+  ipcMain.handle(channels.skillSettingsPlugins, () => pluginSkillGroups());
+}
+
+/** 插件贡献分组：激活清单条目（双根，与命令分组同序）的 skills/SKILL.md
+ *  投影，按技能名排序。坏件/缺目录降级跳过，一条不拖垮整份清单。 */
+async function pluginSkillGroups(): Promise<PluginSkillGroup[]> {
+  const inventory = await getPluginInventory();
+  const userRoot = currentTestOverrides(app.isPackaged).userPluginRoot ?? defaultUserPluginRoot();
+  const builtinRoot = bootPaths().builtinRoot;
+  const groups: PluginSkillGroup[] = [];
+  for (const entry of inventory) {
+    if (entry.state !== "active") continue;
+    for (const dir of [path.join(userRoot, entry.id), path.join(builtinRoot, entry.id)]) {
+      const skills = await scanPluginSkillGroup(dir);
+      if (skills.length > 0) {
+        groups.push({ id: entry.id, title: entry.title, skills });
+        break;
+      }
+    }
+  }
+  return groups;
+}
+
+/**
+ * 单个 bundle 布局插件的技能贡献：skills 目录下各 SKILL.md 的 frontmatter
+ * 投影。native 布局插件的程序化注册技能是运行时行为，静态清单不覆盖（与
+ * 运行时装载边界一致）；目录缺失返回空。
+ */
+async function scanPluginSkillGroup(root: string): Promise<{ name: string; description: string }[]> {
+  const skills: { name: string; description: string }[] = [];
+  const manifest = await bundleManifest(root);
+  for (const rel of await componentFiles(root, "skills", manifest)) {
+    const raw = await fs.readFile(path.join(root, rel), "utf8").catch(() => null);
+    if (raw === null) continue;
+    const parsed = parseSkillMarkdown(raw);
+    if (parsed) skills.push({ name: parsed.name, description: parsed.description });
+  }
+  return skills.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

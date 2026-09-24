@@ -47,6 +47,7 @@ const api: InnocenceCodeApi = {
   skillSettingsRemove: (target, id) => ipcRenderer.invoke(skillChannels.skillSettingsRemove, target, id),
   skillSettingsDiscover: (target) => ipcRenderer.invoke(skillChannels.skillSettingsDiscover, target),
   skillSettingsImport: (target, source) => ipcRenderer.invoke(skillChannels.skillSettingsImport, target, source),
+  skillSettingsPlugins: (target) => ipcRenderer.invoke(skillChannels.skillSettingsPlugins, target),
   commandSettingsList: (target) => ipcRenderer.invoke(commandChannels.commandSettingsList, target),
   commandSettingsCreate: (target, input) => ipcRenderer.invoke(commandChannels.commandSettingsCreate, target, input),
   commandSettingsRemove: (target, id) => ipcRenderer.invoke(commandChannels.commandSettingsRemove, target, id),
