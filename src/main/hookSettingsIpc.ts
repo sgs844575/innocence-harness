@@ -50,7 +50,7 @@ export function registerHookSettingsIpc(): void {
     for (const entry of inventory) {
       if (entry.state !== "active") continue;
       for (const dir of [path.join(userRoot, entry.id), path.join(builtinRoot, entry.id)]) {
-        const hooks = await scanPluginHooks(path.join(dir, "hooks"));
+        const hooks = await scanPluginHooks(dir);
         if (hooks.length > 0) {
           groups.push({ id: entry.id, title: entry.title, hooks });
           break;
@@ -82,8 +82,9 @@ export function registerHookSettingsIpc(): void {
   });
 }
 
-async function scanPluginHooks(dir: string): Promise<HookDefinition[]> {
+async function scanPluginHooks(pluginRoot: string): Promise<HookDefinition[]> {
   const hooks: HookDefinition[] = [];
+  const dir = path.join(pluginRoot, "hooks");
   for (const entry of (await fs.readdir(dir).catch(() => [] as string[])).sort()) {
     if (entry.startsWith(".") || !entry.endsWith(".json")) continue;
     const file = path.join(dir, entry);
@@ -95,7 +96,8 @@ async function scanPluginHooks(dir: string): Promise<HookDefinition[]> {
     } catch {
       continue; // 坏 JSON 降级跳过，不拖垮整组
     }
-    hooks.push(...parseEcosystemHooksDocument(raw).hooks);
+    // 插件根随解析下发：命令里的插件根变量就地展开（与运行时装载同径）。
+    hooks.push(...parseEcosystemHooksDocument(raw, { pluginRoot }).hooks);
   }
   return hooks;
 }

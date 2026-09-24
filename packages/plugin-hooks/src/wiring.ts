@@ -43,14 +43,13 @@ import type {
 } from "@innocenceharness/harness-tools";
 import { parseHookDefinitions, type HookDefinition, type ParsedHooks } from "./config";
 import type { HookConditionEvaluator } from "./condition";
-import {
-  createHookPermissionGate,
-  type HookPermissionGate,
-} from "./gate";
+import { createHookPermissionGate, type HookPermissionGate } from "./gate";
+import { hookMatchesSubject } from "./matching";
 import { createHookRunner, type HookRunner, type HookRunInput, type HookRunResult } from "./runner";
 import { createStopFace, type HookLogSink } from "./stop";
 import {
   appendHookNote,
+  extractHookContext,
   formatHookFailure,
   renderContinuationReminder,
   renderHookVetoContent,
@@ -64,6 +63,14 @@ import {
 export const HOOKS_PROCESSOR_NAME = "hooks";
 /** Pipeline position between the memory index (-500) and the host/reminder passes. */
 export const HOOKS_PROCESSOR_ORDER = -450;
+
+/**
+ * The one session-start source this harness emits: every composition is a
+ * fresh startup (there are no resume/clear/compact lifetimes), so ecosystem
+ * source matchers test against this literal — "startup|clear|compact" fires,
+ * a resume-only matcher never does, which is the honest mapping.
+ */
+export const SESSION_START_SOURCE = "startup";
 
 export interface HooksWiringOptions {
   /** Reads the raw "hooks" configuration; parsed once, then cached. */
@@ -200,13 +207,15 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     const cwd = options.getWorkspaceRoot();
     for (const hook of parsed.hooks) {
       if (hook.event !== "sessionStart") continue;
+      // 来源筛选（生态 matcher）；字面 match 历史上不参与本面，维持恒真。
+      if (!hookMatchesSubject(hook, SESSION_START_SOURCE, () => true)) continue;
       const skip = await gate.authorize(hook);
       if (skip !== null) {
         warnings.push(skip);
         continue;
       }
       const result = await runGuarded(hook, { cwd, ...(signal !== undefined ? { signal } : {}) });
-      if (result.ok && hasOutput(result)) outputs.push(result.output);
+      if (result.ok && hasOutput(result)) outputs.push(extractHookContext(result.output));
       else if (!result.ok) warnings.push(formatHookFailure(hook, result));
     }
     const block = renderSessionStartReminder(outputs, warnings);
@@ -242,7 +251,8 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
     const cwd = options.getWorkspaceRoot();
     for (const hook of parsed.hooks) {
       if (hook.event !== "userPromptSubmit") continue;
-      if (hook.match !== undefined && !text.startsWith(hook.match)) continue;
+      // 字面 = 提示词前缀（历史语义）；正则 = 生态语义，未锚定搜索全文。
+      if (!hookMatchesSubject(hook, text, (match) => text.startsWith(match))) continue;
       const skip = await gate.authorize(hook);
       if (skip !== null) {
         failures.push(skip);
@@ -253,7 +263,7 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
         cwd,
         ...(signal !== undefined ? { signal } : {}),
       });
-      if (result.ok && hasOutput(result)) blocks.push(renderPromptContextReminder(result.output));
+      if (result.ok && hasOutput(result)) blocks.push(renderPromptContextReminder(extractHookContext(result.output)));
       else if (!result.ok) failures.push(formatHookFailure(hook, result));
     }
     if (failures.length > 0) blocks.push(renderWarningReminder(failures));
@@ -283,8 +293,9 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
       next: () => Promise<ToolResult>,
     ): Promise<ToolResult> {
       const parsed = await loadHooks();
+      // 字面 = 工具名相等（历史语义）；正则 = 生态语义，未锚定搜索工具名。
       const matchesTool = (hook: HookDefinition): boolean =>
-        hook.match === undefined || hook.match === invocation.toolName;
+        hookMatchesSubject(hook, invocation.toolName, (match) => match === invocation.toolName);
       const preHooks = parsed.hooks.filter(
         (hook) => hook.event === "preToolCall" && matchesTool(hook),
       );
@@ -348,7 +359,7 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
           cwd,
           signal: invocation.signal,
         });
-        if (note.ok && hasOutput(note)) content = appendHookNote(content, note.output);
+        if (note.ok && hasOutput(note)) content = appendHookNote(content, extractHookContext(note.output));
         else if (!note.ok) pendingWarnings.push(formatHookFailure(hook, note));
       }
       return content === result.content ? result : { ...result, content };
@@ -377,7 +388,7 @@ export function createHooksWiring(options: HooksWiringOptions): HooksWiring {
           continue;
         }
         const result = await runGuarded(hook, { cwd });
-        if (result.ok && hasOutput(result)) blocks.push(renderTurnEndReminder(result.output));
+        if (result.ok && hasOutput(result)) blocks.push(renderTurnEndReminder(extractHookContext(result.output)));
         else if (!result.ok) failures.push(formatHookFailure(hook, result));
       }
       if (blocks.length > 0) pendingTurnEndBlocks.push(...blocks);

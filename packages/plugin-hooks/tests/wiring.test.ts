@@ -763,3 +763,107 @@ describe("turnEnd wiring", () => {
     expect(unsubscribed).toEqual([]);
   });
 });
+
+describe("ecosystem matcher wiring (regex matchKind)", () => {
+  it("fires a startup-source matcher and holds a resume-only matcher back", async () => {
+    const calls: string[] = [];
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        {
+          event: "sessionStart",
+          command: "ecosystem-boot",
+          match: "startup|clear|compact",
+          matchKind: "regex",
+        },
+        {
+          event: "sessionStart",
+          command: "resume-only-boot",
+          match: "^resume$",
+          matchKind: "regex",
+        },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner((hook) => {
+        calls.push(hook.command);
+        return { ok: true, output: "" };
+      }),
+    });
+    await wiring.processor.process(userMessage("begin"), processorContext("sess-1"));
+    expect(calls).toEqual(["ecosystem-boot"]);
+  });
+
+  it("unwraps an ecosystem additionalContext envelope on session start", async () => {
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [{ event: "sessionStart", command: "envelope-boot" }],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => ({
+        ok: true,
+        output: JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "SessionStart",
+            additionalContext: "Skill introduction loaded.",
+          },
+        }),
+      })),
+    });
+    const message = await wiring.processor.process(
+      userMessage("begin"),
+      processorContext("sess-1"),
+    );
+    const text = textOf(message);
+    expect(text).toContain("Skill introduction loaded.");
+    expect(text).not.toContain("hookSpecificOutput");
+    expect(text).not.toContain("additionalContext");
+  });
+
+  it("matches tool names with an alternation regex on both tool faces", async () => {
+    const calls: string[] = [];
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "preToolCall", command: "edit-guard", match: "Write|Edit", matchKind: "regex" },
+        { event: "postToolCall", command: "edit-audit", match: "Write|Edit", matchKind: "regex" },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner((hook) => {
+        calls.push(hook.command);
+        return { ok: true, output: "guarded" };
+      }),
+    });
+    const skipped = await wiring.middleware.execute(invocation("Read"), async () => ({
+      content: "read ok",
+    }));
+    expect(skipped).toEqual({ content: "read ok" });
+    expect(calls).toEqual([]);
+    const result = await wiring.middleware.execute(invocation("Edit"), async () => ({
+      content: "edited",
+    }));
+    expect(calls).toEqual(["edit-guard", "edit-audit"]);
+    expect(result.content).toContain("[hook note]");
+  });
+
+  it("searches the whole prompt with a regex matcher instead of prefix-only", async () => {
+    let runs = 0;
+    const wiring = createHooksWiring({
+      getHooksConfig: async () => [
+        { event: "userPromptSubmit", command: "deploy-context", match: "deploy|ship it", matchKind: "regex" },
+      ],
+      getWorkspaceRoot: () => "D:/ws/root",
+      getPermissions: () => allowAllPermissions(),
+      runner: fakeRunner(() => {
+        runs += 1;
+        return { ok: true, output: "deploy checklist loaded" };
+      }),
+    });
+    await wiring.processor.process(userMessage("first"), processorContext("sess-1"));
+    // 前缀语义下 "please ship it now" 不会命中；正则搜索语义命中。
+    const second = await wiring.processor.process(
+      userMessage("please ship it now"),
+      processorContext("sess-1"),
+    );
+    expect(runs).toBe(1);
+    expect(textOf(second)).toContain("deploy checklist loaded");
+  });
+});

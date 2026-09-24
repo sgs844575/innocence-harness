@@ -32,6 +32,7 @@ export * from "./config";
 export * from "./condition";
 export * from "./ecosystem";
 export * from "./gate";
+export * from "./matching";
 export * from "./runner";
 export * from "./stop";
 export * from "./wording";

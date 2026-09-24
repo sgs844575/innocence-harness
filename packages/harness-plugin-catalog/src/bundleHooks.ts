@@ -3,7 +3,8 @@ import { bundleDocuments } from "./bundleDocuments";
 
 export async function readBundleHooks(root: string, manifest?: Record<string, unknown>) {
   const documents = await bundleDocuments(root, "hooks/hooks.json", manifest?.hooks);
-  const parsed = documents.map(parseEcosystemHooksDocument);
+  // 安装根随解析下发：命令里的插件根变量（外部协议拼写）就地展开。
+  const parsed = documents.map((document) => parseEcosystemHooksDocument(document, { pluginRoot: root }));
   return {
     declared: documents.length > 0,
     hooks: parsed.flatMap((entry) => entry.hooks),

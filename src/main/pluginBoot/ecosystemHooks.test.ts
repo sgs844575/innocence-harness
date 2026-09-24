@@ -82,8 +82,14 @@ describe("applyBundleHooks", () => {
     const applied = await applyBundleHooks(mount.ctx, "bundle-x", dir, mount.port, sink.log);
     expect(applied).toBe(true);
     expect(mount.hooks).toEqual([[
-      { event: "preToolCall", command: "guard.sh", match: "Write" },
-      { event: "turnEnd", command: "turn.sh", timeoutMs: 2000 },
+      {
+        event: "preToolCall",
+        command: "guard.sh",
+        commandTokens: ["guard.sh"],
+        match: "Write",
+        matchKind: "regex",
+      },
+      { event: "turnEnd", command: "turn.sh", commandTokens: ["turn.sh"], timeoutMs: 2000 },
     ]]);
     expect(mount.plugins).toHaveLength(1);
     expect(sink.lines).toEqual([]);
@@ -98,7 +104,7 @@ describe("applyBundleHooks", () => {
     const mount = fakeMount();
     const sink = logSink();
     await applyBundleHooks(mount.ctx, "bundle-x", dir, mount.port, sink.log);
-    expect(mount.hooks).toEqual([[{ event: "preToolCall", command: "ok.sh" }]]);
+    expect(mount.hooks).toEqual([[{ event: "preToolCall", command: "ok.sh", commandTokens: ["ok.sh"] }]]);
     expect(sink.lines).toHaveLength(1);
     expect(sink.lines[0]).toMatchObject({ channel: "bundle hooks" });
   });

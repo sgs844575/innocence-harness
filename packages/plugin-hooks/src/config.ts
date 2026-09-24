@@ -38,6 +38,20 @@ export interface HookDefinition {
   command: string;
   /** Tool name (tool events) or input prefix (input events); optional. */
   match?: string;
+  /**
+   * How `match` reads: absent/"literal" keeps the native semantics (tool-name
+   * equality on tool events, prompt-text prefix on input events); "regex"
+   * (the ecosystem matcher shape) reads `match` as a JavaScript regular
+   * expression searched unanchored over the same subject.
+   */
+  matchKind?: "literal" | "regex";
+  /**
+   * Pre-split executable tokens (ecosystem commands arrive shell-flavored,
+   * quoting included). Present means the runner executes exactly these
+   * tokens instead of whitespace-splitting `command`, so quoted paths with
+   * spaces survive; the permission gate still keys on the `command` string.
+   */
+  commandTokens?: string[];
   /** Kill ceiling in milliseconds; upper-clamped, defaults at run time. */
   timeoutMs?: number;
   /** Optional LLM condition; false/insufficient evidence skips the command. */
@@ -92,6 +106,26 @@ export function parseHookDefinitions(raw: unknown): ParsedHooks {
       return;
     }
 
+    const matchKind = record.matchKind;
+    if (matchKind !== undefined && matchKind !== "literal" && matchKind !== "regex") {
+      warnings.push(`${where}: matchKind must be "literal" or "regex" when present`);
+      return;
+    }
+
+    let commandTokens: string[] | undefined;
+    if (record.commandTokens !== undefined) {
+      const tokens = record.commandTokens;
+      if (
+        !Array.isArray(tokens) ||
+        tokens.length === 0 ||
+        tokens.some((token) => typeof token !== "string" || token.trim().length === 0)
+      ) {
+        warnings.push(`${where}: commandTokens must be a non-empty array of non-empty strings`);
+        return;
+      }
+      commandTokens = tokens.map((token) => token as string);
+    }
+
     let timeoutMs: number | undefined;
     const rawTimeout = record.timeoutMs;
     if (rawTimeout !== undefined) {
@@ -123,6 +157,8 @@ export function parseHookDefinitions(raw: unknown): ParsedHooks {
       event,
       command: command.trim(),
       ...(match !== undefined ? { match: match.trim() } : {}),
+      ...(matchKind !== undefined ? { matchKind } : {}),
+      ...(commandTokens !== undefined ? { commandTokens } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       ...(condition !== undefined ? { condition: condition.trim() } : {}),
     });

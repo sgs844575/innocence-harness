@@ -83,10 +83,10 @@ it("lists layer-file hooks index-stably (invalid entries flagged) plus active pl
   ]);
   expect(userScope.plugins).toEqual([
     { id: "my-plugin", title: "My Plugin", hooks: [
-      { event: "turnEnd", command: "node wrap.js", timeoutMs: 5000 },
-      { event: "preToolCall", command: "node guard.js", match: "Read" },
+      { event: "turnEnd", command: "node wrap.js", commandTokens: ["node", "wrap.js"], timeoutMs: 5000 },
+      { event: "preToolCall", command: "node guard.js", commandTokens: ["node", "guard.js"], match: "Read", matchKind: "regex" },
     ] },
-    { id: "team", title: "Team", hooks: [{ event: "sessionStart", command: "node hi.js" }] },
+    { id: "team", title: "Team", hooks: [{ event: "sessionStart", command: "node hi.js", commandTokens: ["node", "hi.js"] }] },
   ]);
   const projectScope = await mocks.handlers.get("hook-settings:list")!(null, projectDir()) as { installed: { event: string; timeoutMs?: number }[] };
   expect(projectScope.installed).toEqual([{ index: 0, valid: true, event: "turnEnd", command: "node done.js", timeoutMs: 5000 }]);

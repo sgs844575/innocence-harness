@@ -8,6 +8,7 @@ import {
   MAX_HOOK_OUTPUT_CHARS,
   MAX_HOOK_PREVIEW_CHARS,
   createHookRunner,
+  resolveHookSpawnTarget,
   type HookExecFile,
   type HookExecFileError,
   type HookExecFileOptions,
@@ -293,5 +294,55 @@ describe("createHookRunner", () => {
     );
     expect(observedOptions!.windowsHide).toBe(true);
     expect(typeof observedOptions!.maxBuffer).toBe("number");
+  });
+
+  it("prefers pre-split command tokens so quoted spaced paths survive", async () => {
+    let observed: ObservedCall | undefined;
+    const execFile: HookExecFile = (file, args, _options, callback) => {
+      observed = { file, args: [...args], env: {} };
+      callback(null, "", "");
+      return { pid: undefined, kill() {} };
+    };
+    const result = await createHookRunner({ execFile }).runHook(
+      {
+        event: "sessionStart",
+        command: '"C:/my plugins/p/hook bin" session-start',
+        commandTokens: ["C:/my plugins/p/hook bin", "session-start"],
+      },
+      {},
+    );
+    expect(result.ok).toBe(true);
+    expect(observed!.file).toBe("C:/my plugins/p/hook bin");
+    expect(observed!.args).toEqual(["session-start"]);
+  });
+});
+
+describe("resolveHookSpawnTarget", () => {
+  it("routes win32 .cmd/.bat executables through the command interpreter", () => {
+    expect(
+      resolveHookSpawnTarget("C:/p/run-hook.cmd", ["session-start"], "win32", "C:/Windows/system32/cmd.exe"),
+    ).toEqual({
+      file: "C:/Windows/system32/cmd.exe",
+      args: ["/d", "/s", "/c", "C:/p/run-hook.cmd", "session-start"],
+    });
+    expect(resolveHookSpawnTarget("C:/p/BOOT.BAT", [], "win32", undefined)).toEqual({
+      file: "cmd.exe",
+      args: ["/d", "/s", "/c", "C:/p/BOOT.BAT"],
+    });
+  });
+
+  it("spawns everything else verbatim, on any platform", () => {
+    expect(resolveHookSpawnTarget("C:/p/run-hook.cmd", [], "linux", undefined)).toEqual({
+      file: "C:/p/run-hook.cmd",
+      args: [],
+    });
+    expect(resolveHookSpawnTarget("/usr/bin/node", ["script.js"], "darwin", undefined)).toEqual({
+      file: "/usr/bin/node",
+      args: ["script.js"],
+    });
+    expect(resolveHookSpawnTarget("C:/p/run.sh", ["x"], "win32", undefined)).toEqual({
+      file: "C:/p/run.sh",
+      args: ["x"],
+    });
   });
 });

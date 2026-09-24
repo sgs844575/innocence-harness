@@ -119,6 +119,27 @@ function killTree(child: HookChildProcess): void {
   }
 }
 
+/**
+ * Spawn-plan seam for the no-shell face (win32 batch escape hatch): Node's
+ * execFile cannot launch .cmd/.bat scripts directly (EINVAL), so on Windows
+ * such executables are routed through the user's command interpreter
+ * (`/d /s /c`) — tokens without spaces behave exactly like a direct launch;
+ * spaced tokens stay subject to the interpreter's quote-stripping rules, the
+ * documented limit of this escape hatch. Every other combination spawns
+ * verbatim. Pure so tests can pin the platform branching.
+ */
+export function resolveHookSpawnTarget(
+  file: string,
+  args: readonly string[],
+  platform: NodeJS.Platform,
+  comspec: string | undefined,
+): { file: string; args: readonly string[] } {
+  if (platform === "win32" && /\.(cmd|bat)$/i.test(file)) {
+    return { file: comspec && comspec.trim() !== "" ? comspec : "cmd.exe", args: ["/d", "/s", "/c", file, ...args] };
+  }
+  return { file, args };
+}
+
 /** Clamps a configured per-hook ceiling: unset defaults, values are
  *  rounded and bounded to [1, MAX_HOOK_TIMEOUT_MS]. Shared by the run
  *  path and the stop face's teardown-wait budget. */
@@ -146,11 +167,17 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
   const execFileImpl = dependencies.execFile ?? defaultExecFile;
   return {
     async runHook(hook, input) {
-      const tokens = hook.command.trim().split(/\s+/).filter((token) => token.length > 0);
+      // Pre-split ecosystem tokens win over whitespace splitting: quoted
+      // paths with spaces only survive as explicit tokens (gate still keys
+      // on the raw command string).
+      const tokens =
+        hook.commandTokens ??
+        hook.command.trim().split(/\s+/).filter((token) => token.length > 0);
       if (tokens.length === 0) {
         return { ok: false, output: "hook command is empty" };
       }
       const [file, ...args] = tokens;
+      const target = resolveHookSpawnTarget(file, args, process.platform, process.env.ComSpec);
       const timeoutMs = clampHookTimeoutMs(hook.timeoutMs);
       if (input.signal?.aborted) {
         return { ok: false, output: ABORT_BEFORE_START_OUTPUT, aborted: true };
@@ -196,8 +223,8 @@ export function createHookRunner(dependencies: HookRunnerDependencies = {}): Hoo
         }, timeoutMs);
         try {
           child = execFileImpl(
-            file,
-            args,
+            target.file,
+            target.args,
             {
               env: buildEnvironment(hook, input),
               windowsHide: true,

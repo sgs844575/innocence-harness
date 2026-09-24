@@ -123,6 +123,41 @@ describe("parseHookDefinitions", () => {
     expect(bad.warnings).toHaveLength(1);
   });
 
+  it("carries matchKind and commandTokens through (the ecosystem re-parse path)", () => {
+    // 已解析的生态定义经宿主工厂再次进入 parseHookDefinitions：两个新字段
+    // 必须原样存活，否则正则 matcher 与引号词元在装载时被剥离。
+    const parsed = parseHookDefinitions([
+      {
+        event: "sessionStart",
+        command: '"C:/plugins/p/run.cmd" session-start',
+        commandTokens: ["C:/plugins/p/run.cmd", "session-start"],
+        match: "startup|clear|compact",
+        matchKind: "regex",
+      },
+    ]);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.hooks).toEqual([
+      {
+        event: "sessionStart",
+        command: '"C:/plugins/p/run.cmd" session-start',
+        commandTokens: ["C:/plugins/p/run.cmd", "session-start"],
+        match: "startup|clear|compact",
+        matchKind: "regex",
+      },
+    ]);
+  });
+
+  it("rejects bad matchKind and commandTokens shapes", () => {
+    const parsed = parseHookDefinitions([
+      { event: "sessionStart", command: "boot-hook", matchKind: "wildcard" },
+      { event: "sessionStart", command: "boot-hook", commandTokens: [] },
+      { event: "sessionStart", command: "boot-hook", commandTokens: ["ok", "   "] },
+      { event: "sessionStart", command: "boot-hook", commandTokens: "run" },
+    ]);
+    expect(parsed.hooks).toEqual([]);
+    expect(parsed.warnings).toHaveLength(4);
+  });
+
   it("documents the timeout contract boundaries", () => {
     expect(DEFAULT_HOOK_TIMEOUT_MS).toBe(10000);
     expect(MAX_HOOK_TIMEOUT_MS).toBe(30000);

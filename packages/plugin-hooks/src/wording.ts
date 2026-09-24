@@ -19,6 +19,39 @@ function reminderEnvelope(body: string): string {
 }
 
 /**
+ * Ecosystem output protocol: a hook may print its context wrapped in a JSON
+ * envelope (top-level `additionalContext`, or the nested
+ * `hookSpecificOutput.additionalContext` spelling). A pure envelope is
+ * unwrapped so the model receives the intended prose; anything else —
+ * non-JSON text, JSON without a usable context field, a broken envelope —
+ * passes through verbatim, and a native hook that happens to print JSON is
+ * untouched unless it deliberately uses the envelope shape.
+ */
+export function extractHookContext(output: string): string {
+  const trimmed = output.trim();
+  if (!trimmed.startsWith("{")) return output;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return output;
+  }
+  if (typeof parsed !== "object" || parsed === null) return output;
+  const envelope = parsed as {
+    additionalContext?: unknown;
+    hookSpecificOutput?: { additionalContext?: unknown };
+  };
+  const nested = envelope.hookSpecificOutput;
+  const context =
+    typeof nested === "object" && nested !== null && typeof nested.additionalContext === "string"
+      ? nested.additionalContext
+      : typeof envelope.additionalContext === "string"
+        ? envelope.additionalContext
+        : undefined;
+  return context !== undefined && context.trim().length > 0 ? context : output;
+}
+
+/**
  * The session-start block: one envelope over every hook's output, with
  * configuration parse warnings (and any failed start hook) as trailing
  * warning lines. Undefined when there is nothing to say — no hooks, no
