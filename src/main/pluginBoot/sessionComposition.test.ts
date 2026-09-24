@@ -1,11 +1,11 @@
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, createSessionComposition, fsFactoryConfigFor, projectAgentModes, projectSkillCatalog, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
+import { buildProviderFromSettings, capabilityNotesPlugin, collectCapabilityNotes, createSessionComposition, fsFactoryConfigFor, projectAgentModes, projectSkillCatalog, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
 import { resolveCommandShell } from "@innocenceharness/terminal-pty";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
@@ -279,6 +279,80 @@ describe("worktree isolation notes (S2a)", () => {
     expect(text).toContain("coherent commit");
     expect(text).toContain("Never rewrite history");
     expect(text).toContain("re-read a file before editing");
+  });
+});
+
+describe("capability notes (session capability prefix)", () => {
+  it("registers one shared fragment through the plugin face", async () => {
+    const registered: unknown[] = [];
+    const ctx = { systemPrompt: { registerFragment: (fragment: unknown) => registered.push(fragment) } };
+    await capabilityNotesPlugin({ plugins: ["skills"] }).apply(ctx as never);
+    expect(registered).toHaveLength(1);
+    const fragment = registered[0] as { id: string; render: (ctx: { activeMode: string; traits: object }) => string };
+    expect(fragment.id).toBe("shared.capabilities");
+    const text = fragment.render({ activeMode: "default", traits: {} });
+    expect(text).toContain("# Session capabilities");
+    expect(text).toContain("- skills");
+  });
+
+  it("collectCapabilityNotes merges top-level and ecosystem facts with the mount-loop filters", async () => {
+    // 真实生态夹具：.mcp.json + hooks/hooks.json（收集器按磁盘事实读取）。
+    const bundle = mkdtempSync(path.join(tmpdir(), "cap-notes-"));
+    try {
+      mkdirSync(path.join(bundle, "hooks"), { recursive: true });
+      writeFileSync(path.join(bundle, ".mcp.json"), JSON.stringify({ mcpServers: { "team-server": { command: "n" } } }), "utf8");
+      writeFileSync(path.join(bundle, "hooks", "hooks.json"), JSON.stringify({
+        SessionStart: [{ hooks: [{ type: "command", command: "start.sh" }] }],
+        Stop: [{ hooks: [{ type: "command", command: "turn.sh" }] }],
+      }), "utf8");
+      const notes = await collectCapabilityNotes({
+        entries: [
+          { id: "skills", name: "skills" },
+          { id: "mcp", name: "mcp" },
+          { id: "example", name: "example" },
+          { id: "memory", name: "memory" },
+          { id: "team-x", name: "team-x" },
+        ],
+        ecosystemDirs: new Map([["team-x", bundle]]),
+        config: {},
+        workspaceRoot: "D:/ws",
+        topHooks: [
+          { event: "userPromptSubmit", command: "inject-a" },
+          { event: "userPromptSubmit", command: "inject-b" },
+        ],
+        memoryOptOut: true,
+        isComputerEnabled: () => true,
+        log: () => {},
+      });
+      // 关断的 memory 与恒跳的 example 不进清单；生态条目标注。
+      expect(notes.plugins).toEqual(["skills", "mcp", "team-x (ecosystem)"]);
+      // 缺省 skills 双目录（workspace 项目层在前）。
+      expect(notes.skillDirs?.length).toBeGreaterThan(0);
+      // 生态服务器名带来源标注；顶层 mcp 条目无 servers 配置时不产生名字。
+      expect(notes.mcpServers).toEqual(["team-server (from plugin team-x)"]);
+      // 顶层与生态 hook 事件聚合计数，事件名排序输出。
+      expect(notes.hooks).toEqual([
+        { event: "sessionStart", commands: 1 },
+        { event: "turnEnd", commands: 1 },
+        { event: "userPromptSubmit", commands: 2 },
+      ]);
+    } finally {
+      rmSync(bundle, { recursive: true, force: true });
+    }
+  });
+
+  it("collectCapabilityNotes renders empty when nothing is active", async () => {
+    const notes = await collectCapabilityNotes({
+      entries: [{ id: "example", name: "example" }],
+      ecosystemDirs: new Map(),
+      config: {},
+      workspaceRoot: "D:/ws",
+      topHooks: undefined,
+      memoryOptOut: false,
+      isComputerEnabled: () => true,
+      log: () => {},
+    });
+    expect(notes).toEqual({});
   });
 });
 

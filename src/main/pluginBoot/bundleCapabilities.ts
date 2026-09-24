@@ -25,6 +25,38 @@ export async function collectBundleAgents(entries: readonly { id: string; dir: s
   }
   return all;
 }
+
+/** 生态插件的能力注记事实（会话能力前缀片段）：MCP 服务器名 + 映射到本包
+ *  词汇表后的 hook 事件序列（每条命令一项、重复计入，由组装侧聚合计数）。
+ *  读取失败降级为该插件无注记（告警跳过），与 agents/servers 收集同纪律。 */
+export interface BundleCapabilityNotes {
+  readonly id: string;
+  readonly servers: readonly string[];
+  readonly hookEvents: readonly string[];
+}
+export async function collectBundleCapabilities(
+  entries: readonly { id: string; dir: string }[],
+  log: EcosystemAdapterLog,
+): Promise<BundleCapabilityNotes[]> {
+  const notes: BundleCapabilityNotes[] = [];
+  for (const { id, dir } of entries) {
+    try {
+      const manifest = await bundleManifest(dir);
+      const [servers, hooks] = await Promise.all([
+        readBundleServers(dir, manifest),
+        readBundleHooks(dir, manifest),
+      ]);
+      notes.push({
+        id,
+        servers: Object.keys(servers.servers),
+        hookEvents: hooks.hooks.map((hook) => hook.event),
+      });
+    } catch (error) {
+      log("warn", "bundle capabilities", { plugin: id, error: String(error) });
+    }
+  }
+  return notes;
+}
 export interface BundleRuntimePort {
   getDataRoot(): string;
   createServers(servers: Record<string, BundleServer>): ObjectPlugin;

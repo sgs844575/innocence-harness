@@ -49,6 +49,13 @@ export {
 } from "./permission-classifier";
 // S2a 工作树会话隔离纪律片段（组合根与子代理工厂共用一个来源）。
 export { WORKTREE_ISOLATION_FRAGMENT } from "./worktree-fragment";
+// 会话能力前缀片段（技能/插件/MCP/钩子清单；组合根收集事实后挂载）。
+export {
+  capabilityPrefixFragment,
+  renderCapabilityPrefix,
+  type CapabilityHookSummary,
+  type CapabilityPrefixData,
+} from "./capability-prefix";
 export {
   canonicalizeHistory,
   decodeTranscript,

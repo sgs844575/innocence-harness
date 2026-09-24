@@ -163,16 +163,18 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();
       expect(names, `descriptor "${id}" 未实例化`).toContain(nameById[id]);
     }
-    // +4 = project-permission-rules（关系模型外，恒定注入）、provider（设置
+    // +5 = project-permission-rules（关系模型外，恒定注入）、provider（设置
     // 驱动的 provider 插件，每 session 组装）、worktree-isolation-notes
-    // （S2a 工作树会话感知片段，恒定挂载、非工作树会话 no-op）与
-    // workbench-focus-notes（S4 焦点注记中间件，恒定挂载、无焦点时零行为）；
+    // （S2a 工作树会话感知片段，恒定挂载、非工作树会话 no-op），
+    // workbench-focus-notes（S4 焦点注记中间件，恒定挂载、无焦点时零行为）
+    // 与 capability-notes（会话能力前缀片段，恒定挂载、空事实渲染为空串）；
     // 多余的实例化分支（无对应描述符）同样会让计数失衡变红。
     expect(names).toContain("project-permission-rules");
     expect(names).toContain("provider");
     expect(names).toContain("worktree-isolation-notes");
     expect(names).toContain("workbench-focus-notes");
-    expect(names).toHaveLength(MANIFEST_IDS.length + 4);
+    expect(names).toContain("capability-notes");
+    expect(names).toHaveLength(MANIFEST_IDS.length + 5);
   });
 
   it("equivalence: composePlugins names mirror resolveBuiltinSet active entries", async () => {

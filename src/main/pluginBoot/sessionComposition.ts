@@ -18,7 +18,11 @@ import {
 import { createProviderPlugin } from "@innocenceharness/harness-providers";
 import { createMockProvider } from "@innocenceharness/provider-mock";
 import type { UsageMetadata } from "@innocenceharness/harness-providers";
-import { WORKTREE_ISOLATION_FRAGMENT } from "@innocenceharness/harness-electron";
+import {
+  capabilityPrefixFragment,
+  WORKTREE_ISOLATION_FRAGMENT,
+  type CapabilityPrefixData,
+} from "@innocenceharness/harness-electron";
 import type { ToolActivityObserver } from "@innocenceharness/harness-tools";
 import type { FsPluginConfig } from "@innocenceharness/tools-fs";
 import type { ShellPluginConfig } from "@innocenceharness/tools-shell";
@@ -32,7 +36,10 @@ import { builtinSkills } from "@innocenceharness/plugin-builtin-skills";
 import { computerControlSkill } from "@innocenceharness/tools-computer/skill";
 import { computerAccessFor, configureComputerEntry, configuredComputerPlugin } from "./computerControl";
 import { configuredSubagentPlugin } from "./subagentConfiguration";
-import { collectBundleAgents } from "./bundleCapabilities";
+import {
+  collectBundleAgents,
+  collectBundleCapabilities,
+} from "./bundleCapabilities";
 import type { BundleAgent } from "@innocenceharness/harness-plugin-catalog";
 import { appDataRoot } from "../appDataRoot";
 import {
@@ -63,6 +70,7 @@ import {
 } from "./compose";
 import { scanUserPlugins, nativeProbe, bundleProbe, type UserPluginScanResult } from "./userPluginScan";
 import { createEcosystemAdapterPlugin } from "./ecosystemAdapter";
+import { parseHookDefinitions } from "@innocenceharness/plugin-hooks";
 import type { HostHmrWatcher } from "./hmrWatcher";
 import type {
   PluginDescriptor,
@@ -219,6 +227,89 @@ export function worktreeIsolationPlugin(active: boolean): ObjectPlugin {
       if (!active) return;
       ctx.systemPrompt.registerFragment(WORKTREE_ISOLATION_FRAGMENT);
     },
+  };
+}
+
+/**
+ * 会话能力前缀（技能/插件/MCP/钩子清单）：组合根在解析当次会话插件集时
+ * 收集事实（同一趟解析里的条目、生态目录、顶层 hooks 声明），经本插件挂载
+ * 共享片段（全模式生效，紧随基础身份前缀）。渲染为空时由装配器自动丢弃，
+ * 不产生空段。
+ */
+export function capabilityNotesPlugin(data: CapabilityPrefixData): ObjectPlugin {
+  return {
+    name: "capability-notes",
+    apply(ctx: Context) {
+      ctx.systemPrompt.registerFragment(capabilityPrefixFragment(data));
+    },
+  };
+}
+
+/** 能力事实采集的输入：与 composePlugins 的同趟解析数据对齐。 */
+interface CapabilityFactInputs {
+  readonly entries: readonly import("@innocenceharness/kernel-loader").EntryOptions[];
+  readonly ecosystemDirs: ReadonlyMap<string, string>;
+  readonly config: InnocenceConfig;
+  readonly workspaceRoot: string;
+  /** 顶层 hooks 声明（项目覆盖用户的合并值，未解析原样）。 */
+  readonly topHooks: unknown;
+  /** 用户对 memory 插件的关断（settings 与 yml 双源同判，与装载循环一致）。 */
+  readonly memoryOptOut: boolean;
+  /** computer 插件的当次开关（与装载循环同参，保证清单与实际装载一致）。 */
+  readonly isComputerEnabled: () => boolean;
+  readonly log: (channel: string, detail: Record<string, unknown>) => void;
+}
+
+/**
+ * 从同趟解析结果收集能力前缀事实：激活插件清单（条目 id，生态条目标注）、
+ * skills 目录、MCP 服务器名（顶层 + 生态）、hook 事件聚合计数（顶层 +
+ * 生态）。全部为空时返回空数据（片段渲染为空串，装配器丢弃）。单条工厂
+ * 配置或生态清单读取失败只降级该条（告警），不拖垮前缀。
+ */
+export async function collectCapabilityNotes(inputs: CapabilityFactInputs): Promise<CapabilityPrefixData> {
+  const plugins: string[] = [];
+  let skillDirs: readonly string[] = [];
+  const mcpServers: string[] = [];
+  const hookCounts = new Map<string, number>();
+  const activeEcosystem: { id: string; dir: string }[] = [];
+  for (const rawEntry of inputs.entries) {
+    const entry = configureComputerEntry(rawEntry, inputs.isComputerEnabled);
+    if (entry.id === "example" || entry.disabled) continue;
+    if (entry.id === "memory" && inputs.memoryOptOut) continue;
+    const ecosystemDir = inputs.ecosystemDirs.get(entry.id);
+    plugins.push(ecosystemDir !== undefined ? `${entry.id} (ecosystem)` : entry.id);
+    if (ecosystemDir !== undefined) activeEcosystem.push({ id: entry.id, dir: ecosystemDir });
+    try {
+      if (entry.id === "skills") {
+        skillDirs = (factoryConfig("skills", entry.config, inputs.workspaceRoot, inputs.config) as { dirs: string[] }).dirs;
+      } else if (entry.id === "mcp") {
+        const servers = (factoryConfig("mcp", entry.config, inputs.workspaceRoot, inputs.config) as { servers: Record<string, unknown> }).servers;
+        for (const name of Object.keys(servers)) {
+          mcpServers.push(name);
+        }
+      }
+    } catch (error) {
+      inputs.log("capability notes", { entry: entry.id, error: String(error) });
+    }
+  }
+  const countHook = (event: string): void => {
+    hookCounts.set(event, (hookCounts.get(event) ?? 0) + 1);
+  };
+  for (const hook of parseHookDefinitions(inputs.topHooks).hooks) countHook(hook.event);
+  for (const note of await collectBundleCapabilities(activeEcosystem, (_level, channel, detail) =>
+    inputs.log(channel, detail),
+  )) {
+    for (const name of note.servers) mcpServers.push(`${name} (from plugin ${note.id})`);
+    for (const event of note.hookEvents) countHook(event);
+  }
+  const hooks: CapabilityPrefixData["hooks"] = [...hookCounts]
+    .map(([event, commands]) => ({ event, commands }))
+    .sort((a, b) => (a.event < b.event ? -1 : a.event > b.event ? 1 : 0));
+  return {
+    ...(plugins.length > 0 ? { plugins } : {}),
+    ...(skillDirs.length > 0 ? { skillDirs } : {}),
+    ...(mcpServers.length > 0 ? { mcpServers } : {}),
+    ...(hooks.length > 0 ? { hooks } : {}),
   };
 }
 
@@ -1060,6 +1151,20 @@ export function createSessionComposition(
       plugins.push(worktreeIsolationPlugin(sessionSurface?.isolatedWorktree === true));
       // S4 工作台焦点注记（恒挂载；无焦点/会话不匹配时中间件零行为）。
       plugins.push(workbenchFocusPlugin(sessionSurface?.workbenchFocus ?? (() => undefined)));
+      // 会话能力前缀（技能/插件/MCP/钩子清单）：同趟解析收集事实后挂载
+      // 共享片段；事实为空的会话渲染为空串，装配器自动丢弃。
+      plugins.push(capabilityNotesPlugin(
+        await collectCapabilityNotes({
+          entries: resolved.entries,
+          ecosystemDirs,
+          config,
+          workspaceRoot,
+          topHooks: resolved.hooks,
+          memoryOptOut: settings?.pluginToggles?.memory === false || userToggles?.memory === false,
+          isComputerEnabled,
+          log: (channel, detail) => options.log("warn", channel, detail),
+        }),
+      ));
       // A:58 EnterWorktree 半边：仅武装会话（后台作业）注入写隔离面。
       if (sessionSurface?.backgroundIsolation === true) {
         plugins.push(createWorktreeFencePlugin());

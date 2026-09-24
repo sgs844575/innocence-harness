@@ -79,6 +79,19 @@ describe("subagent presets", () => {
     expect(enumValues).toContain("custom");
   });
 
+  it("thread notes carry the execution workflow discipline into every preset thread", () => {
+    for (const preset of BUILTIN_PRESETS) {
+      const thread = withThreadNotes(preset.systemPrompt);
+      expect(thread).toMatch(/analyzing the requirement|analyze the requirement/i);
+      expect(thread).toMatch(/TodoWrite/);
+      expect(thread).toMatch(/execute strictly by that list/i);
+      // 能力匹配：记忆/MCP/插件/技能/命令/钩子 + 条件性子代理委派。
+      expect(thread).toMatch(/reuse what relevant memory holds/i);
+      expect(thread).toContain("MCP tools, plugin capabilities, skills (/name), commands, and");
+      expect(thread).toMatch(/through Task \(subagents\) when your toolset offers it/i);
+    }
+  });
+
   it("default plugin exposes the full thirteen-preset catalog in the Task enum", () => {
     const registered: unknown[] = [];
     SubagentPlugin.apply({ tools: { register: (t: unknown) => registered.push(t) } } as never);

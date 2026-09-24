@@ -7,6 +7,15 @@
  * carried on this channel as well.
  */
 export const SUBAGENT_THREAD_NOTES = [
+  "- Start every task by analyzing the requirement, then list the steps as a",
+  "  todo with TodoWrite, and execute strictly by that list — marking items",
+  "  complete as you finish them and adding newly discovered steps instead",
+  "  of working from memory. Trivial one-step tasks need no list.",
+  "- Plan with capabilities in mind: reuse what relevant memory holds and",
+  "  pick the MCP tools, plugin capabilities, skills (/name), commands, and",
+  "  declared hooks that fit each step. Delegate genuinely separable",
+  "  sub-work through Task (subagents) when your toolset offers it — while",
+  "  the overall assignment stays yours.",
   "- Every shell command starts in the workspace root; nothing persists",
   "  between calls. Address files with paths that resolve from the workspace",
   "  root, and report them that way — never a bare filename the parent must",
