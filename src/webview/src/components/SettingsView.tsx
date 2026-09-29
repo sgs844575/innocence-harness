@@ -72,6 +72,8 @@ interface Props {
   onSetApiKey?: (profileId: string, apiKey: string) => void;
   /** 从供应商拉取模型清单；缺省 = 隐藏拉取钮。 */
   onFetchModels?: (profile: ProviderProfile) => Promise<ModelInfo[]>;
+  /** 智能配置：按模型名称匹配内置模型清单；缺省 = 关闭自动填充。 */
+  onMatchModel?: (profile: ProviderProfile, modelId: string) => Promise<ModelInfo | null>;
   /** 关于页「反馈问题」入口（缺省隐藏该行）。 */
   onFeedback?: () => void;
   /** 常规页「数据存储路径」当前值；空值 = 隐藏该卡片。 */
@@ -161,7 +163,7 @@ function CodePreviewCard({
   );
 }
 
-export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onPatchMemorySettings, skillsApi, onCreateSkill, commandsApi, hooksApi, memoryApi, mcpApi, subagentApi, pluginCatalogApi, memoryWorkspace, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
+export function SettingsView({ t, settings, appInfo, section, onPatchSettings, onPatchBrowserSettings, onPatchComputerSettings, onPatchMemorySettings, skillsApi, onCreateSkill, commandsApi, hooksApi, memoryApi, mcpApi, subagentApi, pluginCatalogApi, memoryWorkspace, onClearBrowserData, onSetTheme, onSetApiKey, onFetchModels, onMatchModel, onFeedback, dataRoot, onChangeDataRoot, onOpenOnboarding, resolvedTheme }: Props): React.JSX.Element {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto p-6">
       {section === "skills" && <SkillsPanel t={t} api={skillsApi} onCreate={onCreateSkill} />}
@@ -293,6 +295,7 @@ export function SettingsView({ t, settings, appInfo, section, onPatchSettings, o
               onPatchSettings={onPatchSettings}
               onSetApiKey={onSetApiKey}
               onFetchModels={onFetchModels}
+              onMatchModel={onMatchModel}
             />
           )}
         </div>

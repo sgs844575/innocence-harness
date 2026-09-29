@@ -98,6 +98,9 @@ const MANIFEST_IDS = [
   "team",
   "ask",
   "attachments",
+  // dsh-compat：参考开源框架（dsh，Cordis 形态）插件生态兼容层（工厂形态，
+  // 宿主 factoryPlugin 装配 roots 扫描根）。
+  "dsh-compat",
 ] as const;
 const INVENTORY_IDS = [...MANIFEST_IDS, "example"] as const;
 
@@ -158,6 +161,7 @@ maybeDescribe("composePlugins (declarative composition root)", () => {
       team: "team",
       ask: "ask",
       attachments: "attachments",
+      "dsh-compat": "dsh-compat",
     };
     for (const id of MANIFEST_IDS) {
       expect(nameById[id], `descriptor "${id}" 缺少测试侧 id→name 映射`).toBeTruthy();

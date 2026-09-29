@@ -528,3 +528,64 @@ describe("permissionClassifier flag (S3)", () => {
     expect(mergeSettings({ permissionClassifier: true }).permissionClassifier).toBe(true);
   });
 });
+
+describe("model attribute normalization (capabilities / reasoning levels / param map)", () => {
+  const modelRow = (overrides: Record<string, unknown>) => ({
+    id: "gpt-5",
+    source: "manual",
+    contextWindow: 400000,
+    maxOutput: 128000,
+    vision: true,
+    video: true,
+    pdf: true,
+    tools: true,
+    reasoning: true,
+    reasoningEfforts: ["low", "medium", "high"],
+    reasoningParamMap: { max: "xhigh" },
+    structuredOutput: true,
+    webSearch: true,
+    systemMessage: true,
+    ...overrides,
+  });
+
+  const normalizeModelRow = (row: Record<string, unknown>) =>
+    mergeSettings({
+      profiles: [{
+        id: "p", name: "P", kind: "openai", apiKey: "", baseURL: "", enabled: true,
+        models: [modelRow(row)],
+      }],
+      activeProfileId: "p", activeModel: "gpt-5",
+    }).profiles[0]!.models[0]!;
+
+  it("全部新字段经归一化保留（含历史缺口 reasoningEfforts）", () => {
+    expect(normalizeModelRow({})).toMatchObject({
+      pdf: true,
+      reasoningEfforts: ["low", "medium", "high"],
+      reasoningParamMap: { max: "xhigh" },
+      structuredOutput: true,
+      webSearch: true,
+      systemMessage: true,
+    });
+  });
+
+  it("非法形状收窄：坏档位剔除、坏映射整体丢弃、非布尔归 undefined", () => {
+    expect(normalizeModelRow({
+      reasoningEfforts: ["low", 3, "  ", null],
+      reasoningParamMap: { max: 3 },
+      pdf: "yes",
+      systemMessage: 1,
+    })).toMatchObject({
+      reasoningEfforts: ["low"],
+      reasoningParamMap: undefined,
+      pdf: undefined,
+      systemMessage: undefined,
+    });
+  });
+
+  it("空档位列表与空映射归 undefined（不落空集合）", () => {
+    expect(normalizeModelRow({ reasoningEfforts: [], reasoningParamMap: {} })).toMatchObject({
+      reasoningEfforts: undefined,
+      reasoningParamMap: undefined,
+    });
+  });
+});

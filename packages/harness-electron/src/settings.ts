@@ -409,6 +409,24 @@ export function newCustomProfile(name = "自定义平台"): ProviderProfile {
   };
 }
 
+/** 归一化思考档位列表：字符串数组过滤空白项；非数组 → undefined。 */
+function normalizeReasoningEfforts(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const list = raw.filter((v): v is string => typeof v === "string" && v.trim() !== "").map((v) => v.trim());
+  return list.length > 0 ? list : undefined;
+}
+
+/** 归一化思考参数映射：纯 string→string 对象；其余形状 → undefined。 */
+function normalizeReasoningParamMap(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string" || value === "") return undefined;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Normalizes one model entry: v2 strings migrate (preset-hit enriches,
  *  anything else is manual), v3 objects keep their fields as-is. */
 function normalizeModel(raw: unknown, providerName: string): ModelInfo | null {
@@ -430,8 +448,14 @@ function normalizeModel(raw: unknown, providerName: string): ModelInfo | null {
     maxOutput: num(src.maxOutput),
     vision: src.vision === true || undefined,
     video: src.video === true || undefined,
+    pdf: src.pdf === true || undefined,
     tools: src.tools === true || undefined,
     reasoning: src.reasoning === true || undefined,
+    reasoningEfforts: normalizeReasoningEfforts(src.reasoningEfforts),
+    reasoningParamMap: normalizeReasoningParamMap(src.reasoningParamMap),
+    structuredOutput: src.structuredOutput === true || undefined,
+    webSearch: src.webSearch === true || undefined,
+    systemMessage: src.systemMessage === true || undefined,
     streaming: src.streaming === false ? false : undefined,
     source: src.source === "fetch" || src.source === "manual" ? src.source : "preset",
     dirty: src.dirty === true || undefined,

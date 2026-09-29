@@ -24,9 +24,11 @@ interface Props {
   onSetApiKey?: (profileId: string, apiKey: string) => void;
   /** 从供应商拉取模型清单（宿主 listProviderModels + enrichModels）。 */
   onFetchModels?: (profile: ProviderProfile) => Promise<ModelInfo[]>;
+  /** 智能配置：按模型名称匹配内置模型清单（null = 未命中/不支持）。 */
+  onMatchModel?: (profile: ProviderProfile, modelId: string) => Promise<ModelInfo | null>;
 }
 
-export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetchModels }: Props): React.JSX.Element {
+export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetchModels, onMatchModel }: Props): React.JSX.Element {
   const profiles = settings.profiles;
   const [selectedId, setSelectedId] = useState<string | null>(settings.activeProfileId || profiles[0]?.id || null);
   const selected = profiles.find((profile) => profile.id === selectedId) ?? profiles[0] ?? null;
@@ -350,7 +352,12 @@ export function ModelsPanel({ t, settings, onPatchSettings, onSetApiKey, onFetch
         <div className="grid flex-1 place-items-center p-6 text-(--color-muted)">{t("settings.models.empty")}</div>
       )}
       {addingModel && selected && (
-        <AddModelDialog t={t} onClose={() => setAddingModel(false)} onSave={addModel} />
+        <AddModelDialog
+          t={t}
+          onClose={() => setAddingModel(false)}
+          onSave={addModel}
+          onMatch={onMatchModel ? (modelId) => onMatchModel(selected, modelId) : undefined}
+        />
       )}
       {importing && selected && (
         <ImportModelsDialog t={t} models={importing} onClose={() => setImporting(null)} onImport={importModels} />

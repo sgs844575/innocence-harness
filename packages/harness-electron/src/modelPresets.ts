@@ -22,10 +22,20 @@ export interface PresetModelMeta {
   maxInput?: number;
   maxOutput?: number;
   vision?: boolean;
+  /** 视频输入能力标记（展示用）。 */
+  video?: boolean;
+  /** PDF 文档输入能力标记（展示用）。 */
+  pdf?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   /** 支持的思考档位（openai reasoning_effort 风格，如 minimal/low/medium/high）。 */
   reasoningEfforts?: string[];
+  /** 思考档位 → 接口参数值映射（键为档位名）；装配 provider 时覆盖默认档位。 */
+  reasoningParamMap?: Record<string, string>;
+  /** 模型能力标记：结构化输出 / 原生联网搜索 / 对话中系统消息。 */
+  structuredOutput?: boolean;
+  webSearch?: boolean;
+  systemMessage?: boolean;
 }
 
 export type ModelSource = "preset" | "fetch" | "manual";
@@ -40,9 +50,17 @@ export interface ModelInfo {
   vision?: boolean;
   /** 视频输入能力标记（展示用）。 */
   video?: boolean;
+  /** PDF 文档输入能力标记（展示用）。 */
+  pdf?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   reasoningEfforts?: string[];
+  /** 思考档位 → 接口参数值映射（键为档位名）；装配 provider 时覆盖默认档位。 */
+  reasoningParamMap?: Record<string, string>;
+  /** 模型能力标记：结构化输出 / 原生联网搜索 / 对话中系统消息。 */
+  structuredOutput?: boolean;
+  webSearch?: boolean;
+  systemMessage?: boolean;
   streaming?: boolean;
   source: ModelSource;
   /** 用户手改保护：enrich 不覆盖已 dirty 模型的任何字段。 */

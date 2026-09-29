@@ -13,7 +13,6 @@ import { registerWorkbenchIpc } from "./workbenchIpc";
 import { registerSubagentSettingsIpc } from "./subagentSettingsIpc";
 import { registerPluginCatalogIpc } from "./pluginCatalogIpc";
 import { registerEditorIpc } from "./editorIpc";
-import { modelFromPreset, resolvePresetMeta } from "@innocenceharness/harness-electron";
 import { discoverExternalSkills, importSkill, type DiscoveredSkill } from "./skillDiscovery";
 import { importAttachmentFromBytes, importAttachmentFromPath, validateAttachmentsForSend } from "./attachments";
 import { discoverMcpFile, importMcpServers, parseMcpImport } from "./mcpImport";
@@ -34,6 +33,7 @@ import {
   listAutomations,
   triggerAutomation,
   listProviderModelsById,
+  enrichProviderModels,
   pickWorkspace,
   listPendingQuestionCards,
   respondPermission,
@@ -542,13 +542,9 @@ export function registerIpcHandlers(): void {
     listProviderModelsById(profileId),
   );
   ipcMain.handle(IPC.settingsEnrichModels, (_e, providerName: string, ids: string[]) =>
-    // 渲染层无法 import harness-electron（node 侧包），预设元数据在 main 补全。
-    // 未命中预设（自定义厂家/未知型号）→ 返回最小 fetch 对象，不再误标 preset。
-    ids.map((id) =>
-      resolvePresetMeta(providerName, id)
-        ? modelFromPreset(providerName, id)
-        : { id, source: "fetch" as const },
-    ),
+    // 渲染层无法 import harness-electron（node 侧包），预设元数据在 main 补全：
+    // cherry 预设层 + 模型清单插件按字段覆盖合并；未命中 → 最小 fetch 对象。
+    enrichProviderModels(providerName, ids),
   );
 
   ipcMain.handle(IPC.menuPopup, (_e, id: MenuId) => {

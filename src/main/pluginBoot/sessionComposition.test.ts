@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderModel } from "@innocenceharness/harness-providers";
 import { DEFAULT_SETTINGS, mergeSettings, WORKTREE_ISOLATION_FRAGMENT, type HarnessSettings } from "@innocenceharness/harness-electron";
-import { buildProviderFromSettings, capabilityNotesPlugin, collectCapabilityNotes, createSessionComposition, fsFactoryConfigFor, projectAgentModes, projectSkillCatalog, resolveStagedProvider, shellFactoryConfigFor, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
+import { buildProviderFromSettings, capabilityNotesPlugin, collectCapabilityNotes, createSessionComposition, fsFactoryConfigFor, projectAgentModes, projectSkillCatalog, resolveStagedProvider, shellFactoryConfigFor, wireReasoningEffort, workbenchFocusPlugin, worktreeIsolationPlugin } from "./sessionComposition";
 import { resolveCommandShell } from "@innocenceharness/terminal-pty";
 import type { PluginDescriptor } from "../plugin-toggles-local";
 import { stagingBootPaths } from "../staging-paths";
@@ -83,6 +83,47 @@ describe("buildProviderFromSettings", () => {
     expect(provider.model).toEqual(model("native", "native-model"));
   });
 
+  it("maps the global effort through the active model's reasoningParamMap", async () => {
+    const create = vi.fn(() => model("mapped", "gpt-5"));
+    const importPlugin = vi.fn(async () => create);
+
+    await buildProviderFromSettings(
+      { importPlugin } as never,
+      mergeSettings({
+        profiles: [{
+          id: "mapped", name: "Mapped", kind: "openai", apiKey: "secret", baseURL: "", enabled: true,
+          models: [{ id: "gpt-5", source: "manual", reasoningParamMap: { max: "xhigh", high: "high" } }],
+        }],
+        activeProfileId: "mapped",
+        activeModel: "gpt-5",
+        reasoningEffort: "max",
+      }),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-5", reasoningEffort: "xhigh" }),
+    );
+  });
+
+});
+
+describe("wireReasoningEffort", () => {
+  const models = [{ id: "gpt-5", reasoningParamMap: { max: "xhigh" } }, { id: "plain" }];
+
+  it("档位在当前模型映射内 → 映射为接口参数值", () => {
+    expect(wireReasoningEffort(models, "gpt-5", "max")).toBe("xhigh");
+  });
+
+  it("档位不在映射内 / 当前模型未声明映射 → 透传原档位", () => {
+    expect(wireReasoningEffort(models, "gpt-5", "high")).toBe("high");
+    expect(wireReasoningEffort(models, "plain", "max")).toBe("max");
+    expect(wireReasoningEffort([], "missing", "low")).toBe("low");
+  });
+
+  it("无全局档位 → undefined（不带参数，跟随模型默认）", () => {
+    expect(wireReasoningEffort(models, "gpt-5", "")).toBeUndefined();
+    expect(wireReasoningEffort(models, "gpt-5", undefined)).toBeUndefined();
+  });
 });
 
 describe("resolveStagedProvider", () => {

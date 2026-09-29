@@ -1,6 +1,8 @@
-// 「导入模型」弹窗：拉取结果不直接写入，用户勾选要导入的模型，并统一下发
-// 上下文窗口（默认 1000000）/ 最大输出（默认 128000）/ 输入类型（文本锁定，
-// 图片、视频可勾选）/ 输出类型（文本锁定）。Esc/遮罩关闭。
+// 「导入模型」弹窗：拉取结果不直接写入，用户勾选要导入的模型。拉取时已按
+// 名称匹配内置模型清单自动配置属性（source "preset" 行带「已匹配」标记，
+// 导入时保留模型自身数值）；共享的上下文窗口（默认 1000000）/ 最大输出
+// （默认 128000）/ 输入类型（图片、视频）只补齐未匹配模型的缺口。Esc/遮罩
+// 关闭。
 import { useEffect, useMemo, useState } from "react";
 import { CheckSquare, Search, Square, X } from "lucide-react";
 import type { ModelInfo } from "../../../../shared/ipc";
@@ -64,8 +66,9 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
       .filter((model) => selected.has(model.id))
       .map((model) => ({
         ...model,
-        ...(Number.isFinite(context) && context > 0 ? { contextWindow: context } : {}),
-        ...(Number.isFinite(output) && output > 0 ? { maxOutput: output } : {}),
+        // 清单已匹配的模型保留自身数值；共享输入只补齐未匹配模型的缺口。
+        ...(model.contextWindow === undefined && Number.isFinite(context) && context > 0 ? { contextWindow: context } : {}),
+        ...(model.maxOutput === undefined && Number.isFinite(output) && output > 0 ? { maxOutput: output } : {}),
         vision: vision || model.vision === true,
         video: video || model.video === true,
         // 用户在导入时确认的字段标记为手改，enrich 不再覆盖。
@@ -130,6 +133,11 @@ export function ImportModelsDialog({ t, models, onClose, onImport }: Props): Rea
                 aria-label={model.id}
               />
               <span className="min-w-0 flex-1 truncate font-mono">{model.name ?? model.id}</span>
+              {model.source === "preset" && (
+                <span className="shrink-0 rounded bg-(--color-selected) px-1 py-0.5 leading-none text-(--color-muted)" title={model.contextWindow !== undefined ? `${model.contextWindow}` : undefined}>
+                  {t("settings.models.import.matched")}
+                </span>
+              )}
             </label>
           ))}
           {filtered.length === 0 && (

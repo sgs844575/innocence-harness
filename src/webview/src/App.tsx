@@ -907,6 +907,15 @@ export function App(): React.JSX.Element {
                     }
                   : undefined
               }
+              onMatchModel={
+                hasBridge()
+                  ? async (profile, modelId) => {
+                      // 智能配置：清单/预设命中（source "preset"）才回填表单。
+                      const [hit] = await api.enrichModels(profile.name, [modelId]).catch(() => []);
+                      return hit && hit.source === "preset" ? hit : null;
+                    }
+                  : undefined
+              }
               onFeedback={
                 hasBridge() ? () => void api.openExternal(ISSUES_URL).catch(() => undefined) : undefined
               }

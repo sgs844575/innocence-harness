@@ -66,7 +66,9 @@ maybeDescribe("plugin boot config and route loader", () => {
     await host.disposePluginBoot();
   });
 
-  it("user invalid skills config disables its dependent and still builds a session", async () => {
+  // 真实内核启动的集成用例串行 4.5–5.3s；并行 worker 负载下默认 5s 会踩线，
+  // 显式放宽到 20s（与同类 staging 拷贝 + 内核装载的真实耗时对齐）。
+  it("user invalid skills config disables its dependent and still builds a session", { timeout: 20_000 }, async () => {
     const home = tempRoot("ic-invalid-user-home-");
     const workspace = tempRoot("ic-invalid-user-workspace-");
     const resources = tempRoot("ic-invalid-user-resources-");
@@ -175,7 +177,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     await host.disposePluginBoot();
   });
 
-  it("does not resolve a disabled factory child", async () => {
+  it("does not resolve a disabled factory child", { timeout: 20_000 }, async () => {
     const resources = tempRoot("ic-disabled-group-factory-resources-");
     const pluginRoot = path.join(resources, "plugins");
     cpSync(paths.builtinRoot, pluginRoot, { recursive: true });
@@ -252,7 +254,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     await host.disposePluginBoot();
   });
 
-  it("rethrows transactional group failures instead of isolating them", async () => {
+  it("rethrows transactional group failures instead of isolating them", { timeout: 20_000 }, async () => {
     const resources = tempRoot("ic-group-failure-resources-");
     const pluginRoot = path.join(resources, "plugins");
     cpSync(paths.builtinRoot, pluginRoot, { recursive: true });
@@ -287,7 +289,7 @@ maybeDescribe("plugin boot config and route loader", () => {
     })).rejects.toThrow(/missing|broken/);
     await host.disposePluginBoot();
   });
-  it("mounts route loader entries and isolates apply and import failures", async () => {
+  it("mounts route loader entries and isolates apply and import failures", { timeout: 20_000 }, async () => {
     const resources = tempRoot("ic-route-loader-resources-");
     const pluginRoot = path.join(resources, "plugins");
     cpSync(paths.builtinRoot, pluginRoot, { recursive: true });

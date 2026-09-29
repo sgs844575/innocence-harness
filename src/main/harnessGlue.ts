@@ -25,13 +25,16 @@ import {
   createPermissionClassifier,
   listModels,
   mergeSettings,
+  resolvePresetMeta,
   type HarnessSettings as PkgSettings,
+  type ModelInfo,
 } from "@innocenceharness/harness-electron";
 import { IPC, attachmentPartsOf, type AgentModeInfo, type AttachmentPart, type ChatQuestionEvent, type ChatQuestionResponse, type PermissionChoice, type PluginInventory, type SkillInfo } from "../shared/ipc";
 import type { Message } from "@innocenceharness/harness-session";
 import { createAttachmentResolver } from "./attachments";
 import type { PluginBoot } from "./pluginBoot";
 import { createSessionComposition } from "./pluginBoot";
+import { matchModelCatalog, mergeModelMeta } from "./modelCatalog";
 import { isWorktreeSession } from "./taskWorktreePredicate";
 import { buildProviderFromSettings } from "./pluginBoot/sessionComposition";
 import { detectProjectTraits, type ProjectFacts } from "./pluginBoot/projectTraits";
@@ -861,6 +864,29 @@ export async function listProviderModelsById(profileId: string): Promise<string[
   const profile = settings.profiles.find((candidate) => candidate.id === profileId);
   if (!profile) throw new Error("profile not found");
   return listProviderModels(profile);
+}
+
+/**
+ * 设置侧模型元数据补全（渲染层无法 import harness-electron）：cherry 预设层
+ * 之上叠加模型清单插件（plugin-model-catalog，经批准双根装载）的按字段覆
+ * 盖——拉取模型自动勾选配置与添加模型智能配置共用此口径。boot 装载失败
+ * 按"无清单"降级（cherry 层照常），未命中两层 → 最小 fetch 对象（不再误标
+ * preset）。
+ */
+export async function enrichProviderModels(providerName: string, ids: string[]): Promise<ModelInfo[]> {
+  let boot: Pick<PluginBoot, "importPlugin"> | undefined;
+  try {
+    boot = await ensureBoot();
+  } catch {
+    boot = undefined; // 清单层降级：cherry 层仍可用
+  }
+  return Promise.all(
+    ids.map(async (id) => {
+      const preset = resolvePresetMeta(providerName, id);
+      const catalog = boot ? await matchModelCatalog(boot, id) : undefined;
+      return mergeModelMeta(preset, catalog?.meta, id);
+    }),
+  );
 }
 
 export async function pickWorkspace(): Promise<string> {

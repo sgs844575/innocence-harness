@@ -192,6 +192,11 @@ const PLUGINS = [
   { dir: "packages/plugin-ask", id: "ask" },
   { dir: "packages/plugin-attachments", id: "attachments" },
   { dir: "packages/plugin-dsh-compat", id: "dsh-compat" },
+  // model-catalog 为内置模型清单插件（数据载体形态，同 provider-* 工厂位：
+  // 仅 staging 供 boot.importPlugin 双根解析，不进 BUILTIN_DESCRIPTORS——无
+  // 会话面，宿主在设置 enrichment 时读取 catalog/matchModel 数据面做按名
+  // 称匹配的属性自动配置）。
+  { dir: "packages/plugin-model-catalog", id: "model-catalog" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

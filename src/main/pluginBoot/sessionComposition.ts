@@ -475,7 +475,22 @@ export async function buildProviderFromSettings(
     apiKey: active.apiKey,
     baseURL: active.baseURL,
     model: active.model,
-  }, settings.reasoningEffort || undefined);
+  }, wireReasoningEffort(profile.models, settings.activeModel, settings.reasoningEffort));
+}
+
+/**
+ * 思考档位接线：当前模型声明了 reasoningParamMap 且全局档位是其键时，映射
+ * 为接口参数值（如 {"max": "xhigh"}）；未声明或档位不在映射内时透传原档位
+ * （"max"/自定义值由各协议的 request-options 分支自行归置）。
+ */
+export function wireReasoningEffort(
+  models: readonly { id: string; reasoningParamMap?: Record<string, string> }[],
+  activeModel: string,
+  effort: string | undefined,
+): string | undefined {
+  if (!effort) return undefined;
+  const mapped = models.find((model) => model.id === activeModel)?.reasoningParamMap?.[effort];
+  return mapped ?? effort;
 }
 
 /** Resolve a host-only factory lazily at the loader entry boundary. */
