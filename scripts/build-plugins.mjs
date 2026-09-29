@@ -145,6 +145,13 @@ const BUILTIN_DESCRIPTORS = [
   // 向会话注册消息处理器（-500）——单消息件数上限与引用/表示形状校验，
   // 无 IO 无配置；CAS 存在性与模型能力门控由宿主主进程权威负责。
   { id: "attachments", dependencies: [] },
+  // dsh-compat 为参考开源框架（dsh，Cordis 形态）插件生态兼容层：默认导出
+  // 是工厂（同 mcp 形态），由宿主 factoryPlugin 装配并传入组合扫描根
+  // （工作区 .dsh 与用户数据根 dsh，可用组配置 roots 覆盖）；扫描
+  // cordis.patch.yml/cordis.yml 与 dsh.bundle.patch 包布局，按序装载
+  // 函数/对象形态插件，defineTool DSL 工具映射为 dsh__<条目>__<工具>，
+  // 失败条目隔离并落首轮提醒。
+  { id: "dsh-compat", dependencies: [] },
   { id: "example", dependencies: [] },
 ];
 const PLUGINS = [
@@ -184,6 +191,7 @@ const PLUGINS = [
   { dir: "packages/plugin-team", id: "team" },
   { dir: "packages/plugin-ask", id: "ask" },
   { dir: "packages/plugin-attachments", id: "attachments" },
+  { dir: "packages/plugin-dsh-compat", id: "dsh-compat" },
 ];
 const STAGING = "build/dist/resources";
 const WORKSPACE_SCOPE = "@innocenceharness";

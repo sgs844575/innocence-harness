@@ -1,0 +1,28 @@
+{
+  "name": "@innocenceharness/plugin-dsh-compat",
+  "version": "0.1.0",
+  "description": "InnocenceHarness dsh compat plugin: loads reference-harness Cordis plugins and maps their tools into the harness",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@innocenceharness/harness-session": "^0.1.0",
+    "@innocenceharness/harness-tools": "^0.1.0",
+    "@innocenceharness/kernel": "^0.1.0",
+    "@innocenceharness/kernel-logger": "^0.1.0",
+    "yaml": "^2.9.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "逆流无邪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgs844575/innocence-code.git",
+    "directory": "packages/plugin-dsh-compat"
+  }
+}

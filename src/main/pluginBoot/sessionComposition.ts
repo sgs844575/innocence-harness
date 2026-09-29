@@ -481,9 +481,10 @@ export async function buildProviderFromSettings(
 /** Resolve a host-only factory lazily at the loader entry boundary. */
 function factoryPlugin(
   boot: PluginBoot,
-  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell" | "instructions",
+  id: "skills" | "mcp" | "creation" | "reminders" | "memory" | "hooks" | "team" | "ask" | "fs" | "shell" | "instructions" | "dsh-compat",
   options: () =>
     | { dirs: string[] }
+    | { roots: string[] }
     | {
         servers: Record<string, unknown>;
         isComputerEnabled?: () => boolean;
@@ -528,14 +529,14 @@ function factoryPlugin(
 }
 
 function factoryConfig(
-  id: "skills" | "mcp",
+  id: "skills" | "mcp" | "dsh-compat",
   config: unknown,
   workspaceRoot: string,
   project: InnocenceConfig,
   isComputerEnabled?: () => boolean,
   computerActivity?: ToolActivityObserver,
   authorizeServer?: (server: { name: string; url: string; oauth?: ServerAuthorizationConfig }) => Promise<McpAuthorizationOutcome>,
-): { dirs: string[] } | {
+): { dirs: string[] } | { roots: string[] } | {
   servers: Record<string, unknown>;
   isComputerEnabled?: () => boolean;
   computerActivity?: ToolActivityObserver;
@@ -549,6 +550,15 @@ function factoryConfig(
     // 缺省四根：skills 在前（同名技能优先于同名命令），commands 随后——
     // 命令只是扁平 *.md 技能条目，经同一插件装载为 "/name" 可调用项。
     return { dirs: configured?.dirs as string[] ?? [path.join(workspaceRoot, ".innocence", "skills"), path.join(appDataRoot(), "skills"), path.join(workspaceRoot, ".innocence", "commands"), path.join(appDataRoot(), "commands")] };
+  }
+  if (id === "dsh-compat") {
+    const configured = config as { roots?: unknown } | undefined;
+    if (config !== undefined && (!configured || !Array.isArray(configured.roots) || !configured.roots.every((v) => typeof v === "string"))) {
+      throw new Error("invalid dsh-compat group config: roots must be a string array");
+    }
+    // 缺省双根：工作区 .dsh（项目内组合层）在前，用户数据根 dsh（跨项目
+    // 安装的参考框架插件与包布局）随后。
+    return { roots: configured?.roots as string[] ?? [path.join(workspaceRoot, ".dsh"), path.join(appDataRoot(), "dsh")] };
   }
   const configured = config as { servers?: unknown } | undefined;
   if (config !== undefined && (!configured || !configured.servers || typeof configured.servers !== "object" || Array.isArray(configured.servers))) {
@@ -610,7 +620,7 @@ function groupConfigOf(id: string, config: unknown): { id: string; entries: read
 // bridge is host-owned, so a group child cannot bare-load the factory either.
 // "fs"/"shell" receive the settings-snapshot tool configs
 // (enhancedFindGrep/terminalShell — same composePlugins channel).
-const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team", "ask", "fs", "shell", "instructions"]);
+const FACTORY_ONLY_BUILTINS = new Set(["creation", "reminders", "memory", "hooks", "team", "ask", "fs", "shell", "instructions", "dsh-compat"]);
 
 /**
  * fs 工厂入参（当次 settings 快照 → 工具行为）：
@@ -739,6 +749,12 @@ async function builtinLoaderEntryFor(
     plugin = factoryPlugin(boot, "skills", () => factoryConfig("skills", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "mcp") {
     plugin = factoryPlugin(boot, "mcp", () => factoryConfig("mcp", entry.config, workspaceRoot, config, isComputerEnabled, computerActivity, authorizeServer));
+  } else if (!entry.disabled && id === "dsh-compat") {
+    // Same factory shape as mcp: the staged default export is the reference-
+    // harness compatibility factory; roots come from the dsh-compat group
+    // config (workspace .dsh + user-data dsh by default). Failures inside a
+    // scanned root never fail composition — the plugin isolates them.
+    plugin = factoryPlugin(boot, "dsh-compat", () => factoryConfig("dsh-compat", entry.config, workspaceRoot, config));
   } else if (!entry.disabled && id === "creation") {
     // Factory builtin like skills/mcp: the staged default export is a factory
     // needing the host-resolved user plugin root (creation-mode directory

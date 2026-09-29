@@ -149,6 +149,12 @@ const builtinConfigSpecs: ConfigSpecs = {
       servers: { spec: { type: "object" } },
     },
   } satisfies SchemaSpec,
+  "dsh-compat": {
+    type: "object",
+    properties: {
+      roots: { spec: { type: "array", items: { type: "string" } } },
+    },
+  } satisfies SchemaSpec,
 };
 
 /** Root-level permission decider: no UI exists at the boot root, so every
