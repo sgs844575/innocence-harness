@@ -72,11 +72,17 @@ export async function* streamOneHarnessStep(
 
   try {
     // Anthropic prompt caching: the provider allows at most 4 cache
-    // breakpoints per request. This runtime places exactly 2: breakpoint 1 at
-    // the end of the system prompt (covers the stable system-prompt prefix)
-    // and breakpoint 2 at the last part of the last message (rolls forward
-    // with the growing message prefix). Every other protocol keeps the plain
-    // string system prompt and untouched messages.
+    // breakpoints per request. This runtime places up to 4, all ephemeral:
+    // (1) the last tool definition — keeps the tool block (the largest stable
+    //     prefix) cached even when the system prompt differs between requests;
+    // (2) the end of the system prompt — the stable system-prompt prefix;
+    // (3) the previous-turn boundary (last part of the message before the
+    //     final assistant message) — always coincides with the previous
+    //     request's last-message breakpoint, so the rolling chain still hits
+    //     when the newest tail was rewritten (resend, aborted-turn repair);
+    // (4) the last part of the last message — rolls forward with the growing
+    //     message prefix. Every other protocol keeps the plain string system
+    //     prompt and untouched tools and messages.
     const cacheBreakpointOptions: SharedV3ProviderOptions = {
       anthropic: { cacheControl: { type: "ephemeral" } },
     };
@@ -89,8 +95,11 @@ export async function* streamOneHarnessStep(
       system: isAnthropic
         ? [{ role: "system" as const, content: request.system, providerOptions: cacheBreakpointOptions }]
         : request.system,
-      messages: isAnthropic ? withLastPartCacheBreakpoint(messages, cacheBreakpointOptions) : messages,
-      tools: toSdkTools(request.tools),
+      messages: isAnthropic ? withCacheBreakpoints(messages, cacheBreakpointOptions) : messages,
+      tools: toSdkTools(
+        request.tools,
+        isAnthropic ? { lastToolProviderOptions: cacheBreakpointOptions } : undefined,
+      ),
       abortSignal: request.signal,
       stopWhen: stepCountIs(1),
     });
@@ -249,42 +258,70 @@ function toError(error: unknown): { message: string } {
 }
 
 /**
- * Attaches the cache breakpoint to a shallow copy of the last message's last
- * part. The input messages and their parts are never mutated: only the last
- * message and its last part are copied. Returns the input array unchanged
+ * Attaches cache breakpoints to shallow copies of the marked messages' last
+ * parts: the last message (rolling prefix boundary) and, when the tail holds a
+ * final assistant message, the message before it (previous-turn checkpoint —
+ * the position the previous request's last-message breakpoint already cached).
+ * The input messages and their parts are never mutated: only the marked
+ * messages and their last parts are copied. Returns the input array unchanged
  * when there is no part to attach to.
  */
-function withLastPartCacheBreakpoint(
+function withCacheBreakpoints(
   messages: ModelMessage[],
   providerOptions: SharedV3ProviderOptions,
 ): ModelMessage[] {
-  const last = messages[messages.length - 1];
-  if (!last) return messages;
+  if (messages.length === 0) return messages;
 
+  // Previous-turn checkpoint: the message right before the final assistant
+  // message (skipped when the assistant is first or absent — the first-turn
+  // tail has no earlier boundary worth pinning).
+  let checkpointIndex = -1;
+  for (let i = messages.length - 2; i >= 0; i--) {
+    if (messages[i]!.role === "assistant") {
+      checkpointIndex = i - 1;
+      break;
+    }
+  }
+  const lastIndex = messages.length - 1;
+  const indices =
+    checkpointIndex >= 0 && checkpointIndex !== lastIndex
+      ? [checkpointIndex, lastIndex]
+      : [lastIndex];
+
+  const result = messages.slice();
+  for (const index of indices) {
+    const marked = withMessageBreakpoint(result[index]!, providerOptions);
+    if (marked !== result[index]) result[index] = marked;
+  }
+  return result;
+}
+
+/** Attaches the breakpoint to a shallow copy of one message's last part. */
+function withMessageBreakpoint(
+  message: ModelMessage,
+  providerOptions: SharedV3ProviderOptions,
+): ModelMessage {
   let patched: ModelMessage;
-  switch (last.role) {
+  switch (message.role) {
     case "user":
       patched =
-        typeof last.content === "string"
-          ? { ...last, content: [{ type: "text", text: last.content, providerOptions }] }
-          : { ...last, content: patchUserContent(last.content, providerOptions) };
+        typeof message.content === "string"
+          ? { ...message, content: [{ type: "text", text: message.content, providerOptions }] }
+          : { ...message, content: patchUserContent(message.content, providerOptions) };
       break;
     case "assistant":
       patched =
-        typeof last.content === "string"
-          ? { ...last, content: [{ type: "text", text: last.content, providerOptions }] }
-          : { ...last, content: patchAssistantContent(last.content, providerOptions) };
+        typeof message.content === "string"
+          ? { ...message, content: [{ type: "text", text: message.content, providerOptions }] }
+          : { ...message, content: patchAssistantContent(message.content, providerOptions) };
       break;
     case "tool":
-      patched = { ...last, content: patchToolContent(last.content, providerOptions) };
+      patched = { ...message, content: patchToolContent(message.content, providerOptions) };
       break;
     case "system":
-      return messages;
+      return message;
   }
-
-  const result = messages.slice();
-  result[result.length - 1] = patched;
-  return result;
+  return patched;
 }
 
 function patchUserContent(

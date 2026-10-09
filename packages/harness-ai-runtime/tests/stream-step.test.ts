@@ -354,7 +354,7 @@ describe("streamOneHarnessStep", () => {
     });
   });
 
-  it("places a cache breakpoint on the last part of the last message only, without mutating the input", async () => {
+  it("places cache breakpoints on the previous-turn boundary and the last part of the last message, without mutating the input", async () => {
     const model = new MockLanguageModelV3({
       doStream: {
         stream: convertArrayToReadableStream([
@@ -373,13 +373,8 @@ describe("streamOneHarnessStep", () => {
     });
     const messages: Message[] = [
       { role: "user", parts: [{ type: "text", text: "Hi" }] },
-      {
-        role: "assistant",
-        parts: [
-          { type: "text", text: "part-a" },
-          { type: "text", text: "part-b" },
-        ],
-      },
+      { role: "assistant", parts: [{ type: "toolCall", id: "c1", toolName: "shell", args: { command: "ls" } }] },
+      { role: "user", parts: [{ type: "toolResult", toolCallId: "c1", content: "out" }] },
     ];
     const snapshot = JSON.parse(JSON.stringify(messages));
     for (const message of messages) {
@@ -398,17 +393,112 @@ describe("streamOneHarnessStep", () => {
 
     expect(messages).toEqual(snapshot);
 
+    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral" } } };
     const prompt = model.doStreamCalls[0]?.prompt ?? [];
-    expect(prompt[1]).toEqual({ role: "user", content: [{ type: "text", text: "Hi" }] });
-    const lastMessage = prompt[2];
-    expect(lastMessage?.role).toBe("assistant");
-    expect(lastMessage?.content[0]).toEqual({ type: "text", text: "part-a" });
-    expect(lastMessage?.content[1]).toEqual({
-      type: "text",
-      text: "part-b",
+    // Previous-turn checkpoint: the opening user message (it sits right before
+    // the final assistant message and was the previous request's boundary).
+    expect(prompt[1]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "Hi", providerOptions: breakpoint }],
+    });
+    // The assistant tool-call message between the two boundaries stays plain.
+    expect(JSON.stringify(prompt[2])).not.toContain("cacheControl");
+    // Rolling breakpoint: last part of the last (tool-result) message.
+    const lastMessage = prompt[3];
+    expect(lastMessage?.role).toBe("tool");
+    expect(lastMessage?.content[0]).toMatchObject({
+      type: "tool-result",
+      providerOptions: breakpoint,
+    });
+    // Exactly two message breakpoints (checkpoint + last), plus the system one.
+    expect(JSON.stringify(prompt.slice(1)).match(/cacheControl/g)).toHaveLength(2);
+  });
+
+  it("places the checkpoint on the previous request's rolling boundary in a multi-round tool chain", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "anthropic-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createAnthropic: () => ({ chat: () => model }),
+    }).create({
+      providerId: "caching-profile",
+      protocol: "anthropic",
+      modelId: "model",
+      credential: "secret",
+    });
+
+    await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system",
+        // Two completed tool rounds: the checkpoint must land on the FIRST
+        // round's tool results (the previous request's last message), and the
+        // rolling breakpoint on the second round's results.
+        messages: [
+          { role: "user", parts: [{ type: "text", text: "Hi" }] },
+          { role: "assistant", parts: [{ type: "toolCall", id: "c1", toolName: "shell", args: { command: "ls" } }] },
+          { role: "user", parts: [{ type: "toolResult", toolCallId: "c1", content: "out-1" }] },
+          { role: "assistant", parts: [{ type: "toolCall", id: "c2", toolName: "shell", args: { command: "pwd" } }] },
+          { role: "user", parts: [{ type: "toolResult", toolCallId: "c2", content: "out-2" }] },
+        ],
+        tools: [],
+      }),
+    );
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    // mapped: [user, assistant, tool, assistant, tool]
+    const marked: number[] = [];
+    prompt.forEach((entry, index) => {
+      if (index === 0) return; // system
+      const content = typeof entry.content === "string" ? [] : entry.content;
+      if (content.some((part) => "providerOptions" in part && part.providerOptions !== undefined)) {
+        marked.push(index);
+      }
+    });
+    expect(marked).toEqual([3, 5]);
+  });
+
+  it("attaches the tool-block cache breakpoint to the last tool definition only for anthropic", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "finish", usage, finishReason: { unified: "stop", raw: "anthropic-wire-finish" } },
+        ]),
+      },
+    });
+    const carrier = createModelFactory({
+      createAnthropic: () => ({ chat: () => model }),
+    }).create({
+      providerId: "caching-profile",
+      protocol: "anthropic",
+      modelId: "model",
+      credential: "secret",
+    });
+
+    await collect(
+      streamOneHarnessStep({
+        model: carrier,
+        system: "system",
+        messages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
+        tools: [
+          { name: "shell", description: "run", parameters: { type: "object" } },
+          { name: "read", description: "read", parameters: { type: "object" } },
+        ],
+      }),
+    );
+
+    const tools = (model.doStreamCalls[0]?.tools ?? []) as Array<{ providerOptions?: unknown }>;
+    expect(tools).toHaveLength(2);
+    expect(tools[0]?.providerOptions).toBeUndefined();
+    expect(tools[1]).toMatchObject({
       providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
     });
-    expect(JSON.stringify(prompt.slice(1, -1))).not.toContain("cacheControl");
   });
 
   it("keeps the plain string system prompt and no cache breakpoints for openai protocol", async () => {

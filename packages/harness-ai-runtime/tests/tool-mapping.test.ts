@@ -21,4 +21,23 @@ describe("toSdkTools", () => {
     const inputSchema = mapped.shell.inputSchema as { jsonSchema: unknown };
     expect(inputSchema.jsonSchema).toEqual(schema);
   });
+
+  it("attaches lastToolProviderOptions to the final tool only, keeping spec order", () => {
+    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral" } } };
+    const mapped = toSdkTools(
+      [
+        { name: "shell", description: "run", parameters: schema },
+        { name: "read", description: "read", parameters: { type: "object" } },
+      ],
+      { lastToolProviderOptions: breakpoint },
+    );
+    expect(Object.keys(mapped)).toEqual(["shell", "read"]);
+    expect(mapped.shell.providerOptions).toBeUndefined();
+    expect(mapped.read.providerOptions).toEqual(breakpoint);
+  });
+
+  it("emits no provider options by default", () => {
+    const mapped = toSdkTools([{ name: "shell", description: "run", parameters: schema }]);
+    expect(mapped.shell.providerOptions).toBeUndefined();
+  });
 });
