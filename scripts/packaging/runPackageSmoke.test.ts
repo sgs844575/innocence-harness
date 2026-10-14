@@ -17,7 +17,6 @@ const runner = path.join(repoRoot, "scripts", "packaging", "runPackageSmoke.ts")
 async function runRunner(environment: NodeJS.ProcessEnv): Promise<{ code: number | null; output: string }> {
   const child = spawn(process.execPath, [
     "--experimental-strip-types",
-    "--experimental-default-type=module",
     runner,
   ], {
     cwd: repoRoot,
